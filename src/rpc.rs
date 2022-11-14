@@ -1,5 +1,3 @@
-
-
 use solana_client::{
     pubsub_client::{BlockSubscription, PubsubClientError},
     tpu_client::TpuClientConfig,
@@ -7,6 +5,7 @@ use solana_client::{
 use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
 use std::thread::{Builder, JoinHandle};
 
+use crate::context::{BlockInformation, LiteRpcContext};
 use {
     bincode::config::Options,
     crossbeam_channel::Receiver,
@@ -28,13 +27,9 @@ use {
     std::{
         any::type_name,
         collections::HashMap,
-        sync::{
-            atomic::{Ordering},
-            Arc, RwLock,
-        },
+        sync::{atomic::Ordering, Arc, RwLock},
     },
 };
-use crate::context::{LiteRpcContext, BlockInformation};
 
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
@@ -49,10 +44,7 @@ pub struct LightRpcRequestProcessor {
 }
 
 impl LightRpcRequestProcessor {
-    pub fn new(
-        json_rpc_url: &String,
-        websocket_url: &String,
-    ) -> LightRpcRequestProcessor {
+    pub fn new(json_rpc_url: &String, websocket_url: &String) -> LightRpcRequestProcessor {
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url.as_str()));
         let connection_cache = Arc::new(ConnectionCache::default());
         let tpu_client = Arc::new(
@@ -74,12 +66,20 @@ impl LightRpcRequestProcessor {
         // subscribe for finalized blocks
         let (client_finalized, receiver_finalized) =
             Self::subscribe_block(websocket_url, CommitmentLevel::Finalized).unwrap();
-        
+
         // create threads to listen for finalized and confrimed blocks
         let joinables = vec![
-            Self::build_thread_to_process_blocks(receiver_confirmed, &context, CommitmentLevel::Confirmed),
-            Self::build_thread_to_process_blocks(receiver_finalized, &context, CommitmentLevel::Finalized),
-         ];
+            Self::build_thread_to_process_blocks(
+                receiver_confirmed,
+                &context,
+                CommitmentLevel::Confirmed,
+            ),
+            Self::build_thread_to_process_blocks(
+                receiver_finalized,
+                &context,
+                CommitmentLevel::Finalized,
+            ),
+        ];
 
         LightRpcRequestProcessor {
             rpc_client,
@@ -89,7 +89,7 @@ impl LightRpcRequestProcessor {
             context: context,
             _connection_cache: connection_cache,
             _joinables: Arc::new(joinables),
-            _subscribed_clients : Arc::new(vec![client_confirmed, client_finalized]),
+            _subscribed_clients: Arc::new(vec![client_confirmed, client_finalized]),
         }
     }
 
@@ -114,20 +114,21 @@ impl LightRpcRequestProcessor {
         )
     }
 
-    fn build_thread_to_process_blocks(reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
-        context : &Arc<LiteRpcContext>,
-        commitment : CommitmentLevel,) -> JoinHandle<()>{
+    fn build_thread_to_process_blocks(
+        reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
+        context: &Arc<LiteRpcContext>,
+        commitment: CommitmentLevel,
+    ) -> JoinHandle<()> {
         let context = context.clone();
         Builder::new()
             .name("thread working on confirmation block".to_string())
             .spawn(move || {
-                let block_info = if commitment.eq(&CommitmentLevel::Finalized) {&context.confirmed_block_info} else {&context.finalized_block_info};
-                Self::process_block(
-                    reciever,
-                    &context.signature_status,
-                    commitment,
-                    block_info,
-                );
+                let block_info = if commitment.eq(&CommitmentLevel::Finalized) {
+                    &context.confirmed_block_info
+                } else {
+                    &context.finalized_block_info
+                };
+                Self::process_block(reciever, &context.signature_status, commitment, block_info);
             })
             .unwrap()
     }
@@ -145,11 +146,14 @@ impl LightRpcRequestProcessor {
             match block_data {
                 Ok(data) => {
                     let block_update = &data.value;
-                    block_information.slot.store(block_update.slot, Ordering::Relaxed);
-                    
-                    if let Some(block) = &block_update.block {
+                    block_information
+                        .slot
+                        .store(block_update.slot, Ordering::Relaxed);
 
-                        block_information.block_height.store(block.block_height.unwrap(), Ordering::Relaxed);
+                    if let Some(block) = &block_update.block {
+                        block_information
+                            .block_height
+                            .store(block.block_height.unwrap(), Ordering::Relaxed);
                         // context to update blockhash
                         {
                             let mut lock = block_information.block_hash.write().unwrap();
@@ -227,7 +231,6 @@ pub mod lite_rpc {
             lamports: u64,
             config: Option<RpcRequestAirdropConfig>,
         ) -> Result<String>;
-
     }
     pub struct LightRpc;
     impl Lite for LightRpc {
@@ -271,14 +274,21 @@ pub mod lite_rpc {
                 None => CommitmentLevel::Confirmed,
             };
             let (block_hash, slot) = match commitment {
-                CommitmentLevel::Finalized => { 
-                    let slot = meta.context.finalized_block_info.slot.load(Ordering::Relaxed);
+                CommitmentLevel::Finalized => {
+                    let slot = meta
+                        .context
+                        .finalized_block_info
+                        .slot
+                        .load(Ordering::Relaxed);
                     let lock = meta.context.finalized_block_info.block_hash.read().unwrap();
                     (lock.clone(), slot)
-                },
+                }
                 _ => {
-
-                    let slot = meta.context.confirmed_block_info.slot.load(Ordering::Relaxed);
+                    let slot = meta
+                        .context
+                        .confirmed_block_info
+                        .slot
+                        .load(Ordering::Relaxed);
                     let lock = meta.context.confirmed_block_info.block_hash.read().unwrap();
                     (lock.clone(), slot)
                 }
@@ -307,9 +317,15 @@ pub mod lite_rpc {
             };
 
             let slot = if commitment.eq(&CommitmentLevel::Finalized) {
-                meta.context.finalized_block_info.slot.load(Ordering::Relaxed)
+                meta.context
+                    .finalized_block_info
+                    .slot
+                    .load(Ordering::Relaxed)
             } else {
-                meta.context.confirmed_block_info.slot.load(Ordering::Relaxed)
+                meta.context
+                    .confirmed_block_info
+                    .slot
+                    .load(Ordering::Relaxed)
             };
 
             match k_value {
@@ -361,8 +377,10 @@ pub mod lite_rpc {
         ) -> Result<String> {
             let pubkey = Pubkey::from_str(pubkey_str.as_str()).unwrap();
             let signature = match config {
-                Some(c) => meta.rpc_client.request_airdrop_with_config(&pubkey, lamports, c),
-                None => meta.rpc_client.request_airdrop(&pubkey, lamports)
+                Some(c) => meta
+                    .rpc_client
+                    .request_airdrop_with_config(&pubkey, lamports, c),
+                None => meta.rpc_client.request_airdrop(&pubkey, lamports),
             };
             Ok(signature.unwrap().to_string())
         }

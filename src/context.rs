@@ -1,8 +1,9 @@
-use std::{sync::{atomic::AtomicU64, RwLock, Arc}, collections::HashMap};
 use solana_client::rpc_client::RpcClient;
-use solana_sdk::commitment_config::{CommitmentLevel, CommitmentConfig};
-
-
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use std::{
+    collections::HashMap,
+    sync::{atomic::AtomicU64, Arc, RwLock},
+};
 
 pub struct BlockInformation {
     pub block_hash: RwLock<String>,
@@ -13,20 +14,21 @@ pub struct BlockInformation {
 
 impl BlockInformation {
     pub fn new(rpc_client: Arc<RpcClient>, commitment: CommitmentLevel) -> Self {
-
         let slot = rpc_client
             .get_slot_with_commitment(CommitmentConfig {
                 commitment: commitment,
             })
             .unwrap();
 
-        let (blockhash, blockheight) = rpc_client.get_latest_blockhash_with_commitment(CommitmentConfig { commitment }).unwrap();
+        let (blockhash, blockheight) = rpc_client
+            .get_latest_blockhash_with_commitment(CommitmentConfig { commitment })
+            .unwrap();
 
-        BlockInformation{
+        BlockInformation {
             block_hash: RwLock::new(blockhash.to_string()),
             block_height: AtomicU64::new(blockheight),
             slot: AtomicU64::new(slot),
-            confirmation_level : commitment,
+            confirmation_level: commitment,
         }
     }
 }
@@ -39,11 +41,16 @@ pub struct LiteRpcContext {
 
 impl LiteRpcContext {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
-
         LiteRpcContext {
-            signature_status : RwLock::new(HashMap::new()),
-            confirmed_block_info : BlockInformation::new(rpc_client.clone(), CommitmentLevel::Confirmed),
-            finalized_block_info : BlockInformation::new(rpc_client.clone(), CommitmentLevel::Finalized)
+            signature_status: RwLock::new(HashMap::new()),
+            confirmed_block_info: BlockInformation::new(
+                rpc_client.clone(),
+                CommitmentLevel::Confirmed,
+            ),
+            finalized_block_info: BlockInformation::new(
+                rpc_client.clone(),
+                CommitmentLevel::Finalized,
+            ),
         }
     }
 }

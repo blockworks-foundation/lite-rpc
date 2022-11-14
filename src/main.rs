@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
 use jsonrpc_core::MetaIoHandler;
-use jsonrpc_http_server::{ServerBuilder, DomainsValidation, hyper, AccessControlAllowOrigin};
+use jsonrpc_http_server::{hyper, AccessControlAllowOrigin, DomainsValidation, ServerBuilder};
 use solana_perf::thread::renice_this_thread;
 
-use crate::rpc::{lite_rpc::{self, Lite}, LightRpcRequestProcessor};
+use crate::rpc::{
+    lite_rpc::{self, Lite},
+    LightRpcRequestProcessor,
+};
 mod cli;
-mod rpc;
 mod context;
+mod rpc;
 
 pub fn main() {
     let matches = cli::build_args(solana_version::version!()).get_matches();
@@ -17,7 +20,6 @@ pub fn main() {
         json_rpc_url,
         websocket_url,
         rpc_addr,
-        subscription_port,
         ..
     } = &cli_config;
 
@@ -25,8 +27,7 @@ pub fn main() {
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
 
-    let request_processor =
-        LightRpcRequestProcessor::new(json_rpc_url, websocket_url);
+    let request_processor = LightRpcRequestProcessor::new(json_rpc_url, websocket_url);
 
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
