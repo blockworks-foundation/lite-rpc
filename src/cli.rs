@@ -1,8 +1,8 @@
 use {
     clap::{App, Arg, ArgMatches},
     solana_clap_utils::input_validators::{is_url, is_url_or_moniker},
-    solana_cli_config::{ConfigInput},
-    std::{net::SocketAddr},
+    solana_cli_config::ConfigInput,
+    std::net::SocketAddr,
 };
 
 /// Holds the configuration for a single run of the benchmark
@@ -19,7 +19,7 @@ impl Default for Config {
             rpc_addr: SocketAddr::from(([127, 0, 0, 1], 8899)),
             json_rpc_url: ConfigInput::default().json_rpc_url,
             websocket_url: ConfigInput::default().websocket_url,
-            subscription_port : SocketAddr::from(([127, 0, 0, 1], 8900)),
+            subscription_port: SocketAddr::from(([127, 0, 0, 1], 8900)),
         }
     }
 }
@@ -67,7 +67,7 @@ pub fn build_args<'a, 'b>(version: &'b str) -> App<'a, 'b> {
                 .takes_value(true)
                 .global(true)
                 .min_values(1025)
-                .help("subscription port on which which lite rpc will use to create subscriptions")
+                .help("subscription port on which which lite rpc will use to create subscriptions"),
         )
 }
 
@@ -102,7 +102,7 @@ pub fn extract_args(matches: &ArgMatches) -> Config {
         args.subscription_port = SocketAddr::from(([127, 0, 0, 1], port));
     } else {
         let port = args.rpc_addr.port().saturating_add(1);
-        args.subscription_port =SocketAddr::from(([127, 0, 0, 1], port));
+        args.subscription_port = SocketAddr::from(([127, 0, 0, 1], port));
     }
     args
 }
