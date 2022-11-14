@@ -1,3 +1,0 @@
-[submodule "deps/solana"]
-	path = deps/solana
-	url = https://github.com/blockworks-foundation/solana.git
