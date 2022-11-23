@@ -44,13 +44,13 @@ pub struct LightRpcRequestProcessor {
 }
 
 impl LightRpcRequestProcessor {
-    pub fn new(json_rpc_url: &String, websocket_url: &String) -> LightRpcRequestProcessor {
-        let rpc_client = Arc::new(RpcClient::new(json_rpc_url.as_str()));
+    pub fn new(json_rpc_url: &str, websocket_url: &str) -> LightRpcRequestProcessor {
+        let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
         let connection_cache = Arc::new(ConnectionCache::default());
         let tpu_client = Arc::new(
             TpuClient::new_with_connection_cache(
                 rpc_client.clone(),
-                websocket_url.as_str(),
+                websocket_url,
                 TpuClientConfig::default(),
                 connection_cache.clone(),
             )
@@ -85,8 +85,8 @@ impl LightRpcRequestProcessor {
             rpc_client,
             tpu_client,
             last_valid_block_height: 0,
-            ws_url: websocket_url.clone(),
-            context: context,
+            ws_url: websocket_url.to_string(),
+            context,
             _connection_cache: connection_cache,
             _joinables: Arc::new(joinables),
             _subscribed_clients: Arc::new(vec![client_confirmed, client_finalized]),
@@ -94,16 +94,14 @@ impl LightRpcRequestProcessor {
     }
 
     fn subscribe_block(
-        websocket_url: &String,
+        websocket_url: &str,
         commitment: CommitmentLevel,
     ) -> std::result::Result<BlockSubscription, PubsubClientError> {
         PubsubClient::block_subscribe(
-            websocket_url.as_str(),
+            websocket_url,
             RpcBlockSubscribeFilter::All,
             Some(RpcBlockSubscribeConfig {
-                commitment: Some(CommitmentConfig {
-                    commitment: commitment,
-                }),
+                commitment: Some(CommitmentConfig { commitment }),
                 encoding: None,
                 transaction_details: Some(
                     solana_transaction_status::TransactionDetails::Signatures,
@@ -139,7 +137,7 @@ impl LightRpcRequestProcessor {
         commitment: CommitmentLevel,
         block_information: &BlockInformation,
     ) {
-        println!("processing blocks for {}", commitment.to_string());
+        println!("processing blocks for {}", commitment);
         loop {
             let block_data = reciever.recv();
 
@@ -181,7 +179,7 @@ impl LightRpcRequestProcessor {
                     }
                 }
                 Err(e) => {
-                    println!("Got error when recieving the block ({})", e.to_string());
+                    println!("Got error when recieving the block ({})", e);
                 }
             }
         }
@@ -252,15 +250,14 @@ pub mod lite_rpc {
                 ))
             })?;
             let (wire_transaction, transaction) =
-                decode_and_deserialize::<VersionedTransaction>(data.clone(), binary_encoding)?;
+                decode_and_deserialize::<VersionedTransaction>(data, binary_encoding)?;
 
             {
                 let mut lock = meta.context.signature_status.write().unwrap();
                 lock.insert(transaction.signatures[0].to_string(), None);
-                println!("added {} to map", transaction.signatures[0].to_string());
+                println!("added {} to map", transaction.signatures[0]);
             }
-            meta.tpu_client
-                .send_wire_transaction(wire_transaction.clone());
+            meta.tpu_client.send_wire_transaction(wire_transaction);
             Ok(transaction.signatures[0].to_string())
         }
 
@@ -332,7 +329,7 @@ pub mod lite_rpc {
                 Some(value) => match value.1 {
                     Some(commitment_for_signature) => {
                         println!("found in cache");
-                        return Ok(RpcResponse {
+                        Ok(RpcResponse {
                             context: RpcResponseContext::new(slot),
                             value: if commitment.eq(&CommitmentLevel::Finalized) {
                                 commitment_for_signature.eq(&CommitmentLevel::Finalized)
@@ -340,14 +337,12 @@ pub mod lite_rpc {
                                 commitment_for_signature.eq(&CommitmentLevel::Finalized)
                                     || commitment_for_signature.eq(&CommitmentLevel::Confirmed)
                             },
-                        });
-                    }
-                    None => {
-                        return Ok(RpcResponse {
-                            context: RpcResponseContext::new(slot),
-                            value: false,
                         })
                     }
+                    None => Ok(RpcResponse {
+                        context: RpcResponseContext::new(slot),
+                        value: false,
+                    }),
                 },
                 None => {
                     let signature = Signature::from_str(signature_str.as_str()).unwrap();
@@ -360,12 +355,12 @@ pub mod lite_rpc {
                                 .value
                         }
                     };
-                    return Ok(RpcResponse {
+                    Ok(RpcResponse {
                         context: RpcResponseContext::new(slot),
                         value: ans,
-                    });
+                    })
                 }
-            };
+            }
         }
 
         fn request_airdrop(

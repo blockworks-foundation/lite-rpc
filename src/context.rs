@@ -15,9 +15,7 @@ pub struct BlockInformation {
 impl BlockInformation {
     pub fn new(rpc_client: Arc<RpcClient>, commitment: CommitmentLevel) -> Self {
         let slot = rpc_client
-            .get_slot_with_commitment(CommitmentConfig {
-                commitment: commitment,
-            })
+            .get_slot_with_commitment(CommitmentConfig { commitment })
             .unwrap();
 
         let (blockhash, blockheight) = rpc_client
@@ -47,10 +45,7 @@ impl LiteRpcContext {
                 rpc_client.clone(),
                 CommitmentLevel::Confirmed,
             ),
-            finalized_block_info: BlockInformation::new(
-                rpc_client.clone(),
-                CommitmentLevel::Finalized,
-            ),
+            finalized_block_info: BlockInformation::new(rpc_client, CommitmentLevel::Finalized),
         }
     }
 }

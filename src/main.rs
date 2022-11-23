@@ -39,7 +39,7 @@ pub fn main() {
             .expect("Runtime"),
     );
     let max_request_body_size: usize = 50 * (1 << 10);
-    let socket_addr = rpc_addr.clone();
+    let socket_addr = *rpc_addr;
 
     let server =
         ServerBuilder::with_meta_extractor(io, move |_req: &hyper::Request<hyper::Body>| {
