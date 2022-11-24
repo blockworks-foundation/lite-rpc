@@ -1,5 +1,5 @@
 use solana_client::{
-    pubsub_client::{BlockSubscription, PubsubClientError},
+    pubsub_client::{BlockSubscription, PubsubClientError, SignatureSubscription},
     tpu_client::TpuClientConfig,
 };
 use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
@@ -108,6 +108,23 @@ impl LightRpcRequestProcessor {
                 ),
                 show_rewards: None,
                 max_supported_transaction_version: None,
+            }),
+        )
+    }
+
+    fn subscribe_signature(
+        websocket_url: &String,
+        signature: &Signature,
+        commitment:CommitmentLevel
+    ) -> std::result::Result<SignatureSubscription, PubsubClientError> {
+        PubsubClient::signature_subscribe(
+            websocket_url.as_str(),
+            signature,
+            Some(RpcSignatureSubscribeConfig {
+                commitment: Some(CommitmentConfig {
+                    commitment,
+                }),
+                enable_received_notification: Some(false),
             }),
         )
     }
