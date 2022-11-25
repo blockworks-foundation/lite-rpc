@@ -3,7 +3,7 @@ use solana_client::{
     tpu_client::TpuClientConfig,
 };
 use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
-use std::thread::{Builder, JoinHandle};
+use std::{thread::{Builder, JoinHandle}, sync::Mutex};
 
 use crate::context::{BlockInformation, LiteRpcContext};
 use {
@@ -22,7 +22,7 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
-    solana_tpu_client::connection_cache::ConnectionCache,
+    solana_client::connection_cache::ConnectionCache,
     solana_transaction_status::{TransactionBinaryEncoding, UiTransactionEncoding},
     std::{
         any::type_name,
@@ -39,8 +39,8 @@ pub struct LightRpcRequestProcessor {
     pub ws_url: String,
     pub context: Arc<LiteRpcContext>,
     _connection_cache: Arc<ConnectionCache>,
-    _joinables: Arc<Vec<JoinHandle<()>>>,
-    _subscribed_clients: Arc<Vec<PubsubBlockClientSubscription>>,
+    joinables: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    subscribed_clients: Arc<Mutex<Vec<PubsubBlockClientSubscription>>>,
 }
 
 impl LightRpcRequestProcessor {
@@ -88,8 +88,8 @@ impl LightRpcRequestProcessor {
             ws_url: websocket_url.to_string(),
             context,
             _connection_cache: connection_cache,
-            _joinables: Arc::new(joinables),
-            _subscribed_clients: Arc::new(vec![client_confirmed, client_finalized]),
+            joinables: Arc::new(Mutex::new(joinables)),
+            subscribed_clients: Arc::new(Mutex::new(vec![client_confirmed, client_finalized])),
         }
     }
 
@@ -199,6 +199,22 @@ impl LightRpcRequestProcessor {
                     println!("Got error when recieving the block ({})", e);
                 }
             }
+        }
+    }
+
+    pub fn free(&mut self) {
+        let subscribed_clients = &mut self.subscribed_clients.lock().unwrap();
+        let len_sc = subscribed_clients.len();
+        for _i in 0..len_sc {
+            let mut subscribed_client = subscribed_clients.pop().unwrap();
+            subscribed_client.send_unsubscribe().unwrap();
+            subscribed_client.shutdown().unwrap();
+        }
+        
+        let joinables = &mut self.joinables.lock().unwrap();
+        let len = joinables.len();
+        for _i in 0..len {
+            joinables.pop().unwrap().join().unwrap();
         }
     }
 }
