@@ -13,8 +13,8 @@ use crate::rpc::{
 };
 mod cli;
 mod context;
-mod rpc;
 mod pubsub;
+mod rpc;
 
 pub fn main() {
     let matches = cli::build_args(solana_version::version!()).get_matches();
@@ -31,15 +31,20 @@ pub fn main() {
     let (broadcast_sender, _broadcast_receiver) = broadcast::channel(128);
     let (notification_sender, notification_reciever) = crossbeam_channel::unbounded();
 
-    let pubsub_control = Arc::new(LiteRpcSubsrciptionControl::new(broadcast_sender, notification_reciever));
+    let pubsub_control = Arc::new(LiteRpcSubsrciptionControl::new(
+        broadcast_sender,
+        notification_reciever,
+    ));
 
     // start recieving notifications and broadcast them
     {
         let pubsub_control = pubsub_control.clone();
-        std::thread::Builder::new().name("broadcasting thread".to_string()).spawn(move || {
-            pubsub_control.start_broadcasting();
-        }
-        ).unwrap();
+        std::thread::Builder::new()
+            .name("broadcasting thread".to_string())
+            .spawn(move || {
+                pubsub_control.start_broadcasting();
+            })
+            .unwrap();
     }
     // start websocket server
     let websocket_service = LitePubSubService::new(pubsub_control, *subscription_port);
@@ -48,7 +53,8 @@ pub fn main() {
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
 
-    let mut request_processor = LightRpcRequestProcessor::new(json_rpc_url, websocket_url, notification_sender);
+    let mut request_processor =
+        LightRpcRequestProcessor::new(json_rpc_url, websocket_url, notification_sender);
 
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()

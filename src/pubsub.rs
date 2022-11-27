@@ -1,31 +1,24 @@
 use dashmap::DashMap;
 use jsonrpc_core::{ErrorCode, IoHandler};
-use soketto::handshake::{Server, server};
-use solana_rpc::{rpc_subscription_tracker::{SubscriptionParams, SignatureSubscriptionParams}};
+use soketto::handshake::{server, Server};
+use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
+use std::{net::SocketAddr, str::FromStr, sync::atomic::AtomicU64, thread::JoinHandle};
 use stream_cancel::Tripwire;
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
-use std::{str::FromStr, sync::atomic::AtomicU64, thread::JoinHandle, net::SocketAddr};
 
-use crate::context::{LiteRpcSubsrciptionControl};
+use crate::context::LiteRpcSubsrciptionControl;
 use {
     jsonrpc_core::{Error, Result},
     jsonrpc_derive::rpc,
-    solana_rpc_client_api::{
-        config::*,
-    },
-    solana_sdk::{
-        signature::Signature,
-    },
-    std::{
-        sync::{Arc},
-    },
     solana_rpc::rpc_subscription_tracker::SubscriptionId,
+    solana_rpc_client_api::config::*,
+    solana_sdk::signature::Signature,
+    std::sync::Arc,
 };
 
 #[rpc]
 pub trait LiteRpcPubSub {
-
     // Get notification when signature is verified
     // Accepts signature parameter as base-58 encoded string
     #[rpc(name = "signatureSubscribe")]
@@ -46,35 +39,37 @@ pub trait LiteRpcPubSub {
     // Unsubscribe from slot notification subscription.
     #[rpc(name = "slotUnsubscribe")]
     fn slot_unsubscribe(&self, id: SubscriptionId) -> Result<bool>;
-
 }
-
 
 pub struct LiteRpcPubSubImpl {
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    current_subscriptions: Arc<DashMap<SubscriptionId, (AtomicU64,SubscriptionParams)>>,
+    current_subscriptions: Arc<DashMap<SubscriptionId, (AtomicU64, SubscriptionParams)>>,
 }
 
 impl LiteRpcPubSubImpl {
-    pub fn new(
-        subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    ) -> Self {
+    pub fn new(subscription_control: Arc<LiteRpcSubsrciptionControl>) -> Self {
         Self {
-            current_subscriptions : Arc::new(DashMap::new()),
+            current_subscriptions: Arc::new(DashMap::new()),
             subscription_control,
         }
     }
 
     fn subscribe(&self, params: SubscriptionParams) -> Result<SubscriptionId> {
-        match self.subscription_control.subscriptions.entry(params.clone()) {
-            dashmap::mapref::entry::Entry::Occupied(x) => {
-                Ok(*x.get())
-            },
+        match self
+            .subscription_control
+            .subscriptions
+            .entry(params.clone())
+        {
+            dashmap::mapref::entry::Entry::Occupied(x) => Ok(*x.get()),
             dashmap::mapref::entry::Entry::Vacant(x) => {
-                let new_subscription_id = self.subscription_control.last_subscription_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let new_subscription_id = self
+                    .subscription_control
+                    .last_subscription_id
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let new_subsription_id = SubscriptionId::from(new_subscription_id);
                 x.insert(new_subsription_id);
-                self.current_subscriptions.insert(new_subsription_id, (AtomicU64::new(1), params));
+                self.current_subscriptions
+                    .insert(new_subsription_id, (AtomicU64::new(1), params));
                 Ok(new_subsription_id)
             }
         }
@@ -85,16 +80,16 @@ impl LiteRpcPubSubImpl {
             dashmap::mapref::entry::Entry::Occupied(x) => {
                 let v = x.get();
                 let count = v.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                if count == 1 { // it was the last subscription
+                if count == 1 {
+                    // it was the last subscription
                     self.subscription_control.subscriptions.remove(&v.1);
                     x.remove();
                 }
                 Ok(true)
-            },
+            }
             dashmap::mapref::entry::Entry::Vacant(_) => Ok(false),
         }
     }
-
 }
 
 fn param<T: FromStr>(param_str: &str, thing: &str) -> Result<T> {
@@ -125,7 +120,7 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
     }
 
     // Get notification when slot is encountered
-    fn slot_subscribe(&self) -> Result<SubscriptionId>{
+    fn slot_subscribe(&self) -> Result<SubscriptionId> {
         Ok(SubscriptionId::from(0))
     }
 
@@ -139,7 +134,6 @@ pub struct LitePubSubService {
     thread_hdl: JoinHandle<()>,
 }
 
-
 #[derive(Debug, thiserror::Error)]
 enum HandleError {
     #[error("handshake error: {0}")]
@@ -149,7 +143,6 @@ enum HandleError {
     #[error("broadcast queue error: {0}")]
     Broadcast(#[from] tokio::sync::broadcast::error::RecvError),
 }
-
 
 async fn handle_connection(
     socket: TcpStream,
@@ -166,9 +159,7 @@ async fn handle_connection(
 
     let mut broadcast_receiver = subscription_control.broadcast_sender.subscribe();
     let mut json_rpc_handler = IoHandler::new();
-    let rpc_impl = LiteRpcPubSubImpl::new(
-        subscription_control,
-    );
+    let rpc_impl = LiteRpcPubSubImpl::new(subscription_control);
     json_rpc_handler.extend_with(rpc_impl.to_delegate());
     loop {
         let mut data = Vec::new();
@@ -204,7 +195,7 @@ async fn handle_connection(
 async fn listen(
     listen_address: SocketAddr,
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    mut tripwire : Tripwire,
+    mut tripwire: Tripwire,
 ) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(&listen_address).await?;
     loop {
@@ -229,7 +220,6 @@ async fn listen(
     }
 }
 
-
 impl LitePubSubService {
     pub fn new(
         subscription_control: Arc<LiteRpcSubsrciptionControl>,
@@ -245,11 +235,9 @@ impl LitePubSubService {
                     .enable_all()
                     .build()
                     .expect("runtime creation failed");
-                if let Err(err) = runtime.block_on(listen(
-                    pubsub_addr,
-                    subscription_control,
-                    tripwire,
-                )) {
+                if let Err(err) =
+                    runtime.block_on(listen(pubsub_addr, subscription_control, tripwire))
+                {
                     println!("pubsub service failed: {}", err);
                 };
             })

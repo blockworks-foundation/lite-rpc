@@ -3,14 +3,20 @@ use solana_client::{
     tpu_client::TpuClientConfig,
 };
 use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
-use std::{thread::{Builder, JoinHandle}, sync::Mutex};
+use std::{
+    str::FromStr,
+    sync::Mutex,
+    thread::{Builder, JoinHandle},
+};
 
-use crate::context::{BlockInformation, LiteRpcContext, NotificationType};
+use crate::context::{BlockInformation, LiteRpcContext, NotificationType, SignatureNotification};
+use crossbeam_channel::Sender;
 use {
     bincode::config::Options,
     crossbeam_channel::Receiver,
     jsonrpc_core::{Error, Metadata, Result},
     jsonrpc_derive::rpc,
+    solana_client::connection_cache::ConnectionCache,
     solana_client::{rpc_client::RpcClient, tpu_client::TpuClient},
     solana_perf::packet::PACKET_DATA_SIZE,
     solana_rpc_client_api::{
@@ -22,7 +28,6 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
-    solana_client::connection_cache::ConnectionCache,
     solana_transaction_status::{TransactionBinaryEncoding, UiTransactionEncoding},
     std::{
         any::type_name,
@@ -30,7 +35,6 @@ use {
         sync::{atomic::Ordering, Arc, RwLock},
     },
 };
-use crossbeam_channel::{Sender};
 
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
@@ -45,7 +49,11 @@ pub struct LightRpcRequestProcessor {
 }
 
 impl LightRpcRequestProcessor {
-    pub fn new(json_rpc_url: &str, websocket_url: &str, notification_sender : Sender<NotificationType>,) -> LightRpcRequestProcessor {
+    pub fn new(
+        json_rpc_url: &str,
+        websocket_url: &str,
+        notification_sender: Sender<NotificationType>,
+    ) -> LightRpcRequestProcessor {
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
         let connection_cache = Arc::new(ConnectionCache::default());
         let tpu_client = Arc::new(
@@ -116,15 +124,13 @@ impl LightRpcRequestProcessor {
     fn subscribe_signature(
         websocket_url: &String,
         signature: &Signature,
-        commitment:CommitmentLevel
+        commitment: CommitmentLevel,
     ) -> std::result::Result<SignatureSubscription, PubsubClientError> {
         PubsubClient::signature_subscribe(
             websocket_url.as_str(),
             signature,
             Some(RpcSignatureSubscribeConfig {
-                commitment: Some(CommitmentConfig {
-                    commitment,
-                }),
+                commitment: Some(CommitmentConfig { commitment }),
                 enable_received_notification: Some(false),
             }),
         )
@@ -144,7 +150,13 @@ impl LightRpcRequestProcessor {
                 } else {
                     &context.finalized_block_info
                 };
-                Self::process_block(reciever, &context.signature_status, commitment, block_info);
+                Self::process_block(
+                    reciever,
+                    &context.signature_status,
+                    commitment,
+                    &context.notification_sender,
+                    block_info,
+                );
             })
             .unwrap()
     }
@@ -153,6 +165,7 @@ impl LightRpcRequestProcessor {
         reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
         signature_status: &RwLock<HashMap<String, Option<CommitmentLevel>>>,
         commitment: CommitmentLevel,
+        notification_sender: &crossbeam_channel::Sender<NotificationType>,
         block_information: &BlockInformation,
     ) {
         println!("processing blocks for {}", commitment);
@@ -165,6 +178,11 @@ impl LightRpcRequestProcessor {
                     block_information
                         .slot
                         .store(block_update.slot, Ordering::Relaxed);
+                    if let Err(e) =
+                        notification_sender.send(NotificationType::Slot(block_update.slot))
+                    {
+                        println!("Error sending slot notification error : {}", e.to_string());
+                    }
 
                     if let Some(block) = &block_update.block {
                         block_information
@@ -183,6 +201,20 @@ impl LightRpcRequestProcessor {
                                         "found signature {} for commitment {}",
                                         signature, commitment
                                     );
+                                    let signature_notification = SignatureNotification {
+                                        signature: Signature::from_str(signature.as_str()).unwrap(),
+                                        commitment,
+                                        slot: block_update.slot,
+                                        error: None,
+                                    };
+                                    if let Err(e) = notification_sender
+                                        .send(NotificationType::Signature(signature_notification))
+                                    {
+                                        println!(
+                                            "Error sending signature notification error : {}",
+                                            e.to_string()
+                                        );
+                                    }
                                     lock.insert(signature.clone(), Some(commitment));
                                 }
                             }
@@ -211,7 +243,7 @@ impl LightRpcRequestProcessor {
             subscribed_client.send_unsubscribe().unwrap();
             subscribed_client.shutdown().unwrap();
         }
-        
+
         let joinables = &mut self.joinables.lock().unwrap();
         let len = joinables.len();
         for _i in 0..len {
