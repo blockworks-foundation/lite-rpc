@@ -3,6 +3,7 @@ use std::sync::Arc;
 use context::LiteRpcSubsrciptionControl;
 use jsonrpc_core::MetaIoHandler;
 use jsonrpc_http_server::{hyper, AccessControlAllowOrigin, DomainsValidation, ServerBuilder};
+use pubsub::LitePubSubService;
 use solana_perf::thread::renice_this_thread;
 use tokio::sync::broadcast;
 
@@ -23,6 +24,7 @@ pub fn main() {
         json_rpc_url,
         websocket_url,
         rpc_addr,
+        subscription_port,
         ..
     } = &cli_config;
 
@@ -39,6 +41,8 @@ pub fn main() {
         }
         ).unwrap();
     }
+    // start websocket server
+    let websocket_service = LitePubSubService::new(pubsub_control, *subscription_port);
 
     let mut io = MetaIoHandler::default();
     let lite_rpc = lite_rpc::LightRpc;
@@ -76,4 +80,5 @@ pub fn main() {
         server.unwrap().wait();
     }
     request_processor.free();
+    websocket_service.close();
 }
