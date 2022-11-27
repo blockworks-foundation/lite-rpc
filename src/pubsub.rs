@@ -1,42 +1,22 @@
 use dashmap::DashMap;
 use jsonrpc_core::ErrorCode;
-use solana_client::{
-    pubsub_client::{BlockSubscription, PubsubClientError, SignatureSubscription},
-    tpu_client::TpuClientConfig,
-};
-use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
-use solana_rpc::{rpc_pubsub_service::PubSubConfig, rpc_subscription_tracker::{SubscriptionControl, SubscriptionToken, SubscriptionParams, SignatureSubscriptionParams}};
-use std::{thread::{Builder, JoinHandle}, sync::Mutex, str::FromStr};
+use solana_rpc::{rpc_subscription_tracker::{SubscriptionParams, SignatureSubscriptionParams}};
+use std::{str::FromStr, sync::atomic::AtomicU64};
 
-use crate::context::{BlockInformation, LiteRpcContext, self};
+use crate::context::{LiteRpcSubsrciptionControl};
 use {
-    bincode::config::Options,
-    crossbeam_channel::Receiver,
-    jsonrpc_core::{Error, Metadata, Result},
+    jsonrpc_core::{Error, Result},
     jsonrpc_derive::rpc,
-    solana_client::{rpc_client::RpcClient, tpu_client::TpuClient},
-    solana_perf::packet::PACKET_DATA_SIZE,
     solana_rpc_client_api::{
         config::*,
-        response::{Response as RpcResponse, *},
     },
     solana_sdk::{
-        commitment_config::{CommitmentConfig, CommitmentLevel},
         signature::Signature,
-        transaction::VersionedTransaction,
     },
-    solana_client::connection_cache::ConnectionCache,
-    solana_transaction_status::{TransactionBinaryEncoding, UiTransactionEncoding},
     std::{
-        any::type_name,
-        collections::HashMap,
-        sync::{atomic::Ordering, Arc, RwLock},
-    },
-    jsonrpc_pubsub::{
-        typed::Subscriber,
+        sync::{Arc},
     },
     solana_rpc::rpc_subscription_tracker::SubscriptionId,
-    jsonrpc_pubsub::SubscriptionId as PubSubSubscriptionId,
 };
 
 #[rpc]
@@ -67,50 +47,47 @@ pub trait LiteRpcPubSub {
 
 
 pub struct LiteRpcPubSubImpl {
-    config: PubSubConfig,
-    subscription_control: SubscriptionControl,
-    current_subscriptions: Arc<DashMap<SubscriptionId, SubscriptionToken>>,
-    context: Arc<LiteRpcContext>,
+    subscription_control: Arc<LiteRpcSubsrciptionControl>,
+    current_subscriptions: Arc<DashMap<SubscriptionId, (AtomicU64,SubscriptionParams)>>,
 }
 
 impl LiteRpcPubSubImpl {
     pub fn new(
-        config : PubSubConfig,
-        subscription_control : SubscriptionControl,
-        context : Arc<LiteRpcContext>
+        subscription_control: Arc<LiteRpcSubsrciptionControl>,
     ) -> Self {
         Self {
-            config,
             current_subscriptions : Arc::new(DashMap::new()),
             subscription_control,
-            context
         }
     }
 
     fn subscribe(&self, params: SubscriptionParams) -> Result<SubscriptionId> {
-        let token = self
-            .subscription_control
-            .subscribe(params)
-            .map_err(|_| Error {
-                code: ErrorCode::InternalError,
-                message: "Internal Error: Subscription refused. Node subscription limit reached"
-                    .into(),
-                data: None,
-            })?;
-        let id = token.id();
-        self.current_subscriptions.insert(id, token);
-        Ok(id)
+        match self.subscription_control.subscriptions.entry(params.clone()) {
+            dashmap::mapref::entry::Entry::Occupied(x) => {
+                Ok(*x.get())
+            },
+            dashmap::mapref::entry::Entry::Vacant(x) => {
+                let new_subscription_id = self.subscription_control.last_subscription_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let new_subsription_id = SubscriptionId::from(new_subscription_id);
+                x.insert(new_subsription_id);
+                self.current_subscriptions.insert(new_subsription_id, (AtomicU64::new(1), params));
+                Ok(new_subsription_id)
+            }
+        }
     }
 
     fn unsubscribe(&self, id: SubscriptionId) -> Result<bool> {
-        if self.current_subscriptions.remove(&id).is_some() {
-            Ok(true)
-        } else {
-            Err(Error {
-                code: ErrorCode::InvalidParams,
-                message: "Invalid subscription id.".into(),
-                data: None,
-            })
+        match self.current_subscriptions.entry(id) {
+            dashmap::mapref::entry::Entry::Occupied(x) => {
+                let v = x.get();
+                let count = v.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                if count == 1 { // it was the last subscription
+                    self.subscription_control.subscriptions.remove(&v.1);
+                    x.remove();
+                }
+                Ok(true)
+            },
+            dashmap::mapref::entry::Entry::Vacant(_) => Ok(false),
         }
     }
 
@@ -134,7 +111,7 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
         let params = SignatureSubscriptionParams {
             signature: param::<Signature>(&signature_str, "signature")?,
             commitment: config.commitment.unwrap_or_default(),
-            enable_received_notification: config.enable_received_notification.unwrap_or_default(),
+            enable_received_notification: false,
         };
         self.subscribe(SubscriptionParams::Signature(params))
     }
@@ -145,13 +122,11 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
 
     // Get notification when slot is encountered
     fn slot_subscribe(&self) -> Result<SubscriptionId>{
-        self.subscribe(SubscriptionParams::Slot)
+        Ok(SubscriptionId::from(0))
     }
 
     // Unsubscribe from slot notification subscription.
     fn slot_unsubscribe(&self, id: SubscriptionId) -> Result<bool> {
-        self.unsubscribe(id)
+        Ok(true)
     }
-
-
 }

@@ -1,12 +1,13 @@
+use crossbeam_channel::{Sender};
 use dashmap::DashMap;
-use serde::{Serialize, Deserialize};
-use solana_client::{rpc_client::RpcClient, rpc_response::{RpcSignatureResult, ReceivedSignatureResult, RpcResponseContext}};
+use serde::{Serialize};
+use solana_client::{rpc_client::RpcClient, rpc_response::{RpcSignatureResult, ReceivedSignatureResult, RpcResponseContext, SlotInfo}};
 use solana_rpc::{rpc_subscription_tracker::{SubscriptionId, SubscriptionParams, SignatureSubscriptionParams}, rpc_subscriptions::RpcNotification};
 use solana_sdk::{commitment_config::{CommitmentConfig, CommitmentLevel}, signature::Signature};
 use tokio::sync::broadcast;
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicU64, Arc, RwLock}, time::Instant,
+    sync::{atomic::AtomicU64, Arc, RwLock}, time::Instant, thread::Builder,
 };
 
 pub struct BlockInformation {
@@ -39,10 +40,12 @@ pub struct LiteRpcContext {
     pub signature_status: RwLock<HashMap<String, Option<CommitmentLevel>>>,
     pub finalized_block_info: BlockInformation,
     pub confirmed_block_info: BlockInformation,
+    pub notification_sender : Sender<NotificationType>,
 }
 
 impl LiteRpcContext {
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient>,
+               notification_sender : Sender<NotificationType>,) -> Self {
         LiteRpcContext {
             signature_status: RwLock::new(HashMap::new()),
             confirmed_block_info: BlockInformation::new(
@@ -50,6 +53,7 @@ impl LiteRpcContext {
                 CommitmentLevel::Confirmed,
             ),
             finalized_block_info: BlockInformation::new(rpc_client, CommitmentLevel::Finalized),
+            notification_sender,
         }
     }
 }
@@ -78,12 +82,6 @@ struct Notification<T> {
     jsonrpc: Option<jsonrpc_core::Version>,
     method: &'static str,
     params: NotificationParams<T>,
-}
-
-pub struct LiteRpcSubsrciptionControl {
-    broadcast_sender: broadcast::Sender<LiteRpcNotification>,
-    notification_reciever : crossbeam_channel::Receiver<NotificationType>,
-    subscriptions : DashMap<SubscriptionParams, SubscriptionId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -129,6 +127,12 @@ pub struct LiteRpcNotification {
     pub created_at: Instant,
 }
 
+pub struct LiteRpcSubsrciptionControl {
+    pub broadcast_sender: broadcast::Sender<LiteRpcNotification>,
+    notification_reciever : crossbeam_channel::Receiver<NotificationType>,
+    pub subscriptions : DashMap<SubscriptionParams, SubscriptionId>,
+    pub last_subscription_id : AtomicU64,
+}
 
 impl LiteRpcSubsrciptionControl {
     pub fn new(
@@ -138,6 +142,7 @@ impl LiteRpcSubsrciptionControl {
         Self { broadcast_sender, 
             notification_reciever,
             subscriptions : DashMap::new(),
+            last_subscription_id : AtomicU64::new(1)
         }
     }
 
@@ -171,7 +176,7 @@ impl LiteRpcSubsrciptionControl {
 
                                     let notification = Notification {
                                         jsonrpc: Some(jsonrpc_core::Version::V2),
-                                        method: &"signatureSubscription",
+                                        method: &"signatureNotification",
                                         params: NotificationParams {
                                             result: value,
                                             subscription: subscription_id,
@@ -185,14 +190,35 @@ impl LiteRpcSubsrciptionControl {
                                         json,
                                     } )
                                 },
-                                dashmap::mapref::entry::Entry::Vacant(x) => {
+                                dashmap::mapref::entry::Entry::Vacant(_x) => {
                                     None
                                 }
                             }                            
                         },
                         NotificationType::Slot(slot) => {
                             // SubscriptionId 0 will be used for slots
-                            None
+                            let subscription_id = SubscriptionId::from(0);
+                            let value = SlotInfo{
+                                parent: 0,
+                                slot,
+                                root: 0,
+                            };
+
+                            let notification = Notification {
+                                jsonrpc: Some(jsonrpc_core::Version::V2),
+                                method: &"slotNotification",
+                                params: NotificationParams {
+                                    result: value,
+                                    subscription: subscription_id,
+                                },
+                            };
+                            let json = serde_json::to_string(&notification).unwrap();
+                            Some( LiteRpcNotification{
+                                subscription_id : subscription_id,
+                                created_at : Instant::now(),
+                                is_final: false,
+                                json,
+                            } )
                         }
                     };
                     if let Some(rpc_notification) = rpc_notification {

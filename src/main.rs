@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
+use context::LiteRpcSubsrciptionControl;
 use jsonrpc_core::MetaIoHandler;
 use jsonrpc_http_server::{hyper, AccessControlAllowOrigin, DomainsValidation, ServerBuilder};
 use solana_perf::thread::renice_this_thread;
+use tokio::sync::broadcast;
 
 use crate::rpc::{
     lite_rpc::{self, Lite},
@@ -24,11 +26,25 @@ pub fn main() {
         ..
     } = &cli_config;
 
+    let (broadcast_sender, _broadcast_receiver) = broadcast::channel(128);
+    let (notification_sender, notification_reciever) = crossbeam_channel::unbounded();
+
+    let pubsub_control = Arc::new(LiteRpcSubsrciptionControl::new(broadcast_sender, notification_reciever));
+
+    // start recieving notifications and broadcast them
+    {
+        let pubsub_control = pubsub_control.clone();
+        std::thread::Builder::new().name("broadcasting thread".to_string()).spawn(move || {
+            pubsub_control.start_broadcasting();
+        }
+        ).unwrap();
+    }
+
     let mut io = MetaIoHandler::default();
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
 
-    let mut request_processor = LightRpcRequestProcessor::new(json_rpc_url, websocket_url);
+    let mut request_processor = LightRpcRequestProcessor::new(json_rpc_url, websocket_url, notification_sender);
 
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()

@@ -5,7 +5,7 @@ use solana_client::{
 use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
 use std::{thread::{Builder, JoinHandle}, sync::Mutex};
 
-use crate::context::{BlockInformation, LiteRpcContext};
+use crate::context::{BlockInformation, LiteRpcContext, NotificationType};
 use {
     bincode::config::Options,
     crossbeam_channel::Receiver,
@@ -30,6 +30,7 @@ use {
         sync::{atomic::Ordering, Arc, RwLock},
     },
 };
+use crossbeam_channel::{Sender};
 
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
@@ -44,7 +45,7 @@ pub struct LightRpcRequestProcessor {
 }
 
 impl LightRpcRequestProcessor {
-    pub fn new(json_rpc_url: &str, websocket_url: &str) -> LightRpcRequestProcessor {
+    pub fn new(json_rpc_url: &str, websocket_url: &str, notification_sender : Sender<NotificationType>,) -> LightRpcRequestProcessor {
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
         let connection_cache = Arc::new(ConnectionCache::default());
         let tpu_client = Arc::new(
@@ -57,7 +58,7 @@ impl LightRpcRequestProcessor {
             .unwrap(),
         );
 
-        let context = Arc::new(LiteRpcContext::new(rpc_client.clone()));
+        let context = Arc::new(LiteRpcContext::new(rpc_client.clone(), notification_sender));
 
         // subscribe for confirmed_blocks
         let (client_confirmed, receiver_confirmed) =
