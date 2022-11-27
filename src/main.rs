@@ -11,6 +11,7 @@ use crate::rpc::{
 mod cli;
 mod context;
 mod rpc;
+mod pubsub;
 
 pub fn main() {
     let matches = cli::build_args(solana_version::version!()).get_matches();

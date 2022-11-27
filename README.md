@@ -15,10 +15,10 @@ The lite rpc server will be optimized to confirm transactions which are forwarde
 `cargo build`
 
 ## Run
-For RPC node : `http://localhost:8899`
-Websocket : `http://localhost:8900` (Optional)
-Port : `9000` Listening port for LiteRpc server
-Subscription Port : `9001` Listening port of websocket subscriptions for LiteRpc server
+* For RPC node : `http://localhost:8899`,
+* Websocket : `http://localhost:8900` (Optional),
+* Port : `9000` Listening port for LiteRpc server,
+* Subscription Port : `9001` Listening port of websocket subscriptions for LiteRpc server,
 
 
 ```
