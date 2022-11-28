@@ -3,7 +3,7 @@ use jsonrpc_core::{ErrorCode, IoHandler};
 use soketto::handshake::{server, Server};
 use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
 use std::{net::SocketAddr, str::FromStr, sync::atomic::AtomicU64, thread::JoinHandle};
-use stream_cancel::Tripwire;
+use stream_cancel::{Tripwire, Trigger};
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
@@ -224,8 +224,8 @@ impl LitePubSubService {
     pub fn new(
         subscription_control: Arc<LiteRpcSubsrciptionControl>,
         pubsub_addr: SocketAddr,
-    ) -> Self {
-        let (_trigger, tripwire) = Tripwire::new();
+    ) -> (Trigger, Self) {
+        let (trigger, tripwire) = Tripwire::new();
 
         let thread_hdl = std::thread::Builder::new()
             .name("solRpcPubSub".to_string())
@@ -243,7 +243,7 @@ impl LitePubSubService {
             })
             .expect("thread spawn failed");
 
-        Self { thread_hdl }
+        (trigger, Self { thread_hdl })
     }
 
     pub fn close(self) -> std::thread::Result<()> {

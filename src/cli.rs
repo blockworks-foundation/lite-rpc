@@ -30,7 +30,7 @@ pub fn build_args<'a, 'b>(version: &'b str) -> App<'a, 'b> {
         .about("a lite version of solana rpc to send and confirm transactions")
         .version(version)
         .arg(
-            Arg::with_name("json_rpc_url")
+            Arg::with_name("json-rpc-url")
                 .short("u")
                 .long("url")
                 .value_name("URL_OR_MONIKER")
@@ -43,7 +43,7 @@ pub fn build_args<'a, 'b>(version: &'b str) -> App<'a, 'b> {
                 ),
         )
         .arg(
-            Arg::with_name("websocket_url")
+            Arg::with_name("websocket-url")
                 .long("ws")
                 .value_name("URL")
                 .takes_value(true)
@@ -57,16 +57,14 @@ pub fn build_args<'a, 'b>(version: &'b str) -> App<'a, 'b> {
                 .short("p")
                 .takes_value(true)
                 .global(true)
-                .min_values(1025)
                 .help("Port on which which lite rpc will listen to rpc requests"),
         )
         .arg(
-            Arg::with_name("subscription_port")
-                .long("sub_port")
+            Arg::with_name("subscription-port")
+                .long("subscription-port")
                 .short("sp")
                 .takes_value(true)
                 .global(true)
-                .min_values(1025)
                 .help("subscription port on which which lite rpc will use to create subscriptions"),
         )
 }
@@ -80,15 +78,15 @@ pub fn extract_args(matches: &ArgMatches) -> Config {
         solana_cli_config::Config::default()
     };
     let (_, json_rpc_url) = ConfigInput::compute_json_rpc_url_setting(
-        matches.value_of("json_rpc_url").unwrap_or(""),
+        matches.value_of("json-rpc-url").unwrap_or(""),
         &config.json_rpc_url,
     );
     args.json_rpc_url = json_rpc_url;
 
     let (_, websocket_url) = ConfigInput::compute_websocket_url_setting(
-        matches.value_of("websocket_url").unwrap_or(""),
+        matches.value_of("websocket-url").unwrap_or(""),
         &config.websocket_url,
-        matches.value_of("json_rpc_url").unwrap_or(""),
+        matches.value_of("json-rpc-url").unwrap_or(""),
         &config.json_rpc_url,
     );
     args.websocket_url = websocket_url;
@@ -97,8 +95,8 @@ pub fn extract_args(matches: &ArgMatches) -> Config {
         args.rpc_addr = SocketAddr::from(([127, 0, 0, 1], port));
     }
 
-    if let Some(port) = matches.value_of("subsription_port") {
-        let port: u16 = port.parse().expect("can't parse subsription_port");
+    if let Some(port) = matches.value_of("subscription-port") {
+        let port: u16 = port.parse().expect("can't parse subscription-port");
         args.subscription_port = SocketAddr::from(([127, 0, 0, 1], port));
     } else {
         let port = args.rpc_addr.port().saturating_add(1);

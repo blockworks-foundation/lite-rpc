@@ -5,6 +5,7 @@ The lite-rpc server will not have any ledger or banks.
 While sending transaction the lite rpc server will send the transaction to next few leader (FANOUT) and then use different strategies to confirm the transaction. 
 The rpc server will also have a websocket port which is reponsible for just subscribing to slots and signatures. 
 The lite rpc server will be optimized to confirm transactions which are forwarded to leader using the same server.
+This project is currently based on an unstable feature of block subscription of solana which can be enabled using `--rpc-pubsub-enable-block-subscription` while running rpc node.
 
 ### Confirmation strategies
 1) Subscribing to blocks changes and checking the confirmations. (Under development)
@@ -22,5 +23,5 @@ The lite rpc server will be optimized to confirm transactions which are forwarde
 
 
 ```
-cargo run --bin lite-rpc --url http://localhost:8899 --websocket_url http://localhost:8900 --port 9000 --subscription_port 9001
+cargo run --bin lite-rpc -- --port 9000 --subscription-port 9001 --url http://localhost:8899
 ```

@@ -36,6 +36,9 @@ pub fn main() {
         notification_reciever,
     ));
 
+    // start websocket server
+    let (_trigger, websocket_service) = LitePubSubService::new(pubsub_control.clone(), *subscription_port);
+
     // start recieving notifications and broadcast them
     {
         let pubsub_control = pubsub_control.clone();
@@ -46,9 +49,6 @@ pub fn main() {
             })
             .unwrap();
     }
-    // start websocket server
-    let websocket_service = LitePubSubService::new(pubsub_control, *subscription_port);
-
     let mut io = MetaIoHandler::default();
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
@@ -86,5 +86,5 @@ pub fn main() {
         server.unwrap().wait();
     }
     request_processor.free();
-    websocket_service.close();
+    websocket_service.close().unwrap();
 }

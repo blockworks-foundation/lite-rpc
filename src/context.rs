@@ -12,6 +12,7 @@ use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     signature::Signature,
 };
+use stream_cancel::Tripwire;
 use std::{
     collections::HashMap,
     sync::{atomic::AtomicU64, Arc, RwLock},
@@ -230,10 +231,7 @@ impl LiteRpcSubsrciptionControl {
                     }
                 }
                 Err(e) => {
-                    println!(
-                        "LiteRpcSubsrciptionControl notification channel recieved error {}",
-                        e.to_string()
-                    );
+                    break;
                 }
             }
         }
