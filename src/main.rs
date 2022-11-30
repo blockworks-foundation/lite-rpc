@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use clap::Parser;
 use context::LiteRpcSubsrciptionControl;
 use jsonrpc_core::MetaIoHandler;
 use jsonrpc_http_server::{hyper, AccessControlAllowOrigin, DomainsValidation, ServerBuilder};
@@ -16,14 +17,19 @@ mod context;
 mod pubsub;
 mod rpc;
 
-pub fn main() {
-    let matches = cli::build_args(solana_version::version!()).get_matches();
-    let cli_config = cli::extract_args(&matches);
+use cli::Args;
 
-    let cli::Config {
-        json_rpc_url,
+pub fn main() {
+    let mut cli_config = Args::parse();
+    cli_config.resolve_address();
+    println!(
+        "Using rpc server {} and ws server {}",
+        cli_config.rpc_url, cli_config.websocket_url
+    );
+    let Args {
+        rpc_url: json_rpc_url,
         websocket_url,
-        rpc_addr,
+        port: rpc_addr,
         subscription_port,
         ..
     } = &cli_config;
