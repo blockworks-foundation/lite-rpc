@@ -1,9 +1,8 @@
 use dashmap::DashMap;
 use jsonrpc_core::{ErrorCode, IoHandler};
 use soketto::handshake::{server, Server};
-use solana_client::pubsub_client::SlotsSubscription;
 use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
-use std::{net::SocketAddr, str::FromStr, sync::atomic::AtomicU64, thread::JoinHandle};
+use std::{net::SocketAddr, str::FromStr, thread::JoinHandle};
 use stream_cancel::{Trigger, Tripwire};
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
@@ -72,18 +71,15 @@ impl LiteRpcPubSubImpl {
                 x.insert(new_subsription_id);
                 self.current_subscriptions
                     .insert(new_subsription_id, params);
-                println!("subscribing {}", new_subscription_id);
                 Ok(new_subsription_id)
             }
         }
     }
 
     fn unsubscribe(&self, id: SubscriptionId) -> Result<bool> {
-        let sub_id: u64 = u64::from(id);
         match self.current_subscriptions.entry(id) {
             dashmap::mapref::entry::Entry::Occupied(x) => {
                 x.remove();
-                println!("unsubscribing {}", sub_id);
                 Ok(true)
             }
             dashmap::mapref::entry::Entry::Vacant(_) => Ok(false),
@@ -120,11 +116,14 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
 
     // Get notification when slot is encountered
     fn slot_subscribe(&self) -> Result<SubscriptionId> {
+        self.current_subscriptions
+            .insert(SubscriptionId::from(0), SubscriptionParams::Slot);
         Ok(SubscriptionId::from(0))
     }
 
     // Unsubscribe from slot notification subscription.
     fn slot_unsubscribe(&self, _id: SubscriptionId) -> Result<bool> {
+        self.current_subscriptions.remove(&SubscriptionId::from(0));
         Ok(true)
     }
 }
@@ -159,9 +158,6 @@ async fn handle_connection(
     let mut broadcast_receiver = subscription_control.broadcast_sender.subscribe();
     let mut json_rpc_handler = IoHandler::new();
     let rpc_impl = LiteRpcPubSubImpl::new(subscription_control);
-    rpc_impl
-        .current_subscriptions
-        .insert(SubscriptionId::from(0), SubscriptionParams::Slot);
     json_rpc_handler.extend_with(rpc_impl.clone().to_delegate());
     loop {
         let mut data = Vec::new();
@@ -181,7 +177,6 @@ async fn handle_connection(
                     result = broadcast_receiver.recv() => {
                         if let Ok(x) = result {
                             if rpc_impl.current_subscriptions.contains_key(&x.subscription_id) {
-                                println!("sending message \n {}", x.json);
                                 sender.send_text(&x.json).await?;
                             }
                         }
@@ -190,9 +185,7 @@ async fn handle_connection(
             }
         }
         let data_str = String::from_utf8(data).unwrap();
-
         if let Some(response) = json_rpc_handler.handle_request(data_str.as_str()).await {
-            println!("sending response \n {}", response);
             sender.send_text(&response).await?;
         }
     }

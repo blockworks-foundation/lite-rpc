@@ -34,8 +34,7 @@ use {
     solana_transaction_status::{TransactionBinaryEncoding, UiTransactionEncoding},
     std::{
         any::type_name,
-        collections::HashMap,
-        sync::{atomic::Ordering, Arc, RwLock},
+        sync::{atomic::Ordering, Arc},
     },
 };
 

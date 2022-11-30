@@ -3,7 +3,7 @@ use dashmap::DashMap;
 use serde::Serialize;
 use solana_client::{
     rpc_client::RpcClient,
-    rpc_response::{ReceivedSignatureResult, RpcResponseContext, RpcSignatureResult, SlotInfo},
+    rpc_response::{ProcessedSignatureResult, RpcResponseContext, RpcSignatureResult, SlotInfo},
 };
 use solana_rpc::rpc_subscription_tracker::{
     SignatureSubscriptionParams, SubscriptionId, SubscriptionParams,
@@ -186,8 +186,8 @@ impl LiteRpcSubsrciptionControl {
                                     let slot = data.slot;
                                     let value = Response::from(RpcNotificationResponse {
                                         context: RpcNotificationContext { slot },
-                                        value: RpcSignatureResult::ReceivedSignature(
-                                            ReceivedSignatureResult::ReceivedSignature,
+                                        value: RpcSignatureResult::ProcessedSignature(
+                                            ProcessedSignatureResult { err: None },
                                         ),
                                     });
 
@@ -244,7 +244,7 @@ impl LiteRpcSubsrciptionControl {
                         self.broadcast_sender.send(rpc_notification).unwrap();
                     }
                 }
-                Err(e) => {
+                Err(_e) => {
                     break;
                 }
             }
