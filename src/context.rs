@@ -12,9 +12,7 @@ use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     signature::Signature,
 };
-use stream_cancel::Tripwire;
 use std::{
-    collections::HashMap,
     sync::{atomic::AtomicU64, Arc, RwLock},
     time::Instant,
 };
@@ -47,7 +45,7 @@ impl BlockInformation {
 }
 
 pub struct LiteRpcContext {
-    pub signature_status: RwLock<HashMap<String, Option<CommitmentLevel>>>,
+    pub signature_status: DashMap<String, Option<CommitmentLevel>>,
     pub finalized_block_info: BlockInformation,
     pub confirmed_block_info: BlockInformation,
     pub notification_sender: Sender<NotificationType>,
@@ -56,7 +54,7 @@ pub struct LiteRpcContext {
 impl LiteRpcContext {
     pub fn new(rpc_client: Arc<RpcClient>, notification_sender: Sender<NotificationType>) -> Self {
         LiteRpcContext {
-            signature_status: RwLock::new(HashMap::new()),
+            signature_status: DashMap::new(),
             confirmed_block_info: BlockInformation::new(
                 rpc_client.clone(),
                 CommitmentLevel::Confirmed,
@@ -74,9 +72,16 @@ pub struct SignatureNotification {
     pub error: Option<String>,
 }
 
+pub struct SlotNotification {
+    pub slot : u64,
+    pub commitment : CommitmentLevel,
+    pub parent : u64,
+    pub root : u64,
+}
+
 pub enum NotificationType {
     Signature(SignatureNotification),
-    Slot(u64),
+    Slot(SlotNotification),
 }
 
 #[derive(Debug, Serialize)]
@@ -149,7 +154,7 @@ impl LiteRpcSubsrciptionControl {
             broadcast_sender,
             notification_reciever,
             subscriptions: DashMap::new(),
-            last_subscription_id: AtomicU64::new(1),
+            last_subscription_id: AtomicU64::new(2),
         }
     }
 
@@ -160,6 +165,7 @@ impl LiteRpcSubsrciptionControl {
                 Ok(notification_type) => {
                     let rpc_notification = match notification_type {
                         NotificationType::Signature(data) => {
+                            println!("getting signature notification {} confirmation {}",  data.signature, data.commitment.to_string());
                             let signature_params = SignatureSubscriptionParams {
                                 commitment: CommitmentConfig {
                                     commitment: data.commitment,
@@ -200,13 +206,13 @@ impl LiteRpcSubsrciptionControl {
                                 dashmap::mapref::entry::Entry::Vacant(_x) => None,
                             }
                         }
-                        NotificationType::Slot(slot) => {
+                        NotificationType::Slot(data) => {
                             // SubscriptionId 0 will be used for slots
-                            let subscription_id = SubscriptionId::from(0);
+                            let subscription_id = if data.commitment == CommitmentLevel::Confirmed { SubscriptionId::from(0) } else {SubscriptionId::from(1)};
                             let value = SlotInfo {
-                                parent: 0,
-                                slot,
-                                root: 0,
+                                parent: data.parent,
+                                slot: data.slot,
+                                root: data.root,
                             };
 
                             let notification = Notification {

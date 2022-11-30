@@ -1,6 +1,7 @@
 use dashmap::DashMap;
 use jsonrpc_core::{ErrorCode, IoHandler};
 use soketto::handshake::{server, Server};
+use solana_client::pubsub_client::SlotsSubscription;
 use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
 use std::{net::SocketAddr, str::FromStr, sync::atomic::AtomicU64, thread::JoinHandle};
 use stream_cancel::{Tripwire, Trigger};
@@ -41,9 +42,10 @@ pub trait LiteRpcPubSub {
     fn slot_unsubscribe(&self, id: SubscriptionId) -> Result<bool>;
 }
 
+#[derive(Clone)]
 pub struct LiteRpcPubSubImpl {
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    current_subscriptions: Arc<DashMap<SubscriptionId, (AtomicU64, SubscriptionParams)>>,
+    pub current_subscriptions: Arc<DashMap<SubscriptionId, SubscriptionParams>>,
 }
 
 impl LiteRpcPubSubImpl {
@@ -69,22 +71,19 @@ impl LiteRpcPubSubImpl {
                 let new_subsription_id = SubscriptionId::from(new_subscription_id);
                 x.insert(new_subsription_id);
                 self.current_subscriptions
-                    .insert(new_subsription_id, (AtomicU64::new(1), params));
+                    .insert(new_subsription_id, params);
+                println!("subscribing {}", new_subscription_id);
                 Ok(new_subsription_id)
             }
         }
     }
 
     fn unsubscribe(&self, id: SubscriptionId) -> Result<bool> {
+        let sub_id : u64 = u64::from(id);
         match self.current_subscriptions.entry(id) {
             dashmap::mapref::entry::Entry::Occupied(x) => {
-                let v = x.get();
-                let count = v.0.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                if count == 1 {
-                    // it was the last subscription
-                    self.subscription_control.subscriptions.remove(&v.1);
-                    x.remove();
-                }
+                x.remove();
+                println!("unsubscribing {}", sub_id);
                 Ok(true)
             }
             dashmap::mapref::entry::Entry::Vacant(_) => Ok(false),
@@ -160,7 +159,8 @@ async fn handle_connection(
     let mut broadcast_receiver = subscription_control.broadcast_sender.subscribe();
     let mut json_rpc_handler = IoHandler::new();
     let rpc_impl = LiteRpcPubSubImpl::new(subscription_control);
-    json_rpc_handler.extend_with(rpc_impl.to_delegate());
+    rpc_impl.current_subscriptions.insert(SubscriptionId::from(0), SubscriptionParams::Slot);
+    json_rpc_handler.extend_with(rpc_impl.clone().to_delegate());
     loop {
         let mut data = Vec::new();
         // Extra block for dropping `receive_future`.
@@ -178,7 +178,10 @@ async fn handle_connection(
                     },
                     result = broadcast_receiver.recv() => {
                         if let Ok(x) = result {
-                            sender.send_text(&x.json).await?;
+                            if rpc_impl.current_subscriptions.contains_key(&x.subscription_id) {
+                                println!("sending message \n {}", x.json);
+                                sender.send_text(&x.json).await?;
+                            }
                         }
                     },
                 }
@@ -187,6 +190,7 @@ async fn handle_connection(
         let data_str = String::from_utf8(data).unwrap();
 
         if let Some(response) = json_rpc_handler.handle_request(data_str.as_str()).await {
+            println!("sending response \n {}", response);
             sender.send_text(&response).await?;
         }
     }
