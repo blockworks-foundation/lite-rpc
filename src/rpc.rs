@@ -1,16 +1,25 @@
+use dashmap::DashMap;
 use solana_client::{
     pubsub_client::{BlockSubscription, PubsubClientError, SignatureSubscription},
     tpu_client::TpuClientConfig,
 };
 use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
-use std::{thread::{Builder, JoinHandle}, sync::Mutex};
+use std::{
+    str::FromStr,
+    sync::Mutex,
+    thread::{Builder, JoinHandle},
+};
 
-use crate::context::{BlockInformation, LiteRpcContext};
+use crate::context::{
+    BlockInformation, LiteRpcContext, NotificationType, SignatureNotification, SlotNotification,
+};
+use crossbeam_channel::Sender;
 use {
     bincode::config::Options,
     crossbeam_channel::Receiver,
     jsonrpc_core::{Error, Metadata, Result},
     jsonrpc_derive::rpc,
+    solana_client::connection_cache::ConnectionCache,
     solana_client::{rpc_client::RpcClient, tpu_client::TpuClient},
     solana_perf::packet::PACKET_DATA_SIZE,
     solana_rpc_client_api::{
@@ -22,12 +31,10 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
-    solana_client::connection_cache::ConnectionCache,
     solana_transaction_status::{TransactionBinaryEncoding, UiTransactionEncoding},
     std::{
         any::type_name,
-        collections::HashMap,
-        sync::{atomic::Ordering, Arc, RwLock},
+        sync::{atomic::Ordering, Arc},
     },
 };
 
@@ -44,7 +51,11 @@ pub struct LightRpcRequestProcessor {
 }
 
 impl LightRpcRequestProcessor {
-    pub fn new(json_rpc_url: &str, websocket_url: &str) -> LightRpcRequestProcessor {
+    pub fn new(
+        json_rpc_url: &str,
+        websocket_url: &str,
+        notification_sender: Sender<NotificationType>,
+    ) -> LightRpcRequestProcessor {
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
         let connection_cache = Arc::new(ConnectionCache::default());
         let tpu_client = Arc::new(
@@ -57,7 +68,7 @@ impl LightRpcRequestProcessor {
             .unwrap(),
         );
 
-        let context = Arc::new(LiteRpcContext::new(rpc_client.clone()));
+        let context = Arc::new(LiteRpcContext::new(rpc_client.clone(), notification_sender));
 
         // subscribe for confirmed_blocks
         let (client_confirmed, receiver_confirmed) =
@@ -115,15 +126,13 @@ impl LightRpcRequestProcessor {
     fn subscribe_signature(
         websocket_url: &String,
         signature: &Signature,
-        commitment:CommitmentLevel
+        commitment: CommitmentLevel,
     ) -> std::result::Result<SignatureSubscription, PubsubClientError> {
         PubsubClient::signature_subscribe(
             websocket_url.as_str(),
             signature,
             Some(RpcSignatureSubscribeConfig {
-                commitment: Some(CommitmentConfig {
-                    commitment,
-                }),
+                commitment: Some(CommitmentConfig { commitment }),
                 enable_received_notification: Some(false),
             }),
         )
@@ -143,15 +152,22 @@ impl LightRpcRequestProcessor {
                 } else {
                     &context.finalized_block_info
                 };
-                Self::process_block(reciever, &context.signature_status, commitment, block_info);
+                Self::process_block(
+                    reciever,
+                    &context.signature_status,
+                    commitment,
+                    &context.notification_sender,
+                    block_info,
+                );
             })
             .unwrap()
     }
 
     fn process_block(
         reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
-        signature_status: &RwLock<HashMap<String, Option<CommitmentLevel>>>,
+        signature_status: &DashMap<String, Option<CommitmentLevel>>,
         commitment: CommitmentLevel,
+        notification_sender: &crossbeam_channel::Sender<NotificationType>,
         block_information: &BlockInformation,
     ) {
         println!("processing blocks for {}", commitment);
@@ -164,6 +180,17 @@ impl LightRpcRequestProcessor {
                     block_information
                         .slot
                         .store(block_update.slot, Ordering::Relaxed);
+                    let slot_notification = SlotNotification {
+                        commitment: commitment,
+                        slot: block_update.slot,
+                        parent: 0,
+                        root: 0,
+                    };
+                    if let Err(e) =
+                        notification_sender.send(NotificationType::Slot(slot_notification))
+                    {
+                        println!("Error sending slot notification error : {}", e.to_string());
+                    }
 
                     if let Some(block) = &block_update.block {
                         block_information
@@ -174,15 +201,35 @@ impl LightRpcRequestProcessor {
                             let mut lock = block_information.block_hash.write().unwrap();
                             *lock = block.blockhash.clone();
                         }
+
                         if let Some(signatures) = &block.signatures {
-                            let mut lock = signature_status.write().unwrap();
                             for signature in signatures {
-                                if lock.contains_key(signature) {
-                                    println!(
-                                        "found signature {} for commitment {}",
-                                        signature, commitment
-                                    );
-                                    lock.insert(signature.clone(), Some(commitment));
+                                match signature_status.entry(signature.clone()) {
+                                    dashmap::mapref::entry::Entry::Occupied(mut x) => {
+                                        println!(
+                                            "found signature {} for commitment {}",
+                                            signature, commitment
+                                        );
+                                        let signature_notification = SignatureNotification {
+                                            signature: Signature::from_str(signature.as_str())
+                                                .unwrap(),
+                                            commitment,
+                                            slot: block_update.slot,
+                                            error: None,
+                                        };
+                                        if let Err(e) = notification_sender.send(
+                                            NotificationType::Signature(signature_notification),
+                                        ) {
+                                            println!(
+                                                "Error sending signature notification error : {}",
+                                                e.to_string()
+                                            );
+                                        }
+                                        x.insert(Some(commitment));
+                                    }
+                                    dashmap::mapref::entry::Entry::Vacant(_x) => {
+                                        // do nothing transaction not sent by lite rpc
+                                    }
                                 }
                             }
                         } else {
@@ -210,7 +257,7 @@ impl LightRpcRequestProcessor {
             subscribed_client.send_unsubscribe().unwrap();
             subscribed_client.shutdown().unwrap();
         }
-        
+
         let joinables = &mut self.joinables.lock().unwrap();
         let len = joinables.len();
         for _i in 0..len {
@@ -285,11 +332,10 @@ pub mod lite_rpc {
             let (wire_transaction, transaction) =
                 decode_and_deserialize::<VersionedTransaction>(data, binary_encoding)?;
 
-            {
-                let mut lock = meta.context.signature_status.write().unwrap();
-                lock.insert(transaction.signatures[0].to_string(), None);
-                println!("added {} to map", transaction.signatures[0]);
-            }
+            meta.context
+                .signature_status
+                .insert(transaction.signatures[0].to_string(), None);
+            println!("added {} to map", transaction.signatures[0]);
             meta.tpu_client.send_wire_transaction(wire_transaction);
             Ok(transaction.signatures[0].to_string())
         }
@@ -339,8 +385,9 @@ pub mod lite_rpc {
             signature_str: String,
             commitment_cfg: Option<CommitmentConfig>,
         ) -> Result<RpcResponse<bool>> {
-            let lock = meta.context.signature_status.read().unwrap();
-            let k_value = lock.get_key_value(&signature_str);
+            let singature_status = meta.context.signature_status.get(&signature_str);
+            let k_value = singature_status;
+
             let commitment = match commitment_cfg {
                 Some(x) => x.commitment,
                 None => CommitmentLevel::Confirmed,
@@ -359,7 +406,7 @@ pub mod lite_rpc {
             };
 
             match k_value {
-                Some(value) => match value.1 {
+                Some(value) => match *value {
                     Some(commitment_for_signature) => {
                         println!("found in cache");
                         Ok(RpcResponse {

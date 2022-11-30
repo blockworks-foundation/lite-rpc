@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
+use clap::Parser;
+use context::LiteRpcSubsrciptionControl;
 use jsonrpc_core::MetaIoHandler;
 use jsonrpc_http_server::{hyper, AccessControlAllowOrigin, DomainsValidation, ServerBuilder};
+use pubsub::LitePubSubService;
 use solana_perf::thread::renice_this_thread;
+use tokio::sync::broadcast;
 
 use crate::rpc::{
     lite_rpc::{self, Lite},
@@ -10,24 +14,54 @@ use crate::rpc::{
 };
 mod cli;
 mod context;
+mod pubsub;
 mod rpc;
 
-pub fn main() {
-    let matches = cli::build_args(solana_version::version!()).get_matches();
-    let cli_config = cli::extract_args(&matches);
+use cli::Args;
 
-    let cli::Config {
-        json_rpc_url,
+pub fn main() {
+    let mut cli_config = Args::parse();
+    cli_config.resolve_address();
+    println!(
+        "Using rpc server {} and ws server {}",
+        cli_config.rpc_url, cli_config.websocket_url
+    );
+    let Args {
+        rpc_url: json_rpc_url,
         websocket_url,
-        rpc_addr,
+        port: rpc_addr,
+        subscription_port,
         ..
     } = &cli_config;
 
+    let (broadcast_sender, _broadcast_receiver) = broadcast::channel(128);
+    let (notification_sender, notification_reciever) = crossbeam_channel::unbounded();
+
+    let pubsub_control = Arc::new(LiteRpcSubsrciptionControl::new(
+        broadcast_sender,
+        notification_reciever,
+    ));
+
+    // start websocket server
+    let (_trigger, websocket_service) =
+        LitePubSubService::new(pubsub_control.clone(), *subscription_port);
+
+    // start recieving notifications and broadcast them
+    {
+        let pubsub_control = pubsub_control.clone();
+        std::thread::Builder::new()
+            .name("broadcasting thread".to_string())
+            .spawn(move || {
+                pubsub_control.start_broadcasting();
+            })
+            .unwrap();
+    }
     let mut io = MetaIoHandler::default();
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
 
-    let mut request_processor = LightRpcRequestProcessor::new(json_rpc_url, websocket_url);
+    let mut request_processor =
+        LightRpcRequestProcessor::new(json_rpc_url, websocket_url, notification_sender);
 
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
@@ -59,4 +93,5 @@ pub fn main() {
         server.unwrap().wait();
     }
     request_processor.free();
+    websocket_service.close().unwrap();
 }
