@@ -37,7 +37,8 @@ pub fn main() {
     ));
 
     // start websocket server
-    let (_trigger, websocket_service) = LitePubSubService::new(pubsub_control.clone(), *subscription_port);
+    let (_trigger, websocket_service) =
+        LitePubSubService::new(pubsub_control.clone(), *subscription_port);
 
     // start recieving notifications and broadcast them
     {

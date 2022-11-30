@@ -73,10 +73,10 @@ pub struct SignatureNotification {
 }
 
 pub struct SlotNotification {
-    pub slot : u64,
-    pub commitment : CommitmentLevel,
-    pub parent : u64,
-    pub root : u64,
+    pub slot: u64,
+    pub commitment: CommitmentLevel,
+    pub parent: u64,
+    pub root: u64,
 }
 
 pub enum NotificationType {
@@ -165,7 +165,11 @@ impl LiteRpcSubsrciptionControl {
                 Ok(notification_type) => {
                     let rpc_notification = match notification_type {
                         NotificationType::Signature(data) => {
-                            println!("getting signature notification {} confirmation {}",  data.signature, data.commitment.to_string());
+                            println!(
+                                "getting signature notification {} confirmation {}",
+                                data.signature,
+                                data.commitment.to_string()
+                            );
                             let signature_params = SignatureSubscriptionParams {
                                 commitment: CommitmentConfig {
                                     commitment: data.commitment,
@@ -208,7 +212,11 @@ impl LiteRpcSubsrciptionControl {
                         }
                         NotificationType::Slot(data) => {
                             // SubscriptionId 0 will be used for slots
-                            let subscription_id = if data.commitment == CommitmentLevel::Confirmed { SubscriptionId::from(0) } else {SubscriptionId::from(1)};
+                            let subscription_id = if data.commitment == CommitmentLevel::Confirmed {
+                                SubscriptionId::from(0)
+                            } else {
+                                SubscriptionId::from(1)
+                            };
                             let value = SlotInfo {
                                 parent: data.parent,
                                 slot: data.slot,

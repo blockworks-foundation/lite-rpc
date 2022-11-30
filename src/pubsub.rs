@@ -4,7 +4,7 @@ use soketto::handshake::{server, Server};
 use solana_client::pubsub_client::SlotsSubscription;
 use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
 use std::{net::SocketAddr, str::FromStr, sync::atomic::AtomicU64, thread::JoinHandle};
-use stream_cancel::{Tripwire, Trigger};
+use stream_cancel::{Trigger, Tripwire};
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
@@ -79,7 +79,7 @@ impl LiteRpcPubSubImpl {
     }
 
     fn unsubscribe(&self, id: SubscriptionId) -> Result<bool> {
-        let sub_id : u64 = u64::from(id);
+        let sub_id: u64 = u64::from(id);
         match self.current_subscriptions.entry(id) {
             dashmap::mapref::entry::Entry::Occupied(x) => {
                 x.remove();
@@ -159,7 +159,9 @@ async fn handle_connection(
     let mut broadcast_receiver = subscription_control.broadcast_sender.subscribe();
     let mut json_rpc_handler = IoHandler::new();
     let rpc_impl = LiteRpcPubSubImpl::new(subscription_control);
-    rpc_impl.current_subscriptions.insert(SubscriptionId::from(0), SubscriptionParams::Slot);
+    rpc_impl
+        .current_subscriptions
+        .insert(SubscriptionId::from(0), SubscriptionParams::Slot);
     json_rpc_handler.extend_with(rpc_impl.clone().to_delegate());
     loop {
         let mut data = Vec::new();

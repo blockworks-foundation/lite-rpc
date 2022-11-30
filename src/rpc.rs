@@ -10,7 +10,9 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
-use crate::context::{BlockInformation, LiteRpcContext, NotificationType, SignatureNotification, SlotNotification};
+use crate::context::{
+    BlockInformation, LiteRpcContext, NotificationType, SignatureNotification, SlotNotification,
+};
 use crossbeam_channel::Sender;
 use {
     bincode::config::Options,
@@ -182,8 +184,8 @@ impl LightRpcRequestProcessor {
                     let slot_notification = SlotNotification {
                         commitment: commitment,
                         slot: block_update.slot,
-                        parent : 0,
-                        root : 0,
+                        parent: 0,
+                        root: 0,
                     };
                     if let Err(e) =
                         notification_sender.send(NotificationType::Slot(slot_notification))
@@ -210,25 +212,25 @@ impl LightRpcRequestProcessor {
                                             signature, commitment
                                         );
                                         let signature_notification = SignatureNotification {
-                                            signature: Signature::from_str(signature.as_str()).unwrap(),
+                                            signature: Signature::from_str(signature.as_str())
+                                                .unwrap(),
                                             commitment,
                                             slot: block_update.slot,
                                             error: None,
                                         };
-                                        if let Err(e) = notification_sender
-                                            .send(NotificationType::Signature(signature_notification))
-                                        {
+                                        if let Err(e) = notification_sender.send(
+                                            NotificationType::Signature(signature_notification),
+                                        ) {
                                             println!(
                                                 "Error sending signature notification error : {}",
                                                 e.to_string()
                                             );
                                         }
                                         x.insert(Some(commitment));
-                                    },
+                                    }
                                     dashmap::mapref::entry::Entry::Vacant(_x) => {
                                         // do nothing transaction not sent by lite rpc
                                     }
-                                    
                                 }
                             }
                         } else {
@@ -331,7 +333,9 @@ pub mod lite_rpc {
             let (wire_transaction, transaction) =
                 decode_and_deserialize::<VersionedTransaction>(data, binary_encoding)?;
 
-            meta.context.signature_status.insert(transaction.signatures[0].to_string(), None);
+            meta.context
+                .signature_status
+                .insert(transaction.signatures[0].to_string(), None);
             println!("added {} to map", transaction.signatures[0]);
             meta.tpu_client.send_wire_transaction(wire_transaction);
             Ok(transaction.signatures[0].to_string())
@@ -382,7 +386,7 @@ pub mod lite_rpc {
             signature_str: String,
             commitment_cfg: Option<CommitmentConfig>,
         ) -> Result<RpcResponse<bool>> {
-            let singature_status =meta.context.signature_status.get(&signature_str);
+            let singature_status = meta.context.signature_status.get(&signature_str);
             let k_value = singature_status;
 
             let commitment = match commitment_cfg {
