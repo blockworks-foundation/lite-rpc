@@ -8,9 +8,12 @@ use pubsub::LitePubSubService;
 use solana_perf::thread::renice_this_thread;
 use tokio::sync::broadcast;
 
-use crate::rpc::{
-    lite_rpc::{self, Lite},
-    LightRpcRequestProcessor,
+use crate::{
+    context::{launch_performance_updating_thread, PerformanceCounter},
+    rpc::{
+        lite_rpc::{self, Lite},
+        LightRpcRequestProcessor,
+    },
 };
 mod cli;
 mod context;
@@ -34,6 +37,9 @@ pub fn main() {
         ..
     } = &cli_config;
 
+    let performance_counter = PerformanceCounter::new();
+    launch_performance_updating_thread(performance_counter.clone());
+
     let (broadcast_sender, _broadcast_receiver) = broadcast::channel(128);
     let (notification_sender, notification_reciever) = crossbeam_channel::unbounded();
 
@@ -43,8 +49,11 @@ pub fn main() {
     ));
 
     // start websocket server
-    let (_trigger, websocket_service) =
-        LitePubSubService::new(pubsub_control.clone(), *subscription_port);
+    let (_trigger, websocket_service) = LitePubSubService::new(
+        pubsub_control.clone(),
+        *subscription_port,
+        performance_counter.clone(),
+    );
 
     // start recieving notifications and broadcast them
     {
@@ -60,8 +69,12 @@ pub fn main() {
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
 
-    let mut request_processor =
-        LightRpcRequestProcessor::new(json_rpc_url, websocket_url, notification_sender);
+    let mut request_processor = LightRpcRequestProcessor::new(
+        json_rpc_url,
+        websocket_url,
+        notification_sender,
+        performance_counter.clone(),
+    );
 
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
