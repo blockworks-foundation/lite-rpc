@@ -268,10 +268,6 @@ pub struct PerformanceCounter {
     last_count_for_transactions_sent: Arc<AtomicU64>,
 }
 
-unsafe impl Send for PerformanceCounter {}
-
-unsafe impl Sync for PerformanceCounter {}
-
 impl PerformanceCounter {
     pub fn new() -> Self {
         Self {
