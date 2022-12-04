@@ -14,8 +14,8 @@
   },
   "scripts": {
     "test": "jest --detectOpenHandles",
-    "start:lite-rpc": "./lite-rpc",
-    "test:test-validator": "start-server-and-test './light-rpc' test"
+    "start:lite-rpc": "lite-rpc",
+    "test:test-validator": "start-server-and-test 'solana-test-validator --reset --quiet & ../target/debug/lite-rpc' http://localhost:8899/health test"
   },
   "devDependencies": {
     "typescript": "^4.8.4"
