@@ -265,6 +265,8 @@ pub struct RpcPerformanceCounterResults {
     pub confirmations_per_seconds: u64,
     pub total_transactions_count: u64,
     pub total_confirmations_count: u64,
+    pub memory_used: u64,
+    pub nb_threads: u64,
 }
 
 pub mod lite_rpc {
@@ -488,11 +490,17 @@ pub mod lite_rpc {
                 .performance_counter
                 .confirmations_per_seconds
                 .load(Ordering::Acquire);
+
+            let procinfo::pid::Statm { size, .. } = procinfo::pid::statm_self().unwrap();
+            let procinfo::pid::Stat { num_threads, .. } = procinfo::pid::stat_self().unwrap();
+
             Ok(RpcPerformanceCounterResults {
                 confirmations_per_seconds,
                 transactions_per_seconds,
                 total_confirmations_count,
                 total_transactions_count,
+                memory_used: size as u64,
+                nb_threads: num_threads as u64,
             })
         }
     }
