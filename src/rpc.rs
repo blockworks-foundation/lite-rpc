@@ -316,6 +316,13 @@ pub mod lite_rpc {
             &self,
             meta: Self::Metadata,
         ) -> Result<RpcPerformanceCounterResults>;
+
+        #[rpc(meta, name = "getLatestBlockhash")]
+        fn get_latest_blockhash(
+            &self,
+            meta: Self::Metadata,
+            config: Option<RpcContextConfig>,
+        ) -> Result<RpcResponse<RpcBlockhash>>;
     }
     pub struct LightRpc;
     impl Lite for LightRpc {
@@ -355,7 +362,7 @@ pub mod lite_rpc {
         ) -> Result<RpcResponse<RpcBlockhashFeeCalculator>> {
             let commitment = match commitment {
                 Some(x) => x.commitment,
-                None => CommitmentLevel::Confirmed,
+                None => CommitmentLevel::Finalized,
             };
             let (block_hash, slot) = match commitment {
                 CommitmentLevel::Finalized => {
@@ -383,6 +390,37 @@ pub mod lite_rpc {
                 value: RpcBlockhashFeeCalculator {
                     blockhash: block_hash,
                     fee_calculator: FeeCalculator::default(),
+                },
+            })
+        }
+
+        fn get_latest_blockhash(
+            &self,
+            meta: Self::Metadata,
+            config: Option<RpcContextConfig>,
+        ) -> Result<RpcResponse<RpcBlockhash>> {
+            let commitment = match config {
+                Some(x) => match x.commitment {
+                    Some(x) => x.commitment,
+                    None => CommitmentLevel::Finalized,
+                },
+                None => CommitmentLevel::Finalized,
+            };
+
+            let block_info = match commitment {
+                CommitmentLevel::Finalized => &meta.context.finalized_block_info,
+                _ => &meta.context.confirmed_block_info,
+            };
+
+            let slot = block_info.slot.load(Ordering::Relaxed);
+            let last_valid_block_height = block_info.block_height.load(Ordering::Relaxed);
+            let blockhash = block_info.block_hash.read().unwrap().clone();
+
+            Ok(RpcResponse {
+                context: RpcResponseContext::new(slot),
+                value: RpcBlockhash {
+                    blockhash,
+                    last_valid_block_height,
                 },
             })
         }
