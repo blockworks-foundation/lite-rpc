@@ -11,7 +11,7 @@ use {clap::Parser, solana_cli_config::ConfigInput, std::net::SocketAddr};
     "
 )]
 pub struct Args {
-    #[arg(short, long, default_value_t = SocketAddr::from(([127, 0, 0, 1], 8899)))]
+    #[arg(short, long, default_value_t = SocketAddr::from(([127, 0, 0, 1], 9000)))]
     pub port: SocketAddr,
     #[arg(short, long, default_value_t = SocketAddr::from(([127, 0, 0, 1], 8900)))]
     pub subscription_port: SocketAddr,
