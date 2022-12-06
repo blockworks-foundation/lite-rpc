@@ -11,11 +11,11 @@ use {clap::Parser, solana_cli_config::ConfigInput};
     "
 )]
 pub struct Args {
-    #[arg(short, long, default_value_t = String::new())]
+    #[arg(short, long, default_value_t = String::from("9000"))]
     pub port: String,
-    #[arg(short, long, default_value_t = String::new())]
+    #[arg(short, long, default_value_t = String::from("8900"))]
     pub subscription_port: String,
-    #[arg(short, long, default_value_t = String::new())]
+    #[arg(short, long, default_value_t = String::from("http://localhost:8899"))]
     pub rpc_url: String,
     #[arg(short, long,  default_value_t = String::new())]
     pub websocket_url: String,
