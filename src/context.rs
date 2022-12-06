@@ -13,8 +13,12 @@ use solana_sdk::{
     signature::Signature,
 };
 use std::{
-    sync::{atomic::AtomicU64, Arc, RwLock},
-    time::Instant,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, RwLock,
+    },
+    thread::{self, Builder, JoinHandle},
+    time::{Duration, Instant},
 };
 use tokio::sync::broadcast;
 
@@ -250,4 +254,90 @@ impl LiteRpcSubsrciptionControl {
             }
         }
     }
+}
+
+#[derive(Clone)]
+pub struct PerformanceCounter {
+    pub total_confirmations: Arc<AtomicU64>,
+    pub total_transactions_sent: Arc<AtomicU64>,
+
+    pub confirmations_per_seconds: Arc<AtomicU64>,
+    pub transactions_per_seconds: Arc<AtomicU64>,
+
+    last_count_for_confirmations: Arc<AtomicU64>,
+    last_count_for_transactions_sent: Arc<AtomicU64>,
+}
+
+impl PerformanceCounter {
+    pub fn new() -> Self {
+        Self {
+            total_confirmations: Arc::new(AtomicU64::new(0)),
+            total_transactions_sent: Arc::new(AtomicU64::new(0)),
+            confirmations_per_seconds: Arc::new(AtomicU64::new(0)),
+            transactions_per_seconds: Arc::new(AtomicU64::new(0)),
+            last_count_for_confirmations: Arc::new(AtomicU64::new(0)),
+            last_count_for_transactions_sent: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    pub fn update_per_seconds_transactions(&self) {
+        let total_confirmations: u64 = self.total_confirmations.load(Ordering::Relaxed);
+
+        let total_transactions: u64 = self.total_transactions_sent.load(Ordering::Relaxed);
+
+        self.confirmations_per_seconds.store(
+            total_confirmations - self.last_count_for_confirmations.load(Ordering::Relaxed),
+            Ordering::Release,
+        );
+        self.transactions_per_seconds.store(
+            total_transactions
+                - self
+                    .last_count_for_transactions_sent
+                    .load(Ordering::Relaxed),
+            Ordering::Release,
+        );
+
+        self.last_count_for_confirmations
+            .store(total_confirmations, Ordering::Relaxed);
+        self.last_count_for_transactions_sent
+            .store(total_transactions, Ordering::Relaxed);
+    }
+
+    pub fn update_sent_transactions_counter(&self) {
+        self.total_transactions_sent.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn update_confirm_transaction_counter(&self) {
+        self.total_confirmations.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+pub fn launch_performance_updating_thread(
+    performance_counter: PerformanceCounter,
+) -> JoinHandle<()> {
+    Builder::new()
+        .name("Performance Counter".to_string())
+        .spawn(move || loop {
+            let start = Instant::now();
+
+            let wait_time = Duration::from_millis(1000);
+            let performance_counter = performance_counter.clone();
+            performance_counter.update_per_seconds_transactions();
+            let confirmations_per_seconds = performance_counter
+                .confirmations_per_seconds
+                .load(Ordering::Acquire);
+            let total_transactions_per_seconds = performance_counter
+                .transactions_per_seconds
+                .load(Ordering::Acquire);
+
+            let runtime = start.elapsed();
+            if let Some(remaining) = wait_time.checked_sub(runtime) {
+                println!(
+                    "Sent {} transactions and confrimed {} transactions",
+                    total_transactions_per_seconds, confirmations_per_seconds
+                );
+                thread::sleep(remaining);
+            }
+        })
+        .unwrap()
 }

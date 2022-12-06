@@ -7,7 +7,7 @@ use stream_cancel::{Trigger, Tripwire};
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
-use crate::context::LiteRpcSubsrciptionControl;
+use crate::context::{LiteRpcSubsrciptionControl, PerformanceCounter};
 use {
     jsonrpc_core::{Error, Result},
     jsonrpc_derive::rpc,
@@ -145,6 +145,7 @@ enum HandleError {
 async fn handle_connection(
     socket: TcpStream,
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
+    performance_counter: PerformanceCounter,
 ) -> core::result::Result<(), HandleError> {
     let mut server = Server::new(socket.compat());
     let request = server.receive_request().await?;
@@ -177,6 +178,7 @@ async fn handle_connection(
                     result = broadcast_receiver.recv() => {
                         if let Ok(x) = result {
                             if rpc_impl.current_subscriptions.contains_key(&x.subscription_id) {
+                                performance_counter.update_confirm_transaction_counter();
                                 sender.send_text(&x.json).await?;
                             }
                         }
@@ -195,6 +197,7 @@ async fn listen(
     listen_address: SocketAddr,
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
     mut tripwire: Tripwire,
+    performance_counter: PerformanceCounter,
 ) -> std::io::Result<()> {
     let listener = tokio::net::TcpListener::bind(&listen_address).await?;
     loop {
@@ -202,9 +205,10 @@ async fn listen(
             result = listener.accept() => match result {
                 Ok((socket, addr)) => {
                     let subscription_control = subscription_control.clone();
+                    let performance_counter = performance_counter.clone();
                     tokio::spawn(async move {
                         let handle = handle_connection(
-                            socket, subscription_control
+                            socket, subscription_control, performance_counter,
                         );
                         match handle.await {
                             Ok(()) => println!("connection closed ({:?})", addr),
@@ -223,6 +227,7 @@ impl LitePubSubService {
     pub fn new(
         subscription_control: Arc<LiteRpcSubsrciptionControl>,
         pubsub_addr: SocketAddr,
+        performance_counter: PerformanceCounter,
     ) -> (Trigger, Self) {
         let (trigger, tripwire) = Tripwire::new();
 
@@ -234,9 +239,12 @@ impl LitePubSubService {
                     .enable_all()
                     .build()
                     .expect("runtime creation failed");
-                if let Err(err) =
-                    runtime.block_on(listen(pubsub_addr, subscription_control, tripwire))
-                {
+                if let Err(err) = runtime.block_on(listen(
+                    pubsub_addr,
+                    subscription_control,
+                    tripwire,
+                    performance_counter,
+                )) {
                     println!("pubsub service failed: {}", err);
                 };
             })
