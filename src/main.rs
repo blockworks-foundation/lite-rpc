@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, net::SocketAddr};
 
 use clap::Parser;
 use context::LiteRpcSubsrciptionControl;
@@ -42,9 +42,13 @@ pub fn main() {
         notification_reciever,
     ));
 
+    let subscription_port = subscription_port
+        .parse::<SocketAddr>()
+        .expect("Invalid subscription port");
+
     // start websocket server
     let (_trigger, websocket_service) =
-        LitePubSubService::new(pubsub_control.clone(), *subscription_port);
+        LitePubSubService::new(pubsub_control.clone(), subscription_port);
 
     // start recieving notifications and broadcast them
     {
@@ -73,7 +77,7 @@ pub fn main() {
             .expect("Runtime"),
     );
     let max_request_body_size: usize = 50 * (1 << 10);
-    let socket_addr = *rpc_addr;
+    let socket_addr = rpc_addr.parse::<SocketAddr>().unwrap();
 
     {
         let request_processor = request_processor.clone();
