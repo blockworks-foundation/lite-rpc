@@ -16,6 +16,7 @@ use crate::{
     },
 };
 mod cli;
+mod client;
 mod context;
 mod pubsub;
 mod rpc;
