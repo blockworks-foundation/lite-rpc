@@ -13,6 +13,7 @@ use crate::rpc::{
     LightRpcRequestProcessor,
 };
 mod cli;
+mod client;
 mod context;
 mod pubsub;
 mod rpc;
