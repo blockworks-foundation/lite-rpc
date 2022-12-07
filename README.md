@@ -23,5 +23,10 @@ This project is currently based on an unstable feature of block subscription of 
 
 
 ```
-cargo run --bin lite-rpc -- --port 9000 --subscription-port 9001 --rpc-url http://localhost:8899
+cargo run --bin lite-rpc -- run --port 9000 --subscription-port 9001 --rpc-url http://localhost:8899
+```
+
+## Tests
+```
+cargo run --bin lite-rpc -- test
 ```
