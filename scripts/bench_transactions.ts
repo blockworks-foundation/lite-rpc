@@ -8,6 +8,7 @@ const tps : number = +process.argv[2];
 const forSeconds : number = +process.argv[3];
 // url
 const url = process.argv.length > 4 ? process.argv[4] : "http://localhost:8899";
+const skip_confirmations = process.argv.length > 5 ? process.argv[5] === "true": false;
 import * as InFile from "./out.json";
 import { web3 } from '@project-serum/anchor';
 import { sleep } from '@blockworks-foundation/mango-client';
@@ -44,17 +45,21 @@ export async function main() {
             }
             const userFrom = userAccounts[fromIndex];
             const userTo = userAccounts[toIndex];
-
-            promises.push(
-                splToken.transfer(
-                    connection,
-                    authority,
-                    userFrom,
-                    userTo,
-                    users[fromIndex],
-                    100,
+            if(skip_confirmations === false) {
+                promises.push(
+                    splToken.transfer(
+                        connection,
+                        authority,
+                        userFrom,
+                        userTo,
+                        users[fromIndex],
+                        100,
+                    )
                 )
-            )
+            }
+        }
+        if (skip_confirmations === false) 
+        {
             promises_to_unpack.push(promises)
         }
         const end = performance.now();
@@ -65,24 +70,26 @@ export async function main() {
     }
 
     console.log('checking for confirmations');
-    const size = promises_to_unpack.length
-    let successes : Uint32Array = new Uint32Array(size).fill(0);
-    let failures : Uint32Array = new Uint32Array(size).fill(0);
-    for (let i=0; i< size; ++i)
-    {
-        const promises = promises_to_unpack[i];
+    if(skip_confirmations === false) {
+        const size = promises_to_unpack.length
+        let successes : Uint32Array = new Uint32Array(size).fill(0);
+        let failures : Uint32Array = new Uint32Array(size).fill(0);
+        for (let i=0; i< size; ++i)
+        {
+            const promises = promises_to_unpack[i];
 
-        await Promise.all( promises.map( promise => {
-            promise.then((_fullfil)=>{
-                Atomics.add(successes, i, 1);
-            },
-            (_reject)=>{
-                Atomics.add(failures, i, 1);
-            })
-        }))
+            await Promise.all( promises.map( promise => {
+                promise.then((_fullfil)=>{
+                    Atomics.add(successes, i, 1);
+                },
+                (_reject)=>{
+                    Atomics.add(failures, i, 1);
+                })
+            }))
+        }
+        console.log("sucesses " +  successes)
+        console.log("failures " + failures)
     }
-    console.log("sucesses " +  successes)
-    console.log("failures " + failures)
 }
 
 main().then(x => {
