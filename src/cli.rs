@@ -11,7 +11,7 @@ use {clap::Parser, solana_cli_config::ConfigInput};
     "
 )]
 pub struct Args {
-    #[arg(short, long, default_value_t = String::from("9000"))]
+    #[arg(short, long, default_value_t = String::from("8899"))]
     pub port: String,
     #[arg(short, long, default_value_t = String::from("8900"))]
     pub subscription_port: String,

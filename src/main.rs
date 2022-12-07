@@ -56,7 +56,7 @@ pub fn main() {
     // start websocket server
     let (_trigger, websocket_service) = LitePubSubService::new(
         pubsub_control.clone(),
-        *subscription_port,
+        subscription_port,
         performance_counter.clone(),
     );
 
