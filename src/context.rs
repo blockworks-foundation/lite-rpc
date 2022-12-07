@@ -169,11 +169,6 @@ impl LiteRpcSubsrciptionControl {
                 Ok(notification_type) => {
                     let rpc_notification = match notification_type {
                         NotificationType::Signature(data) => {
-                            println!(
-                                "getting signature notification {} confirmation {}",
-                                data.signature,
-                                data.commitment.to_string()
-                            );
                             let signature_params = SignatureSubscriptionParams {
                                 commitment: CommitmentConfig {
                                     commitment: data.commitment,

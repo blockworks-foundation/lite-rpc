@@ -160,7 +160,6 @@ impl LightRpcRequestProcessor {
         notification_sender: &crossbeam_channel::Sender<NotificationType>,
         block_information: &BlockInformation,
     ) {
-        println!("processing blocks for {}", commitment);
         loop {
             let block_data = reciever.recv();
 
@@ -196,10 +195,7 @@ impl LightRpcRequestProcessor {
                             for signature in signatures {
                                 match signature_status.entry(signature.clone()) {
                                     dashmap::mapref::entry::Entry::Occupied(mut x) => {
-                                        println!(
-                                            "found signature {} for commitment {}",
-                                            signature, commitment
-                                        );
+                                        
                                         let signature_notification = SignatureNotification {
                                             signature: Signature::from_str(signature.as_str())
                                                 .unwrap(),
@@ -272,7 +268,9 @@ pub struct RpcPerformanceCounterResults {
 pub mod lite_rpc {
     use std::str::FromStr;
 
+    use itertools::Itertools;
     use solana_sdk::{fee_calculator::FeeCalculator, pubkey::Pubkey};
+    use solana_transaction_status::{TransactionStatus, TransactionConfirmationStatus};
 
     use super::*;
     #[rpc]
@@ -316,6 +314,22 @@ pub mod lite_rpc {
             &self,
             meta: Self::Metadata,
         ) -> Result<RpcPerformanceCounterResults>;
+
+        #[rpc(meta, name = "getLatestBlockhash")]
+        fn get_latest_blockhash(
+            &self,
+            meta: Self::Metadata,
+            config: Option<RpcContextConfig>,
+        ) -> Result<RpcResponse<RpcBlockhash>>;
+
+        #[rpc(meta, name = "getSignatureStatuses")]
+        fn get_signature_statuses(
+            &self,
+            meta: Self::Metadata,
+            signature_strs: Vec<String>,
+            config: Option<RpcSignatureStatusConfig>,
+        ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>>;
+
     }
     pub struct LightRpc;
     impl Lite for LightRpc {
@@ -342,7 +356,6 @@ pub mod lite_rpc {
             meta.context
                 .signature_status
                 .insert(transaction.signatures[0].to_string(), None);
-            println!("added {} to map", transaction.signatures[0]);
             meta.tpu_client.send_wire_transaction(wire_transaction);
             meta.performance_counter.update_sent_transactions_counter();
             Ok(transaction.signatures[0].to_string())
@@ -355,7 +368,7 @@ pub mod lite_rpc {
         ) -> Result<RpcResponse<RpcBlockhashFeeCalculator>> {
             let commitment = match commitment {
                 Some(x) => x.commitment,
-                None => CommitmentLevel::Confirmed,
+                None => CommitmentLevel::Finalized,
             };
             let (block_hash, slot) = match commitment {
                 CommitmentLevel::Finalized => {
@@ -383,6 +396,37 @@ pub mod lite_rpc {
                 value: RpcBlockhashFeeCalculator {
                     blockhash: block_hash,
                     fee_calculator: FeeCalculator::default(),
+                },
+            })
+        }
+
+        fn get_latest_blockhash(
+            &self,
+            meta: Self::Metadata,
+            config: Option<RpcContextConfig>,
+        ) -> Result<RpcResponse<RpcBlockhash>> {
+            let commitment = match config {
+                Some(x) => match x.commitment {
+                    Some(x) => x.commitment,
+                    None => CommitmentLevel::Finalized,
+                },
+                None => CommitmentLevel::Finalized,
+            };
+
+            let block_info = match commitment {
+                CommitmentLevel::Finalized => &meta.context.finalized_block_info,
+                _ => &meta.context.confirmed_block_info,
+            };
+
+            let slot = block_info.slot.load(Ordering::Relaxed);
+            let last_valid_block_height = block_info.block_height.load(Ordering::Relaxed);
+            let blockhash = block_info.block_hash.read().unwrap().clone();
+
+            Ok(RpcResponse {
+                context: RpcResponseContext::new(slot),
+                value: RpcBlockhash {
+                    blockhash,
+                    last_valid_block_height,
                 },
             })
         }
@@ -418,7 +462,6 @@ pub mod lite_rpc {
             match k_value {
                 Some(value) => match *value {
                     Some(commitment_for_signature) => {
-                        println!("found in cache");
                         Ok(RpcResponse {
                             context: RpcResponseContext::new(slot),
                             value: if commitment.eq(&CommitmentLevel::Finalized) {
@@ -451,6 +494,51 @@ pub mod lite_rpc {
                     })
                 }
             }
+        }
+
+        fn get_signature_statuses(
+            &self,
+            meta: Self::Metadata,
+            signature_strs: Vec<String>,
+            _config: Option<RpcSignatureStatusConfig>,
+        ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
+            let confirmed_slot = meta.context.confirmed_block_info.slot.load(Ordering::Relaxed);
+            let status = signature_strs.iter().map(|x| {
+                let singature_status = meta.context.signature_status.get(x);
+                let k_value = singature_status;
+                match k_value {                        
+                    Some(value) => match *value {
+                        Some(commitment_for_signature) => {
+                            let slot = meta.context
+                                    .confirmed_block_info
+                                    .slot
+                                    .load(Ordering::Relaxed);
+                            meta.performance_counter
+                                .update_confirm_transaction_counter();
+
+                            let status = match commitment_for_signature {
+                                CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
+                                _ => TransactionConfirmationStatus::Confirmed,
+                            };
+                            Some(TransactionStatus {
+                                slot,
+                                confirmations: Some(1),
+                                status: Ok(()),
+                                err: None,
+                                confirmation_status : Some(status)
+                            })
+                        }
+                        None => None,
+                    },
+                    None => None
+                }
+            }).collect_vec();
+            Ok(
+                RpcResponse {
+                    context : RpcResponseContext::new(confirmed_slot),
+                    value: status,
+                }
+            )
         }
 
         fn request_airdrop(
