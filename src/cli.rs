@@ -13,10 +13,8 @@ use clap::Parser;
     "
 )]
 pub struct Args {
-
     #[clap(subcommand)]
-    pub command:Command,
-
+    pub command: Command,
     /*
     #[arg(short, long, default_value_t = String::from("8899"))]
     pub port: String,
@@ -28,11 +26,11 @@ pub struct Args {
     pub websocket_url: String,
     */
 }
-/* 
+/*
 impl Args {
 
     pub fn resolve_address(&mut self) {
-        
+
         if self.rpc_url.is_empty() {
             let (_, rpc_url) = ConfigInput::compute_json_rpc_url_setting(
                 self.rpc_url.as_str(),
@@ -50,10 +48,10 @@ impl Args {
             self.websocket_url = ws_url;
         }
     }
-    
+
 }
 */
-#[derive(Subcommand,Debug)]
+#[derive(Subcommand, Debug)]
 pub enum Command {
     Run {
         #[arg(short, long, default_value_t = String::from("8899"))]

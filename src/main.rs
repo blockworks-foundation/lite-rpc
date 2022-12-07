@@ -122,10 +122,13 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
     websocket_service.close().unwrap();
 }
 
-fn ts_test(){
-
-    
-
+fn ts_test() {
+    let res = std::process::Command::new("yarn")
+        .args(["run", "test:test-validator"])
+        .output()
+        .unwrap();
+    println!("{}", String::from_utf8_lossy(&res.stdout));
+    println!("{}", String::from_utf8_lossy(&res.stderr));
 }
 
 pub fn main() {
