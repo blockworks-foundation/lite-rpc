@@ -1,0 +1,23 @@
+{
+  "name": "lightrpc-test",
+  "version": "1.0.0",
+  "repository": "",
+  "author": "",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "@solana/web3.js": "^1.66.2",
+    "@types/jest": "^29.2.3",
+    "jest": "^29.3.1",
+    "start-server-and-test": "^1.14.0",
+    "ts-jest": "^29.0.3"
+  },
+  "scripts": {
+    "test": "jest --detectOpenHandles",
+    "start:lite-rpc": "lite-rpc",
+    "test:test-validator": "start-server-and-test 'solana-test-validator --reset --quiet & target/debug/lite-rpc run --port 9000  --rpc-url http://localhost:8899 --subscription-port 9001 --websocket-url ws://localhost:8900/' http://localhost:8899/health test"
+  },
+  "devDependencies": {
+    "typescript": "^4.8.4"
+  }
+}

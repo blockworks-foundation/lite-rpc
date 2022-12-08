@@ -1,10 +1,11 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use clap::Parser;
 use context::LiteRpcSubsrciptionControl;
 use jsonrpc_core::MetaIoHandler;
 use jsonrpc_http_server::{hyper, AccessControlAllowOrigin, DomainsValidation, ServerBuilder};
 use pubsub::LitePubSubService;
+use solana_cli_config::ConfigInput;
 use solana_perf::thread::renice_this_thread;
 use tokio::sync::broadcast;
 
@@ -23,21 +24,31 @@ mod rpc;
 
 use cli::Args;
 
-pub fn main() {
-    let mut cli_config = Args::parse();
-    cli_config.resolve_address();
+fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: String) {
+    let rpc_url = if rpc_url.is_empty() {
+        let (_, rpc_url) = ConfigInput::compute_json_rpc_url_setting(
+            rpc_url.as_str(),
+            &ConfigInput::default().json_rpc_url,
+        );
+        rpc_url
+    } else {
+        rpc_url
+    };
+    let websocket_url = if websocket_url.is_empty() {
+        let (_, ws_url) = ConfigInput::compute_websocket_url_setting(
+            &websocket_url.as_str(),
+            "",
+            rpc_url.as_str(),
+            "",
+        );
+        ws_url
+    } else {
+        websocket_url
+    };
     println!(
         "Using rpc server {} and ws server {}",
-        cli_config.rpc_url, cli_config.websocket_url
+        rpc_url, websocket_url
     );
-    let Args {
-        rpc_url: json_rpc_url,
-        websocket_url,
-        port: rpc_addr,
-        subscription_port,
-        ..
-    } = &cli_config;
-
     let performance_counter = PerformanceCounter::new();
     launch_performance_updating_thread(performance_counter.clone());
 
@@ -49,14 +60,16 @@ pub fn main() {
         notification_reciever,
     ));
 
+    let subscription_port = format!("127.0.0.1:{subscription_port}")
+        .parse::<SocketAddr>()
+        .expect("Invalid subscription port");
+
     // start websocket server
     let (_trigger, websocket_service) = LitePubSubService::new(
         pubsub_control.clone(),
-        *subscription_port,
+        subscription_port,
         performance_counter.clone(),
     );
-
-    // start recieving notifications and broadcast them
     {
         let pubsub_control = pubsub_control.clone();
         std::thread::Builder::new()
@@ -71,12 +84,11 @@ pub fn main() {
     io.extend_with(lite_rpc.to_delegate());
 
     let mut request_processor = LightRpcRequestProcessor::new(
-        json_rpc_url,
-        websocket_url,
+        rpc_url.as_str(),
+        &websocket_url,
         notification_sender,
         performance_counter.clone(),
     );
-
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -87,7 +99,7 @@ pub fn main() {
             .expect("Runtime"),
     );
     let max_request_body_size: usize = 50 * (1 << 10);
-    let socket_addr = *rpc_addr;
+    let socket_addr = port.parse::<SocketAddr>().unwrap();
 
     {
         let request_processor = request_processor.clone();
@@ -108,4 +120,41 @@ pub fn main() {
     }
     request_processor.free();
     websocket_service.close().unwrap();
+}
+
+fn ts_test() {
+    let res = std::process::Command::new("yarn")
+        .args(["run", "test:test-validator"])
+        .output()
+        .unwrap();
+    println!("{}", String::from_utf8_lossy(&res.stdout));
+    println!("{}", String::from_utf8_lossy(&res.stderr));
+}
+
+pub fn main() {
+    let cli_command = Args::parse();
+
+    match cli_command.command {
+        cli::Command::Run {
+            port,
+            subscription_port,
+            rpc_url,
+            websocket_url,
+        } => run(port, subscription_port, rpc_url, websocket_url),
+        cli::Command::Test => ts_test(),
+    }
+    //cli_config.resolve_address();
+    //println!(
+    //    "Using rpc server {} and ws server {}",
+    //    cli_config.rpc_url, cli_config.websocket_url
+    //);
+    //let Args {
+    //    rpc_url: json_rpc_url,
+    //    websocket_url,
+    //    port: rpc_addr,
+    //    subscription_port,
+    //    ..
+    //} = &cli_config;
+
+    // start recieving notifications and broadcast them
 }

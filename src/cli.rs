@@ -1,4 +1,6 @@
-use {clap::Parser, solana_cli_config::ConfigInput, std::net::SocketAddr};
+use clap::Subcommand;
+
+use clap::Parser;
 
 /// Holds the configuration for a single run of the benchmark
 #[derive(Parser, Debug)]
@@ -11,18 +13,24 @@ use {clap::Parser, solana_cli_config::ConfigInput, std::net::SocketAddr};
     "
 )]
 pub struct Args {
-    #[arg(short, long, default_value_t = SocketAddr::from(([127, 0, 0, 1], 8899)))]
-    pub port: SocketAddr,
-    #[arg(short, long, default_value_t = SocketAddr::from(([127, 0, 0, 1], 8900)))]
-    pub subscription_port: SocketAddr,
-    #[arg(short, long, default_value_t = String::new())]
+    #[clap(subcommand)]
+    pub command: Command,
+    /*
+    #[arg(short, long, default_value_t = String::from("8899"))]
+    pub port: String,
+    #[arg(short, long, default_value_t = String::from("8900"))]
+    pub subscription_port: String,
+    #[arg(short, long, default_value_t = String::from("http://localhost:8899"))]
     pub rpc_url: String,
     #[arg(short, long,  default_value_t = String::new())]
     pub websocket_url: String,
+    */
 }
-
+/*
 impl Args {
+
     pub fn resolve_address(&mut self) {
+
         if self.rpc_url.is_empty() {
             let (_, rpc_url) = ConfigInput::compute_json_rpc_url_setting(
                 self.rpc_url.as_str(),
@@ -40,4 +48,20 @@ impl Args {
             self.websocket_url = ws_url;
         }
     }
+
+}
+*/
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    Run {
+        #[arg(short, long, default_value_t = String::from("8899"))]
+        port: String,
+        #[arg(short, long, default_value_t = String::from("8900"))]
+        subscription_port: String,
+        #[arg(short, long, default_value_t = String::from("http://localhost:8899"))]
+        rpc_url: String,
+        #[arg(short, long,  default_value_t = String::new())]
+        websocket_url: String,
+    },
+    Test,
 }
