@@ -149,7 +149,8 @@ fn ts_test() {
     println!("{}", String::from_utf8_lossy(&res.stderr));
 }
 
-pub fn main() {
+#[tokio::main]
+pub async fn main() {
     let cli_command = Args::parse();
 
     match cli_command.command {
