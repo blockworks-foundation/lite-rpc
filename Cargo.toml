@@ -6,32 +6,32 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-solana-client = { git = "https://github.com/solana-labs/solana.git" }
-solana-sdk = { git = "https://github.com/solana-labs/solana.git" } 
-solana-clap-utils = { git = "https://github.com/solana-labs/solana.git" } 
-solana-cli-config = { git = "https://github.com/solana-labs/solana.git" } 
-solana-pubsub-client = { git = "https://github.com/solana-labs/solana.git" } 
-solana-account-decoder = { git = "https://github.com/solana-labs/solana.git" } 
-solana-entry = { git = "https://github.com/solana-labs/solana.git" } 
-solana-faucet = { git = "https://github.com/solana-labs/solana.git" } 
-solana-gossip = { git = "https://github.com/solana-labs/solana.git" } 
-solana-ledger = { git = "https://github.com/solana-labs/solana.git" } 
-solana-measure = { git = "https://github.com/solana-labs/solana.git" } 
-solana-metrics = { git = "https://github.com/solana-labs/solana.git" } 
-solana-perf = { git = "https://github.com/solana-labs/solana.git" } 
-solana-poh = { git = "https://github.com/solana-labs/solana.git" } 
-solana-rayon-threadlimit = { git = "https://github.com/solana-labs/solana.git" } 
-solana-rpc-client-api = { git = "https://github.com/solana-labs/solana.git" } 
-solana-runtime = { git = "https://github.com/solana-labs/solana.git" } 
-solana-send-transaction-service = { git = "https://github.com/solana-labs/solana.git" } 
-solana-stake-program = { git = "https://github.com/solana-labs/solana.git" } 
-solana-storage-bigtable = { git = "https://github.com/solana-labs/solana.git" } 
-solana-streamer = { git = "https://github.com/solana-labs/solana.git" } 
-solana-tpu-client = { git = "https://github.com/solana-labs/solana.git" } 
-solana-transaction-status = { git = "https://github.com/solana-labs/solana.git" } 
-solana-version = { git = "https://github.com/solana-labs/solana.git" } 
-solana-vote-program = { git = "https://github.com/solana-labs/solana.git" } 
-solana-rpc = { git = "https://github.com/solana-labs/solana.git" } 
+solana-client = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" }
+solana-sdk = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-clap-utils = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-cli-config = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-pubsub-client = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-account-decoder = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-entry = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-faucet = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-gossip = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-ledger = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-measure = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-metrics = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-perf = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-poh = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-rayon-threadlimit = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-rpc-client-api = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-runtime = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-send-transaction-service = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-stake-program = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-storage-bigtable = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-streamer = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-tpu-client = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-transaction-status = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-version = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-vote-program = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
+solana-rpc = { git = "https://github.com/blockworks-foundation/solana.git", branch="lite-rpc-compatible" } 
 
 tokio = { version = "1.14.1", features = ["full"]}
 futures = "0.3.25"
