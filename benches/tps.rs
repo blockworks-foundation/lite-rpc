@@ -16,7 +16,7 @@ use simplelog::*;
 use tokio::sync::mpsc;
 
 const NUM_OF_TXS: usize = 10_000;
-const NUM_OF_RUNS: usize = 1;
+const NUM_OF_RUNS: usize = 3;
 const CSV_FILE_NAME: &str = "metrics.csv";
 
 #[tokio::main]
