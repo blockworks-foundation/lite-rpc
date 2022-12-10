@@ -60,7 +60,8 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
         notification_reciever,
     ));
 
-    let subscription_port = format!("127.0.0.1:{subscription_port}")
+    let subscription_port = format!("127.0.0.1:{}",subscription_port)
+
         .parse::<SocketAddr>()
         .expect("Invalid subscription port");
 
@@ -99,7 +100,9 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
             .expect("Runtime"),
     );
     let max_request_body_size: usize = 50 * (1 << 10);
-    let socket_addr = port.parse::<SocketAddr>().unwrap();
+
+    let socket_addr = format!("127.0.0.1:{}",rpc_addr).parse::<SocketAddr>().unwrap();
+
 
     {
         let request_processor = request_processor.clone();
