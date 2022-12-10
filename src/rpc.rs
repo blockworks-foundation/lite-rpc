@@ -328,7 +328,11 @@ pub mod lite_rpc {
             signature_strs: Vec<String>,
             config: Option<RpcSignatureStatusConfig>,
         ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>>;
+
+        #[rpc(name = "getVersion")]
+        fn get_version(&self) -> Result<RpcVersionInfo>;
     }
+
     pub struct LightRpc;
     impl Lite for LightRpc {
         type Metadata = LightRpcRequestProcessor;
@@ -560,6 +564,14 @@ pub mod lite_rpc {
                 None => meta.rpc_client.request_airdrop(&pubkey, lamports),
             };
             Ok(signature.unwrap().to_string())
+        }
+
+        fn get_version(&self) -> Result<RpcVersionInfo> {
+            let version = solana_version::Version::default();
+            Ok(RpcVersionInfo {
+                solana_core: version.to_string(),
+                feature_set: Some(version.feature_set),
+            })
         }
 
         fn get_performance_counters(
