@@ -1,0 +1,14 @@
+[package]
+name = "lite-bench-utils"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lite-client = { path ="../lite-client" }
+serde = { version = "1.0.149", features = ["derive"] }
+serde_json = "1.0.89"
+solana-client = { git = "https://github.com/solana-labs/solana.git" }
+solana-sdk = { git = "https://github.com/solana-labs/solana.git" } 
+tokio = "1.14.1"
+log = "0.4.17"
+anyhow = "1.0.66"
