@@ -1,3 +1,8 @@
+mod cli;
+mod context;
+mod pubsub;
+mod rpc;
+
 use std::{net::SocketAddr, sync::Arc};
 
 use clap::Parser;
@@ -16,12 +21,6 @@ use crate::{
         LightRpcRequestProcessor,
     },
 };
-mod cli;
-mod client;
-mod context;
-mod pubsub;
-mod rpc;
-
 use cli::Args;
 
 fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: String) {
