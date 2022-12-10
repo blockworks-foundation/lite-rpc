@@ -195,7 +195,6 @@ impl LightRpcRequestProcessor {
                             for signature in signatures {
                                 match signature_status.entry(signature.clone()) {
                                     dashmap::mapref::entry::Entry::Occupied(mut x) => {
-                                        
                                         let signature_notification = SignatureNotification {
                                             signature: Signature::from_str(signature.as_str())
                                                 .unwrap(),
@@ -270,7 +269,7 @@ pub mod lite_rpc {
 
     use itertools::Itertools;
     use solana_sdk::{fee_calculator::FeeCalculator, pubkey::Pubkey};
-    use solana_transaction_status::{TransactionStatus, TransactionConfirmationStatus};
+    use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 
     use super::*;
     #[rpc]
@@ -329,7 +328,6 @@ pub mod lite_rpc {
             signature_strs: Vec<String>,
             config: Option<RpcSignatureStatusConfig>,
         ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>>;
-
     }
     pub struct LightRpc;
     impl Lite for LightRpc {
@@ -461,17 +459,15 @@ pub mod lite_rpc {
 
             match k_value {
                 Some(value) => match *value {
-                    Some(commitment_for_signature) => {
-                        Ok(RpcResponse {
-                            context: RpcResponseContext::new(slot),
-                            value: if commitment.eq(&CommitmentLevel::Finalized) {
-                                commitment_for_signature.eq(&CommitmentLevel::Finalized)
-                            } else {
-                                commitment_for_signature.eq(&CommitmentLevel::Finalized)
-                                    || commitment_for_signature.eq(&CommitmentLevel::Confirmed)
-                            },
-                        })
-                    }
+                    Some(commitment_for_signature) => Ok(RpcResponse {
+                        context: RpcResponseContext::new(slot),
+                        value: if commitment.eq(&CommitmentLevel::Finalized) {
+                            commitment_for_signature.eq(&CommitmentLevel::Finalized)
+                        } else {
+                            commitment_for_signature.eq(&CommitmentLevel::Finalized)
+                                || commitment_for_signature.eq(&CommitmentLevel::Confirmed)
+                        },
+                    }),
                     None => Ok(RpcResponse {
                         context: RpcResponseContext::new(slot),
                         value: false,
@@ -502,43 +498,51 @@ pub mod lite_rpc {
             signature_strs: Vec<String>,
             _config: Option<RpcSignatureStatusConfig>,
         ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
-            let confirmed_slot = meta.context.confirmed_block_info.slot.load(Ordering::Relaxed);
-            let status = signature_strs.iter().map(|x| {
-                let singature_status = meta.context.signature_status.get(x);
-                let k_value = singature_status;
-                match k_value {                        
-                    Some(value) => match *value {
-                        Some(commitment_for_signature) => {
-                            let slot = meta.context
+            let confirmed_slot = meta
+                .context
+                .confirmed_block_info
+                .slot
+                .load(Ordering::Relaxed);
+            let status = signature_strs
+                .iter()
+                .map(|x| {
+                    let singature_status = meta.context.signature_status.get(x);
+                    let k_value = singature_status;
+                    match k_value {
+                        Some(value) => match *value {
+                            Some(commitment_for_signature) => {
+                                let slot = meta
+                                    .context
                                     .confirmed_block_info
                                     .slot
                                     .load(Ordering::Relaxed);
-                            meta.performance_counter
-                                .update_confirm_transaction_counter();
+                                meta.performance_counter
+                                    .update_confirm_transaction_counter();
 
-                            let status = match commitment_for_signature {
-                                CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
-                                _ => TransactionConfirmationStatus::Confirmed,
-                            };
-                            Some(TransactionStatus {
-                                slot,
-                                confirmations: Some(1),
-                                status: Ok(()),
-                                err: None,
-                                confirmation_status : Some(status)
-                            })
-                        }
+                                let status = match commitment_for_signature {
+                                    CommitmentLevel::Finalized => {
+                                        TransactionConfirmationStatus::Finalized
+                                    }
+                                    _ => TransactionConfirmationStatus::Confirmed,
+                                };
+                                Some(TransactionStatus {
+                                    slot,
+                                    confirmations: Some(1),
+                                    status: Ok(()),
+                                    err: None,
+                                    confirmation_status: Some(status),
+                                })
+                            }
+                            None => None,
+                        },
                         None => None,
-                    },
-                    None => None
-                }
-            }).collect_vec();
-            Ok(
-                RpcResponse {
-                    context : RpcResponseContext::new(confirmed_slot),
-                    value: status,
-                }
-            )
+                    }
+                })
+                .collect_vec();
+            Ok(RpcResponse {
+                context: RpcResponseContext::new(confirmed_slot),
+                value: status,
+            })
         }
 
         fn request_airdrop(
