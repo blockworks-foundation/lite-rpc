@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use futures::executor::block_on;
 use serde::{Deserialize, Serialize};
 use solana_client::{
     pubsub_client::{BlockSubscription, PubsubClientError},
@@ -9,11 +10,12 @@ use std::{
     str::FromStr,
     sync::Mutex,
     thread::{Builder, JoinHandle},
+    time::Duration,
 };
 
 use crate::context::{
     BlockInformation, LiteRpcContext, NotificationType, PerformanceCounter, SignatureNotification,
-    SlotNotification,
+    SignatureStatus, SlotNotification,
 };
 use crossbeam_channel::Sender;
 use {
@@ -22,7 +24,8 @@ use {
     jsonrpc_core::{Error, Metadata, Result},
     jsonrpc_derive::rpc,
     solana_client::connection_cache::ConnectionCache,
-    solana_client::{rpc_client::RpcClient, tpu_client::TpuClient},
+    solana_client::rpc_client::RpcClient,
+    solana_client::nonblocking::rpc_client::RpcClient as NonblockingRpcClient,
     solana_perf::packet::PACKET_DATA_SIZE,
     solana_rpc_client_api::{
         config::*,
@@ -33,6 +36,7 @@ use {
         signature::Signature,
         transaction::VersionedTransaction,
     },
+    solana_tpu_client::nonblocking::tpu_client::TpuClient,
     solana_transaction_status::{TransactionBinaryEncoding, UiTransactionEncoding},
     std::{
         any::type_name,
@@ -40,10 +44,11 @@ use {
     },
 };
 
+const TPU_BATCH_SIZE: usize = 64;
+
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
     pub rpc_client: Arc<RpcClient>,
-    pub tpu_client: Arc<TpuClient>,
     pub last_valid_block_height: u64,
     pub ws_url: String,
     pub context: Arc<LiteRpcContext>,
@@ -51,6 +56,7 @@ pub struct LightRpcRequestProcessor {
     joinables: Arc<Mutex<Vec<JoinHandle<()>>>>,
     subscribed_clients: Arc<Mutex<Vec<PubsubBlockClientSubscription>>>,
     performance_counter: PerformanceCounter,
+    tpu_producer_channel: Sender<Vec<u8>>,
 }
 
 impl LightRpcRequestProcessor {
@@ -60,15 +66,17 @@ impl LightRpcRequestProcessor {
         notification_sender: Sender<NotificationType>,
         performance_counter: PerformanceCounter,
     ) -> LightRpcRequestProcessor {
+
+        let nonblocking_rpc_client = Arc::new(NonblockingRpcClient::new(json_rpc_url.to_string()));
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
         let connection_cache = Arc::new(ConnectionCache::default());
         let tpu_client = Arc::new(
-            TpuClient::new_with_connection_cache(
-                rpc_client.clone(),
+            block_on(TpuClient::new_with_connection_cache(
+                nonblocking_rpc_client,
                 websocket_url,
-                TpuClientConfig::default(),
+                TpuClientConfig {fanout_slots : 100}, // value for max fanout slots
                 connection_cache.clone(),
-            )
+            ))
             .unwrap(),
         );
 
@@ -82,6 +90,8 @@ impl LightRpcRequestProcessor {
         let (client_finalized, receiver_finalized) =
             Self::subscribe_block(websocket_url, CommitmentLevel::Finalized).unwrap();
 
+        let (tpu_producer, tpu_consumer) = crossbeam_channel::bounded(100000);
+
         // create threads to listen for finalized and confrimed blocks
         let joinables = vec![
             Self::build_thread_to_process_blocks(
@@ -94,11 +104,11 @@ impl LightRpcRequestProcessor {
                 &context,
                 CommitmentLevel::Finalized,
             ),
+            Self::build_thread_to_process_transactions(tpu_client.clone(), tpu_consumer, performance_counter.clone()),
         ];
 
         LightRpcRequestProcessor {
             rpc_client,
-            tpu_client,
             last_valid_block_height: 0,
             ws_url: websocket_url.to_string(),
             context,
@@ -106,6 +116,7 @@ impl LightRpcRequestProcessor {
             joinables: Arc::new(Mutex::new(joinables)),
             subscribed_clients: Arc::new(Mutex::new(vec![client_confirmed, client_finalized])),
             performance_counter,
+            tpu_producer_channel: tpu_producer,
         }
     }
 
@@ -153,9 +164,55 @@ impl LightRpcRequestProcessor {
             .unwrap()
     }
 
+    fn build_thread_to_process_transactions(
+        tpu_client: Arc<TpuClient>,
+        receiver: Receiver<Vec<u8>>,
+        performance_counters : PerformanceCounter,
+    ) -> JoinHandle<()> {
+        Builder::new()
+            .name("tpu sender".to_string())
+            .spawn(move || loop {
+                let recv_res = receiver.recv();
+                match recv_res {
+                    Ok(transaction) => {
+                        let mut transactions_vec = vec![transaction];
+                        let mut time_remaining = Duration::from_micros(50000);
+                        for _i in 1..TPU_BATCH_SIZE {
+                            let start = std::time::Instant::now();
+                            let another = receiver.recv_timeout(time_remaining);
+
+                            match another {
+                                Ok(x) => transactions_vec.push(x),
+                                Err(_) => break,
+                            }
+                            match time_remaining.checked_sub(start.elapsed()) {
+                                Some(x) => time_remaining = x,
+                                None => break,
+                            }
+                        }
+                        let count:u64 = transactions_vec.len() as u64;
+                        let fut_res = block_on(tpu_client.try_send_wire_transaction_batch(transactions_vec));
+                        match fut_res
+                        {
+                            Ok(_) => performance_counters.total_confirmations.fetch_add( count, Ordering::Relaxed),
+                            Err(e) => {
+                                println!("Got error while sending transaction batch of size {}, error {}", count, e.to_string());
+                                performance_counters.transaction_sent_error.fetch_add(count, Ordering::Relaxed)
+                            }
+                        };
+                    }
+                    Err(e) => {
+                        println!("got error on tpu channel {}", e.to_string());
+                        break;
+                    }
+                };
+            })
+            .unwrap()
+    }
+
     fn process_block(
         reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
-        signature_status: &DashMap<String, Option<CommitmentLevel>>,
+        signature_status: &DashMap<String, SignatureStatus>,
         commitment: CommitmentLevel,
         notification_sender: &crossbeam_channel::Sender<NotificationType>,
         block_information: &BlockInformation,
@@ -210,7 +267,7 @@ impl LightRpcRequestProcessor {
                                                 e.to_string()
                                             );
                                         }
-                                        x.insert(Some(commitment));
+                                        x.insert(SignatureStatus::new_from_commitment(commitment));
                                     }
                                     dashmap::mapref::entry::Entry::Vacant(_x) => {
                                         // do nothing transaction not sent by lite rpc
@@ -355,12 +412,18 @@ pub mod lite_rpc {
             let (wire_transaction, transaction) =
                 decode_and_deserialize::<VersionedTransaction>(data, binary_encoding)?;
 
-            meta.context
-                .signature_status
-                .insert(transaction.signatures[0].to_string(), None);
-            meta.tpu_client.send_wire_transaction(wire_transaction);
-            meta.performance_counter.update_sent_transactions_counter();
-            Ok(transaction.signatures[0].to_string())
+            meta.context.signature_status.insert(
+                transaction.signatures[0].to_string(),
+                SignatureStatus::new(),
+            );
+
+            match meta.tpu_producer_channel.send(wire_transaction) {
+                Ok(_) => Ok(transaction.signatures[0].to_string()),
+                Err(e) => { 
+                    println!("got error while sending on channel {}", e.to_string());
+                    Err(jsonrpc_core::Error::new(jsonrpc_core::ErrorCode::InternalError))
+                }
+            }
         }
 
         fn get_recent_blockhash(
@@ -462,7 +525,7 @@ pub mod lite_rpc {
                 .update_confirm_transaction_counter();
 
             match k_value {
-                Some(value) => match *value {
+                Some(value) => match (*value).status {
                     Some(commitment_for_signature) => Ok(RpcResponse {
                         context: RpcResponseContext::new(slot),
                         value: if commitment.eq(&CommitmentLevel::Finalized) {
@@ -513,7 +576,7 @@ pub mod lite_rpc {
                     let singature_status = meta.context.signature_status.get(x);
                     let k_value = singature_status;
                     match k_value {
-                        Some(value) => match *value {
+                        Some(value) => match (*value).status {
                             Some(commitment_for_signature) => {
                                 let slot = meta
                                     .context

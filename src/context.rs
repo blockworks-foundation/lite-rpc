@@ -48,8 +48,32 @@ impl BlockInformation {
     }
 }
 
+pub struct SignatureStatus {
+    pub status: Option<CommitmentLevel>,
+    pub error: Option<String>,
+    pub created: Instant,
+}
+
+impl SignatureStatus {
+    pub fn new() -> Self {
+        Self {
+            status: None,
+            error: None,
+            created: Instant::now(),
+        }
+    }
+
+    pub fn new_from_commitment(commitment: CommitmentLevel) -> Self {
+        Self {
+            status: Some(commitment),
+            error: None,
+            created: Instant::now(),
+        }
+    }
+}
+
 pub struct LiteRpcContext {
-    pub signature_status: DashMap<String, Option<CommitmentLevel>>,
+    pub signature_status: DashMap<String, SignatureStatus>,
     pub finalized_block_info: BlockInformation,
     pub confirmed_block_info: BlockInformation,
     pub notification_sender: Sender<NotificationType>,
@@ -66,6 +90,11 @@ impl LiteRpcContext {
             finalized_block_info: BlockInformation::new(rpc_client, CommitmentLevel::Finalized),
             notification_sender,
         }
+    }
+
+    pub fn remove_stale_data(&self, purgetime_in_seconds: u64) {
+        self.signature_status
+            .retain(|_k, v| v.created.elapsed().as_secs() < purgetime_in_seconds);
     }
 }
 
@@ -259,6 +288,8 @@ pub struct PerformanceCounter {
     pub confirmations_per_seconds: Arc<AtomicU64>,
     pub transactions_per_seconds: Arc<AtomicU64>,
 
+    pub transaction_sent_error: Arc<AtomicU64>,
+
     last_count_for_confirmations: Arc<AtomicU64>,
     last_count_for_transactions_sent: Arc<AtomicU64>,
 }
@@ -272,6 +303,7 @@ impl PerformanceCounter {
             transactions_per_seconds: Arc::new(AtomicU64::new(0)),
             last_count_for_confirmations: Arc::new(AtomicU64::new(0)),
             last_count_for_transactions_sent: Arc::new(AtomicU64::new(0)),
+            transaction_sent_error: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -297,11 +329,7 @@ impl PerformanceCounter {
         self.last_count_for_transactions_sent
             .store(total_transactions, Ordering::Relaxed);
     }
-
-    pub fn update_sent_transactions_counter(&self) {
-        self.total_transactions_sent.fetch_add(1, Ordering::Relaxed);
-    }
-
+    
     pub fn update_confirm_transaction_counter(&self) {
         self.total_confirmations.fetch_add(1, Ordering::Relaxed);
     }
@@ -321,15 +349,17 @@ pub fn launch_performance_updating_thread(
             let confirmations_per_seconds = performance_counter
                 .confirmations_per_seconds
                 .load(Ordering::Acquire);
+
+            let errors_on_sent = performance_counter.transaction_sent_error.load(Ordering::Acquire);
+
             let total_transactions_per_seconds = performance_counter
                 .transactions_per_seconds
                 .load(Ordering::Acquire);
-
             let runtime = start.elapsed();
             if let Some(remaining) = wait_time.checked_sub(runtime) {
                 println!(
-                    "Sent {} transactions and confrimed {} transactions",
-                    total_transactions_per_seconds, confirmations_per_seconds
+                    "Sent {} transactions sucessfully {} with errors, and confrimed {} transactions",
+                    total_transactions_per_seconds, errors_on_sent, confirmations_per_seconds
                 );
                 thread::sleep(remaining);
             }
