@@ -1,6 +1,6 @@
 import { Connection, Keypair, LAMPORTS_PER_SOL, Message, VersionedTransaction } from "@solana/web3.js";
 import { url } from "./urls";
-
+jest.setTimeout(60000);
 test('send and confirm transaction', async () => {
   const connection = new Connection(url, 'confirmed');
   const payer = Keypair.generate();
@@ -19,7 +19,7 @@ test('send and confirm transaction', async () => {
       accountKeys: [payer.publicKey.toBase58()],
     }),
   );
-
+  
   versionedTx.sign([payer]);
   const signature = await connection.sendTransaction(versionedTx);
   const latestBlockHash = await connection.getLatestBlockhash();

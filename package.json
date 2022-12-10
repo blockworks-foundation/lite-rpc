@@ -15,7 +15,7 @@
   "scripts": {
     "test": "jest --detectOpenHandles",
     "start:lite-rpc": "lite-rpc",
-    "test:test-validator": "start-server-and-test 'solana-test-validator --reset --quiet & target/debug/lite-rpc --rpc-url http://localhost:8899 --websocket-url ws://localhost:8900/' http://localhost:8899/health test"
+    "test:test-validator": "start-server-and-test 'target/debug/lite-rpc --port 9000 --subscription-port 9001 --rpc-url http://localhost:8899 --websocket-url ws://localhost:8900/' http://localhost:8899/health test"
   },
   "devDependencies": {
     "typescript": "^4.8.4"
