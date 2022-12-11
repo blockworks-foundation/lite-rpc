@@ -140,7 +140,7 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
     cleaning_thread.join().unwrap();
 }
 
-pub async fn main() {
+pub fn main() {
     let mut cli = Args::parse();
     cli.resolve_address();
     let Args {
