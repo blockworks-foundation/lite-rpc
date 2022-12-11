@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc, thread::sleep};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+    thread::sleep,
+};
 
 use clap::Parser;
 use context::LiteRpcSubsrciptionControl;
@@ -24,7 +28,7 @@ mod rpc;
 
 use cli::Args;
 
-fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: String) {
+fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String) {
     let rpc_url = if rpc_url.is_empty() {
         let (_, rpc_url) = ConfigInput::compute_json_rpc_url_setting(
             rpc_url.as_str(),
@@ -60,10 +64,8 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
         notification_reciever,
     ));
 
-    let subscription_port = format!("127.0.0.1:{}",subscription_port)
-
-        .parse::<SocketAddr>()
-        .expect("Invalid subscription port");
+    let subscription_port =
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), subscription_port);
 
     // start websocket server
     let (_trigger, websocket_service) = LitePubSubService::new(
@@ -114,9 +116,7 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
     );
     let max_request_body_size: usize = 50 * (1 << 10);
 
-    let socket_addr = format!("127.0.0.1:{}",rpc_addr).parse::<SocketAddr>().unwrap();
-
-
+    let socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
     {
         let request_processor = request_processor.clone();
         let server =
@@ -140,40 +140,15 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
     cleaning_thread.join().unwrap();
 }
 
-fn ts_test() {
-    let res = std::process::Command::new("yarn")
-        .args(["run", "test:test-validator"])
-        .output()
-        .unwrap();
-    println!("{}", String::from_utf8_lossy(&res.stdout));
-    println!("{}", String::from_utf8_lossy(&res.stderr));
-}
-
-#[tokio::main]
 pub async fn main() {
-    let cli_command = Args::parse();
+    let mut cli = Args::parse();
+    cli.resolve_address();
+    let Args {
+        port,
+        subscription_port,
+        rpc_url,
+        websocket_url,
+    } = cli;
 
-    match cli_command.command {
-        cli::Command::Run {
-            port,
-            subscription_port,
-            rpc_url,
-            websocket_url,
-        } => run(port, subscription_port, rpc_url, websocket_url),
-        cli::Command::Test => ts_test(),
-    }
-    //cli_config.resolve_address();
-    //println!(
-    //    "Using rpc server {} and ws server {}",
-    //    cli_config.rpc_url, cli_config.websocket_url
-    //);
-    //let Args {
-    //    rpc_url: json_rpc_url,
-    //    websocket_url,
-    //    port: rpc_addr,
-    //    subscription_port,
-    //    ..
-    //} = &cli_config;
-
-    // start recieving notifications and broadcast them
+    run(port, subscription_port, rpc_url, websocket_url)
 }

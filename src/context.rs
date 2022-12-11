@@ -329,7 +329,7 @@ impl PerformanceCounter {
         self.last_count_for_transactions_sent
             .store(total_transactions, Ordering::Relaxed);
     }
-    
+
     pub fn update_confirm_transaction_counter(&self) {
         self.total_confirmations.fetch_add(1, Ordering::Relaxed);
     }
