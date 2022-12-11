@@ -168,10 +168,10 @@ impl LightRpcRequestProcessor {
         Builder::new()
             .name("thread working on confirmation block".to_string())
             .spawn(move || {
-            let nonblocking_rpc_client =
+            let rpc_client =
                 Arc::new(RpcClient::new(json_rpc_url.to_string()));
             let tpu_client = TpuClient::new_with_connection_cache(
-                nonblocking_rpc_client,
+                rpc_client,
                 websocket_url.as_str(),
                 TpuClientConfig::default(), // value for max fanout slots
                 connection_cache.clone(),

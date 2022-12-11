@@ -65,7 +65,7 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
     ));
 
     let subscription_port =
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), subscription_port);
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), subscription_port);
 
     // start websocket server
     let (_trigger, websocket_service) = LitePubSubService::new(
@@ -116,7 +116,7 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
     );
     let max_request_body_size: usize = 50 * (1 << 10);
 
-    let socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port);
+    let socket_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), port);
     {
         let request_processor = request_processor.clone();
         let server =
