@@ -1,3 +1,4 @@
+use chrono::DateTime;
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
 use serde::Serialize;
@@ -18,7 +19,7 @@ use std::{
         Arc, RwLock,
     },
     thread::{self, Builder, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use tokio::sync::broadcast;
 
@@ -284,14 +285,15 @@ impl LiteRpcSubsrciptionControl {
 pub struct PerformanceCounter {
     pub total_confirmations: Arc<AtomicU64>,
     pub total_transactions_sent: Arc<AtomicU64>,
+    pub transaction_sent_error: Arc<AtomicU64>,
 
     pub confirmations_per_seconds: Arc<AtomicU64>,
     pub transactions_per_seconds: Arc<AtomicU64>,
-
-    pub transaction_sent_error: Arc<AtomicU64>,
+    pub send_transactions_errors_per_seconds: Arc<AtomicU64>,
 
     last_count_for_confirmations: Arc<AtomicU64>,
     last_count_for_transactions_sent: Arc<AtomicU64>,
+    last_count_for_sent_errors: Arc<AtomicU64>,
 }
 
 impl PerformanceCounter {
@@ -304,6 +306,8 @@ impl PerformanceCounter {
             last_count_for_confirmations: Arc::new(AtomicU64::new(0)),
             last_count_for_transactions_sent: Arc::new(AtomicU64::new(0)),
             transaction_sent_error: Arc::new(AtomicU64::new(0)),
+            last_count_for_sent_errors: Arc::new(AtomicU64::new(0)),
+            send_transactions_errors_per_seconds: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -311,6 +315,8 @@ impl PerformanceCounter {
         let total_confirmations: u64 = self.total_confirmations.load(Ordering::Relaxed);
 
         let total_transactions: u64 = self.total_transactions_sent.load(Ordering::Relaxed);
+
+        let total_errors: u64 = self.transaction_sent_error.load(Ordering::Relaxed);
 
         self.confirmations_per_seconds.store(
             total_confirmations - self.last_count_for_confirmations.load(Ordering::Relaxed),
@@ -323,11 +329,17 @@ impl PerformanceCounter {
                     .load(Ordering::Relaxed),
             Ordering::Release,
         );
+        self.send_transactions_errors_per_seconds.store(
+            total_errors - self.last_count_for_sent_errors.load(Ordering::Relaxed),
+            Ordering::Release,
+        );
 
         self.last_count_for_confirmations
             .store(total_confirmations, Ordering::Relaxed);
         self.last_count_for_transactions_sent
             .store(total_transactions, Ordering::Relaxed);
+        self.last_count_for_sent_errors
+            .store(total_errors, Ordering::Relaxed);
     }
 
     pub fn update_confirm_transaction_counter(&self) {
@@ -350,16 +362,17 @@ pub fn launch_performance_updating_thread(
                 .confirmations_per_seconds
                 .load(Ordering::Acquire);
 
-            let errors_on_sent = performance_counter.transaction_sent_error.load(Ordering::Acquire);
+            let errors_on_sent = performance_counter.send_transactions_errors_per_seconds.load(Ordering::Acquire);
 
             let total_transactions_per_seconds = performance_counter
                 .transactions_per_seconds
                 .load(Ordering::Acquire);
             let runtime = start.elapsed();
             if let Some(remaining) = wait_time.checked_sub(runtime) {
+                let datetime: DateTime<chrono::Local> = SystemTime::now().into();
                 println!(
-                    "Sent {} transactions sucessfully {} with errors, and confrimed {} transactions",
-                    total_transactions_per_seconds, errors_on_sent, confirmations_per_seconds
+                    "{} : sent {} transactions sucessfully {} with errors, and confrimed {} transactions",
+                    datetime.format("%H:%M:%S"), total_transactions_per_seconds, errors_on_sent, confirmations_per_seconds
                 );
                 thread::sleep(remaining);
             }

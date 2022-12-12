@@ -91,15 +91,28 @@ impl LightRpcRequestProcessor {
                 &context,
                 CommitmentLevel::Finalized,
             ),
+            Self::build_thread_to_process_transactions(
+                json_rpc_url.to_string(),
+                websocket_url.to_string(),
+                connection_cache.clone(),
+                tpu_consumer.clone(),
+                performance_counter.clone(),
+            ),
+            Self::build_thread_to_process_transactions(
+                json_rpc_url.to_string(),
+                websocket_url.to_string(),
+                connection_cache.clone(),
+                tpu_consumer.clone(),
+                performance_counter.clone(),
+            ),
+            Self::build_thread_to_process_transactions(
+                json_rpc_url.to_string(),
+                websocket_url.to_string(),
+                connection_cache.clone(),
+                tpu_consumer,
+                performance_counter.clone(),
+            ),
         ];
-
-        Self::build_thread_to_process_transactions(
-            json_rpc_url.to_string(),
-            websocket_url.to_string(),
-            connection_cache.clone(),
-            tpu_consumer,
-            performance_counter.clone(),
-        );
 
         LightRpcRequestProcessor {
             rpc_client,
@@ -164,7 +177,7 @@ impl LightRpcRequestProcessor {
         connection_cache: Arc<ConnectionCache>,
         receiver: Receiver<Transaction>,
         performance_counters: PerformanceCounter,
-    ) {
+    ) -> JoinHandle<()> {
         Builder::new()
             .name("thread working on confirmation block".to_string())
             .spawn(move || {
@@ -184,7 +197,7 @@ impl LightRpcRequestProcessor {
                 match recv_res {
                     Ok(transaction) => {
                         let mut transactions_vec = vec![transaction];
-                        let mut time_remaining = Duration::from_micros(50000);
+                        let mut time_remaining = Duration::from_micros(5000);
                         for _i in 1..TPU_BATCH_SIZE {
                             let start = std::time::Instant::now();
                             let another = receiver.recv_timeout(time_remaining);
@@ -219,7 +232,7 @@ impl LightRpcRequestProcessor {
                     }
                 };
             }
-        }).unwrap();
+        }).unwrap()
     }
 
     fn process_block(
