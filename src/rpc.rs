@@ -193,7 +193,6 @@ impl LightRpcRequestProcessor {
 
             loop {
                 let recv_res = receiver.recv();
-                println!("recieved a transaction");
                 match recv_res {
                     Ok(transaction) => {
                         let mut transactions_vec = vec![transaction];
