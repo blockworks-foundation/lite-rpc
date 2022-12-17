@@ -1,32 +1,39 @@
-# Solana Lite RPC
+# Light RPC
 
-This project aims to create a lite rpc server which is responsible only for sending and confirming the transactions. 
-The lite-rpc server will not have any ledger or banks.
-While sending transaction the lite rpc server will send the transaction to next few leader (FANOUT) and then use different strategies to confirm the transaction. 
-The rpc server will also have a websocket port which is reponsible for just subscribing to slots and signatures. 
-The lite rpc server will be optimized to confirm transactions which are forwarded to leader using the same server.
-This project is currently based on an unstable feature of block subscription of solana which can be enabled using `--rpc-pubsub-enable-block-subscription` while running rpc node.
+Submitting a [transaction](https://docs.solana.com/terminology#transaction) to be executed on the solana blockchain,
+requires the client to identify the next few leaders based on the
+[leader schedule](https://docs.solana.com/terminology#leader-schedule), look up their peering information in gossip and
+connect to them via the [quic protocol](https://en.wikipedia.org/wiki/QUIC). In order to simplify the
+process so it can be triggered from a web browser, most applications
+run full [validators](https://docs.solana.com/terminology#validator) that forward the transactions according to the
+protocol on behalf of the web browser. Running full solana [validators](https://docs.solana.com/terminology#validator)
+is incredibly resource intensive `(>256GB RAM)`, the goal of this
+project would be to create a specialized micro-service that allows
+to deploy this logic quickly and allows [horizontal scalability](https://en.wikipedia.org/wiki/Scalability) with
+commodity vms.
 
-### Confirmation strategies
-1) Subscribing to blocks changes and checking the confirmations. (Under development)
-2) Subscribing to signatures with pool of rpc servers. (Under development)
-3) Listining to gossip protocol. (Future roadmap)
+## Test
 
-## Build 
-`cargo build`
-
-## Run
-* For RPC node : `http://localhost:8899`,
-* Websocket : `http://localhost:8900` (Optional),
-* Port : `9000` Listening port for LiteRpc server,
-* Subscription Port : `9001` Listening port of websocket subscriptions for LiteRpc server,
-
-
-```
-cargo run --bin lite-rpc -- run --port 9000 --subscription-port 9001 --rpc-url http://localhost:8899
+*make sure `solana-test-validator` is running in the background*
+```bash
+$ cd ~ && solana-test-validator 
 ```
 
-## Tests
+*run `light-rpc` test*
+```bash
+$ cargo test
 ```
-cargo run --bin lite-rpc -- test
+
+## Bench
+
+*make sure `solana-test-validator` is running in the background*
+```bash
+$ cd ~ && solana-test-validator 
 ```
+
+*run `light-rpc` bench*
+```bash
+$ cargo bench
+```
+
+Find a new file named `metrics.csv` in the project root.

@@ -1,5 +1,1 @@
-/target
-/node_modules
-/test-ledger
-/config
-**/validator.log
+target

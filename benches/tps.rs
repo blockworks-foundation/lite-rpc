@@ -1,11 +1,12 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use lite_bench_utils::{
-    generate_txs,
+use bench_utils::{
+    helpers::{generate_txs, new_funded_payer},
     metrics::{AvgMetric, Metric},
-    new_funded_payer,
 };
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
@@ -15,8 +16,8 @@ use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use simplelog::*;
 use tokio::sync::mpsc;
 
-const NUM_OF_TXS: usize = 10_000;
-const NUM_OF_RUNS: usize = 3;
+const NUM_OF_TXS: usize = 20_000;
+const NUM_OF_RUNS: usize = 5;
 const CSV_FILE_NAME: &str = "metrics.csv";
 
 #[tokio::main]
@@ -92,7 +93,7 @@ async fn foo(lite_client: Arc<LiteClient>) -> Metric {
                     *time_elapsed_since_last_confirmed = Some(Instant::now())
                 }
 
-                if lite_client.confirm_transaction(sig.clone()).await.value {
+                if lite_client.confirm_transaction(sig.clone()).await {
                     metrics.txs_confirmed += 1;
                     to_remove_txs.push(sig.clone());
                 } else if time_elapsed_since_last_confirmed.unwrap().elapsed()
