@@ -1,4 +1,4 @@
-# Light RPC
+# Lite RPC
 
 Submitting a [transaction](https://docs.solana.com/terminology#transaction) to be executed on the solana blockchain,
 requires the client to identify the next few leaders based on the
@@ -12,24 +12,36 @@ project would be to create a specialized micro-service that allows
 to deploy this logic quickly and allows [horizontal scalability](https://en.wikipedia.org/wiki/Scalability) with
 commodity vms.
 
-## Test
+### Confirmation strategies
 
-*make sure `solana-test-validator` is running in the background*
+1) Subscribe to new blocks using [blockSubscribe](https://docs.solana.com/developing/clients/jsonrpc-api#blocksubscribe---unstable-disabled-by-default)
+2) Subscribing to signatures with pool of rpc servers. (Under development)
+3) Listining to gossip protocol. (Future roadmap)
+
+## Executing
+
+*make sure `solana-validator` is running in the background with `--rpc-pubsub-enable-block-subscription`*
+
+*run using*
 ```bash
-$ cd ~ && solana-test-validator 
+$ cargo run --release
 ```
 
-*run `light-rpc` test*
+*to know about command line options*
+```bash
+$ cargo run --release -- --help
+```
+
+## Test and Bench
+
+*Make sure both `solana-validator` and `lite-rpc` is running*
+
+*to test run*
 ```bash
 $ cargo test
 ```
 
-## Bench
-
-*make sure `solana-test-validator` is running in the background*
-```bash
-$ cd ~ && solana-test-validator 
-```
+*to bench run*
 
 *run `light-rpc` bench*
 ```bash
@@ -37,3 +49,10 @@ $ cargo bench
 ```
 
 Find a new file named `metrics.csv` in the project root.
+
+## License & Copyright
+
+Copyright (c) 2022 Blockworks Foundation
+
+Licensed under the **[MIT LICENSE](LICENSE)**
+
