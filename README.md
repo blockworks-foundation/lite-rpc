@@ -36,14 +36,12 @@ $ cargo run --release -- --help
 
 *Make sure both `solana-validator` and `lite-rpc` is running*
 
-*to test run*
+*test*
 ```bash
 $ cargo test
 ```
 
-*to bench run*
-
-*run `light-rpc` bench*
+*bench*
 ```bash
 $ cargo bench
 ```
