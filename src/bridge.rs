@@ -51,11 +51,8 @@ impl LiteBridge {
         SendTransactionParams(
             tx,
             SendTransactionConfig {
-                skip_preflight: _,       //TODO:
-                preflight_commitment: _, //TODO:
                 encoding,
                 max_retries,
-                min_context_slot: _, //TODO:
             },
         ): SendTransactionParams,
     ) -> Result<String, JsonRpcError> {
