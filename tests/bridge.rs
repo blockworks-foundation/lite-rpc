@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use std::time::Duration;
 
+use lite_rpc::{DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR};
 use reqwest::Url;
 use solana_client::rpc_response::RpcVersionInfo;
 use solana_sdk::{
@@ -10,12 +11,9 @@ use solana_sdk::{
 
 use lite_rpc::{bridge::LiteBridge, encoding::BinaryEncoding, rpc::SendTransactionParams};
 
-const RPC_ADDR: &str = "http://127.0.0.1:8899";
-const WS_ADDR: &str = "ws://127.0.0.1:8900";
-
 #[tokio::test]
 async fn get_version() {
-    let light_bridge = LiteBridge::new(Url::from_str(RPC_ADDR).unwrap(), WS_ADDR)
+    let lite_bridge = LiteBridge::new(Url::from_str(DEFAULT_RPC_ADDR).unwrap(), DEFAULT_WS_ADDR)
         .await
         .unwrap();
 
@@ -31,7 +29,7 @@ async fn get_version() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_send_transaction() {
-    let light_bridge = LiteBridge::new(Url::from_str(RPC_ADDR).unwrap(), WS_ADDR)
+    let lite_bridge = LiteBridge::new(Url::from_str(DEFAULT_RPC_ADDR).unwrap(), DEFAULT_WS_ADDR)
         .await
         .unwrap();
 
