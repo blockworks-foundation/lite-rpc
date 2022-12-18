@@ -22,14 +22,14 @@ use solana_sdk::{signature::Signature, transaction::VersionedTransaction};
 use tokio::task::JoinHandle;
 
 /// A bridge between clients and tpu
-pub struct LightBridge {
+pub struct LiteBridge {
     pub tpu_client: Arc<TpuClient>,
     pub rpc_url: Url,
     pub tx_sender: TxSender,
     pub block_listner: BlockListener,
 }
 
-impl LightBridge {
+impl LiteBridge {
     pub async fn new(rpc_url: reqwest::Url, ws_addr: &str) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.to_string()));
 
@@ -142,7 +142,7 @@ impl LightBridge {
         vec![server, block_listenser, tx_sender]
     }
 
-    async fn rpc_route(body: bytes::Bytes, state: web::Data<Arc<LightBridge>>) -> JsonRpcRes {
+    async fn rpc_route(body: bytes::Bytes, state: web::Data<Arc<LiteBridge>>) -> JsonRpcRes {
         let json_rpc_req = match serde_json::from_slice::<JsonRpcReq>(&body) {
             Ok(json_rpc_req) => json_rpc_req,
             Err(err) => return JsonRpcError::SerdeError(err).into(),

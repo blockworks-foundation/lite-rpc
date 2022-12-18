@@ -8,14 +8,14 @@ use solana_sdk::{
     signer::Signer, system_instruction, transaction::Transaction,
 };
 
-use lite_rpc::{bridge::LightBridge, encoding::BinaryEncoding, rpc::SendTransactionParams};
+use lite_rpc::{bridge::LiteBridge, encoding::BinaryEncoding, rpc::SendTransactionParams};
 
 const RPC_ADDR: &str = "http://127.0.0.1:8899";
 const WS_ADDR: &str = "ws://127.0.0.1:8900";
 
 #[tokio::test]
 async fn get_version() {
-    let light_bridge = LightBridge::new(Url::from_str(RPC_ADDR).unwrap(), WS_ADDR)
+    let light_bridge = LiteBridge::new(Url::from_str(RPC_ADDR).unwrap(), WS_ADDR)
         .await
         .unwrap();
 
@@ -31,7 +31,7 @@ async fn get_version() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_send_transaction() {
-    let light_bridge = LightBridge::new(Url::from_str(RPC_ADDR).unwrap(), WS_ADDR)
+    let light_bridge = LiteBridge::new(Url::from_str(RPC_ADDR).unwrap(), WS_ADDR)
         .await
         .unwrap();
 
