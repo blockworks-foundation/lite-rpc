@@ -20,7 +20,7 @@ async fn get_version() {
     let RpcVersionInfo {
         solana_core,
         feature_set,
-    } = light_bridge.get_version();
+    } = lite_bridge.get_version();
     let version_crate = solana_version::Version::default();
 
     assert_eq!(solana_core, version_crate.to_string());
@@ -35,7 +35,7 @@ async fn test_send_transaction() {
 
     let payer = Keypair::new();
 
-    light_bridge
+    lite_bridge
         .tpu_client
         .rpc_client()
         .request_airdrop(&payer.pubkey(), LAMPORTS_PER_SOL * 2)
@@ -49,7 +49,7 @@ async fn test_send_transaction() {
 
     let message = Message::new(&[instruction], Some(&payer.pubkey()));
 
-    let blockhash = light_bridge
+    let blockhash = lite_bridge
         .tpu_client
         .rpc_client()
         .get_latest_blockhash()
@@ -63,7 +63,7 @@ async fn test_send_transaction() {
     let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
 
     assert_eq!(
-        light_bridge
+        lite_bridge
             .send_transaction(SendTransactionParams(tx, Default::default()))
             .await
             .unwrap(),
@@ -75,7 +75,7 @@ async fn test_send_transaction() {
     let mut passed = false;
 
     for _ in 0..100 {
-        passed = light_bridge
+        passed = lite_bridge
             .tpu_client
             .rpc_client()
             .confirm_transaction(&signature)
