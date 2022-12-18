@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use std::time::Duration;
 
+use lite_rpc::rpc::ConfirmTransactionParams;
 use lite_rpc::{DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR};
 use reqwest::Url;
 use solana_client::rpc_response::RpcVersionInfo;
@@ -36,8 +37,6 @@ async fn test_send_transaction() {
     let payer = Keypair::new();
 
     lite_bridge
-        .tpu_client
-        .rpc_client()
         .request_airdrop(&payer.pubkey(), LAMPORTS_PER_SOL * 2)
         .await
         .unwrap();
@@ -49,16 +48,11 @@ async fn test_send_transaction() {
 
     let message = Message::new(&[instruction], Some(&payer.pubkey()));
 
-    let blockhash = lite_bridge
-        .tpu_client
-        .rpc_client()
-        .get_latest_blockhash()
-        .await
-        .unwrap();
+    let blockhash = lite_bridge.get_latest_blockhash().await.unwrap();
 
     let tx = Transaction::new(&[&payer], message, blockhash);
-    let signature = tx.signatures[0];
-    let encoded_signature = BinaryEncoding::Base58.encode(signature);
+    let sig = tx.signatures[0];
+    let sig = BinaryEncoding::Base58.encode(sig);
 
     let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
 
@@ -67,7 +61,7 @@ async fn test_send_transaction() {
             .send_transaction(SendTransactionParams(tx, Default::default()))
             .await
             .unwrap(),
-        encoded_signature
+        sig
     );
 
     std::thread::sleep(Duration::from_secs(5));
@@ -76,9 +70,7 @@ async fn test_send_transaction() {
 
     for _ in 0..100 {
         passed = lite_bridge
-            .tpu_client
-            .rpc_client()
-            .confirm_transaction(&signature)
+            .confirm_transaction(ConfirmTransactionParams(sig.clone(), Some(())))
             .await
             .unwrap();
 

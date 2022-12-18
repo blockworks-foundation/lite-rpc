@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::{bail, Context};
 use lite_client::LiteClient;
 use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -20,17 +20,9 @@ pub async fn new_funded_payer(rpc_client: &RpcClient, amount: u64) -> anyhow::Re
 
     info!("Air Dropping {payer_pubkey} with {amount}L");
 
-    loop {
-        if let Some(res) = rpc_client
-            .get_signature_status_with_commitment(&airdrop_sig, CommitmentConfig::finalized())
-            .await?
-        {
-            match res {
-                Ok(_) => break,
-                Err(_) => bail!("Error air dropping {payer_pubkey}"),
-            }
-        }
-    }
+    wait_till_finalized(rpc_client, &airdrop_sig)
+        .await
+        .context("finalize air drop signature")?;
 
     info!("Air Drop Successful: {airdrop_sig}");
 
@@ -39,6 +31,20 @@ pub async fn new_funded_payer(rpc_client: &RpcClient, amount: u64) -> anyhow::Re
 
 pub async fn wait_till_confirmed(lite_client: &LiteClient, sig: &Signature) {
     while lite_client.confirm_transaction(sig.to_string()).await {}
+}
+
+pub async fn wait_till_finalized(rpc_client: &RpcClient, sig: &Signature) -> anyhow::Result<()> {
+    loop {
+        if let Some(res) = rpc_client
+            .get_signature_status_with_commitment(sig, CommitmentConfig::finalized())
+            .await?
+        {
+            match res {
+                Ok(_) => break Ok(()),
+                Err(_) => bail!("Error finalizing signature {sig}"),
+            }
+        }
+    }
 }
 
 pub fn create_transaction(funded_payer: &Keypair, blockhash: Hash) -> Transaction {
