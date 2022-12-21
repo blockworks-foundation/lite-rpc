@@ -20,10 +20,10 @@ bench-utils = { path = "./bench-utils" }
 csv = "1.1.6"
 
 [dependencies]
-solana-client = { git = "https://github.com/solana-labs/solana.git" }
-solana-sdk = { git = "https://github.com/solana-labs/solana.git" } 
-solana-version = { git = "https://github.com/solana-labs/solana.git" } 
-solana-transaction-status = { git = "https://github.com/solana-labs/solana.git" } 
+solana-client = "1.14.11"
+solana-sdk = "1.14.11"
+solana-transaction-status = "1.14.11"
+solana-version = "1.14.11"
 actix-web = "4.2.1"
 serde = { version = "1.0.150", features = ["derive"] }
 serde_json = "1.0.89"
