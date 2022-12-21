@@ -14,7 +14,6 @@ use solana_sdk::native_token::LAMPORTS_PER_SOL;
 
 use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use simplelog::*;
-use tokio::sync::mpsc;
 
 const NUM_OF_TXS: usize = 20_000;
 const NUM_OF_RUNS: usize = 5;
@@ -71,16 +70,18 @@ async fn foo(lite_client: Arc<LiteClient>) -> Metric {
 
     let send_fut = {
         let lite_client = lite_client.clone();
+        let start_time = start_time.clone();
+
         tokio::spawn(async move {
             for tx in txs {
                 lite_client.send_transaction(&tx).await.unwrap();
                 info!("Tx {}", &tx.signatures[0]);
             }
             info!("Sent {NUM_OF_TXS} tx(s)");
+
+            start_time.elapsed()
         })
     };
-
-    let (metrics_send, mut metrics_recv) = mpsc::channel(1);
 
     let confirm_fut = tokio::spawn(async move {
         let mut metrics = Metric::default();
@@ -109,16 +110,17 @@ async fn foo(lite_client: Arc<LiteClient>) -> Metric {
             }
         }
 
-        metrics.time_elapsed_sec = start_time.elapsed().as_secs_f64();
+        metrics.total_time_elapsed_sec = start_time.elapsed().as_secs_f64();
         metrics.txs_sent = NUM_OF_TXS as u64;
-        metrics.calc_tps();
 
-        metrics_send.send(metrics).await.unwrap();
+        metrics
     });
 
-    let (res1, res2) = tokio::join!(send_fut, confirm_fut);
-    res1.unwrap();
-    res2.unwrap();
+    let (send_fut, confirm_fut) = tokio::join!(send_fut, confirm_fut);
+    let time_to_send_txs = send_fut.unwrap();
+    let mut metrics = confirm_fut.unwrap();
+    metrics.time_to_send_txs = time_to_send_txs.as_secs_f64();
+    metrics.calc_tps();
 
-    metrics_recv.recv().await.unwrap()
+    metrics
 }

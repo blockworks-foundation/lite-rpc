@@ -9,7 +9,7 @@ use solana_sdk::signature::Signature;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-use crate::{WireTransaction, DEFAULT_TX_RETRY_BATCH_SIZE};
+use crate::{WireTransaction, DEFAULT_TX_RETRY_BATCH_SIZE, TX_MAX_RETRIES_UPPER_LIMIT};
 
 use super::block_listenser::BlockListener;
 
@@ -45,6 +45,7 @@ impl TxSender {
             .await
             .contains(&sig.to_string())
         {
+            let max_retries = max_retries.min(TX_MAX_RETRIES_UPPER_LIMIT);
             info!("en-queuing {sig} with max retries {max_retries}");
             self.enqueued_txs
                 .write()

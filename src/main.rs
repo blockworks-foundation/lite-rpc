@@ -1,8 +1,8 @@
 use std::str::FromStr;
 
+use anyhow::Context;
 use clap::Parser;
-use lite_rpc::bridge::LiteBridge;
-use lite_rpc::cli::Args;
+use lite_rpc::{bridge::LiteBridge, cli::Args};
 use reqwest::Url;
 use simplelog::*;
 
@@ -24,19 +24,16 @@ pub async fn main() -> anyhow::Result<()> {
     let light_bridge = LiteBridge::new(Url::from_str(&rpc_addr).unwrap(), &ws_addr).await?;
 
     let services = light_bridge.start_services(lite_rpc_addr);
-    let services = futures::future::join_all(services);
+    let services = futures::future::try_join_all(services);
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
         services = services => {
-            for res in services {
-                res??;
-            }
-            anyhow::bail!("Some services exited unexpectedly")
+            services.context("Some services exited unexpectedly")?;
         }
-        _ = ctrl_c_signal => {
-            Ok(())
-        }
+        _ = ctrl_c_signal => {}
     }
+
+    Ok(())
 }
