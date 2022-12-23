@@ -9,7 +9,7 @@ use crate::{
     DEFAULT_TX_MAX_RETRIES,
 };
 
-use std::{net::ToSocketAddrs, str::FromStr, sync::Arc};
+use std::{net::ToSocketAddrs, ops::Deref, str::FromStr, sync::Arc};
 
 use actix_web::{web, App, HttpServer, Responder};
 use reqwest::Url;
@@ -165,5 +165,13 @@ impl LiteBridge {
                 .try_into()
                 .unwrap()
         }
+    }
+}
+
+impl Deref for LiteBridge {
+    type Target = RpcClient;
+
+    fn deref(&self) -> &Self::Target {
+        self.tpu_client.rpc_client()
     }
 }

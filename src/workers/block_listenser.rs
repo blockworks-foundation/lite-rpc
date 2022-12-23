@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use futures::StreamExt;
 use log::info;
 use solana_client::nonblocking::pubsub_client::PubsubClient;
@@ -57,7 +57,7 @@ impl BlockListener {
         tokio::spawn(async move {
             info!("Subscribing to blocks");
 
-            let (mut recv, un_sub) = self
+            let (mut recv, _) = self
                 .pub_sub_client
                 .block_subscribe(
                     RpcBlockSubscribeFilter::All,
@@ -91,11 +91,7 @@ impl BlockListener {
                 }
             }
 
-            info!("Stopped Listening to confirmed blocks");
-
-            un_sub();
-
-            Ok(())
+            bail!("Stopped Listening to confirmed blocks")
         })
     }
 }

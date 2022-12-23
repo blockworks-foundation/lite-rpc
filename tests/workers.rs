@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bench_utils::helpers::{create_transaction, new_funded_payer};
-use futures::future::join;
+use futures::future::try_join_all;
 use lite_rpc::{
     encoding::BinaryEncoding,
     workers::{BlockListener, TxSender},
@@ -27,7 +27,10 @@ async fn send_and_confirm_txs() {
 
     let tx_sender = TxSender::new(tpu_client, block_listener.clone());
 
-    let services = join(block_listener.clone().listen(), tx_sender.clone().execute());
+    let services = try_join_all(vec![
+        block_listener.clone().listen(),
+        tx_sender.clone().execute(),
+    ]);
 
     let confirm = tokio::spawn(async move {
         let funded_payer = new_funded_payer(&rpc_client, LAMPORTS_PER_SOL * 2)
