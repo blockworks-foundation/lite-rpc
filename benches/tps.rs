@@ -10,7 +10,7 @@ use bench_utils::{
 };
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
-use solana_sdk::native_token::LAMPORTS_PER_SOL;
+use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
 
 use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use simplelog::*;
@@ -29,7 +29,11 @@ async fn main() {
     )
     .unwrap();
 
-    let lite_client = Arc::new(LiteClient(RpcClient::new(LOCAL_LIGHT_RPC_ADDR.to_string())));
+    let lite_client = Arc::new(LiteClient(RpcClient::new_with_commitment(
+        LOCAL_LIGHT_RPC_ADDR.to_string(),
+        CommitmentConfig::confirmed(),
+    )));
+
     let mut csv_writer = csv::Writer::from_path(CSV_FILE_NAME).unwrap();
 
     let mut avg_metric = AvgMetric::default();
