@@ -1,3 +1,4 @@
+use anyhow::Context;
 use lite_client::LiteClient;
 use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -15,7 +16,10 @@ pub async fn new_funded_payer(lite_client: &LiteClient, amount: u64) -> anyhow::
     let payer_pubkey = payer.pubkey().to_string();
 
     // request airdrop to payer
-    let airdrop_sig = lite_client.request_airdrop(&payer.pubkey(), amount).await?;
+    let airdrop_sig = lite_client
+        .request_airdrop(&payer.pubkey(), amount)
+        .await
+        .context("requesting air drop")?;
 
     info!("Air Dropping {payer_pubkey} with {amount}L");
 

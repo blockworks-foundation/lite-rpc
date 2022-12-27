@@ -7,7 +7,7 @@ use lite_client::LiteClient;
 use lite_rpc::{
     encoding::BinaryEncoding,
     workers::{BlockListener, TxSender},
-    DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR,
+    DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR, DEFAULT_LITE_RPC_ADDR,
 };
 use solana_client::nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient};
 
@@ -16,7 +16,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER
 #[tokio::test]
 async fn send_and_confirm_txs() {
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_RPC_ADDR.to_string()));
-    let lite_client = LiteClient(RpcClient::new(DEFAULT_RPC_ADDR.to_string()));
+    let lite_client = LiteClient(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
 
     let tpu_client = Arc::new(
         TpuClient::new(rpc_client.clone(), DEFAULT_WS_ADDR, Default::default())
