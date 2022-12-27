@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use bench_utils::helpers::{create_transaction, new_funded_payer};
 use futures::future::try_join_all;
+use lite_client::LiteClient;
 use lite_rpc::{
     encoding::BinaryEncoding,
     workers::{BlockListener, TxSender},
@@ -10,11 +11,13 @@ use lite_rpc::{
 };
 use solana_client::nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient};
 
-use solana_sdk::native_token::LAMPORTS_PER_SOL;
+use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
 
 #[tokio::test]
 async fn send_and_confirm_txs() {
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_RPC_ADDR.to_string()));
+    let lite_client = LiteClient(RpcClient::new(DEFAULT_RPC_ADDR.to_string()));
+
     let tpu_client = Arc::new(
         TpuClient::new(rpc_client.clone(), DEFAULT_WS_ADDR, Default::default())
             .await
@@ -28,12 +31,12 @@ async fn send_and_confirm_txs() {
     let tx_sender = TxSender::new(tpu_client, block_listener.clone());
 
     let services = try_join_all(vec![
-        block_listener.clone().listen(),
+        block_listener.clone().listen(CommitmentConfig::confirmed()),
         tx_sender.clone().execute(),
     ]);
 
     let confirm = tokio::spawn(async move {
-        let funded_payer = new_funded_payer(&rpc_client, LAMPORTS_PER_SOL * 2)
+        let funded_payer = new_funded_payer(&lite_client, LAMPORTS_PER_SOL * 2)
             .await
             .unwrap();
 
@@ -48,7 +51,7 @@ async fn send_and_confirm_txs() {
         let sig = sig.to_string();
 
         for _ in 0..2 {
-            if block_listener.confirmed_txs.read().await.contains(&sig) {
+            if block_listener.blocks.contains_key(&sig) {
                 return;
             }
 

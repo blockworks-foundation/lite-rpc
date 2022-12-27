@@ -39,3 +39,4 @@ anyhow = "1.0.66"
 log = "0.4.17"
 simplelog = "0.12.0"
 clap = { version = "4.0.29", features = ["derive"] }
+dashmap = "5.4.0"

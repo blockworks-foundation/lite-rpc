@@ -18,7 +18,11 @@ use solana_client::{
     nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
     rpc_response::RpcVersionInfo,
 };
-use solana_sdk::{signature::Signature, transaction::VersionedTransaction};
+use solana_sdk::{
+    commitment_config::{CommitmentConfig},
+    signature::Signature,
+    transaction::VersionedTransaction,
+};
 use tokio::task::JoinHandle;
 
 /// A bridge between clients and tpu
@@ -71,11 +75,15 @@ impl LiteBridge {
 
     pub async fn confirm_transaction(
         &self,
-        ConfirmTransactionParams(sig, _): ConfirmTransactionParams,
+        ConfirmTransactionParams(sig, commitment_config): ConfirmTransactionParams,
     ) -> Result<bool, JsonRpcError> {
         let sig = Signature::from_str(&sig)?;
 
-        Ok(self.block_listner.confirm_tx(sig).await.is_some())
+        Ok(self
+            .block_listner
+            .confirm_tx(sig, commitment_config)
+            .await
+            .is_some())
     }
 
     pub fn get_version(&self) -> RpcVersionInfo {
@@ -112,7 +120,14 @@ impl LiteBridge {
     ) -> Vec<JoinHandle<anyhow::Result<()>>> {
         let this = Arc::new(self);
         let tx_sender = this.tx_sender.clone().execute();
-        let block_listenser = this.block_listner.clone().listen();
+        let finalized_block_listenser = this
+            .block_listner
+            .clone()
+            .listen(CommitmentConfig::finalized());
+        let confirmed_block_listenser = this
+            .block_listner
+            .clone()
+            .listen(CommitmentConfig::confirmed());
 
         let json_cfg = web::JsonConfig::default().error_handler(|err, req| {
             let err = JsonRpcRes::Err(serde_json::Value::String(format!("{err}")))
@@ -136,7 +151,12 @@ impl LiteBridge {
             Ok(())
         });
 
-        vec![server, block_listenser, tx_sender]
+        vec![
+            server,
+            finalized_block_listenser,
+            confirmed_block_listenser,
+            tx_sender,
+        ]
     }
 
     async fn rpc_route(body: bytes::Bytes, state: web::Data<Arc<LiteBridge>>) -> JsonRpcRes {

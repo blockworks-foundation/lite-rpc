@@ -70,7 +70,6 @@ async fn foo(lite_client: Arc<LiteClient>) -> Metric {
 
     let send_fut = {
         let lite_client = lite_client.clone();
-        let start_time = start_time.clone();
 
         tokio::spawn(async move {
             for tx in txs {

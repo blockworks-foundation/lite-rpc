@@ -6,7 +6,7 @@ use bench_utils::helpers::{generate_txs, new_funded_payer, wait_till_confirmed};
 use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use simplelog::*;
 
-const AMOUNT: usize = 100;
+const AMOUNT: usize = 5;
 
 #[tokio::test]
 async fn send_and_confirm_tx() {

@@ -38,13 +38,7 @@ impl TxSender {
             return;
         }
 
-        if !self
-            .block_listner
-            .confirmed_txs
-            .read()
-            .await
-            .contains(&sig.to_string())
-        {
+        if !self.block_listner.blocks.contains_key(&sig.to_string()) {
             let max_retries = max_retries.min(TX_MAX_RETRIES_UPPER_LIMIT);
             info!("en-queuing {sig} with max retries {max_retries}");
             self.enqueued_txs
@@ -74,13 +68,7 @@ impl TxSender {
         let mut batch_index = 0;
 
         for (index, (sig, (tx, retries))) in enqued_tx.iter_mut().enumerate() {
-            if self
-                .block_listner
-                .confirmed_txs
-                .read()
-                .await
-                .contains(&sig.to_string())
-            {
+            if self.block_listner.blocks.contains_key(&sig.to_string()) {
                 stale_txs.push(sig.to_owned());
                 continue;
             }
