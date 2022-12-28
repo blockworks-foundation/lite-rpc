@@ -5,19 +5,22 @@ use std::{
 };
 
 use bench_utils::{
-    helpers::{generate_txs, new_funded_payer},
+    helpers::BenchHelper,
     metrics::{AvgMetric, Metric},
 };
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
-use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
+use solana_sdk::{
+    commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL, signature::Signature,
+};
 
 use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use simplelog::*;
 
 const NUM_OF_TXS: usize = 20_000;
-const NUM_OF_RUNS: usize = 5;
+const NUM_OF_RUNS: usize = 1;
 const CSV_FILE_NAME: &str = "metrics.csv";
+const USE_SIGNATURE_STATUS_TO_CONFIRM: bool = true;
 
 #[tokio::main]
 async fn main() {
@@ -34,13 +37,18 @@ async fn main() {
         CommitmentConfig::confirmed(),
     )));
 
+    let bench_helper = BenchHelper {
+        lite_client,
+        use_signature_status_to_confirm: USE_SIGNATURE_STATUS_TO_CONFIRM,
+    };
+
     let mut csv_writer = csv::Writer::from_path(CSV_FILE_NAME).unwrap();
 
     let mut avg_metric = AvgMetric::default();
 
     for run_num in 0..NUM_OF_RUNS {
-        let metric = foo(lite_client.clone()).await;
-        info!("Run {run_num}: Sent and Confirmed {NUM_OF_TXS} tx(s) in {metric:?}",);
+        let metric = bench(&bench_helper).await;
+        info!("Run {run_num}: Sent and Confirmed {NUM_OF_TXS} tx(s) in {metric:?} with USE_SIGNATURE_STATUS_TO_CONFIRM {USE_SIGNATURE_STATUS_TO_CONFIRM}",);
         avg_metric += &metric;
         csv_writer.serialize(metric).unwrap();
     }
@@ -53,24 +61,32 @@ async fn main() {
     csv_writer.flush().unwrap();
 }
 
-async fn foo(lite_client: Arc<LiteClient>) -> Metric {
-    let funded_payer = new_funded_payer(&lite_client, LAMPORTS_PER_SOL * 2000)
+async fn bench(bench_helper: &BenchHelper) -> Metric {
+    let funded_payer = bench_helper
+        .new_funded_payer(LAMPORTS_PER_SOL * 2000)
         .await
         .unwrap();
 
-    let txs = generate_txs(NUM_OF_TXS, &lite_client.0, &funded_payer)
+    let txs = bench_helper
+        .generate_txs(NUM_OF_TXS, &funded_payer)
         .await
         .unwrap();
 
-    let mut un_confirmed_txs: HashMap<String, Option<Instant>> = HashMap::with_capacity(txs.len());
+    let mut un_confirmed_txs: HashMap<Signature, Option<Instant>> =
+        HashMap::with_capacity(txs.len());
 
     for tx in &txs {
-        un_confirmed_txs.insert(tx.get_signature().to_string(), None);
+        un_confirmed_txs.insert(*tx.get_signature(), None);
     }
 
     let start_time = Instant::now();
 
-    info!("Sending and Confirming {NUM_OF_TXS} tx(s)");
+    info!(
+        "Sending and Confirming {NUM_OF_TXS} tx(s) with signature status polling {}",
+        bench_helper.use_signature_status_to_confirm
+    );
+
+    let lite_client = bench_helper.lite_client.clone();
 
     let send_fut = {
         let lite_client = lite_client.clone();
@@ -86,6 +102,7 @@ async fn foo(lite_client: Arc<LiteClient>) -> Metric {
         })
     };
 
+    let use_signature_status_to_confirm = bench_helper.use_signature_status_to_confirm;
     let confirm_fut = tokio::spawn(async move {
         let mut metrics = Metric::default();
 
@@ -93,18 +110,31 @@ async fn foo(lite_client: Arc<LiteClient>) -> Metric {
             let mut to_remove_txs = Vec::new();
 
             for (sig, time_elapsed_since_last_confirmed) in un_confirmed_txs.iter_mut() {
+                let sig = *sig;
+
                 if time_elapsed_since_last_confirmed.is_none() {
                     *time_elapsed_since_last_confirmed = Some(Instant::now())
                 }
 
-                if lite_client.confirm_transaction(sig.clone()).await {
+                let confirmed = if use_signature_status_to_confirm {
+                    if let Some(err) = lite_client.get_signature_status(&sig).await.unwrap() {
+                        err.unwrap();
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    lite_client.confirm_transaction(sig.to_string()).await
+                };
+
+                if confirmed {
                     metrics.txs_confirmed += 1;
-                    to_remove_txs.push(sig.clone());
+                    to_remove_txs.push(sig);
                 } else if time_elapsed_since_last_confirmed.unwrap().elapsed()
                     > Duration::from_secs(3)
                 {
                     metrics.txs_un_confirmed += 1;
-                    to_remove_txs.push(sig.clone());
+                    to_remove_txs.push(sig);
                 }
             }
 

@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
+use bench_utils::helpers::BenchHelper;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 
-use bench_utils::helpers::{generate_txs, new_funded_payer, wait_till_confirmed};
 use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use simplelog::*;
 
@@ -18,12 +21,16 @@ async fn send_and_confirm_tx() {
     )
     .unwrap();
 
-    let lite_client = LiteClient(RpcClient::new(LOCAL_LIGHT_RPC_ADDR.to_string()));
-    let funded_payer = new_funded_payer(&lite_client, LAMPORTS_PER_SOL * 2)
+    let lite_client = Arc::new(LiteClient(RpcClient::new(LOCAL_LIGHT_RPC_ADDR.to_string())));
+    let bench_helper = BenchHelper::new(lite_client.clone());
+
+    let funded_payer = bench_helper
+        .new_funded_payer(LAMPORTS_PER_SOL * 2)
         .await
         .unwrap();
 
-    let txs = generate_txs(AMOUNT, &lite_client.0, &funded_payer)
+    let txs = bench_helper
+        .generate_txs(AMOUNT, &funded_payer)
         .await
         .unwrap();
 
@@ -37,7 +44,9 @@ async fn send_and_confirm_tx() {
     for tx in &txs {
         let sig = tx.get_signature();
         info!("Confirming {sig}");
-        wait_till_confirmed(&lite_client, sig).await;
+        bench_helper
+            .wait_till_commitment(sig, CommitmentConfig::confirmed())
+            .await;
     }
 
     info!("Sent and Confirmed {AMOUNT} tx(s)");

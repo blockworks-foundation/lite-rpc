@@ -1,13 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use bench_utils::helpers::{create_transaction, new_funded_payer};
+use bench_utils::helpers::BenchHelper;
 use futures::future::try_join_all;
-use lite_client::LiteClient;
+use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use lite_rpc::{
     encoding::BinaryEncoding,
     workers::{BlockListener, TxSender},
-    DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR, DEFAULT_LITE_RPC_ADDR,
+    DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR,
 };
 use solana_client::nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient};
 
@@ -16,7 +16,9 @@ use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER
 #[tokio::test]
 async fn send_and_confirm_txs() {
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_RPC_ADDR.to_string()));
-    let lite_client = LiteClient(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
+
+    let lite_client = Arc::new(LiteClient(RpcClient::new(LOCAL_LIGHT_RPC_ADDR.to_string())));
+    let bench_helper = BenchHelper::new(lite_client.clone());
 
     let tpu_client = Arc::new(
         TpuClient::new(rpc_client.clone(), DEFAULT_WS_ADDR, Default::default())
@@ -36,13 +38,14 @@ async fn send_and_confirm_txs() {
     ]);
 
     let confirm = tokio::spawn(async move {
-        let funded_payer = new_funded_payer(&lite_client, LAMPORTS_PER_SOL * 2)
+        let funded_payer = bench_helper
+            .new_funded_payer(LAMPORTS_PER_SOL * 2)
             .await
             .unwrap();
 
         let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
-        let tx = create_transaction(&funded_payer, blockhash);
+        let tx = bench_helper.create_transaction(&funded_payer, blockhash);
         let sig = tx.signatures[0];
         let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
 
