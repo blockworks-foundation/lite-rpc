@@ -4,21 +4,32 @@ use actix_web::error::JsonPayloadError;
 use actix_web::{http::StatusCode, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_client::rpc_config::RpcSignatureStatusConfig;
 use solana_sdk::signature::ParseSignatureError;
 use solana_sdk::transport::TransportError;
+use solana_transaction_status::TransactionConfirmationStatus;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SendTransactionParams(pub String, #[serde(default)] pub SendTransactionConfig);
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ConfirmTransactionParams(pub String, #[serde(default)] pub CommitmentConfig);
+pub struct ConfirmTransactionsParams(
+    pub Vec<String>,
+    #[serde(default)] pub Option<TransactionConfirmationStatus>,
+);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetSignatureStatusesParams(
+    pub Vec<String>,
+    #[serde(default)] pub Option<RpcSignatureStatusConfig>,
+);
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RpcMethod {
     SendTransaction,
-    ConfirmTransaction,
+    GetSignatureStatuses,
+    ConfirmTransactions,
     GetVersion,
     #[serde(other)]
     Other,

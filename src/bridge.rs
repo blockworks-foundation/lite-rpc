@@ -2,27 +2,24 @@ use crate::{
     configs::SendTransactionConfig,
     encoding::BinaryEncoding,
     rpc::{
-        ConfirmTransactionParams, JsonRpcError, JsonRpcReq, JsonRpcRes, RpcMethod,
-        SendTransactionParams,
+        ConfirmTransactionsParams, GetSignatureStatusesParams, JsonRpcError, JsonRpcReq,
+        JsonRpcRes, RpcMethod, SendTransactionParams,
     },
     workers::{BlockListener, TxSender},
-    DEFAULT_TX_MAX_RETRIES,
+    DEFAULT_TRANSACTION_CONFIRMATION_STATUS, DEFAULT_TX_MAX_RETRIES,
 };
 
-use std::{net::ToSocketAddrs, ops::Deref, str::FromStr, sync::Arc};
+use std::{net::ToSocketAddrs, ops::Deref, sync::Arc};
 
 use actix_web::{web, App, HttpServer, Responder};
 use reqwest::Url;
 
 use solana_client::{
     nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
-    rpc_response::RpcVersionInfo,
+    rpc_response::{Response as RpcResponse, RpcResponseContext, RpcVersionInfo},
 };
-use solana_sdk::{
-    commitment_config::{CommitmentConfig},
-    signature::Signature,
-    transaction::VersionedTransaction,
-};
+use solana_sdk::{commitment_config::CommitmentConfig, transaction::VersionedTransaction};
+use solana_transaction_status::TransactionStatus;
 use tokio::task::JoinHandle;
 
 /// A bridge between clients and tpu
@@ -73,17 +70,42 @@ impl LiteBridge {
         Ok(BinaryEncoding::Base58.encode(sig))
     }
 
-    pub async fn confirm_transaction(
+    pub async fn confirm_transactions(
         &self,
-        ConfirmTransactionParams(sig, commitment_config): ConfirmTransactionParams,
-    ) -> Result<bool, JsonRpcError> {
-        let sig = Signature::from_str(&sig)?;
+        ConfirmTransactionsParams(sigs, confirmation_status): ConfirmTransactionsParams,
+    ) -> Result<Vec<bool>, JsonRpcError> {
+        let confirmation_status =
+            confirmation_status.unwrap_or(DEFAULT_TRANSACTION_CONFIRMATION_STATUS);
 
         Ok(self
             .block_listner
-            .confirm_tx(sig, commitment_config)
+            .get_signature_statuses(&sigs)
             .await
-            .is_some())
+            .iter()
+            .map(|s| {
+                if let Some(s) = s {
+                    s.confirmation_status
+                        .clone()
+                        .unwrap()
+                        .eq(&confirmation_status)
+                } else {
+                    false
+                }
+            })
+            .collect())
+    }
+
+    pub async fn get_signature_statuses(
+        &self,
+        GetSignatureStatusesParams(sigs, _config): GetSignatureStatusesParams,
+    ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>, JsonRpcError> {
+        Ok(RpcResponse {
+            context: RpcResponseContext {
+                slot: self.block_listner.get_slot(),
+                api_version: None,
+            },
+            value: self.block_listner.get_signature_statuses(&sigs).await,
+        })
     }
 
     pub fn get_version(&self) -> RpcVersionInfo {
@@ -104,8 +126,13 @@ impl LiteBridge {
                 .send_transaction(serde_json::from_value(params)?)
                 .await?
                 .into()),
-            RpcMethod::ConfirmTransaction => Ok(self
-                .confirm_transaction(serde_json::from_value(params)?)
+            RpcMethod::GetSignatureStatuses => Ok(serde_json::to_value(
+                self.get_signature_statuses(serde_json::from_value(params)?)
+                    .await?,
+            )
+            .unwrap()),
+            RpcMethod::ConfirmTransactions => Ok(self
+                .confirm_transactions(serde_json::from_value(params)?)
                 .await?
                 .into()),
             RpcMethod::GetVersion => Ok(serde_json::to_value(self.get_version()).unwrap()),

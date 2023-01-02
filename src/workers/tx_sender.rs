@@ -108,7 +108,7 @@ impl TxSender {
 
     /// retry and confirm transactions every 800ms (avg time to confirm tx)
     pub fn execute(self) -> JoinHandle<anyhow::Result<()>> {
-        let mut interval = tokio::time::interval(Duration::from_secs(800));
+        let mut interval = tokio::time::interval(Duration::from_millis(20));
 
         #[allow(unreachable_code)]
         tokio::spawn(async move {

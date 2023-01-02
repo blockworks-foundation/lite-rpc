@@ -20,7 +20,7 @@ use simplelog::*;
 const NUM_OF_TXS: usize = 20_000;
 const NUM_OF_RUNS: usize = 1;
 const CSV_FILE_NAME: &str = "metrics.csv";
-const USE_SIGNATURE_STATUS_TO_CONFIRM: bool = true;
+const USE_SIGNATURE_STATUS_TO_CONFIRM: bool = false;
 
 #[tokio::main]
 async fn main() {
