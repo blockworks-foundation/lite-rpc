@@ -1,8 +1,8 @@
 use std::{ops::Deref, sync::Arc};
 
 use anyhow::Context;
-use lite_client::LiteClient;
 use log::info;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     hash::Hash,
@@ -16,24 +16,20 @@ use solana_sdk::{
 
 #[derive(Clone)]
 pub struct BenchHelper {
-    pub lite_client: Arc<LiteClient>,
-    pub use_signature_status_to_confirm: bool,
+    pub rpc_client: Arc<RpcClient>,
 }
 
 impl Deref for BenchHelper {
-    type Target = LiteClient;
+    type Target = RpcClient;
 
     fn deref(&self) -> &Self::Target {
-        &self.lite_client
+        &self.rpc_client
     }
 }
 
 impl BenchHelper {
-    pub fn new(lite_client: Arc<LiteClient>) -> Self {
-        Self {
-            lite_client,
-            use_signature_status_to_confirm: false,
-        }
+    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
+        Self { rpc_client }
     }
 
     pub async fn new_funded_payer(&self, amount: u64) -> anyhow::Result<Keypair> {
@@ -42,31 +38,19 @@ impl BenchHelper {
 
         // request airdrop to payer
         let airdrop_sig = self
-            .lite_client
+            .rpc_client
             .request_airdrop(&payer.pubkey(), amount)
             .await
             .context("requesting air drop")?;
 
         info!("Air Dropping {payer_pubkey} with {amount}L");
 
-        self.wait_till_commitment(&airdrop_sig, CommitmentConfig::finalized())
-            .await;
+        self.wait_till_signature_status(&airdrop_sig, CommitmentConfig::finalized())
+            .await?;
 
         info!("Air Drop Successful: {airdrop_sig}");
 
         Ok(payer)
-    }
-
-    pub async fn wait_till_block_signature(
-        &self,
-        sig: &Signature,
-        commitment_config: CommitmentConfig,
-    ) {
-        while self
-            .lite_client
-            .confirm_transaction_with_commitment(sig.to_string(), commitment_config)
-            .await
-        {}
     }
 
     pub async fn wait_till_signature_status(
@@ -76,7 +60,7 @@ impl BenchHelper {
     ) -> anyhow::Result<()> {
         loop {
             if let Some(err) = self
-                .lite_client
+                .rpc_client
                 .get_signature_status_with_commitment(sig, commitment_config)
                 .await?
             {
@@ -85,17 +69,6 @@ impl BenchHelper {
             }
         }
     }
-
-    pub async fn wait_till_commitment(&self, sig: &Signature, commitment_config: CommitmentConfig) {
-        if self.use_signature_status_to_confirm {
-            self.wait_till_signature_status(sig, commitment_config)
-                .await
-                .unwrap();
-        } else {
-            self.wait_till_block_signature(sig, commitment_config).await;
-        }
-    }
-
     pub fn create_transaction(&self, funded_payer: &Keypair, blockhash: Hash) -> Transaction {
         let to_pubkey = Pubkey::new_unique();
 
@@ -115,7 +88,7 @@ impl BenchHelper {
     ) -> anyhow::Result<Vec<Transaction>> {
         let mut txs = Vec::with_capacity(num_of_txs);
 
-        let blockhash = self.lite_client.get_latest_blockhash().await?;
+        let blockhash = self.rpc_client.get_latest_blockhash().await?;
 
         for _ in 0..num_of_txs {
             txs.push(self.create_transaction(funded_payer, blockhash));

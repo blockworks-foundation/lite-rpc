@@ -8,19 +8,18 @@ use bench_utils::{
     helpers::BenchHelper,
     metrics::{AvgMetric, Metric},
 };
+use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::{
     commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL, signature::Signature,
 };
 
-use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use simplelog::*;
 
 const NUM_OF_TXS: usize = 20_000;
 const NUM_OF_RUNS: usize = 1;
 const CSV_FILE_NAME: &str = "metrics.csv";
-const USE_SIGNATURE_STATUS_TO_CONFIRM: bool = false;
 
 #[tokio::main]
 async fn main() {
@@ -32,15 +31,14 @@ async fn main() {
     )
     .unwrap();
 
-    let lite_client = Arc::new(LiteClient(RpcClient::new_with_commitment(
-        LOCAL_LIGHT_RPC_ADDR.to_string(),
+    let rpc_client = Arc::new(RpcClient::new_with_commitment(
+        DEFAULT_LITE_RPC_ADDR.to_string(),
         CommitmentConfig::confirmed(),
-    )));
+    ));
 
-    let bench_helper = BenchHelper {
-        lite_client,
-        use_signature_status_to_confirm: USE_SIGNATURE_STATUS_TO_CONFIRM,
-    };
+    info!("Connecting to {DEFAULT_LITE_RPC_ADDR}");
+
+    let bench_helper = BenchHelper { rpc_client };
 
     let mut csv_writer = csv::Writer::from_path(CSV_FILE_NAME).unwrap();
 
@@ -48,7 +46,7 @@ async fn main() {
 
     for run_num in 0..NUM_OF_RUNS {
         let metric = bench(&bench_helper).await;
-        info!("Run {run_num}: Sent and Confirmed {NUM_OF_TXS} tx(s) in {metric:?} with USE_SIGNATURE_STATUS_TO_CONFIRM {USE_SIGNATURE_STATUS_TO_CONFIRM}",);
+        info!("Run {run_num}: Sent and Confirmed {NUM_OF_TXS} tx(s) in {metric:?} with",);
         avg_metric += &metric;
         csv_writer.serialize(metric).unwrap();
     }
@@ -81,12 +79,9 @@ async fn bench(bench_helper: &BenchHelper) -> Metric {
 
     let start_time = Instant::now();
 
-    info!(
-        "Sending and Confirming {NUM_OF_TXS} tx(s) with signature status polling {}",
-        bench_helper.use_signature_status_to_confirm
-    );
+    info!("Sending and Confirming {NUM_OF_TXS} tx(s)",);
 
-    let lite_client = bench_helper.lite_client.clone();
+    let lite_client = bench_helper.rpc_client.clone();
 
     let send_fut = {
         let lite_client = lite_client.clone();
@@ -102,7 +97,6 @@ async fn bench(bench_helper: &BenchHelper) -> Metric {
         })
     };
 
-    let use_signature_status_to_confirm = bench_helper.use_signature_status_to_confirm;
     let confirm_fut = tokio::spawn(async move {
         let mut metrics = Metric::default();
 
@@ -116,18 +110,7 @@ async fn bench(bench_helper: &BenchHelper) -> Metric {
                     *time_elapsed_since_last_confirmed = Some(Instant::now())
                 }
 
-                let confirmed = if use_signature_status_to_confirm {
-                    if let Some(err) = lite_client.get_signature_status(&sig).await.unwrap() {
-                        err.unwrap();
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    lite_client.confirm_transaction(sig.to_string()).await
-                };
-
-                if confirmed {
+                if lite_client.confirm_transaction(&sig).await.unwrap() {
                     metrics.txs_confirmed += 1;
                     to_remove_txs.push(sig);
                 } else if time_elapsed_since_last_confirmed.unwrap().elapsed()

@@ -6,7 +6,6 @@ description = "A lite version of solana rpc to send and confirm transactions"
 
 [workspace]
 members = [
-    "lite-client",
     "bench-utils"
 ]
 
@@ -15,7 +14,6 @@ name="tps"
 harness=false
 
 [dev-dependencies]
-lite-client = { path = "./lite-client" }
 bench-utils = { path = "./bench-utils" }
 csv = "1.1.6"
 
@@ -40,3 +38,4 @@ log = "0.4.17"
 simplelog = "0.12.0"
 clap = { version = "4.0.29", features = ["derive"] }
 dashmap = "5.4.0"
+const_env = "0.1.2"

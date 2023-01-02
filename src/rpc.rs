@@ -7,16 +7,9 @@ use serde_json::json;
 use solana_client::rpc_config::RpcSignatureStatusConfig;
 use solana_sdk::signature::ParseSignatureError;
 use solana_sdk::transport::TransportError;
-use solana_transaction_status::TransactionConfirmationStatus;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SendTransactionParams(pub String, #[serde(default)] pub SendTransactionConfig);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConfirmTransactionsParams(
-    pub Vec<String>,
-    #[serde(default)] pub Option<TransactionConfirmationStatus>,
-);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GetSignatureStatusesParams(
@@ -29,7 +22,6 @@ pub struct GetSignatureStatusesParams(
 pub enum RpcMethod {
     SendTransaction,
     GetSignatureStatuses,
-    ConfirmTransactions,
     GetVersion,
     #[serde(other)]
     Other,

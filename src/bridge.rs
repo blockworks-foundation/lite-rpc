@@ -2,11 +2,11 @@ use crate::{
     configs::SendTransactionConfig,
     encoding::BinaryEncoding,
     rpc::{
-        ConfirmTransactionsParams, GetSignatureStatusesParams, JsonRpcError, JsonRpcReq,
-        JsonRpcRes, RpcMethod, SendTransactionParams,
+        GetSignatureStatusesParams, JsonRpcError, JsonRpcReq, JsonRpcRes, RpcMethod,
+        SendTransactionParams,
     },
     workers::{BlockListener, TxSender},
-    DEFAULT_TRANSACTION_CONFIRMATION_STATUS, DEFAULT_TX_MAX_RETRIES,
+    DEFAULT_TX_MAX_RETRIES,
 };
 
 use std::{net::ToSocketAddrs, ops::Deref, sync::Arc};
@@ -70,31 +70,6 @@ impl LiteBridge {
         Ok(BinaryEncoding::Base58.encode(sig))
     }
 
-    pub async fn confirm_transactions(
-        &self,
-        ConfirmTransactionsParams(sigs, confirmation_status): ConfirmTransactionsParams,
-    ) -> Result<Vec<bool>, JsonRpcError> {
-        let confirmation_status =
-            confirmation_status.unwrap_or(DEFAULT_TRANSACTION_CONFIRMATION_STATUS);
-
-        Ok(self
-            .block_listner
-            .get_signature_statuses(&sigs)
-            .await
-            .iter()
-            .map(|s| {
-                if let Some(s) = s {
-                    s.confirmation_status
-                        .clone()
-                        .unwrap()
-                        .eq(&confirmation_status)
-                } else {
-                    false
-                }
-            })
-            .collect())
-    }
-
     pub async fn get_signature_statuses(
         &self,
         GetSignatureStatusesParams(sigs, _config): GetSignatureStatusesParams,
@@ -131,10 +106,6 @@ impl LiteBridge {
                     .await?,
             )
             .unwrap()),
-            RpcMethod::ConfirmTransactions => Ok(self
-                .confirm_transactions(serde_json::from_value(params)?)
-                .await?
-                .into()),
             RpcMethod::GetVersion => Ok(serde_json::to_value(self.get_version()).unwrap()),
             RpcMethod::Other => unreachable!("Other Rpc Methods should be handled externally"),
         }

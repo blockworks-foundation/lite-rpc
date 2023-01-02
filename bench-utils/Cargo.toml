@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 solana-client = "1.14.11"
 solana-sdk = "1.14.11"
-lite-client = { path = "../lite-client" }
 log = "0.4.17"
 anyhow = "1.0.66"
 serde = "1.0.150"
