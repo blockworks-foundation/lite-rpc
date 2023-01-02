@@ -1,4 +1,4 @@
-use crate::{DEFAULT_LITE_RPC_ADDR, DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR};
+use crate::{DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -8,7 +8,7 @@ pub struct Args {
     pub rpc_addr: String,
     #[arg(short, long, default_value_t = String::from(DEFAULT_WS_ADDR))]
     pub ws_addr: String,
-    #[arg(short, long, default_value_t = String::from(DEFAULT_LITE_RPC_ADDR))]
+    #[arg(short, long, default_value_t = String::from("127.0.0.1:8890"))]
     pub lite_rpc_addr: String,
     #[arg(short, long, default_value_t = false)]
     pub batch_transactions: bool,
