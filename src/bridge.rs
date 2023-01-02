@@ -6,7 +6,6 @@ use crate::{
         SendTransactionParams,
     },
     workers::{BlockListener, TxSender},
-    DEFAULT_TX_MAX_RETRIES,
 };
 
 use std::{net::ToSocketAddrs, ops::Deref, sync::Arc};
@@ -26,12 +25,16 @@ use tokio::task::JoinHandle;
 pub struct LiteBridge {
     pub tpu_client: Arc<TpuClient>,
     pub rpc_url: Url,
-    pub tx_sender: TxSender,
+    pub tx_sender: Option<TxSender>,
     pub block_listner: BlockListener,
 }
 
 impl LiteBridge {
-    pub async fn new(rpc_url: reqwest::Url, ws_addr: &str) -> anyhow::Result<Self> {
+    pub async fn new(
+        rpc_url: reqwest::Url,
+        ws_addr: &str,
+        batch_transactions: bool,
+    ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.to_string()));
 
         let tpu_client =
@@ -40,7 +43,11 @@ impl LiteBridge {
         let block_listner = BlockListener::new(rpc_client.clone(), ws_addr).await?;
 
         Ok(Self {
-            tx_sender: TxSender::new(tpu_client.clone(), block_listner.clone()),
+            tx_sender: if batch_transactions {
+                Some(TxSender::new(tpu_client.clone()))
+            } else {
+                None
+            },
             block_listner,
             rpc_url,
             tpu_client,
@@ -53,7 +60,7 @@ impl LiteBridge {
             tx,
             SendTransactionConfig {
                 encoding,
-                max_retries,
+                max_retries: _,
             },
         ): SendTransactionParams,
     ) -> Result<String, JsonRpcError> {
@@ -61,11 +68,11 @@ impl LiteBridge {
 
         let sig = bincode::deserialize::<VersionedTransaction>(&raw_tx)?.signatures[0];
 
-        self.tpu_client.send_wire_transaction(raw_tx.clone()).await;
-
-        self.tx_sender
-            .enqnueue_tx(sig, raw_tx, max_retries.unwrap_or(DEFAULT_TX_MAX_RETRIES))
-            .await;
+        if let Some(tx_sender) = &self.tx_sender {
+            tx_sender.enqnueue_tx(raw_tx);
+        } else {
+            self.tpu_client.send_wire_transaction(raw_tx.clone()).await;
+        }
 
         Ok(BinaryEncoding::Base58.encode(sig))
     }
@@ -117,7 +124,8 @@ impl LiteBridge {
         addr: impl ToSocketAddrs + Send + 'static,
     ) -> Vec<JoinHandle<anyhow::Result<()>>> {
         let this = Arc::new(self);
-        let tx_sender = this.tx_sender.clone().execute();
+        let tx_sender = this.tx_sender.clone();
+
         let finalized_block_listenser = this
             .block_listner
             .clone()
@@ -149,12 +157,13 @@ impl LiteBridge {
             Ok(())
         });
 
-        vec![
-            server,
-            finalized_block_listenser,
-            confirmed_block_listenser,
-            tx_sender,
-        ]
+        let mut services = vec![server, finalized_block_listenser, confirmed_block_listenser];
+
+        if let Some(tx_sender) = tx_sender {
+            services.push(tx_sender.execute());
+        }
+
+        services
     }
 
     async fn rpc_route(body: bytes::Bytes, state: web::Data<Arc<LiteBridge>>) -> JsonRpcRes {

@@ -10,4 +10,6 @@ pub struct Args {
     pub ws_addr: String,
     #[arg(short, long, default_value_t = String::from(DEFAULT_LITE_RPC_ADDR))]
     pub lite_rpc_addr: String,
+    #[arg(short, long, default_value_t = false)]
+    pub batch_transactions: bool,
 }

@@ -19,9 +19,15 @@ pub async fn main() -> anyhow::Result<()> {
         rpc_addr,
         ws_addr,
         lite_rpc_addr,
+        batch_transactions,
     } = Args::parse();
 
-    let light_bridge = LiteBridge::new(Url::from_str(&rpc_addr).unwrap(), &ws_addr).await?;
+    let light_bridge = LiteBridge::new(
+        Url::from_str(&rpc_addr).unwrap(),
+        &ws_addr,
+        batch_transactions,
+    )
+    .await?;
 
     let services = light_bridge.start_services(lite_rpc_addr);
     let services = futures::future::try_join_all(services);

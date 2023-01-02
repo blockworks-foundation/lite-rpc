@@ -28,7 +28,7 @@ async fn send_and_confirm_txs() {
         .await
         .unwrap();
 
-    let tx_sender = TxSender::new(tpu_client, block_listener.clone());
+    let tx_sender = TxSender::new(tpu_client);
 
     let services = try_join_all(vec![
         block_listener.clone().listen(CommitmentConfig::confirmed()),
@@ -47,7 +47,7 @@ async fn send_and_confirm_txs() {
         let sig = tx.signatures[0];
         let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
 
-        tx_sender.enqnueue_tx(sig, tx.as_bytes().to_vec(), 2).await;
+        tx_sender.enqnueue_tx(tx.as_bytes().to_vec());
 
         let sig = sig.to_string();
 
