@@ -130,6 +130,7 @@ impl LiteBridge {
             .block_listner
             .clone()
             .listen(CommitmentConfig::finalized());
+
         let confirmed_block_listenser = this
             .block_listner
             .clone()
