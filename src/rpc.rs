@@ -1,103 +1,93 @@
-use crate::{configs::SendTransactionConfig, encoding::BinaryCodecError};
+use std::net::SocketAddr;
 
-use actix_web::error::JsonPayloadError;
-use actix_web::{http::StatusCode, HttpResponse, Responder};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use solana_client::rpc_config::RpcSignatureStatusConfig;
-use solana_sdk::signature::ParseSignatureError;
-use solana_sdk::transport::TransportError;
+use jsonrpc_core::{MetaIoHandler, Result};
+use jsonrpc_derive::rpc;
+use jsonrpc_http_server::ServerBuilder;
+use solana_client::rpc_config::{
+    RpcContextConfig, RpcSendTransactionConfig, RpcSignatureStatusConfig,
+};
+use solana_client::rpc_response::{Response as RpcResponse, RpcBlockhash, RpcVersionInfo};
+use solana_transaction_status::TransactionStatus;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SendTransactionParams(pub String, #[serde(default)] pub SendTransactionConfig);
+use crate::bridge::LiteBridge;
+use async_trait::async_trait;
+use tokio::task::JoinHandle;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GetSignatureStatusesParams(
-    pub Vec<String>,
-    #[serde(default)] pub Option<RpcSignatureStatusConfig>,
-);
+#[rpc]
+pub trait Lite {
+    type Metadata;
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum RpcMethod {
-    SendTransaction,
-    GetSignatureStatuses,
-    GetVersion,
-    #[serde(other)]
-    Other,
+    #[rpc(meta, name = "sendTransaction")]
+    fn send_transaction(
+        &self,
+        meta: Self::Metadata,
+        data: String,
+        config: Option<RpcSendTransactionConfig>,
+    ) -> Result<String>;
+
+    #[rpc(meta, name = "getLatestBlockhash")]
+    fn get_latest_blockhash(
+        &self,
+        meta: Self::Metadata,
+        config: Option<RpcContextConfig>,
+    ) -> Result<RpcResponse<RpcBlockhash>>;
+
+    #[rpc(meta, name = "getSignatureStatuses")]
+    fn get_signature_statuses(
+        &self,
+        meta: Self::Metadata,
+        signature_strs: Vec<String>,
+        config: Option<RpcSignatureStatusConfig>,
+    ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>>;
+
+    #[rpc(name = "getVersion")]
+    fn get_version(&self) -> Result<RpcVersionInfo>;
 }
 
-/// According to <https://www.jsonrpc.org/specification#overview>
-#[derive(Debug, Deserialize, Serialize)]
-pub struct JsonRpcReq {
-    pub method: RpcMethod,
-    #[serde(default)]
-    pub params: serde_json::Value,
-}
+struct LiteRpc;
 
-#[derive(Debug, Deserialize, Serialize)]
-pub enum JsonRpcRes {
-    Raw { status: u16, body: String },
-    Err(serde_json::Value),
-    Ok(serde_json::Value),
-}
+#[async_trait]
+impl Lite for LiteRpc {
+    type Metadata = LiteBridge;
 
-impl Responder for JsonRpcRes {
-    type Body = String;
+    async fn send_transaction(
+        &self,
+        meta: Self::Metadata,
+        tx: String,
+        send_transaction_config: Option<RpcSendTransactionConfig>,
+    ) -> Result<String> {
+        Ok(meta.send_transaction(tx, send_transaction_config).await?)
+    }
 
-    fn respond_to(self, _: &actix_web::HttpRequest) -> HttpResponse<Self::Body> {
-        if let Self::Raw { status, body } = self {
-            return HttpResponse::new(StatusCode::from_u16(status).unwrap()).set_body(body);
-        }
-        let mut res = json!({
-            "jsonrpc" : "2.0",
-            // TODO: add id
-        });
+    fn get_latest_blockhash(
+        &self,
+        meta: Self::Metadata,
+        config: Option<RpcContextConfig>,
+    ) -> Result<RpcResponse<RpcBlockhash>> {
+        todo!()
+    }
 
-        match self {
-            Self::Err(error) => {
-                res["error"] = error;
-                HttpResponse::new(StatusCode::from_u16(500).unwrap()).set_body(res.to_string())
-            }
-            Self::Ok(result) => {
-                res["result"] = result;
-                HttpResponse::new(StatusCode::OK).set_body(res.to_string())
-            }
-            _ => unreachable!(),
-        }
+    fn get_signature_statuses(
+        &self,
+        meta: Self::Metadata,
+        signature_strs: Vec<String>,
+        config: Option<RpcSignatureStatusConfig>,
+    ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
+        todo!()
+    }
+
+    fn get_version(&self) -> Result<RpcVersionInfo> {
+        todo!()
     }
 }
 
-impl<T: serde::Serialize> TryFrom<Result<T, JsonRpcError>> for JsonRpcRes {
-    type Error = serde_json::Error;
+impl LiteRpc {
+    fn start_server(bridge: LiteBridge, addr: SocketAddr) -> JoinHandle<anyhow::Result<()>> {
+        tokio::spawn(async move {
+            ServerBuilder::with_meta_extractor(MetaIoHandler::default(), move |_| bridge.clone())
+                .start_http(&addr)?;
 
-    fn try_from(result: Result<T, JsonRpcError>) -> Result<Self, Self::Error> {
-        Ok(match result {
-            Ok(value) => Self::Ok(serde_json::to_value(value)?),
-            // TODO: add custom handle
-            Err(error) => error.into(),
+            Ok(())
         })
     }
-}
-
-impl From<JsonRpcError> for JsonRpcRes {
-    fn from(error: JsonRpcError) -> Self {
-        Self::Err(serde_json::Value::String(format!("{error:?}")))
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum JsonRpcError {
-    #[error("TransportError {0}")]
-    TransportError(#[from] TransportError),
-    #[error("BinaryCodecError {0}")]
-    BinaryCodecError(#[from] BinaryCodecError),
-    #[error("BincodeDeserializeError {0}")]
-    BincodeDeserializeError(#[from] bincode::Error),
-    #[error("SerdeError {0}")]
-    SerdeError(#[from] serde_json::Error),
-    #[error("JsonPayloadError {0}")]
-    JsonPayloadError(#[from] JsonPayloadError),
-    #[error("ParseSignatureError {0}")]
-    ParseSignatureError(#[from] ParseSignatureError),
 }

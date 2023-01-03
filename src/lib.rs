@@ -5,6 +5,7 @@ pub mod bridge;
 pub mod cli;
 pub mod configs;
 pub mod encoding;
+pub mod errors;
 pub mod rpc;
 pub mod workers;
 

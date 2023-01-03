@@ -1,16 +1,12 @@
 use crate::{
     configs::SendTransactionConfig,
     encoding::BinaryEncoding,
-    rpc::{
-        GetSignatureStatusesParams, JsonRpcError, JsonRpcReq, JsonRpcRes, RpcMethod,
-        SendTransactionParams,
-    },
+    errors::JsonRpcError,
     workers::{BlockListener, TxSender},
 };
 
-use std::{net::ToSocketAddrs, ops::Deref, sync::Arc};
+use std::{ops::Deref, sync::Arc};
 
-use actix_web::{web, App, HttpServer, Responder};
 use reqwest::Url;
 
 use solana_client::{
@@ -22,6 +18,7 @@ use solana_transaction_status::TransactionStatus;
 use tokio::task::JoinHandle;
 
 /// A bridge between clients and tpu
+#[derive(Clone)]
 pub struct LiteBridge {
     pub tpu_client: Arc<TpuClient>,
     pub rpc_url: Url,
@@ -56,13 +53,11 @@ impl LiteBridge {
 
     pub async fn send_transaction(
         &self,
-        SendTransactionParams(
-            tx,
-            SendTransactionConfig {
-                encoding,
-                max_retries: _,
-            },
-        ): SendTransactionParams,
+        tx: String,
+        SendTransactionConfig {
+            encoding,
+            max_retries: _,
+        }: SendTransactionConfig,
     ) -> Result<String, JsonRpcError> {
         let raw_tx = encoding.decode(tx)?;
 
@@ -79,7 +74,7 @@ impl LiteBridge {
 
     pub async fn get_signature_statuses(
         &self,
-        GetSignatureStatusesParams(sigs, _config): GetSignatureStatusesParams,
+        sigs: Vec<String>,
     ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>, JsonRpcError> {
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -98,31 +93,8 @@ impl LiteBridge {
         }
     }
 
-    /// Serialize params and execute the specified method
-    pub async fn execute_rpc_request(
-        &self,
-        JsonRpcReq { method, params }: JsonRpcReq,
-    ) -> Result<serde_json::Value, JsonRpcError> {
-        match method {
-            RpcMethod::SendTransaction => Ok(self
-                .send_transaction(serde_json::from_value(params)?)
-                .await?
-                .into()),
-            RpcMethod::GetSignatureStatuses => Ok(serde_json::to_value(
-                self.get_signature_statuses(serde_json::from_value(params)?)
-                    .await?,
-            )
-            .unwrap()),
-            RpcMethod::GetVersion => Ok(serde_json::to_value(self.get_version()).unwrap()),
-            RpcMethod::Other => unreachable!("Other Rpc Methods should be handled externally"),
-        }
-    }
-
     /// List for `JsonRpc` requests
-    pub fn start_services(
-        self,
-        addr: impl ToSocketAddrs + Send + 'static,
-    ) -> Vec<JoinHandle<anyhow::Result<()>>> {
+    pub fn start_services(self) -> Vec<JoinHandle<anyhow::Result<()>>> {
         let this = Arc::new(self);
         let tx_sender = this.tx_sender.clone();
 
@@ -136,29 +108,7 @@ impl LiteBridge {
             .clone()
             .listen(CommitmentConfig::confirmed());
 
-        let json_cfg = web::JsonConfig::default().error_handler(|err, req| {
-            let err = JsonRpcRes::Err(serde_json::Value::String(format!("{err}")))
-                .respond_to(req)
-                .into_body();
-            actix_web::error::ErrorBadRequest(err)
-        });
-
-        let server = tokio::spawn(async move {
-            let server = HttpServer::new(move || {
-                App::new()
-                    .app_data(web::Data::new(this.clone()))
-                    .app_data(json_cfg.clone())
-                    .route("/", web::post().to(Self::rpc_route))
-            })
-            .bind(addr)?
-            .run();
-
-            server.await?;
-
-            Ok(())
-        });
-
-        let mut services = vec![server, finalized_block_listenser, confirmed_block_listenser];
+        let mut services = vec![finalized_block_listenser, confirmed_block_listenser];
 
         if let Some(tx_sender) = tx_sender {
             services.push(tx_sender.execute());
@@ -166,35 +116,9 @@ impl LiteBridge {
 
         services
     }
-
-    async fn rpc_route(body: bytes::Bytes, state: web::Data<Arc<LiteBridge>>) -> JsonRpcRes {
-        let json_rpc_req = match serde_json::from_slice::<JsonRpcReq>(&body) {
-            Ok(json_rpc_req) => json_rpc_req,
-            Err(err) => return JsonRpcError::SerdeError(err).into(),
-        };
-
-        if let RpcMethod::Other = json_rpc_req.method {
-            let res = reqwest::Client::new()
-                .post(state.rpc_url.clone())
-                .body(body)
-                .header("Content-Type", "application/json")
-                .send()
-                .await
-                .unwrap();
-
-            JsonRpcRes::Raw {
-                status: res.status().as_u16(),
-                body: res.text().await.unwrap(),
-            }
-        } else {
-            state
-                .execute_rpc_request(json_rpc_req)
-                .await
-                .try_into()
-                .unwrap()
-        }
-    }
 }
+
+impl jsonrpc_core::Metadata for LiteBridge {}
 
 impl Deref for LiteBridge {
     type Target = RpcClient;
