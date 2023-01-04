@@ -1,3 +1,4 @@
+use chrono::DateTime;
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
 use serde::Serialize;
@@ -19,7 +20,7 @@ use std::{
         Arc, RwLock,
     },
     thread::{self, Builder, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use tokio::sync::broadcast;
 
@@ -49,14 +50,32 @@ impl BlockInformation {
     }
 }
 
-#[derive(Clone)]
 pub struct SignatureStatus {
-    pub commitment_level: CommitmentLevel,
-    pub transaction_error: Option<TransactionError>,
+    pub status: Option<CommitmentLevel>,
+    pub error: Option<String>,
+    pub created: Instant,
+}
+
+impl SignatureStatus {
+    pub fn new() -> Self {
+        Self {
+            status: None,
+            error: None,
+            created: Instant::now(),
+        }
+    }
+
+    pub fn new_from_commitment(commitment: CommitmentLevel) -> Self {
+        Self {
+            status: Some(commitment),
+            error: None,
+            created: Instant::now(),
+        }
+    }
 }
 
 pub struct LiteRpcContext {
-    pub signature_status: DashMap<String, Option<SignatureStatus>>,
+    pub signature_status: DashMap<String, SignatureStatus>,
     pub finalized_block_info: BlockInformation,
     pub confirmed_block_info: BlockInformation,
     pub notification_sender: Sender<NotificationType>,
@@ -73,6 +92,11 @@ impl LiteRpcContext {
             finalized_block_info: BlockInformation::new(rpc_client, CommitmentLevel::Finalized),
             notification_sender,
         }
+    }
+
+    pub fn remove_stale_data(&self, purgetime_in_seconds: u64) {
+        self.signature_status
+            .retain(|_k, v| v.created.elapsed().as_secs() < purgetime_in_seconds);
     }
 }
 
@@ -268,12 +292,15 @@ impl LiteRpcSubsrciptionControl {
 pub struct PerformanceCounter {
     pub total_confirmations: Arc<AtomicU64>,
     pub total_transactions_sent: Arc<AtomicU64>,
+    pub transaction_sent_error: Arc<AtomicU64>,
 
     pub confirmations_per_seconds: Arc<AtomicU64>,
     pub transactions_per_seconds: Arc<AtomicU64>,
+    pub send_transactions_errors_per_seconds: Arc<AtomicU64>,
 
     last_count_for_confirmations: Arc<AtomicU64>,
     last_count_for_transactions_sent: Arc<AtomicU64>,
+    last_count_for_sent_errors: Arc<AtomicU64>,
 }
 
 impl PerformanceCounter {
@@ -285,6 +312,9 @@ impl PerformanceCounter {
             transactions_per_seconds: Arc::new(AtomicU64::new(0)),
             last_count_for_confirmations: Arc::new(AtomicU64::new(0)),
             last_count_for_transactions_sent: Arc::new(AtomicU64::new(0)),
+            transaction_sent_error: Arc::new(AtomicU64::new(0)),
+            last_count_for_sent_errors: Arc::new(AtomicU64::new(0)),
+            send_transactions_errors_per_seconds: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -292,6 +322,8 @@ impl PerformanceCounter {
         let total_confirmations: u64 = self.total_confirmations.load(Ordering::Relaxed);
 
         let total_transactions: u64 = self.total_transactions_sent.load(Ordering::Relaxed);
+
+        let total_errors: u64 = self.transaction_sent_error.load(Ordering::Relaxed);
 
         self.confirmations_per_seconds.store(
             total_confirmations - self.last_count_for_confirmations.load(Ordering::Relaxed),
@@ -304,15 +336,17 @@ impl PerformanceCounter {
                     .load(Ordering::Relaxed),
             Ordering::Release,
         );
+        self.send_transactions_errors_per_seconds.store(
+            total_errors - self.last_count_for_sent_errors.load(Ordering::Relaxed),
+            Ordering::Release,
+        );
 
         self.last_count_for_confirmations
             .store(total_confirmations, Ordering::Relaxed);
         self.last_count_for_transactions_sent
             .store(total_transactions, Ordering::Relaxed);
-    }
-
-    pub fn update_sent_transactions_counter(&self) {
-        self.total_transactions_sent.fetch_add(1, Ordering::Relaxed);
+        self.last_count_for_sent_errors
+            .store(total_errors, Ordering::Relaxed);
     }
 
     pub fn update_confirm_transaction_counter(&self) {

@@ -23,7 +23,7 @@ use crate::{
 };
 use cli::Args;
 
-fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: String) {
+fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String) {
     let rpc_url = if rpc_url.is_empty() {
         let (_, rpc_url) = ConfigInput::compute_json_rpc_url_setting(
             rpc_url.as_str(),
@@ -51,7 +51,7 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
     let performance_counter = PerformanceCounter::new();
     launch_performance_updating_thread(performance_counter.clone());
 
-    let (broadcast_sender, _broadcast_receiver) = broadcast::channel(128);
+    let (broadcast_sender, _broadcast_receiver) = broadcast::channel(10000);
     let (notification_sender, notification_reciever) = crossbeam_channel::unbounded();
 
     let pubsub_control = Arc::new(LiteRpcSubsrciptionControl::new(
@@ -69,15 +69,16 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
         subscription_port,
         performance_counter.clone(),
     );
-    {
+    let broadcast_thread = {
+        // build broadcasting thread
         let pubsub_control = pubsub_control.clone();
         std::thread::Builder::new()
             .name("broadcasting thread".to_string())
             .spawn(move || {
                 pubsub_control.start_broadcasting();
             })
-            .unwrap();
-    }
+            .unwrap()
+    };
     let mut io = MetaIoHandler::default();
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
@@ -88,6 +89,18 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
         notification_sender,
         performance_counter.clone(),
     );
+    let cleaning_thread = {
+        // build cleaning thread
+        let context = request_processor.context.clone();
+        std::thread::Builder::new()
+            .name("cleaning thread".to_string())
+            .spawn(move || {
+                context.remove_stale_data(60 * 10);
+                sleep(std::time::Duration::from_secs(60 * 5))
+            })
+            .unwrap()
+    };
+
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(1)
@@ -108,7 +121,7 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
                 request_processor.clone()
             })
             .event_loop_executor(runtime.handle().clone())
-            .threads(1)
+            .threads(4)
             .cors(DomainsValidation::AllowOnly(vec![
                 AccessControlAllowOrigin::Any,
             ]))

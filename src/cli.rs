@@ -18,7 +18,7 @@ pub struct Args {
     pub subscription_port: String,
     #[arg(short, long, default_value_t = String::from("http://localhost:8899"))]
     pub rpc_url: String,
-    #[arg(short, long,  default_value_t = String::new())]
+    #[arg(short, long,  default_value_t = String::from("http://localhost:8900"))]
     pub websocket_url: String,
 }
 
