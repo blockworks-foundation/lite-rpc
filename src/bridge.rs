@@ -10,7 +10,7 @@ use std::{ops::Deref, str::FromStr, sync::Arc};
 use anyhow::bail;
 use reqwest::Url;
 
-use jsonrpsee::server::ServerBuilder;
+use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 use solana_client::{
     nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
     rpc_config::{RpcContextConfig, RpcRequestAirdropConfig},
@@ -210,6 +210,17 @@ impl LiteRpcServer for LiteBridge {
             .await
             .unwrap()
             .to_string())
+    }
+
+    fn signature_subscribe(
+        &self,
+        sink: SubscriptionSink,
+        signature: String,
+        commitment_config: CommitmentConfig,
+    ) -> SubscriptionResult {
+        self.get_block_listner(commitment_config)
+            .signature_subscribe(signature, sink);
+        Ok(())
     }
 }
 

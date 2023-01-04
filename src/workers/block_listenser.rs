@@ -4,12 +4,14 @@ use std::sync::Arc;
 use anyhow::{bail, Context};
 use dashmap::DashMap;
 use futures::StreamExt;
+use jsonrpsee::SubscriptionSink;
 use log::info;
 use solana_client::nonblocking::pubsub_client::PubsubClient;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_client::rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
+use solana_sdk::transaction::TransactionError;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -24,6 +26,7 @@ pub struct BlockListener {
     latest_block_hash: Arc<RwLock<String>>,
     block_height: Arc<AtomicU64>,
     commitment_config: CommitmentConfig,
+    signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
 }
 
 impl BlockListener {
@@ -44,6 +47,7 @@ impl BlockListener {
             latest_block_hash: Arc::new(RwLock::new(latest_block_hash.to_string())),
             block_height: Arc::new(AtomicU64::new(block_height)),
             commitment_config,
+            signature_subscribers: Default::default(),
         })
     }
 
@@ -68,6 +72,14 @@ impl BlockListener {
             self.latest_block_hash.read().await.clone(),
             self.block_height.load(Ordering::Relaxed),
         )
+    }
+
+    pub fn signature_subscribe(&self, signature: String, sink: SubscriptionSink) {
+        self.signature_subscribers.insert(signature, sink).unwrap();
+    }
+
+    pub fn signature_un_subscribe(&self, signature: String) {
+        self.signature_subscribers.remove(&signature);
     }
 
     pub fn listen(self) -> JoinHandle<anyhow::Result<()>> {
@@ -124,12 +136,18 @@ impl BlockListener {
                 for sig in signatures {
                     info!("{comfirmation_status:?} {sig}");
 
+                    // subscribers
+                    if let Some((_sig, mut sink)) = self.signature_subscribers.remove(&sig) {
+                        // none if transaction succeeded
+                        sink.send::<Option<TransactionError>>(&None).unwrap();
+                    }
+
                     self.blocks.insert(
                         sig,
                         TransactionStatus {
                             slot,
                             confirmations: None, //TODO: talk about this
-                            status: Ok(()),         // legacy field
+                            status: Ok(()),      // legacy field
                             err: None,
                             confirmation_status: Some(comfirmation_status.clone()),
                         },

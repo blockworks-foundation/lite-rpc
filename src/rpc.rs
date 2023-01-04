@@ -4,6 +4,7 @@ use solana_client::rpc_config::{
     RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
 };
 use solana_client::rpc_response::{Response as RpcResponse, RpcBlockhash, RpcVersionInfo};
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionStatus;
 
 use crate::configs::SendTransactionConfig;
@@ -42,4 +43,7 @@ pub trait LiteRpc {
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
     ) -> Result<String>;
+
+    #[subscription(name = "signatureSubscribe", unsubscribe="signatureUnsubscribe", item=Option<TransactionError>)]
+    fn signature_subscribe(&self, signature: String, commitment_config: CommitmentConfig);
 }
