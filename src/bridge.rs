@@ -5,7 +5,7 @@ use crate::{
     workers::{BlockListener, TxSender},
 };
 
-use std::{ops::Deref, sync::Arc};
+use std::{ops::Deref, str::FromStr, sync::Arc};
 
 use anyhow::bail;
 use reqwest::Url;
@@ -13,11 +13,12 @@ use reqwest::Url;
 use jsonrpsee::server::ServerBuilder;
 use solana_client::{
     nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
-    rpc_config::RpcContextConfig,
+    rpc_config::{RpcContextConfig, RpcRequestAirdropConfig},
     rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
+    pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
 use solana_transaction_status::TransactionStatus;
@@ -190,6 +191,23 @@ impl LiteRpcServer for LiteBridge {
             solana_core: version.to_string(),
             feature_set: Some(version.feature_set),
         })
+    }
+
+    async fn request_airdrop(
+        &self,
+        pubkey_str: String,
+        lamports: u64,
+        config: RpcRequestAirdropConfig,
+    ) -> crate::rpc::Result<String> {
+        let pubkey = Pubkey::from_str(&pubkey_str).unwrap();
+
+        Ok(self
+            .tpu_client
+            .rpc_client()
+            .request_airdrop_with_config(&pubkey, lamports, config)
+            .await
+            .unwrap()
+            .to_string())
     }
 }
 
