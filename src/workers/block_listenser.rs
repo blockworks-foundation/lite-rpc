@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use anyhow::{bail, Context};
@@ -22,11 +21,15 @@ use tokio::task::JoinHandle;
 pub struct BlockListener {
     pub_sub_client: Arc<PubsubClient>,
     pub blocks: Arc<DashMap<String, TransactionStatus>>,
-    slot: Arc<AtomicU64>,
-    latest_block_hash: Arc<RwLock<String>>,
-    block_height: Arc<AtomicU64>,
     commitment_config: CommitmentConfig,
+    latest_block_info: Arc<RwLock<BlockInformation>>,
     signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
+}
+
+struct BlockInformation {
+    pub slot: u64,
+    pub blockhash: String,
+    pub block_height: u64,
 }
 
 impl BlockListener {
@@ -41,11 +44,13 @@ impl BlockListener {
             .await?;
 
         Ok(Self {
-            slot: Arc::new(AtomicU64::new(rpc_client.get_slot().await?)),
             pub_sub_client,
             blocks: Default::default(),
-            latest_block_hash: Arc::new(RwLock::new(latest_block_hash.to_string())),
-            block_height: Arc::new(AtomicU64::new(block_height)),
+            latest_block_info: Arc::new(RwLock::new(BlockInformation {
+                slot: rpc_client.get_slot().await?,
+                blockhash: latest_block_hash.to_string(),
+                block_height,
+            })),
             commitment_config,
             signature_subscribers: Default::default(),
         })
@@ -63,15 +68,14 @@ impl BlockListener {
         commitment_levels
     }
 
-    pub fn get_slot(&self) -> u64 {
-        self.slot.load(Ordering::Relaxed)
+    pub async fn get_slot(&self) -> u64 {
+        self.latest_block_info.read().await.slot
     }
 
     pub async fn get_latest_blockhash(&self) -> (String, u64) {
-        (
-            self.latest_block_hash.read().await.clone(),
-            self.block_height.load(Ordering::Relaxed),
-        )
+        let block = self.latest_block_info.read().await;
+
+        (block.blockhash.clone(), block.block_height)
     }
 
     pub fn signature_subscribe(&self, signature: String, sink: SubscriptionSink) {
@@ -129,9 +133,11 @@ impl BlockListener {
                     continue;
                 };
 
-                self.slot.store(slot, Ordering::Relaxed);
-                *self.latest_block_hash.write().await = blockhash;
-                self.block_height.store(block_height, Ordering::Relaxed);
+                *self.latest_block_info.write().await = BlockInformation {
+                    slot,
+                    blockhash,
+                    block_height,
+                };
 
                 for sig in signatures {
                     info!("{comfirmation_status:?} {sig}");

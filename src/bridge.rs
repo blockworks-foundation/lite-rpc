@@ -141,7 +141,7 @@ impl LiteRpcServer for LiteBridge {
 
         let block_listner = self.get_block_listner(commitment_config);
         let (blockhash, last_valid_block_height) = block_listner.get_latest_blockhash().await;
-        let slot = block_listner.get_slot();
+        let slot = block_listner.get_slot().await;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -180,7 +180,7 @@ impl LiteRpcServer for LiteBridge {
 
         Ok(RpcResponse {
             context: RpcResponseContext {
-                slot: self.finalized_block_listenser.get_slot(),
+                slot: self.finalized_block_listenser.get_slot().await,
                 api_version: None,
             },
             value: sig_statuses,
