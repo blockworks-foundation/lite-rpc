@@ -24,14 +24,18 @@ async fn send_and_confirm_txs() {
             .unwrap(),
     );
 
-    let block_listener = BlockListener::new(rpc_client.clone(), DEFAULT_WS_ADDR)
-        .await
-        .unwrap();
+    let block_listener = BlockListener::new(
+        rpc_client.clone(),
+        DEFAULT_WS_ADDR,
+        CommitmentConfig::confirmed(),
+    )
+    .await
+    .unwrap();
 
     let tx_sender = TxSender::new(tpu_client);
 
     let services = try_join_all(vec![
-        block_listener.clone().listen(CommitmentConfig::confirmed()),
+        block_listener.clone().listen(),
         tx_sender.clone().execute(),
     ]);
 

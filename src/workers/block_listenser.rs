@@ -9,7 +9,9 @@ use solana_client::nonblocking::pubsub_client::PubsubClient;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_client::rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 /// Background worker which listen's to new blocks
@@ -19,15 +21,29 @@ pub struct BlockListener {
     pub_sub_client: Arc<PubsubClient>,
     pub blocks: Arc<DashMap<String, TransactionStatus>>,
     slot: Arc<AtomicU64>,
+    latest_block_hash: Arc<RwLock<String>>,
+    block_height: Arc<AtomicU64>,
+    commitment_config: CommitmentConfig,
 }
 
 impl BlockListener {
-    pub async fn new(rpc_client: Arc<RpcClient>, ws_url: &str) -> anyhow::Result<Self> {
+    pub async fn new(
+        rpc_client: Arc<RpcClient>,
+        ws_url: &str,
+        commitment_config: CommitmentConfig,
+    ) -> anyhow::Result<Self> {
         let pub_sub_client = Arc::new(PubsubClient::new(ws_url).await?);
+        let (latest_block_hash, block_height) = rpc_client
+            .get_latest_blockhash_with_commitment(commitment_config)
+            .await?;
+
         Ok(Self {
             slot: Arc::new(AtomicU64::new(rpc_client.get_slot().await?)),
             pub_sub_client,
             blocks: Default::default(),
+            latest_block_hash: Arc::new(RwLock::new(latest_block_hash.to_string())),
+            block_height: Arc::new(AtomicU64::new(block_height)),
+            commitment_config,
         })
     }
 
@@ -47,11 +63,20 @@ impl BlockListener {
         self.slot.load(Ordering::Relaxed)
     }
 
-    pub fn listen(self, commitment_config: CommitmentConfig) -> JoinHandle<anyhow::Result<()>> {
+    pub async fn get_latest_blockhash(&self) -> (String, u64) {
+        (
+            self.latest_block_hash.read().await.clone(),
+            self.block_height.load(Ordering::Relaxed),
+        )
+    }
+
+    pub fn listen(self) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             info!("Subscribing to blocks");
 
-            let comfirmation_status = match commitment_config.commitment {
+            let commitment = self.commitment_config.commitment;
+
+            let comfirmation_status = match commitment {
                 CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
                 _ => TransactionConfirmationStatus::Confirmed,
             };
@@ -61,7 +86,7 @@ impl BlockListener {
                 .block_subscribe(
                     RpcBlockSubscribeFilter::All,
                     Some(RpcBlockSubscribeConfig {
-                        commitment: Some(commitment_config),
+                        commitment: Some(self.commitment_config),
                         encoding: None,
                         transaction_details: Some(
                             solana_transaction_status::TransactionDetails::Signatures,
@@ -73,21 +98,28 @@ impl BlockListener {
                 .await
                 .context("Error calling block_subscribe")?;
 
-            let commitment = commitment_config.commitment;
-
             info!("Listening to {commitment:?} blocks");
 
             while let Some(block) = recv.as_mut().next().await {
                 let slot = block.value.slot;
-                self.slot.store(slot, Ordering::Relaxed);
 
                 let Some(block) = block.value.block else {
                     continue;
                 };
 
+                let Some(block_height) = block.block_height else {
+                    continue;
+                };
+
+                let blockhash = block.blockhash;
+
                 let Some(signatures) = block.signatures else {
                     continue;
                 };
+
+                self.slot.store(slot, Ordering::Relaxed);
+                *self.latest_block_hash.write().await = blockhash;
+                self.block_height.store(block_height, Ordering::Relaxed);
 
                 for sig in signatures {
                     info!("{comfirmation_status:?} {sig}");

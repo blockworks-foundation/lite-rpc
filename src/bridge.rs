@@ -1,21 +1,27 @@
 use crate::{
     configs::SendTransactionConfig,
     encoding::BinaryEncoding,
-    errors::JsonRpcError,
+    rpc::LiteRpcServer,
     workers::{BlockListener, TxSender},
 };
 
 use std::{ops::Deref, sync::Arc};
 
+use anyhow::bail;
 use reqwest::Url;
 
+use jsonrpsee::server::ServerBuilder;
 use solana_client::{
     nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
-    rpc_response::{Response as RpcResponse, RpcResponseContext, RpcVersionInfo},
+    rpc_config::RpcContextConfig,
+    rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
-use solana_sdk::{commitment_config::CommitmentConfig, transaction::VersionedTransaction};
+use solana_sdk::{
+    commitment_config::{CommitmentConfig, CommitmentLevel},
+    transaction::VersionedTransaction,
+};
 use solana_transaction_status::TransactionStatus;
-use tokio::task::JoinHandle;
+use tokio::{net::ToSocketAddrs, task::JoinHandle};
 
 /// A bridge between clients and tpu
 #[derive(Clone)]
@@ -23,7 +29,8 @@ pub struct LiteBridge {
     pub tpu_client: Arc<TpuClient>,
     pub rpc_url: Url,
     pub tx_sender: Option<TxSender>,
-    pub block_listner: BlockListener,
+    pub finalized_block_listenser: BlockListener,
+    pub confirmed_block_listenser: BlockListener,
 }
 
 impl LiteBridge {
@@ -37,7 +44,10 @@ impl LiteBridge {
         let tpu_client =
             Arc::new(TpuClient::new(rpc_client.clone(), ws_addr, Default::default()).await?);
 
-        let block_listner = BlockListener::new(rpc_client.clone(), ws_addr).await?;
+        let finalized_block_listenser =
+            BlockListener::new(rpc_client.clone(), ws_addr, CommitmentConfig::finalized()).await?;
+        let confirmed_block_listenser =
+            BlockListener::new(rpc_client.clone(), ws_addr, CommitmentConfig::confirmed()).await?;
 
         Ok(Self {
             tx_sender: if batch_transactions {
@@ -45,23 +55,67 @@ impl LiteBridge {
             } else {
                 None
             },
-            block_listner,
+            finalized_block_listenser,
+            confirmed_block_listenser,
             rpc_url,
             tpu_client,
         })
     }
 
-    pub async fn send_transaction(
+    pub fn get_block_listner(&self, commitment_config: CommitmentConfig) -> BlockListener {
+        if let CommitmentLevel::Finalized = commitment_config.commitment {
+            self.finalized_block_listenser.clone()
+        } else {
+            self.confirmed_block_listenser.clone()
+        }
+    }
+
+    /// List for `JsonRpc` requests
+    pub async fn start_services(
+        self,
+        addr: impl ToSocketAddrs,
+    ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
+        let tx_sender = self.tx_sender.clone();
+
+        let finalized_block_listenser = self.finalized_block_listenser.clone().listen();
+
+        let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen();
+
+        let handle = ServerBuilder::default()
+            .build(addr)
+            .await?
+            .start(self.into_rpc())?;
+
+        let server = tokio::spawn(async move {
+            handle.stopped().await;
+            bail!("server stopped");
+        });
+
+        let mut services = vec![server, finalized_block_listenser, confirmed_block_listenser];
+
+        if let Some(tx_sender) = tx_sender {
+            services.push(tx_sender.execute());
+        }
+
+        Ok(services)
+    }
+}
+
+#[jsonrpsee::core::async_trait]
+impl LiteRpcServer for LiteBridge {
+    async fn send_transaction(
         &self,
         tx: String,
         SendTransactionConfig {
             encoding,
             max_retries: _,
         }: SendTransactionConfig,
-    ) -> Result<String, JsonRpcError> {
-        let raw_tx = encoding.decode(tx)?;
+    ) -> crate::rpc::Result<String> {
+        let raw_tx = encoding.decode(tx).unwrap();
 
-        let sig = bincode::deserialize::<VersionedTransaction>(&raw_tx)?.signatures[0];
+        let sig = bincode::deserialize::<VersionedTransaction>(&raw_tx)
+            .unwrap()
+            .signatures[0];
 
         if let Some(tx_sender) = &self.tx_sender {
             tx_sender.enqnueue_tx(raw_tx);
@@ -72,53 +126,72 @@ impl LiteBridge {
         Ok(BinaryEncoding::Base58.encode(sig))
     }
 
-    pub async fn get_signature_statuses(
+    async fn get_latest_blockhash(
         &self,
-        sigs: Vec<String>,
-    ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>, JsonRpcError> {
+        config: Option<solana_client::rpc_config::RpcContextConfig>,
+    ) -> crate::rpc::Result<RpcResponse<solana_client::rpc_response::RpcBlockhash>> {
+        let commitment_config = if let Some(RpcContextConfig { commitment, .. }) = config {
+            commitment.unwrap_or_default()
+        } else {
+            CommitmentConfig::default()
+        };
+
+        let block_listner = self.get_block_listner(commitment_config);
+        let (blockhash, last_valid_block_height) = block_listner.get_latest_blockhash().await;
+        let slot = block_listner.get_slot();
+
         Ok(RpcResponse {
             context: RpcResponseContext {
-                slot: self.block_listner.get_slot(),
+                slot,
                 api_version: None,
             },
-            value: self.block_listner.get_signature_statuses(&sigs).await,
+            value: RpcBlockhash {
+                blockhash,
+                last_valid_block_height,
+            },
         })
     }
 
-    pub fn get_version(&self) -> RpcVersionInfo {
+    async fn get_signature_statuses(
+        &self,
+        sigs: Vec<String>,
+        _config: Option<solana_client::rpc_config::RpcSignatureStatusConfig>,
+    ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
+        let mut sig_statuses = self
+            .confirmed_block_listenser
+            .get_signature_statuses(&sigs)
+            .await;
+
+        // merge
+        let mut sig_index = 0;
+        for finalized_block in self
+            .finalized_block_listenser
+            .get_signature_statuses(&sigs)
+            .await
+        {
+            if let Some(finalized_block) = finalized_block {
+                sig_statuses[sig_index] = Some(finalized_block);
+            }
+            sig_index += 0;
+        }
+
+        Ok(RpcResponse {
+            context: RpcResponseContext {
+                slot: self.finalized_block_listenser.get_slot(),
+                api_version: None,
+            },
+            value: sig_statuses,
+        })
+    }
+
+    fn get_version(&self) -> crate::rpc::Result<RpcVersionInfo> {
         let version = solana_version::Version::default();
-        RpcVersionInfo {
+        Ok(RpcVersionInfo {
             solana_core: version.to_string(),
             feature_set: Some(version.feature_set),
-        }
-    }
-
-    /// List for `JsonRpc` requests
-    pub fn start_services(self) -> Vec<JoinHandle<anyhow::Result<()>>> {
-        let this = Arc::new(self);
-        let tx_sender = this.tx_sender.clone();
-
-        let finalized_block_listenser = this
-            .block_listner
-            .clone()
-            .listen(CommitmentConfig::finalized());
-
-        let confirmed_block_listenser = this
-            .block_listner
-            .clone()
-            .listen(CommitmentConfig::confirmed());
-
-        let mut services = vec![finalized_block_listenser, confirmed_block_listenser];
-
-        if let Some(tx_sender) = tx_sender {
-            services.push(tx_sender.execute());
-        }
-
-        services
+        })
     }
 }
-
-impl jsonrpc_core::Metadata for LiteBridge {}
 
 impl Deref for LiteBridge {
     type Target = RpcClient;

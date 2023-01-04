@@ -29,7 +29,7 @@ pub async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let services = light_bridge.start_services(lite_rpc_addr);
+    let services = light_bridge.start_services(lite_rpc_addr).await?;
     let services = futures::future::try_join_all(services);
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
