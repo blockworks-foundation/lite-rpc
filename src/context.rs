@@ -11,6 +11,7 @@ use solana_rpc::rpc_subscription_tracker::{
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     signature::Signature,
+    transaction::TransactionError,
 };
 use std::{
     sync::{
@@ -48,8 +49,14 @@ impl BlockInformation {
     }
 }
 
+#[derive(Clone)]
+pub struct SignatureStatus {
+    pub commitment_level: CommitmentLevel,
+    pub transaction_error: Option<TransactionError>,
+}
+
 pub struct LiteRpcContext {
-    pub signature_status: DashMap<String, Option<CommitmentLevel>>,
+    pub signature_status: DashMap<String, Option<SignatureStatus>>,
     pub finalized_block_info: BlockInformation,
     pub confirmed_block_info: BlockInformation,
     pub notification_sender: Sender<NotificationType>,

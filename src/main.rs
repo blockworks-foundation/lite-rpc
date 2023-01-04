@@ -143,18 +143,4 @@ pub fn main() {
         } => run(port, subscription_port, rpc_url, websocket_url),
         cli::Command::Test => ts_test(),
     }
-    //cli_config.resolve_address();
-    //println!(
-    //    "Using rpc server {} and ws server {}",
-    //    cli_config.rpc_url, cli_config.websocket_url
-    //);
-    //let Args {
-    //    rpc_url: json_rpc_url,
-    //    websocket_url,
-    //    port: rpc_addr,
-    //    subscription_port,
-    //    ..
-    //} = &cli_config;
-
-    // start recieving notifications and broadcast them
 }

@@ -13,7 +13,7 @@ use std::{
 
 use crate::context::{
     BlockInformation, LiteRpcContext, NotificationType, PerformanceCounter, SignatureNotification,
-    SlotNotification,
+    SignatureStatus, SlotNotification,
 };
 use crossbeam_channel::Sender;
 use {
@@ -155,7 +155,7 @@ impl LightRpcRequestProcessor {
 
     fn process_block(
         reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
-        signature_status: &DashMap<String, Option<CommitmentLevel>>,
+        signature_status: &DashMap<String, Option<SignatureStatus>>,
         commitment: CommitmentLevel,
         notification_sender: &crossbeam_channel::Sender<NotificationType>,
         block_information: &BlockInformation,
@@ -192,15 +192,30 @@ impl LightRpcRequestProcessor {
                         }
 
                         if let Some(signatures) = &block.signatures {
-                            for signature in signatures {
+                            for (index, signature) in signatures.iter().enumerate() {
                                 match signature_status.entry(signature.clone()) {
                                     dashmap::mapref::entry::Entry::Occupied(mut x) => {
+                                        // get signature status
+                                        let transaction_error = match &block.transactions {
+                                            Some(transactions) => match &transactions[index].meta {
+                                                Some(meta) => meta.err.clone(),
+                                                None => {
+                                                    println!("error while getting transaction status, meta null");
+                                                    None
+                                                }
+                                            },
+                                            None => {
+                                                println!("Error while getting transaction status, transactions null");
+                                                None
+                                            }
+                                        };
+
                                         let signature_notification = SignatureNotification {
                                             signature: Signature::from_str(signature.as_str())
                                                 .unwrap(),
                                             commitment,
                                             slot: block_update.slot,
-                                            error: None,
+                                            error: transaction_error.clone().map(|x| x.to_string()),
                                         };
                                         if let Err(e) = notification_sender.send(
                                             NotificationType::Signature(signature_notification),
@@ -210,7 +225,11 @@ impl LightRpcRequestProcessor {
                                                 e.to_string()
                                             );
                                         }
-                                        x.insert(Some(commitment));
+
+                                        x.insert(Some(SignatureStatus {
+                                            commitment_level: commitment,
+                                            transaction_error: transaction_error,
+                                        }));
                                     }
                                     dashmap::mapref::entry::Entry::Vacant(_x) => {
                                         // do nothing transaction not sent by lite rpc
@@ -462,16 +481,21 @@ pub mod lite_rpc {
                 .update_confirm_transaction_counter();
 
             match k_value {
-                Some(value) => match *value {
-                    Some(commitment_for_signature) => Ok(RpcResponse {
-                        context: RpcResponseContext::new(slot),
-                        value: if commitment.eq(&CommitmentLevel::Finalized) {
-                            commitment_for_signature.eq(&CommitmentLevel::Finalized)
+                Some(value) => match value.clone() {
+                    Some(signature_status) => {
+                        let commitment = signature_status.commitment_level;
+                        let commitment_matches = if commitment.eq(&CommitmentLevel::Finalized) {
+                            commitment.eq(&CommitmentLevel::Finalized)
                         } else {
-                            commitment_for_signature.eq(&CommitmentLevel::Finalized)
-                                || commitment_for_signature.eq(&CommitmentLevel::Confirmed)
-                        },
-                    }),
+                            commitment.eq(&CommitmentLevel::Finalized)
+                                || commitment.eq(&CommitmentLevel::Confirmed)
+                        };
+                        Ok(RpcResponse {
+                            context: RpcResponseContext::new(slot),
+                            value: commitment_matches
+                                && signature_status.transaction_error.is_none(),
+                        })
+                    }
                     None => Ok(RpcResponse {
                         context: RpcResponseContext::new(slot),
                         value: false,
@@ -513,7 +537,7 @@ pub mod lite_rpc {
                     let singature_status = meta.context.signature_status.get(x);
                     let k_value = singature_status;
                     match k_value {
-                        Some(value) => match *value {
+                        Some(value) => match value.clone() {
                             Some(commitment_for_signature) => {
                                 let slot = meta
                                     .context
@@ -523,7 +547,7 @@ pub mod lite_rpc {
                                 meta.performance_counter
                                     .update_confirm_transaction_counter();
 
-                                let status = match commitment_for_signature {
+                                let status = match commitment_for_signature.commitment_level {
                                     CommitmentLevel::Finalized => {
                                         TransactionConfirmationStatus::Finalized
                                     }
@@ -533,7 +557,7 @@ pub mod lite_rpc {
                                     slot,
                                     confirmations: Some(1),
                                     status: Ok(()),
-                                    err: None,
+                                    err: commitment_for_signature.transaction_error,
                                     confirmation_status: Some(status),
                                 })
                             }
