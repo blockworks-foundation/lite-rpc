@@ -3,7 +3,7 @@ mod context;
 mod pubsub;
 mod rpc;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, thread::sleep};
 
 use clap::Parser;
 use context::LiteRpcSubsrciptionControl;
@@ -69,7 +69,7 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
         subscription_port,
         performance_counter.clone(),
     );
-    let broadcast_thread = {
+    let _broadcast_thread = {
         // build broadcasting thread
         let pubsub_control = pubsub_control.clone();
         std::thread::Builder::new()
@@ -79,6 +79,7 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
             })
             .unwrap()
     };
+
     let mut io = MetaIoHandler::default();
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
@@ -89,14 +90,14 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
         notification_sender,
         performance_counter.clone(),
     );
-    let cleaning_thread = {
+    let _cleaning_thread = {
         // build cleaning thread
         let context = request_processor.context.clone();
         std::thread::Builder::new()
             .name("cleaning thread".to_string())
             .spawn(move || {
                 context.remove_stale_data(60 * 10);
-                sleep(std::time::Duration::from_secs(60 * 5))
+                sleep(std::time::Duration::from_secs(60))
             })
             .unwrap()
     };

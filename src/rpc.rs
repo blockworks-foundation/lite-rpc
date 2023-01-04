@@ -69,6 +69,7 @@ impl LightRpcRequestProcessor {
 
         let context = Arc::new(LiteRpcContext::new(rpc_client.clone(), notification_sender));
 
+        println!("ws_url {}", websocket_url);
         // subscribe for confirmed_blocks
         let (client_confirmed, receiver_confirmed) =
             Self::subscribe_block(websocket_url, CommitmentLevel::Confirmed).unwrap();
@@ -85,11 +86,13 @@ impl LightRpcRequestProcessor {
                 receiver_confirmed,
                 &context,
                 CommitmentLevel::Confirmed,
+                performance_counter.clone(),
             ),
             Self::build_thread_to_process_blocks(
                 receiver_finalized,
                 &context,
                 CommitmentLevel::Finalized,
+                performance_counter.clone(),
             ),
             Self::build_thread_to_process_transactions(
                 json_rpc_url.to_string(),
@@ -148,6 +151,7 @@ impl LightRpcRequestProcessor {
         reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
         context: &Arc<LiteRpcContext>,
         commitment: CommitmentLevel,
+        performance_counters: PerformanceCounter,
     ) -> JoinHandle<()> {
         let context = context.clone();
         Builder::new()
@@ -164,6 +168,7 @@ impl LightRpcRequestProcessor {
                     commitment,
                     &context.notification_sender,
                     block_info,
+                    performance_counters,
                 );
             })
             .unwrap()
@@ -238,6 +243,7 @@ impl LightRpcRequestProcessor {
         commitment: CommitmentLevel,
         notification_sender: &crossbeam_channel::Sender<NotificationType>,
         block_information: &BlockInformation,
+        performance_counters: PerformanceCounter,
     ) {
         loop {
             let block_data = reciever.recv();
@@ -300,6 +306,12 @@ impl LightRpcRequestProcessor {
                                                 e.to_string()
                                             );
                                         }
+
+                                        if commitment.eq(&CommitmentLevel::Finalized) {
+                                            performance_counters.finalized_per_seconds.fetch_add(1, Ordering::Relaxed);
+                                        } else {
+                                            performance_counters.confirmations_per_seconds.fetch_add(1, Ordering::Relaxed);
+                                        } 
 
                                         x.insert(SignatureStatus {
                                             status: Some(commitment),
@@ -452,7 +464,11 @@ pub mod lite_rpc {
             let signature = transaction.signatures[0].to_string();
             meta.context
                 .signature_status
-                .insert(signature.clone(), SignatureStatus::new());
+                .insert(signature.clone(), SignatureStatus{
+                    status: None,
+                    error: None,
+                    created: Instant::now(),
+                });
 
             match meta.tpu_producer_channel.send(transaction) {
                 Ok(_) => Ok(signature),
@@ -560,13 +576,10 @@ pub mod lite_rpc {
                     .slot
                     .load(Ordering::Relaxed)
             };
-            meta.performance_counter
-                .update_confirm_transaction_counter();
 
             match k_value {
-                Some(value) => match value.clone() {
-                    Some(signature_status) => {
-                        let commitment = signature_status.commitment_level;
+                Some(value) => match value.status {
+                    Some(commitment) => {
                         let commitment_matches = if commitment.eq(&CommitmentLevel::Finalized) {
                             commitment.eq(&CommitmentLevel::Finalized)
                         } else {
@@ -576,7 +589,7 @@ pub mod lite_rpc {
                         Ok(RpcResponse {
                             context: RpcResponseContext::new(slot),
                             value: commitment_matches
-                                && signature_status.transaction_error.is_none(),
+                                && value.error.is_none(),
                         })
                     }
                     None => Ok(RpcResponse {
@@ -620,17 +633,15 @@ pub mod lite_rpc {
                     let singature_status = meta.context.signature_status.get(x);
                     let k_value = singature_status;
                     match k_value {
-                        Some(value) => match value.clone() {
-                            Some(commitment_for_signature) => {
+                        Some(value) => match value.status {
+                            Some(commitment_level) => {
                                 let slot = meta
                                     .context
                                     .confirmed_block_info
                                     .slot
                                     .load(Ordering::Relaxed);
-                                meta.performance_counter
-                                    .update_confirm_transaction_counter();
 
-                                let status = match commitment_for_signature.commitment_level {
+                                let status = match commitment_level {
                                     CommitmentLevel::Finalized => {
                                         TransactionConfirmationStatus::Finalized
                                     }
@@ -638,9 +649,9 @@ pub mod lite_rpc {
                                 };
                                 Some(TransactionStatus {
                                     slot,
-                                    confirmations: Some(1),
+                                    confirmations: None,
                                     status: Ok(()),
-                                    err: commitment_for_signature.transaction_error,
+                                    err: value.error.clone(),
                                     confirmation_status: Some(status),
                                 })
                             }

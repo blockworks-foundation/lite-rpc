@@ -12,13 +12,13 @@ use solana_cli_config::ConfigInput;
     "
 )]
 pub struct Args {
-    #[arg(short, long, default_value_t = String::from("8899"))]
-    pub port: String,
-    #[arg(short, long, default_value_t = String::from("8900"))]
-    pub subscription_port: String,
+    #[arg(short, long, default_value_t = 9000)]
+    pub port: u16,
+    #[arg(short, long, default_value_t = 9001)]
+    pub subscription_port: u16,
     #[arg(short, long, default_value_t = String::from("http://localhost:8899"))]
     pub rpc_url: String,
-    #[arg(short, long,  default_value_t = String::from("http://localhost:8900"))]
+    #[arg(short, long,  default_value_t = String::from("ws://localhost:8900"))]
     pub websocket_url: String,
 }
 

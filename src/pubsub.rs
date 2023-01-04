@@ -161,7 +161,7 @@ enum HandleError {
 async fn handle_connection(
     socket: TcpStream,
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    performance_counter: PerformanceCounter,
+    _performance_counter: PerformanceCounter,
 ) -> core::result::Result<(), HandleError> {
     let mut server = Server::new(socket.compat());
     let request = server.receive_request().await?;
@@ -194,7 +194,6 @@ async fn handle_connection(
                     result = broadcast_receiver.recv() => {
                         if let Ok(x) = result {
                             if rpc_impl.current_subscriptions.contains_key(&x.subscription_id) {
-                                performance_counter.update_confirm_transaction_counter();
                                 sender.send_text(&x.json).await?;
                             }
                         }

@@ -1,6 +1,7 @@
 use chrono::DateTime;
 use crossbeam_channel::Sender;
 use dashmap::DashMap;
+use libc::file_clone_range;
 use serde::Serialize;
 use solana_client::{
     rpc_client::RpcClient,
@@ -52,26 +53,8 @@ impl BlockInformation {
 
 pub struct SignatureStatus {
     pub status: Option<CommitmentLevel>,
-    pub error: Option<String>,
+    pub error: Option<TransactionError>,
     pub created: Instant,
-}
-
-impl SignatureStatus {
-    pub fn new() -> Self {
-        Self {
-            status: None,
-            error: None,
-            created: Instant::now(),
-        }
-    }
-
-    pub fn new_from_commitment(commitment: CommitmentLevel) -> Self {
-        Self {
-            status: Some(commitment),
-            error: None,
-            created: Instant::now(),
-        }
-    }
 }
 
 pub struct LiteRpcContext {
@@ -290,14 +273,17 @@ impl LiteRpcSubsrciptionControl {
 
 #[derive(Clone)]
 pub struct PerformanceCounter {
+    pub total_finalized: Arc<AtomicU64>,
     pub total_confirmations: Arc<AtomicU64>,
     pub total_transactions_sent: Arc<AtomicU64>,
     pub transaction_sent_error: Arc<AtomicU64>,
 
+    pub finalized_per_seconds:  Arc<AtomicU64>,
     pub confirmations_per_seconds: Arc<AtomicU64>,
     pub transactions_per_seconds: Arc<AtomicU64>,
     pub send_transactions_errors_per_seconds: Arc<AtomicU64>,
 
+    last_count_for_finalized: Arc<AtomicU64>,
     last_count_for_confirmations: Arc<AtomicU64>,
     last_count_for_transactions_sent: Arc<AtomicU64>,
     last_count_for_sent_errors: Arc<AtomicU64>,
@@ -306,10 +292,13 @@ pub struct PerformanceCounter {
 impl PerformanceCounter {
     pub fn new() -> Self {
         Self {
+            total_finalized: Arc::new(AtomicU64::new(0)),
             total_confirmations: Arc::new(AtomicU64::new(0)),
             total_transactions_sent: Arc::new(AtomicU64::new(0)),
             confirmations_per_seconds: Arc::new(AtomicU64::new(0)),
             transactions_per_seconds: Arc::new(AtomicU64::new(0)),
+            finalized_per_seconds: Arc::new(AtomicU64::new(0)),
+            last_count_for_finalized: Arc::new(AtomicU64::new(0)),
             last_count_for_confirmations: Arc::new(AtomicU64::new(0)),
             last_count_for_transactions_sent: Arc::new(AtomicU64::new(0)),
             transaction_sent_error: Arc::new(AtomicU64::new(0)),
@@ -319,12 +308,17 @@ impl PerformanceCounter {
     }
 
     pub fn update_per_seconds_transactions(&self) {
+        let total_finalized: u64 = self.total_finalized.load(Ordering::Relaxed);
         let total_confirmations: u64 = self.total_confirmations.load(Ordering::Relaxed);
 
         let total_transactions: u64 = self.total_transactions_sent.load(Ordering::Relaxed);
 
         let total_errors: u64 = self.transaction_sent_error.load(Ordering::Relaxed);
 
+        self.finalized_per_seconds.store(
+            total_finalized - self.last_count_for_finalized.load(Ordering::Relaxed),
+            Ordering::Release,
+        );
         self.confirmations_per_seconds.store(
             total_confirmations - self.last_count_for_confirmations.load(Ordering::Relaxed),
             Ordering::Release,
@@ -341,16 +335,14 @@ impl PerformanceCounter {
             Ordering::Release,
         );
 
+        self.last_count_for_finalized
+            .store(total_finalized, Ordering::Relaxed);
         self.last_count_for_confirmations
             .store(total_confirmations, Ordering::Relaxed);
         self.last_count_for_transactions_sent
             .store(total_transactions, Ordering::Relaxed);
         self.last_count_for_sent_errors
             .store(total_errors, Ordering::Relaxed);
-    }
-
-    pub fn update_confirm_transaction_counter(&self) {
-        self.total_confirmations.fetch_add(1, Ordering::Relaxed);
     }
 }
 
@@ -373,9 +365,10 @@ pub fn launch_performance_updating_thread(
                 let total_transactions_per_seconds = performance_counter
                     .transactions_per_seconds
                     .load(Ordering::Acquire);
+                let finalized_per_second = performance_counter.finalized_per_seconds.load(Ordering::Acquire);
                 println!(
-                    "At {} second, Sent {} transactions and confrimed {} transactions",
-                    nb_seconds, total_transactions_per_seconds, confirmations_per_seconds
+                    "At {} second, Sent {} transactions, finalized {} and confirmed {} transactions",
+                    nb_seconds, total_transactions_per_seconds, finalized_per_second, confirmations_per_seconds
                 );
                 let runtime = start.elapsed();
                 nb_seconds += 1;
