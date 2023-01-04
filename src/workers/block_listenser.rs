@@ -5,9 +5,10 @@ use dashmap::DashMap;
 use futures::StreamExt;
 use jsonrpsee::SubscriptionSink;
 use log::info;
-use solana_client::nonblocking::pubsub_client::PubsubClient;
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_client::rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter};
+use solana_client::{
+    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
+    rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
+};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
 use solana_sdk::transaction::TransactionError;
