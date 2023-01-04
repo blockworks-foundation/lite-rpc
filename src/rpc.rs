@@ -119,9 +119,7 @@ impl LightRpcRequestProcessor {
             Some(RpcBlockSubscribeConfig {
                 commitment: Some(CommitmentConfig { commitment }),
                 encoding: None,
-                transaction_details: Some(
-                    solana_transaction_status::TransactionDetails::Signatures,
-                ),
+                transaction_details: Some(solana_transaction_status::TransactionDetails::Full),
                 show_rewards: None,
                 max_supported_transaction_version: None,
             }),
@@ -162,7 +160,6 @@ impl LightRpcRequestProcessor {
     ) {
         loop {
             let block_data = reciever.recv();
-
             match block_data {
                 Ok(data) => {
                     let block_update = &data.value;
@@ -191,25 +188,22 @@ impl LightRpcRequestProcessor {
                             *lock = block.blockhash.clone();
                         }
 
-                        if let Some(signatures) = &block.signatures {
-                            for (index, signature) in signatures.iter().enumerate() {
+                        if let Some(transactions) = &block.transactions {
+                            for transaction in transactions {
+                                let decoded_transaction =
+                                    &transaction.transaction.decode().unwrap();
+
+                                let signature = decoded_transaction.signatures[0].to_string();
                                 match signature_status.entry(signature.clone()) {
                                     dashmap::mapref::entry::Entry::Occupied(mut x) => {
                                         // get signature status
-                                        let transaction_error = match &block.transactions {
-                                            Some(transactions) => match &transactions[index].meta {
-                                                Some(meta) => meta.err.clone(),
-                                                None => {
-                                                    println!("error while getting transaction status, meta null");
-                                                    None
-                                                }
-                                            },
+                                        let transaction_error = match &transaction.meta {
+                                            Some(x) => x.err.clone(),
                                             None => {
-                                                println!("Error while getting transaction status, transactions null");
+                                                println!("cannot decode transaction error");
                                                 None
                                             }
                                         };
-
                                         let signature_notification = SignatureNotification {
                                             signature: Signature::from_str(signature.as_str())
                                                 .unwrap(),

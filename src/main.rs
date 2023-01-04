@@ -122,25 +122,15 @@ fn run(port: String, subscription_port: String, rpc_url: String, websocket_url: 
     websocket_service.close().unwrap();
 }
 
-fn ts_test() {
-    let res = std::process::Command::new("yarn")
-        .args(["run", "test:test-validator"])
-        .output()
-        .unwrap();
-    println!("{}", String::from_utf8_lossy(&res.stdout));
-    println!("{}", String::from_utf8_lossy(&res.stderr));
-}
-
 pub fn main() {
-    let cli_command = Args::parse();
+    let mut cli_command = Args::parse();
+    cli_command.resolve_address();
 
-    match cli_command.command {
-        cli::Command::Run {
-            port,
-            subscription_port,
-            rpc_url,
-            websocket_url,
-        } => run(port, subscription_port, rpc_url, websocket_url),
-        cli::Command::Test => ts_test(),
-    }
+    let Args {
+        port,
+        subscription_port,
+        rpc_url,
+        websocket_url,
+    } = cli_command;
+    run(port, subscription_port, rpc_url, websocket_url)
 }

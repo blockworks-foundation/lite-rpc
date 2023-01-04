@@ -206,8 +206,14 @@ impl LiteRpcSubsrciptionControl {
                                         },
                                     };
                                     let json = serde_json::to_string(&notification).unwrap();
+                                    let subscription_id = *x.get();
+
+                                    // no more notification for this signature has been finalized
+                                    if data.commitment.eq(&CommitmentLevel::Finalized) {
+                                        x.remove();
+                                    }
                                     Some(LiteRpcNotification {
-                                        subscription_id: *x.get(),
+                                        subscription_id,
                                         created_at: Instant::now(),
                                         is_final: false,
                                         json,
@@ -319,26 +325,29 @@ pub fn launch_performance_updating_thread(
 ) -> JoinHandle<()> {
     Builder::new()
         .name("Performance Counter".to_string())
-        .spawn(move || loop {
-            let start = Instant::now();
+        .spawn(move || {
+            let mut nb_seconds: u64 = 0;
+            loop {
+                let start = Instant::now();
 
-            let wait_time = Duration::from_millis(1000);
-            let performance_counter = performance_counter.clone();
-            performance_counter.update_per_seconds_transactions();
-            let confirmations_per_seconds = performance_counter
-                .confirmations_per_seconds
-                .load(Ordering::Acquire);
-            let total_transactions_per_seconds = performance_counter
-                .transactions_per_seconds
-                .load(Ordering::Acquire);
-
-            let runtime = start.elapsed();
-            if let Some(remaining) = wait_time.checked_sub(runtime) {
+                let wait_time = Duration::from_millis(1000);
+                let performance_counter = performance_counter.clone();
+                performance_counter.update_per_seconds_transactions();
+                let confirmations_per_seconds = performance_counter
+                    .confirmations_per_seconds
+                    .load(Ordering::Acquire);
+                let total_transactions_per_seconds = performance_counter
+                    .transactions_per_seconds
+                    .load(Ordering::Acquire);
                 println!(
-                    "Sent {} transactions and confrimed {} transactions",
-                    total_transactions_per_seconds, confirmations_per_seconds
+                    "At {} second, Sent {} transactions and confrimed {} transactions",
+                    nb_seconds, total_transactions_per_seconds, confirmations_per_seconds
                 );
-                thread::sleep(remaining);
+                let runtime = start.elapsed();
+                nb_seconds += 1;
+                if let Some(remaining) = wait_time.checked_sub(runtime) {
+                    thread::sleep(remaining);
+                }
             }
         })
         .unwrap()

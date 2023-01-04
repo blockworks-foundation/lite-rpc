@@ -2,7 +2,7 @@ use dashmap::DashMap;
 use jsonrpc_core::{ErrorCode, IoHandler};
 use soketto::handshake::{server, Server};
 use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
-use std::{net::SocketAddr, str::FromStr, thread::JoinHandle};
+use std::{net::SocketAddr, str::FromStr, thread::JoinHandle, time::Instant};
 use stream_cancel::{Trigger, Tripwire};
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
@@ -42,15 +42,21 @@ pub trait LiteRpcPubSub {
 }
 
 #[derive(Clone)]
+pub struct SubscriptionParamsWithTime {
+    params: SubscriptionParams,
+    time: Instant,
+}
+
+#[derive(Clone)]
 pub struct LiteRpcPubSubImpl {
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    pub current_subscriptions: Arc<DashMap<SubscriptionId, SubscriptionParams>>,
+    pub current_subscriptions: DashMap<SubscriptionId, SubscriptionParamsWithTime>,
 }
 
 impl LiteRpcPubSubImpl {
     pub fn new(subscription_control: Arc<LiteRpcSubsrciptionControl>) -> Self {
         Self {
-            current_subscriptions: Arc::new(DashMap::new()),
+            current_subscriptions: DashMap::new(),
             subscription_control,
         }
     }
@@ -69,8 +75,13 @@ impl LiteRpcPubSubImpl {
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let new_subsription_id = SubscriptionId::from(new_subscription_id);
                 x.insert(new_subsription_id);
-                self.current_subscriptions
-                    .insert(new_subsription_id, params);
+                self.current_subscriptions.insert(
+                    new_subsription_id,
+                    SubscriptionParamsWithTime {
+                        params,
+                        time: Instant::now(),
+                    },
+                );
                 Ok(new_subsription_id)
             }
         }
@@ -116,8 +127,13 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
 
     // Get notification when slot is encountered
     fn slot_subscribe(&self) -> Result<SubscriptionId> {
-        self.current_subscriptions
-            .insert(SubscriptionId::from(0), SubscriptionParams::Slot);
+        self.current_subscriptions.insert(
+            SubscriptionId::from(0),
+            SubscriptionParamsWithTime {
+                params: SubscriptionParams::Slot,
+                time: Instant::now(),
+            },
+        );
         Ok(SubscriptionId::from(0))
     }
 
@@ -235,7 +251,7 @@ impl LitePubSubService {
             .name("solRpcPubSub".to_string())
             .spawn(move || {
                 let runtime = tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(512)
+                    .worker_threads(1)
                     .enable_all()
                     .build()
                     .expect("runtime creation failed");

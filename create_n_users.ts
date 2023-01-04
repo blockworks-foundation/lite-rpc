@@ -6,7 +6,7 @@ import * as os from 'os';
 // number of users
 const nbUsers = +process.argv[2];
 // url
-const url = process.argv.length > 3 ? process.argv[3] : "http://localhost:8899";
+const url = process.argv.length > 3 ? process.argv[3] : "http://0.0.0.0:8899";
 // outfile
 const outFile = process.argv.length > 4 ? process.argv[4] : "out.json";
  
