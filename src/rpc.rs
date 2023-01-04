@@ -16,7 +16,7 @@ pub trait LiteRpc {
     async fn send_transaction(
         &self,
         tx: String,
-        send_transaction_config: SendTransactionConfig,
+        send_transaction_config: Option<SendTransactionConfig>,
     ) -> Result<String>;
 
     #[method(name = "getLatestBlockhash")]
@@ -40,6 +40,6 @@ pub trait LiteRpc {
         &self,
         pubkey_str: String,
         lamports: u64,
-        config: RpcRequestAirdropConfig,
+        config: Option<RpcRequestAirdropConfig>,
     ) -> Result<String>;
 }

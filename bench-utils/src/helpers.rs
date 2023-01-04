@@ -43,7 +43,7 @@ impl BenchHelper {
             .await
             .context("requesting air drop")?;
 
-        info!("Air Dropping {payer_pubkey} with {amount}L");
+        info!("Air Dropping {payer_pubkey} with {amount}L {airdrop_sig}");
 
         self.wait_till_signature_status(&airdrop_sig, CommitmentConfig::finalized())
             .await?;

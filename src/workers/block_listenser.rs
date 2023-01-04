@@ -128,7 +128,7 @@ impl BlockListener {
                         sig,
                         TransactionStatus {
                             slot,
-                            confirmations: Some(1), //TODO: talk about this
+                            confirmations: None, //TODO: talk about this
                             status: Ok(()),         // legacy field
                             err: None,
                             confirmation_status: Some(comfirmation_status.clone()),

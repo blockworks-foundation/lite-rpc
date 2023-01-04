@@ -107,11 +107,13 @@ impl LiteRpcServer for LiteBridge {
     async fn send_transaction(
         &self,
         tx: String,
-        SendTransactionConfig {
+        send_transaction_config: Option<SendTransactionConfig>,
+    ) -> crate::rpc::Result<String> {
+        let SendTransactionConfig {
             encoding,
             max_retries: _,
-        }: SendTransactionConfig,
-    ) -> crate::rpc::Result<String> {
+        } = send_transaction_config.unwrap_or_default();
+
         let raw_tx = encoding.decode(tx).unwrap();
 
         let sig = bincode::deserialize::<VersionedTransaction>(&raw_tx)
@@ -197,14 +199,14 @@ impl LiteRpcServer for LiteBridge {
         &self,
         pubkey_str: String,
         lamports: u64,
-        config: RpcRequestAirdropConfig,
+        config: Option<RpcRequestAirdropConfig>,
     ) -> crate::rpc::Result<String> {
         let pubkey = Pubkey::from_str(&pubkey_str).unwrap();
 
         Ok(self
             .tpu_client
             .rpc_client()
-            .request_airdrop_with_config(&pubkey, lamports, config)
+            .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
             .await
             .unwrap()
             .to_string())
