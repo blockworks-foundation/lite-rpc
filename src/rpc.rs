@@ -42,7 +42,7 @@ use {
     },
 };
 
-const TPU_BATCH_SIZE: usize = 64;
+const TPU_BATCH_SIZE: usize = 32;
 
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
@@ -199,7 +199,7 @@ impl LightRpcRequestProcessor {
                 match recv_res {
                     Ok(transaction) => {
                         let mut transactions_vec = vec![transaction];
-                        let mut time_remaining = Duration::from_micros(5000);
+                        let mut time_remaining = Duration::from_micros(200);
                         for _i in 1..TPU_BATCH_SIZE {
                             let start = std::time::Instant::now();
                             let another = receiver.recv_timeout(time_remaining);
@@ -306,12 +306,15 @@ impl LightRpcRequestProcessor {
                                                 e.to_string()
                                             );
                                         }
-
                                         if commitment.eq(&CommitmentLevel::Finalized) {
-                                            performance_counters.finalized_per_seconds.fetch_add(1, Ordering::Relaxed);
+                                            performance_counters
+                                                .total_finalized
+                                                .fetch_add(1, Ordering::Relaxed);
                                         } else {
-                                            performance_counters.confirmations_per_seconds.fetch_add(1, Ordering::Relaxed);
-                                        } 
+                                            performance_counters
+                                                .total_confirmations
+                                                .fetch_add(1, Ordering::Relaxed);
+                                        }
 
                                         x.insert(SignatureStatus {
                                             status: Some(commitment),
@@ -462,13 +465,14 @@ pub mod lite_rpc {
             let (_wire_transaction, transaction) =
                 decode_and_deserialize::<Transaction>(data, binary_encoding)?;
             let signature = transaction.signatures[0].to_string();
-            meta.context
-                .signature_status
-                .insert(signature.clone(), SignatureStatus{
+            meta.context.signature_status.insert(
+                signature.clone(),
+                SignatureStatus {
                     status: None,
                     error: None,
                     created: Instant::now(),
-                });
+                },
+            );
 
             match meta.tpu_producer_channel.send(transaction) {
                 Ok(_) => Ok(signature),
@@ -588,8 +592,7 @@ pub mod lite_rpc {
                         };
                         Ok(RpcResponse {
                             context: RpcResponseContext::new(slot),
-                            value: commitment_matches
-                                && value.error.is_none(),
+                            value: commitment_matches && value.error.is_none(),
                         })
                     }
                     None => Ok(RpcResponse {

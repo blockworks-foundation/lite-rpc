@@ -104,7 +104,7 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
 
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
+            .worker_threads(32)
             .on_thread_start(move || renice_this_thread(0).unwrap())
             .thread_name("solLiteRpcProcessor")
             .enable_all()
@@ -122,7 +122,7 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
                 request_processor.clone()
             })
             .event_loop_executor(runtime.handle().clone())
-            .threads(4)
+            .threads(32)
             .cors(DomainsValidation::AllowOnly(vec![
                 AccessControlAllowOrigin::Any,
             ]))

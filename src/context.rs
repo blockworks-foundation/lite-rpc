@@ -278,7 +278,7 @@ pub struct PerformanceCounter {
     pub total_transactions_sent: Arc<AtomicU64>,
     pub transaction_sent_error: Arc<AtomicU64>,
 
-    pub finalized_per_seconds:  Arc<AtomicU64>,
+    pub finalized_per_seconds: Arc<AtomicU64>,
     pub confirmations_per_seconds: Arc<AtomicU64>,
     pub transactions_per_seconds: Arc<AtomicU64>,
     pub send_transactions_errors_per_seconds: Arc<AtomicU64>,
