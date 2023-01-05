@@ -65,10 +65,9 @@ impl LightRpcRequestProcessor {
         performance_counter: PerformanceCounter,
     ) -> LightRpcRequestProcessor {
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
-        let connection_cache = Arc::new(ConnectionCache::default());
-
         let context = Arc::new(LiteRpcContext::new(rpc_client.clone(), notification_sender));
 
+        let connection_cache = Arc::new(ConnectionCache::default());
         println!("ws_url {}", websocket_url);
         // subscribe for confirmed_blocks
         let (client_confirmed, receiver_confirmed) =
@@ -97,22 +96,8 @@ impl LightRpcRequestProcessor {
             Self::build_thread_to_process_transactions(
                 json_rpc_url.to_string(),
                 websocket_url.to_string(),
-                connection_cache.clone(),
+                &context,
                 tpu_consumer.clone(),
-                performance_counter.clone(),
-            ),
-            Self::build_thread_to_process_transactions(
-                json_rpc_url.to_string(),
-                websocket_url.to_string(),
-                connection_cache.clone(),
-                tpu_consumer.clone(),
-                performance_counter.clone(),
-            ),
-            Self::build_thread_to_process_transactions(
-                json_rpc_url.to_string(),
-                websocket_url.to_string(),
-                connection_cache.clone(),
-                tpu_consumer,
                 performance_counter.clone(),
             ),
         ];
@@ -177,29 +162,33 @@ impl LightRpcRequestProcessor {
     fn build_thread_to_process_transactions(
         json_rpc_url: String,
         websocket_url: String,
-        connection_cache: Arc<ConnectionCache>,
+        context: &Arc<LiteRpcContext>,
         receiver: Receiver<Transaction>,
         performance_counters: PerformanceCounter,
     ) -> JoinHandle<()> {
+        let context = context.clone();
         Builder::new()
             .name("thread working on confirmation block".to_string())
             .spawn(move || {
             let rpc_client =
                 Arc::new(RpcClient::new(json_rpc_url.to_string()));
+
+            let mut connection_cache = Arc::new(ConnectionCache::default());
             let tpu_client = TpuClient::new_with_connection_cache(
-                rpc_client,
+                rpc_client.clone(),
                 websocket_url.as_str(),
                 TpuClientConfig::default(), // value for max fanout slots
                 connection_cache.clone(),
             );
-            let tpu_client = Arc::new(tpu_client.unwrap());
+            let mut tpu_client = Arc::new(tpu_client.unwrap());
+            let mut consecutive_errors: u8 = 0;
 
             loop {
                 let recv_res = receiver.recv();
                 match recv_res {
                     Ok(transaction) => {
                         let mut transactions_vec = vec![transaction];
-                        let mut time_remaining = Duration::from_micros(200);
+                        let mut time_remaining = Duration::from_micros(1000);
                         for _i in 1..TPU_BATCH_SIZE {
                             let start = std::time::Instant::now();
                             let another = receiver.recv_timeout(time_remaining);
@@ -216,15 +205,46 @@ impl LightRpcRequestProcessor {
                         let count: u64 = transactions_vec.len() as u64;
                         let slice = transactions_vec.as_slice();
                         let fut_res = tpu_client.try_send_transaction_batch(slice);
+
+                        // insert sent transactions into signature status map
+                        transactions_vec.iter().for_each(|x| {
+                            let signature = x.signatures[0].to_string();
+                            context.signature_status.insert(
+                                signature.clone(),
+                                SignatureStatus {
+                                    status: None,
+                                    error: None,
+                                    created: Instant::now(),
+                                },
+                            );
+                        });
+
                         match fut_res {
-                            Ok(_) => performance_counters
+                            Ok(_) => {
+                                consecutive_errors = 0;
+
+                                performance_counters
                                 .total_transactions_sent
-                                .fetch_add(count, Ordering::Relaxed),
+                                .fetch_add(count, Ordering::Relaxed);
+                            },
                             Err(e) => {
                                 println!("Got error while sending transaction batch of size {}, error {}", count, e.to_string());
+                                consecutive_errors += 1;
+                                if consecutive_errors > 3 {
+                                    connection_cache = Arc::new(ConnectionCache::default());
+
+                                    let new_tpu_client = TpuClient::new_with_connection_cache(
+                                        rpc_client.clone(),
+                                        websocket_url.as_str(),
+                                        TpuClientConfig::default(), // value for max fanout slots
+                                        connection_cache.clone(),
+                                    );
+                                    // reset TPU connection
+                                    tpu_client = Arc::new(new_tpu_client.unwrap());
+                                }
                                 performance_counters
                                     .transaction_sent_error
-                                    .fetch_add(count, Ordering::Relaxed)
+                                    .fetch_add(count, Ordering::Relaxed);
                             }
                         };
                     }
@@ -418,12 +438,6 @@ pub mod lite_rpc {
             config: Option<RpcRequestAirdropConfig>,
         ) -> Result<String>;
 
-        #[rpc(meta, name = "getPerformanceCounters")]
-        fn get_performance_counters(
-            &self,
-            meta: Self::Metadata,
-        ) -> Result<RpcPerformanceCounterResults>;
-
         #[rpc(meta, name = "getLatestBlockhash")]
         fn get_latest_blockhash(
             &self,
@@ -462,17 +476,11 @@ pub mod lite_rpc {
                     tx_encoding
                 ))
             })?;
-            let (_wire_transaction, transaction) =
-                decode_and_deserialize::<Transaction>(data, binary_encoding)?;
+            let transaction = decode_and_deserialize::<Transaction>(data, binary_encoding)?;
             let signature = transaction.signatures[0].to_string();
-            meta.context.signature_status.insert(
-                signature.clone(),
-                SignatureStatus {
-                    status: None,
-                    error: None,
-                    created: Instant::now(),
-                },
-            );
+            meta.performance_counter
+                .total_transactions_recieved
+                .fetch_add(1, Ordering::Relaxed);
 
             match meta.tpu_producer_channel.send(transaction) {
                 Ok(_) => Ok(signature),
@@ -694,49 +702,12 @@ pub mod lite_rpc {
                 feature_set: Some(version.feature_set),
             })
         }
-
-        fn get_performance_counters(
-            &self,
-            meta: Self::Metadata,
-        ) -> Result<RpcPerformanceCounterResults> {
-            let total_transactions_count = meta
-                .performance_counter
-                .total_transactions_sent
-                .load(Ordering::Relaxed);
-            let total_confirmations_count = meta
-                .performance_counter
-                .total_confirmations
-                .load(Ordering::Relaxed);
-            let transactions_per_seconds = meta
-                .performance_counter
-                .transactions_per_seconds
-                .load(Ordering::Acquire);
-            let confirmations_per_seconds = meta
-                .performance_counter
-                .confirmations_per_seconds
-                .load(Ordering::Acquire);
-
-            let procinfo::pid::Statm { size, .. } = procinfo::pid::statm_self().unwrap();
-            let procinfo::pid::Stat { num_threads, .. } = procinfo::pid::stat_self().unwrap();
-
-            Ok(RpcPerformanceCounterResults {
-                confirmations_per_seconds,
-                transactions_per_seconds,
-                total_confirmations_count,
-                total_transactions_count,
-                memory_used: size as u64,
-                nb_threads: num_threads as u64,
-            })
-        }
     }
 }
 
 const MAX_BASE58_SIZE: usize = 1683; // Golden, bump if PACKET_DATA_SIZE changes
 const MAX_BASE64_SIZE: usize = 1644; // Golden, bump if PACKET_DATA_SIZE changes
-fn decode_and_deserialize<T>(
-    encoded: String,
-    encoding: TransactionBinaryEncoding,
-) -> Result<(Vec<u8>, T)>
+fn decode_and_deserialize<T>(encoded: String, encoding: TransactionBinaryEncoding) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
 {
@@ -789,5 +760,4 @@ where
                 &err.to_string()
             ))
         })
-        .map(|output| (wire_output, output))
 }

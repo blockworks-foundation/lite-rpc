@@ -36,6 +36,7 @@ export async function main() {
     const users = InFile.users.map(x => Keypair.fromSecretKey(Uint8Array.from(x.secretKey)));
     const userAccounts = InFile.tokenAccounts.map(x => new PublicKey(x));
     let promises_to_unpack : Promise<TransactionSignature>[][] = [];
+    let time_taken_to_send = [];
 
     for (let i = 0; i<forSeconds; ++i)
     {
@@ -54,7 +55,7 @@ export async function main() {
             const userTo = userAccounts[toIndex];
             if(skip_confirmations === false) {
                 const transaction = new Transaction().add(
-                    splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, 100)
+                    splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, Math.ceil(Math.random() * 100))
                 );
                 transaction.recentBlockhash = blockhash;
                 transaction.feePayer = authority.publicKey;
@@ -67,7 +68,8 @@ export async function main() {
         }
         const end = performance.now();
         const diff = (end - start);
-        if (diff > 0) {
+        time_taken_to_send[i] = diff;
+        if (diff > 0 && diff < 1000) {
             await sleep(1000 - diff)
         }
     }
@@ -81,19 +83,20 @@ export async function main() {
         for (let i=0; i< size; ++i)
         {
             const promises = promises_to_unpack[i];
-            const signatures = await Promise.all(promises);
-            let statuses = await connection.getSignatureStatuses(signatures, {searchTransactionHistory: false})
-            for (const status of statuses.value) {
-                if(status != null && status.confirmationStatus && status.err == null) {
-                    successes[i] += 1;
-                }
-                else {
-                    failures[i] += 1;
+            for (const promise of promises) {
+                const signature = await promise;
+                const confirmed = await connection.getSignatureStatus(signature);
+                if (confirmed != null && confirmed.value != null && confirmed.value.err == null) {
+                    successes[i]++;
+                } else {
+                    failures[i]++;
                 }
             }
+            
         }
-        console.log("sucesses " +  successes)
-        console.log("failures " + failures)
+        console.log("sucesses : " +  successes)
+        console.log("failures : " + failures)
+        console.log("time taken to send : " + time_taken_to_send)
     }
 }
 
