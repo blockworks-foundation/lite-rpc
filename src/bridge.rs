@@ -8,6 +8,7 @@ use crate::{
 use std::{ops::Deref, str::FromStr, sync::Arc};
 
 use anyhow::bail;
+use log::info;
 use reqwest::Url;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
@@ -72,9 +73,10 @@ impl LiteBridge {
     }
 
     /// List for `JsonRpc` requests
-    pub async fn start_services(
+    pub async fn start_services<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
         self,
-        addr: impl ToSocketAddrs,
+        http_addr: T,
+        ws_addr: T,
     ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
         let tx_sender = self.tx_sender.clone();
 
@@ -82,17 +84,36 @@ impl LiteBridge {
 
         let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen();
 
-        let handle = ServerBuilder::default()
-            .build(addr)
+        let ws_server_handle = ServerBuilder::default()
+            .ws_only()
+            .build(ws_addr.clone())
+            .await?
+            .start(self.clone().into_rpc())?;
+
+        let http_server_handle = ServerBuilder::default()
+            .http_only()
+            .build(http_addr.clone())
             .await?
             .start(self.into_rpc())?;
 
-        let server = tokio::spawn(async move {
-            handle.stopped().await;
-            bail!("server stopped");
+        let ws_server = tokio::spawn(async move {
+            info!("Websocket Server started at {ws_addr:?}");
+            ws_server_handle.stopped().await;
+            bail!("Websocket server stopped");
         });
 
-        let mut services = vec![server, finalized_block_listenser, confirmed_block_listenser];
+        let http_server = tokio::spawn(async move {
+            info!("HTTP Server started at {http_addr:?}");
+            http_server_handle.stopped().await;
+            bail!("HTTP server stopped");
+        });
+
+        let mut services = vec![
+            ws_server,
+            http_server,
+            finalized_block_listenser,
+            confirmed_block_listenser,
+        ];
 
         if let Some(tx_sender) = tx_sender {
             services.push(tx_sender.execute());
@@ -214,10 +235,11 @@ impl LiteRpcServer for LiteBridge {
 
     fn signature_subscribe(
         &self,
-        sink: SubscriptionSink,
+        mut sink: SubscriptionSink,
         signature: String,
         commitment_config: CommitmentConfig,
     ) -> SubscriptionResult {
+        sink.accept()?;
         self.get_block_listner(commitment_config)
             .signature_subscribe(signature, sink);
         Ok(())

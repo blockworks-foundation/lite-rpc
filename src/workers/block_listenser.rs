@@ -4,7 +4,7 @@ use anyhow::{bail, Context};
 use dashmap::DashMap;
 use futures::StreamExt;
 use jsonrpsee::SubscriptionSink;
-use log::info;
+use log::{info, warn};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
@@ -80,7 +80,9 @@ impl BlockListener {
     }
 
     pub fn signature_subscribe(&self, signature: String, sink: SubscriptionSink) {
-        self.signature_subscribers.insert(signature, sink).unwrap();
+        warn!("subscribing {signature}");
+
+        let _ = self.signature_subscribers.insert(signature, sink);
     }
 
     pub fn signature_un_subscribe(&self, signature: String) {
@@ -144,7 +146,8 @@ impl BlockListener {
                     info!("{comfirmation_status:?} {sig}");
 
                     // subscribers
-                    if let Some((_sig, mut sink)) = self.signature_subscribers.remove(&sig) {
+                    if let Some((_, mut sink)) = self.signature_subscribers.remove(&sig) {
+                        warn!("notification {}", sig);
                         // none if transaction succeeded
                         sink.send::<Option<TransactionError>>(&None).unwrap();
                     }
