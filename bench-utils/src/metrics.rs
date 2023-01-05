@@ -2,8 +2,9 @@ use std::ops::{AddAssign, DivAssign};
 
 #[derive(Debug, Default, serde::Serialize)]
 pub struct Metric {
-    pub time_elapsed_sec: f64,
+    pub total_time_elapsed_sec: f64,
     pub txs_sent: u64,
+    pub time_to_send_txs: f64,
     pub txs_confirmed: u64,
     pub txs_un_confirmed: u64,
     pub tps: f64,
@@ -17,14 +18,15 @@ pub struct AvgMetric {
 
 impl Metric {
     pub fn calc_tps(&mut self) {
-        self.tps = self.txs_confirmed as f64 / self.time_elapsed_sec
+        self.tps = self.txs_confirmed as f64 / self.total_time_elapsed_sec
     }
 }
 
 impl AddAssign<&Self> for Metric {
     fn add_assign(&mut self, rhs: &Self) {
-        self.time_elapsed_sec += rhs.time_elapsed_sec;
+        self.total_time_elapsed_sec += rhs.total_time_elapsed_sec;
         self.txs_sent += rhs.txs_sent;
+        self.time_to_send_txs += rhs.time_to_send_txs;
         self.txs_confirmed += rhs.txs_confirmed;
         self.txs_un_confirmed += rhs.txs_un_confirmed;
         self.tps += rhs.tps
@@ -33,8 +35,9 @@ impl AddAssign<&Self> for Metric {
 
 impl DivAssign<u64> for Metric {
     fn div_assign(&mut self, rhs: u64) {
-        self.time_elapsed_sec /= rhs as f64;
+        self.total_time_elapsed_sec /= rhs as f64;
         self.txs_sent /= rhs;
+        self.time_to_send_txs /= rhs as f64;
         self.txs_confirmed /= rhs;
         self.txs_un_confirmed /= rhs;
         self.tps /= rhs as f64;
