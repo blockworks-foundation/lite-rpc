@@ -8,7 +8,6 @@ const tps : number = +process.argv[2];
 const forSeconds : number = +process.argv[3];
 // url
 const url = process.argv.length > 4 ? process.argv[4] : "http://localhost:8899";
-const skip_confirmations = process.argv.length > 5 ? process.argv[5] === "true": false;
 import * as InFile from "./out.json";
 
 function sleep(ms: number) {
@@ -31,12 +30,15 @@ export async function main() {
     
     const users = InFile.users.map(x => Keypair.fromSecretKey(Uint8Array.from(x.secretKey)));
     const userAccounts = InFile.tokenAccounts.map(x => new PublicKey(x));
-    let promises_to_unpack : Promise<TransactionSignature>[][] = [];
+
+    let successes : Uint32Array = new Uint32Array(forSeconds).fill(0);
+    let failures : Uint32Array = new Uint32Array(forSeconds).fill(0);
+    let promises : Promise<void>[] = [];
 
     for (let i = 0; i<forSeconds; ++i)
     {
         const start = performance.now();
-        let promises : Promise<TransactionSignature>[] = []; 
+        let signatures : TransactionSignature[] = []; 
         for (let j=0; j<tps; ++j)
         {
             const toIndex = Math.floor(Math.random() * users.length);
@@ -47,23 +49,17 @@ export async function main() {
             }
             const userFrom = userAccounts[fromIndex];
             const userTo = userAccounts[toIndex];
-            if(skip_confirmations === false) {
-                promises.push(
-                    splToken.transfer(
-                        connection,
-                        authority,
-                        userFrom,
-                        userTo,
-                        users[fromIndex],
-                        100,
-                    )
-                )
-            }
+            const p = splToken.transfer(
+                connection,
+                authority,
+                userFrom,
+                userTo,
+                users[fromIndex],
+                100,
+            ).then((_)=> {successes[i]++}, (_) => {failures[i]++})
+            promises.push(p)
         }
-        if (skip_confirmations === false) 
-        {
-            promises_to_unpack.push(promises)
-        }
+
         const end = performance.now();
         const diff = (end - start);
         if (diff > 0) {
@@ -71,27 +67,12 @@ export async function main() {
         }
     }
 
-    console.log('checking for confirmations');
-    if(skip_confirmations === false) {
-        const size = promises_to_unpack.length
-        let successes : Uint32Array = new Uint32Array(size).fill(0);
-        let failures : Uint32Array = new Uint32Array(size).fill(0);
-        for (let i=0; i< size; ++i)
-        {
-            const promises = promises_to_unpack[i];
-
-            await Promise.all( promises.map( promise => {
-                promise.then((_fullfil)=>{
-                    Atomics.add(successes, i, 1);
-                },
-                (_reject)=>{
-                    Atomics.add(failures, i, 1);
-                })
-            }))
-        }
-        console.log("sucesses " +  successes)
-        console.log("failures " + failures)
+    for (const p of promises)
+    {
+        await p;
     }
+    console.log("successes : " + successes);
+    console.log("failures : " + failures);
 }
 
 main().then(x => {

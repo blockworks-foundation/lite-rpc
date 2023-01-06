@@ -6,7 +6,7 @@ use solana_client::{
     rpc_response::{ProcessedSignatureResult, RpcResponseContext, RpcSignatureResult, SlotInfo},
 };
 use solana_rpc::rpc_subscription_tracker::{
-    SignatureSubscriptionParams, SubscriptionId, SubscriptionParams,
+    SignatureSubscriptionParams, SubscriptionParams,
 };
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
@@ -99,6 +99,8 @@ pub enum NotificationType {
     Signature(SignatureNotification),
     Slot(SlotNotification),
 }
+
+type SubscriptionId = u64;
 
 #[derive(Debug, Serialize)]
 struct NotificationParams<T> {
@@ -230,9 +232,9 @@ impl LiteRpcSubsrciptionControl {
                         NotificationType::Slot(data) => {
                             // SubscriptionId 0 will be used for slots
                             let subscription_id = if data.commitment == CommitmentLevel::Confirmed {
-                                SubscriptionId::from(0)
+                                0
                             } else {
-                                SubscriptionId::from(1)
+                                1
                             };
                             let value = SlotInfo {
                                 parent: data.parent,
@@ -347,6 +349,7 @@ impl PerformanceCounter {
     }
 }
 
+const PRINT_COUNTERS : bool = true;
 pub fn launch_performance_updating_thread(
     performance_counter: PerformanceCounter,
 ) -> JoinHandle<()> {
@@ -360,10 +363,12 @@ pub fn launch_performance_updating_thread(
                 let wait_time = Duration::from_millis(1000);
                 let performance_counter = performance_counter.clone();
                 let data = performance_counter.update_per_seconds_transactions();
-                println!(
-                    "At {} second, Recieved {}, Sent {} transactions, finalized {} and confirmed {} transactions",
-                    nb_seconds, data.transaction_recieved_per_second, data.transactions_per_seconds, data.finalized_per_seconds, data.confirmations_per_seconds
-                );
+                if PRINT_COUNTERS {
+                    println!(
+                        "At {} second, Recieved {}, Sent {} transactions, finalized {} and confirmed {} transactions",
+                        nb_seconds, data.transaction_recieved_per_second, data.transactions_per_seconds, data.finalized_per_seconds, data.confirmations_per_seconds
+                    );
+                }
                 let runtime = start.elapsed();
                 nb_seconds += 1;
                 if let Some(remaining) = wait_time.checked_sub(runtime) {
