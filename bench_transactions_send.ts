@@ -35,13 +35,13 @@ export async function main() {
     
     const users = InFile.users.map(x => Keypair.fromSecretKey(Uint8Array.from(x.secretKey)));
     const userAccounts = InFile.tokenAccounts.map(x => new PublicKey(x));
-    let promises_to_unpack : Promise<TransactionSignature>[][] = [];
+    let signatures_to_unpack : TransactionSignature[][] = [];
     let time_taken_to_send = [];
 
     for (let i = 0; i<forSeconds; ++i)
     {
         const start = performance.now();
-        let promises : Promise<TransactionSignature>[] = [];
+        let signatures : TransactionSignature[] = [];
         const blockhash = (await connection.getLatestBlockhash()).blockhash;
         for (let j=0; j<tps; ++j)
         {
@@ -59,14 +59,13 @@ export async function main() {
                 );
                 transaction.recentBlockhash = blockhash;
                 transaction.feePayer = authority.publicKey;
-                const p =connection.sendTransaction(transaction, [authority, users[fromIndex]], {skipPreflight: true});
-                promises.push(p)
-                await p
+                const p = connection.sendTransaction(transaction, [authority, users[fromIndex]], {skipPreflight: true});
+                signatures.push(await p)
             }
         }
         if (skip_confirmations === false) 
         {
-            promises_to_unpack.push(promises)
+            signatures_to_unpack.push(signatures)
         }
         const end = performance.now();
         const diff = (end - start);
@@ -75,18 +74,18 @@ export async function main() {
             await sleep(1000 - diff)
         }
     }
+
     console.log('finish sending transactions');
     await delay(5000)
     console.log('checking for confirmations');
     if(skip_confirmations === false) {
-        const size = promises_to_unpack.length
+        const size = signatures_to_unpack.length
         let successes : Uint32Array = new Uint32Array(size).fill(0);
         let failures : Uint32Array = new Uint32Array(size).fill(0);
         for (let i=0; i< size; ++i)
         {
-            const promises = promises_to_unpack[i];
-            for (const promise of promises) {
-                const signature = await promise;
+            const signatures = signatures_to_unpack[i];
+            for (const signature of signatures) {
                 const confirmed = await connection.getSignatureStatus(signature);
                 if (confirmed != null && confirmed.value != null && confirmed.value.err == null) {
                     successes[i]++;
@@ -98,7 +97,7 @@ export async function main() {
         }
         console.log("sucesses : " +  successes)
         console.log("failures : " + failures)
-        console.log("time taken to send : " + time_taken_to_send)
+        //console.log("time taken to send : " + time_taken_to_send)
     }
 }
 

@@ -250,7 +250,7 @@ impl LitePubSubService {
             .name("solRpcPubSub".to_string())
             .spawn(move || {
                 let runtime = tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(8)
+                    .worker_threads(128)
                     .enable_all()
                     .build()
                     .expect("runtime creation failed");
