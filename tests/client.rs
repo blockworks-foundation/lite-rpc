@@ -3,8 +3,8 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_client::rpc_client::SerializableTransaction;
 use solana_sdk::native_token::LAMPORTS_PER_SOL;
 
-use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use lite_bench_utils::{generate_txs, new_funded_payer, wait_till_confirmed};
+use lite_client::{LiteClient, LOCAL_LIGHT_RPC_ADDR};
 use simplelog::*;
 
 const AMOUNT: usize = 100;

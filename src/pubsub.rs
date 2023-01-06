@@ -1,8 +1,8 @@
-use dashmap::DashMap;
+
 use jsonrpc_core::{ErrorCode, IoHandler};
 use soketto::handshake::{server, Server};
 use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
-use std::{net::SocketAddr, str::FromStr, thread::JoinHandle};
+use std::{net::SocketAddr, str::FromStr, thread::JoinHandle, collections::{BTreeSet}, sync::{RwLock}};
 use stream_cancel::{Trigger, Tripwire};
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
@@ -11,11 +11,12 @@ use crate::context::{LiteRpcSubsrciptionControl, PerformanceCounter};
 use {
     jsonrpc_core::{Error, Result},
     jsonrpc_derive::rpc,
-    solana_rpc::rpc_subscription_tracker::SubscriptionId,
     solana_rpc_client_api::config::*,
     solana_sdk::signature::Signature,
     std::sync::Arc,
 };
+
+type SubscriptionId = u64;
 
 #[rpc]
 pub trait LiteRpcPubSub {
@@ -44,13 +45,13 @@ pub trait LiteRpcPubSub {
 #[derive(Clone)]
 pub struct LiteRpcPubSubImpl {
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    pub current_subscriptions: Arc<DashMap<SubscriptionId, SubscriptionParams>>,
+    pub current_subscriptions: Arc<RwLock<BTreeSet<u64>>>,
 }
 
 impl LiteRpcPubSubImpl {
     pub fn new(subscription_control: Arc<LiteRpcSubsrciptionControl>) -> Self {
         Self {
-            current_subscriptions: Arc::new(DashMap::new()),
+            current_subscriptions: Arc::new(RwLock::new(BTreeSet::new())),
             subscription_control,
         }
     }
@@ -69,20 +70,34 @@ impl LiteRpcPubSubImpl {
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let new_subsription_id = SubscriptionId::from(new_subscription_id);
                 x.insert(new_subsription_id);
-                self.current_subscriptions
-                    .insert(new_subsription_id, params);
-                Ok(new_subsription_id)
+                let mut lock = self.current_subscriptions.write();
+                match &mut lock {
+                    Ok(set) => {
+                        set.insert(new_subsription_id);
+                        Ok(new_subsription_id)
+                    },
+                    Err(_) => {
+                        Err(Error::new(jsonrpc_core::ErrorCode::InternalError))
+                    }
+                }
             }
         }
     }
 
     fn unsubscribe(&self, id: SubscriptionId) -> Result<bool> {
-        match self.current_subscriptions.entry(id) {
-            dashmap::mapref::entry::Entry::Occupied(x) => {
-                x.remove();
-                Ok(true)
+        let mut lock = self.current_subscriptions.write();
+
+        match &mut lock {
+            Ok(set) => {
+                if set.contains(&id) {
+                    set.remove(&id);
+                    return Ok(true)
+                }
+                return Ok(false)
+            },
+            Err(_) => {
+                Err(Error::new(jsonrpc_core::ErrorCode::InternalError))
             }
-            dashmap::mapref::entry::Entry::Vacant(_) => Ok(false),
         }
     }
 }
@@ -107,7 +122,8 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
             commitment: config.commitment.unwrap_or_default(),
             enable_received_notification: false,
         };
-        self.subscribe(SubscriptionParams::Signature(params))
+        let id = self.subscribe(SubscriptionParams::Signature(params));
+        id
     }
 
     fn signature_unsubscribe(&self, id: SubscriptionId) -> Result<bool> {
@@ -116,15 +132,34 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
 
     // Get notification when slot is encountered
     fn slot_subscribe(&self) -> Result<SubscriptionId> {
-        self.current_subscriptions
-            .insert(SubscriptionId::from(0), SubscriptionParams::Slot);
-        Ok(SubscriptionId::from(0))
+        let mut lock = self.current_subscriptions.write();
+        match &mut lock {
+            Ok(set) => {
+                set.insert(0);
+                Ok(0)
+            },
+            Err(_) => {
+                Err(Error::new(jsonrpc_core::ErrorCode::InternalError))
+            }
+        }
     }
 
     // Unsubscribe from slot notification subscription.
     fn slot_unsubscribe(&self, _id: SubscriptionId) -> Result<bool> {
-        self.current_subscriptions.remove(&SubscriptionId::from(0));
-        Ok(true)
+        let mut lock = self.current_subscriptions.write();
+
+        match &mut lock {
+            Ok(set) => {
+                if set.contains(&0) {
+                    set.remove(&0);
+                    return Ok(true)
+                }
+                return Ok(false)
+            },
+            Err(_) => {
+                Err(Error::new(jsonrpc_core::ErrorCode::InternalError))
+            }
+        }
     }
 }
 
@@ -145,7 +180,7 @@ enum HandleError {
 async fn handle_connection(
     socket: TcpStream,
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    performance_counter: PerformanceCounter,
+    _performance_counter: PerformanceCounter,
 ) -> core::result::Result<(), HandleError> {
     let mut server = Server::new(socket.compat());
     let request = server.receive_request().await?;
@@ -177,8 +212,7 @@ async fn handle_connection(
                     },
                     result = broadcast_receiver.recv() => {
                         if let Ok(x) = result {
-                            if rpc_impl.current_subscriptions.contains_key(&x.subscription_id) {
-                                performance_counter.update_confirm_transaction_counter();
+                            if rpc_impl.current_subscriptions.read().unwrap().contains(&x.subscription_id) {
                                 sender.send_text(&x.json).await?;
                             }
                         }
@@ -235,7 +269,7 @@ impl LitePubSubService {
             .name("solRpcPubSub".to_string())
             .spawn(move || {
                 let runtime = tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(512)
+                    .worker_threads(128)
                     .enable_all()
                     .build()
                     .expect("runtime creation failed");

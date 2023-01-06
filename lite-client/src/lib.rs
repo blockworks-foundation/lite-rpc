@@ -5,7 +5,7 @@ use solana_client::{
     rpc_response::Response as RpcResponse,
 };
 
-pub const LOCAL_LIGHT_RPC_ADDR: &str = "http://127.0.0.1:8890";
+pub const LOCAL_LIGHT_RPC_ADDR: &str = "http://0.0.0.0:8890";
 
 pub struct LiteClient(pub RpcClient);
 
@@ -35,4 +35,3 @@ impl LiteClient {
         .unwrap()
     }
 }
-

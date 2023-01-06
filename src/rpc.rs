@@ -5,15 +5,17 @@ use solana_client::{
     tpu_client::TpuClientConfig,
 };
 use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
+use solana_sdk::transaction::Transaction;
 use std::{
     str::FromStr,
     sync::Mutex,
     thread::{Builder, JoinHandle},
+    time::{Duration, Instant},
 };
 
 use crate::context::{
     BlockInformation, LiteRpcContext, NotificationType, PerformanceCounter, SignatureNotification,
-    SlotNotification,
+    SignatureStatus, SlotNotification,
 };
 use crossbeam_channel::Sender;
 use {
@@ -22,7 +24,8 @@ use {
     jsonrpc_core::{Error, Metadata, Result},
     jsonrpc_derive::rpc,
     solana_client::connection_cache::ConnectionCache,
-    solana_client::{rpc_client::RpcClient, tpu_client::TpuClient},
+    solana_client::rpc_client::RpcClient,
+    solana_client::tpu_client::TpuClient,
     solana_perf::packet::PACKET_DATA_SIZE,
     solana_rpc_client_api::{
         config::*,
@@ -31,7 +34,6 @@ use {
     solana_sdk::{
         commitment_config::{CommitmentConfig, CommitmentLevel},
         signature::Signature,
-        transaction::VersionedTransaction,
     },
     solana_transaction_status::{TransactionBinaryEncoding, UiTransactionEncoding},
     std::{
@@ -40,10 +42,11 @@ use {
     },
 };
 
+const TPU_BATCH_SIZE: usize = 8;
+
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
     pub rpc_client: Arc<RpcClient>,
-    pub tpu_client: Arc<TpuClient>,
     pub last_valid_block_height: u64,
     pub ws_url: String,
     pub context: Arc<LiteRpcContext>,
@@ -51,6 +54,7 @@ pub struct LightRpcRequestProcessor {
     joinables: Arc<Mutex<Vec<JoinHandle<()>>>>,
     subscribed_clients: Arc<Mutex<Vec<PubsubBlockClientSubscription>>>,
     performance_counter: PerformanceCounter,
+    tpu_producer_channel: Sender<Transaction>,
 }
 
 impl LightRpcRequestProcessor {
@@ -61,19 +65,10 @@ impl LightRpcRequestProcessor {
         performance_counter: PerformanceCounter,
     ) -> LightRpcRequestProcessor {
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
-        let connection_cache = Arc::new(ConnectionCache::default());
-        let tpu_client = Arc::new(
-            TpuClient::new_with_connection_cache(
-                rpc_client.clone(),
-                websocket_url,
-                TpuClientConfig::default(),
-                connection_cache.clone(),
-            )
-            .unwrap(),
-        );
-
         let context = Arc::new(LiteRpcContext::new(rpc_client.clone(), notification_sender));
 
+        let connection_cache = Arc::new(ConnectionCache::default());
+        println!("ws_url {}", websocket_url);
         // subscribe for confirmed_blocks
         let (client_confirmed, receiver_confirmed) =
             Self::subscribe_block(websocket_url, CommitmentLevel::Confirmed).unwrap();
@@ -82,23 +77,33 @@ impl LightRpcRequestProcessor {
         let (client_finalized, receiver_finalized) =
             Self::subscribe_block(websocket_url, CommitmentLevel::Finalized).unwrap();
 
+        let (tpu_producer, tpu_consumer) = crossbeam_channel::bounded(100000);
+
         // create threads to listen for finalized and confrimed blocks
         let joinables = vec![
             Self::build_thread_to_process_blocks(
                 receiver_confirmed,
                 &context,
                 CommitmentLevel::Confirmed,
+                performance_counter.clone(),
             ),
             Self::build_thread_to_process_blocks(
                 receiver_finalized,
                 &context,
                 CommitmentLevel::Finalized,
+                performance_counter.clone(),
+            ),
+            Self::build_thread_to_process_transactions(
+                json_rpc_url.to_string(),
+                websocket_url.to_string(),
+                &context,
+                tpu_consumer.clone(),
+                performance_counter.clone(),
             ),
         ];
 
         LightRpcRequestProcessor {
             rpc_client,
-            tpu_client,
             last_valid_block_height: 0,
             ws_url: websocket_url.to_string(),
             context,
@@ -106,6 +111,7 @@ impl LightRpcRequestProcessor {
             joinables: Arc::new(Mutex::new(joinables)),
             subscribed_clients: Arc::new(Mutex::new(vec![client_confirmed, client_finalized])),
             performance_counter,
+            tpu_producer_channel: tpu_producer,
         }
     }
 
@@ -119,9 +125,7 @@ impl LightRpcRequestProcessor {
             Some(RpcBlockSubscribeConfig {
                 commitment: Some(CommitmentConfig { commitment }),
                 encoding: None,
-                transaction_details: Some(
-                    solana_transaction_status::TransactionDetails::Signatures,
-                ),
+                transaction_details: Some(solana_transaction_status::TransactionDetails::Full),
                 show_rewards: None,
                 max_supported_transaction_version: None,
             }),
@@ -132,6 +136,7 @@ impl LightRpcRequestProcessor {
         reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
         context: &Arc<LiteRpcContext>,
         commitment: CommitmentLevel,
+        performance_counters: PerformanceCounter,
     ) -> JoinHandle<()> {
         let context = context.clone();
         Builder::new()
@@ -148,21 +153,135 @@ impl LightRpcRequestProcessor {
                     commitment,
                     &context.notification_sender,
                     block_info,
+                    performance_counters,
                 );
             })
             .unwrap()
     }
 
+    fn build_thread_to_process_transactions(
+        json_rpc_url: String,
+        websocket_url: String,
+        context: &Arc<LiteRpcContext>,
+        receiver: Receiver<Transaction>,
+        performance_counters: PerformanceCounter,
+    ) -> JoinHandle<()> {
+        let context = context.clone();
+        Builder::new()
+            .name("thread working on confirmation block".to_string())
+            .spawn(move || {
+            let rpc_client =
+                Arc::new(RpcClient::new(json_rpc_url.to_string()));
+
+            let mut connection_cache = Arc::new(ConnectionCache::default());
+            let tpu_client = TpuClient::new_with_connection_cache(
+                rpc_client.clone(),
+                websocket_url.as_str(),
+                TpuClientConfig::default(), // value for max fanout slots
+                connection_cache.clone(),
+            );
+            let mut tpu_client = Arc::new(tpu_client.unwrap());
+            let mut consecutive_errors: u8 = 0;
+
+            loop {
+                let recv_res = receiver.recv();
+                match recv_res {
+                    Ok(transaction) => {
+                        let (fut_res, count) = if TPU_BATCH_SIZE > 1 {
+                            let mut transactions_vec = vec![transaction];
+                            let mut time_remaining = Duration::from_micros(1000);
+                            for _i in 1..TPU_BATCH_SIZE {
+                                let start = std::time::Instant::now();
+                                let another = receiver.recv_timeout(time_remaining);
+
+                                match another {
+                                    Ok(x) => transactions_vec.push(x),
+                                    Err(_) => break,
+                                }
+                                match time_remaining.checked_sub(start.elapsed()) {
+                                    Some(x) => time_remaining = x,
+                                    None => break,
+                                }
+                            }
+                            let count: u64 = transactions_vec.len() as u64;
+                            let slice = transactions_vec.as_slice();
+                            let fut_res = tpu_client.try_send_transaction_batch(slice);
+
+                            // insert sent transactions into signature status map
+                            transactions_vec.iter().for_each(|x| {
+                                let signature = x.signatures[0].to_string();
+                                context.signature_status.insert(
+                                    signature.clone(),
+                                    SignatureStatus {
+                                        status: None,
+                                        error: None,
+                                        created: Instant::now(),
+                                    },
+                                );
+                            });
+                            (fut_res, count)
+                        } else {
+                            let fut_res = tpu_client.try_send_transaction(&transaction);
+                            let signature = transaction.signatures[0].to_string();
+                            context.signature_status.insert(
+                                signature.clone(),
+                                SignatureStatus {
+                                    status: None,
+                                    error: None,
+                                    created: Instant::now(),
+                                },
+                            );
+                            (fut_res, 1)
+                        };
+
+                        match fut_res {
+                            Ok(_) => {
+                                consecutive_errors = 0;
+
+                                performance_counters
+                                .total_transactions_sent
+                                .fetch_add(count, Ordering::Relaxed);
+                            },
+                            Err(e) => {
+                                println!("Got error while sending transaction batch of size {}, error {}", count, e.to_string());
+                                consecutive_errors += 1;
+                                if consecutive_errors > 3 {
+                                    connection_cache = Arc::new(ConnectionCache::default());
+
+                                    let new_tpu_client = TpuClient::new_with_connection_cache(
+                                        rpc_client.clone(),
+                                        websocket_url.as_str(),
+                                        TpuClientConfig::default(), // value for max fanout slots
+                                        connection_cache.clone(),
+                                    );
+                                    // reset TPU connection
+                                    tpu_client = Arc::new(new_tpu_client.unwrap());
+                                }
+                                performance_counters
+                                    .transaction_sent_error
+                                    .fetch_add(count, Ordering::Relaxed);
+                            }
+                        };
+                    }
+                    Err(e) => {
+                        println!("got error on tpu channel {}", e.to_string());
+                        break;
+                    }
+                };
+            }
+        }).unwrap()
+    }
+
     fn process_block(
         reciever: Receiver<RpcResponse<RpcBlockUpdate>>,
-        signature_status: &DashMap<String, Option<CommitmentLevel>>,
+        signature_status: &DashMap<String, SignatureStatus>,
         commitment: CommitmentLevel,
         notification_sender: &crossbeam_channel::Sender<NotificationType>,
         block_information: &BlockInformation,
+        performance_counters: PerformanceCounter,
     ) {
         loop {
             let block_data = reciever.recv();
-
             match block_data {
                 Ok(data) => {
                     let block_update = &data.value;
@@ -191,16 +310,28 @@ impl LightRpcRequestProcessor {
                             *lock = block.blockhash.clone();
                         }
 
-                        if let Some(signatures) = &block.signatures {
-                            for signature in signatures {
+                        if let Some(transactions) = &block.transactions {
+                            for transaction in transactions {
+                                let decoded_transaction =
+                                    &transaction.transaction.decode().unwrap();
+
+                                let signature = decoded_transaction.signatures[0].to_string();
                                 match signature_status.entry(signature.clone()) {
                                     dashmap::mapref::entry::Entry::Occupied(mut x) => {
+                                        // get signature status
+                                        let transaction_error = match &transaction.meta {
+                                            Some(x) => x.err.clone(),
+                                            None => {
+                                                println!("cannot decode transaction error");
+                                                None
+                                            }
+                                        };
                                         let signature_notification = SignatureNotification {
                                             signature: Signature::from_str(signature.as_str())
                                                 .unwrap(),
                                             commitment,
                                             slot: block_update.slot,
-                                            error: None,
+                                            error: transaction_error.clone().map(|x| x.to_string()),
                                         };
                                         if let Err(e) = notification_sender.send(
                                             NotificationType::Signature(signature_notification),
@@ -210,7 +341,21 @@ impl LightRpcRequestProcessor {
                                                 e.to_string()
                                             );
                                         }
-                                        x.insert(Some(commitment));
+                                        if commitment.eq(&CommitmentLevel::Finalized) {
+                                            performance_counters
+                                                .total_finalized
+                                                .fetch_add(1, Ordering::Relaxed);
+                                        } else {
+                                            performance_counters
+                                                .total_confirmations
+                                                .fetch_add(1, Ordering::Relaxed);
+                                        }
+
+                                        x.insert(SignatureStatus {
+                                            status: Some(commitment),
+                                            error: transaction_error,
+                                            created: Instant::now(),
+                                        });
                                     }
                                     dashmap::mapref::entry::Entry::Vacant(_x) => {
                                         // do nothing transaction not sent by lite rpc
@@ -268,7 +413,7 @@ pub mod lite_rpc {
     use std::str::FromStr;
 
     use itertools::Itertools;
-    use solana_sdk::{fee_calculator::FeeCalculator, pubkey::Pubkey};
+    use solana_sdk::{fee_calculator::FeeCalculator, pubkey::Pubkey, transaction::Transaction};
     use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 
     use super::*;
@@ -308,12 +453,6 @@ pub mod lite_rpc {
             config: Option<RpcRequestAirdropConfig>,
         ) -> Result<String>;
 
-        #[rpc(meta, name = "getPerformanceCounters")]
-        fn get_performance_counters(
-            &self,
-            meta: Self::Metadata,
-        ) -> Result<RpcPerformanceCounterResults>;
-
         #[rpc(meta, name = "getLatestBlockhash")]
         fn get_latest_blockhash(
             &self,
@@ -352,15 +491,21 @@ pub mod lite_rpc {
                     tx_encoding
                 ))
             })?;
-            let (wire_transaction, transaction) =
-                decode_and_deserialize::<VersionedTransaction>(data, binary_encoding)?;
+            let transaction = decode_and_deserialize::<Transaction>(data, binary_encoding)?;
+            let signature = transaction.signatures[0].to_string();
+            meta.performance_counter
+                .total_transactions_recieved
+                .fetch_add(1, Ordering::Relaxed);
 
-            meta.context
-                .signature_status
-                .insert(transaction.signatures[0].to_string(), None);
-            meta.tpu_client.send_wire_transaction(wire_transaction);
-            meta.performance_counter.update_sent_transactions_counter();
-            Ok(transaction.signatures[0].to_string())
+            match meta.tpu_producer_channel.send(transaction) {
+                Ok(_) => Ok(signature),
+                Err(e) => {
+                    println!("got error while sending on channel {}", e.to_string());
+                    Err(jsonrpc_core::Error::new(
+                        jsonrpc_core::ErrorCode::InternalError,
+                    ))
+                }
+            }
         }
 
         fn get_recent_blockhash(
@@ -458,20 +603,21 @@ pub mod lite_rpc {
                     .slot
                     .load(Ordering::Relaxed)
             };
-            meta.performance_counter
-                .update_confirm_transaction_counter();
 
             match k_value {
-                Some(value) => match *value {
-                    Some(commitment_for_signature) => Ok(RpcResponse {
-                        context: RpcResponseContext::new(slot),
-                        value: if commitment.eq(&CommitmentLevel::Finalized) {
-                            commitment_for_signature.eq(&CommitmentLevel::Finalized)
+                Some(value) => match value.status {
+                    Some(commitment) => {
+                        let commitment_matches = if commitment.eq(&CommitmentLevel::Finalized) {
+                            commitment.eq(&CommitmentLevel::Finalized)
                         } else {
-                            commitment_for_signature.eq(&CommitmentLevel::Finalized)
-                                || commitment_for_signature.eq(&CommitmentLevel::Confirmed)
-                        },
-                    }),
+                            commitment.eq(&CommitmentLevel::Finalized)
+                                || commitment.eq(&CommitmentLevel::Confirmed)
+                        };
+                        Ok(RpcResponse {
+                            context: RpcResponseContext::new(slot),
+                            value: commitment_matches && value.error.is_none(),
+                        })
+                    }
                     None => Ok(RpcResponse {
                         context: RpcResponseContext::new(slot),
                         value: false,
@@ -513,17 +659,15 @@ pub mod lite_rpc {
                     let singature_status = meta.context.signature_status.get(x);
                     let k_value = singature_status;
                     match k_value {
-                        Some(value) => match *value {
-                            Some(commitment_for_signature) => {
+                        Some(value) => match value.status {
+                            Some(commitment_level) => {
                                 let slot = meta
                                     .context
                                     .confirmed_block_info
                                     .slot
                                     .load(Ordering::Relaxed);
-                                meta.performance_counter
-                                    .update_confirm_transaction_counter();
 
-                                let status = match commitment_for_signature {
+                                let status = match commitment_level {
                                     CommitmentLevel::Finalized => {
                                         TransactionConfirmationStatus::Finalized
                                     }
@@ -531,9 +675,9 @@ pub mod lite_rpc {
                                 };
                                 Some(TransactionStatus {
                                     slot,
-                                    confirmations: Some(1),
+                                    confirmations: None,
                                     status: Ok(()),
-                                    err: None,
+                                    err: value.error.clone(),
                                     confirmation_status: Some(status),
                                 })
                             }
@@ -573,49 +717,12 @@ pub mod lite_rpc {
                 feature_set: Some(version.feature_set),
             })
         }
-
-        fn get_performance_counters(
-            &self,
-            meta: Self::Metadata,
-        ) -> Result<RpcPerformanceCounterResults> {
-            let total_transactions_count = meta
-                .performance_counter
-                .total_transactions_sent
-                .load(Ordering::Relaxed);
-            let total_confirmations_count = meta
-                .performance_counter
-                .total_confirmations
-                .load(Ordering::Relaxed);
-            let transactions_per_seconds = meta
-                .performance_counter
-                .transactions_per_seconds
-                .load(Ordering::Acquire);
-            let confirmations_per_seconds = meta
-                .performance_counter
-                .confirmations_per_seconds
-                .load(Ordering::Acquire);
-
-            let procinfo::pid::Statm { size, .. } = procinfo::pid::statm_self().unwrap();
-            let procinfo::pid::Stat { num_threads, .. } = procinfo::pid::stat_self().unwrap();
-
-            Ok(RpcPerformanceCounterResults {
-                confirmations_per_seconds,
-                transactions_per_seconds,
-                total_confirmations_count,
-                total_transactions_count,
-                memory_used: size as u64,
-                nb_threads: num_threads as u64,
-            })
-        }
     }
 }
 
 const MAX_BASE58_SIZE: usize = 1683; // Golden, bump if PACKET_DATA_SIZE changes
 const MAX_BASE64_SIZE: usize = 1644; // Golden, bump if PACKET_DATA_SIZE changes
-fn decode_and_deserialize<T>(
-    encoded: String,
-    encoding: TransactionBinaryEncoding,
-) -> Result<(Vec<u8>, T)>
+fn decode_and_deserialize<T>(encoded: String, encoding: TransactionBinaryEncoding) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
 {
@@ -668,5 +775,4 @@ where
                 &err.to_string()
             ))
         })
-        .map(|output| (wire_output, output))
 }
