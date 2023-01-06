@@ -59,7 +59,9 @@ export async function main() {
                 );
                 transaction.recentBlockhash = blockhash;
                 transaction.feePayer = authority.publicKey;
-                promises.push(connection.sendTransaction(transaction, [authority, users[fromIndex]], {skipPreflight: true}))
+                const p =connection.sendTransaction(transaction, [authority, users[fromIndex]], {skipPreflight: true});
+                promises.push(p)
+                await p
             }
         }
         if (skip_confirmations === false) 

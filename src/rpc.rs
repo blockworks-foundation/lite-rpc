@@ -42,7 +42,7 @@ use {
     },
 };
 
-const TPU_BATCH_SIZE: usize = 32;
+const TPU_BATCH_SIZE: usize = 8;
 
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
@@ -187,28 +187,42 @@ impl LightRpcRequestProcessor {
                 let recv_res = receiver.recv();
                 match recv_res {
                     Ok(transaction) => {
-                        let mut transactions_vec = vec![transaction];
-                        let mut time_remaining = Duration::from_micros(1000);
-                        for _i in 1..TPU_BATCH_SIZE {
-                            let start = std::time::Instant::now();
-                            let another = receiver.recv_timeout(time_remaining);
+                        let (fut_res, count) = if TPU_BATCH_SIZE > 1 {
+                            let mut transactions_vec = vec![transaction];
+                            let mut time_remaining = Duration::from_micros(1000);
+                            for _i in 1..TPU_BATCH_SIZE {
+                                let start = std::time::Instant::now();
+                                let another = receiver.recv_timeout(time_remaining);
 
-                            match another {
-                                Ok(x) => transactions_vec.push(x),
-                                Err(_) => break,
+                                match another {
+                                    Ok(x) => transactions_vec.push(x),
+                                    Err(_) => break,
+                                }
+                                match time_remaining.checked_sub(start.elapsed()) {
+                                    Some(x) => time_remaining = x,
+                                    None => break,
+                                }
                             }
-                            match time_remaining.checked_sub(start.elapsed()) {
-                                Some(x) => time_remaining = x,
-                                None => break,
-                            }
-                        }
-                        let count: u64 = transactions_vec.len() as u64;
-                        let slice = transactions_vec.as_slice();
-                        let fut_res = tpu_client.try_send_transaction_batch(slice);
+                            let count: u64 = transactions_vec.len() as u64;
+                            let slice = transactions_vec.as_slice();
+                            let fut_res = tpu_client.try_send_transaction_batch(slice);
 
-                        // insert sent transactions into signature status map
-                        transactions_vec.iter().for_each(|x| {
-                            let signature = x.signatures[0].to_string();
+                            // insert sent transactions into signature status map
+                            transactions_vec.iter().for_each(|x| {
+                                let signature = x.signatures[0].to_string();
+                                context.signature_status.insert(
+                                    signature.clone(),
+                                    SignatureStatus {
+                                        status: None,
+                                        error: None,
+                                        created: Instant::now(),
+                                    },
+                                );
+                            });
+                            (fut_res, count)
+                        } else {
+                            let fut_res = tpu_client.try_send_transaction(&transaction);
+                            let signature = transaction.signatures[0].to_string();
                             context.signature_status.insert(
                                 signature.clone(),
                                 SignatureStatus {
@@ -217,7 +231,8 @@ impl LightRpcRequestProcessor {
                                     created: Instant::now(),
                                 },
                             );
-                        });
+                            (fut_res, 1)
+                        };
 
                         match fut_res {
                             Ok(_) => {
