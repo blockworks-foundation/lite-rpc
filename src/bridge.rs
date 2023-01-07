@@ -1,3 +1,4 @@
+
 use crate::{
     configs::SendTransactionConfig,
     encoding::BinaryEncoding,
@@ -35,7 +36,7 @@ pub struct LiteBridge {
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
     #[cfg(feature = "metrics")]
-    pub txs_sent: dashmap::DashSet<String>,
+    pub txs_sent: Arc<dashmap::DashSet<String>>,
     #[cfg(feature = "metrics")]
     pub metrics: Arc<tokio::sync::RwLock<crate::metrics::Metrics>>,
 }
@@ -75,16 +76,12 @@ impl LiteBridge {
 
     #[cfg(feature = "metrics")]
     pub fn capture_metrics(self) -> JoinHandle<anyhow::Result<()>> {
-        let mut one_second = tokio::time::interval(std::time::Duration::from_secs(10));
+        let mut one_second = tokio::time::interval(std::time::Duration::from_secs(crate::DEFAULT_METRIC_RESET_TIME_INTERVAL));
 
         tokio::spawn(async move {
             info!("Capturing Metrics");
 
             loop {
-                //                let mut txs_sent = dashmap::DashSet::new();
-
-                //                std::mem::swap(&mut txs_sent, &mut self.txs_sent);
-
                 let txs_sent: Vec<String> = self.txs_sent.iter().map(|v| v.clone()).collect();
                 self.txs_sent.clear();
 
@@ -98,9 +95,10 @@ impl LiteBridge {
                         .finalized_block_listenser
                         .num_of_sigs_commited(&txs_sent)
                         .await,
+                    in_secs: crate::DEFAULT_METRIC_RESET_TIME_INTERVAL
                 };
 
-                info!("{metrics:?}");
+                log::warn!("{metrics:?}");
 
                 *self.metrics.write().await = metrics;
 

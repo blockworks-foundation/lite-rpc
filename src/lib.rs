@@ -24,5 +24,9 @@ pub const DEFAULT_TX_MAX_RETRIES: u16 = 1;
 pub const TX_MAX_RETRIES_UPPER_LIMIT: u16 = 5;
 #[from_env]
 pub const DEFAULT_TX_RETRY_BATCH_SIZE: usize = 20;
+#[cfg(feature = "metrics")]
+#[from_env]
+pub const DEFAULT_METRIC_RESET_TIME_INTERVAL: u64 = 12;
+
 pub const DEFAULT_TRANSACTION_CONFIRMATION_STATUS: TransactionConfirmationStatus =
     TransactionConfirmationStatus::Finalized;
