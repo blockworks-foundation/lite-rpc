@@ -1,3 +1,4 @@
+
 use crate::{
     configs::SendTransactionConfig,
     encoding::BinaryEncoding,
@@ -8,6 +9,7 @@ use crate::{
 use std::{ops::Deref, str::FromStr, sync::Arc};
 
 use anyhow::bail;
+
 use log::info;
 use reqwest::Url;
 
@@ -33,6 +35,10 @@ pub struct LiteBridge {
     pub tx_sender: Option<TxSender>,
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
+    #[cfg(feature = "metrics")]
+    pub txs_sent: Arc<dashmap::DashSet<String>>,
+    #[cfg(feature = "metrics")]
+    pub metrics: Arc<tokio::sync::RwLock<crate::metrics::Metrics>>,
 }
 
 impl LiteBridge {
@@ -61,6 +67,43 @@ impl LiteBridge {
             confirmed_block_listenser,
             rpc_url,
             tpu_client,
+            #[cfg(feature = "metrics")]
+            txs_sent: Default::default(),
+            #[cfg(feature = "metrics")]
+            metrics: Default::default(),
+        })
+    }
+
+    #[cfg(feature = "metrics")]
+    pub fn capture_metrics(self) -> JoinHandle<anyhow::Result<()>> {
+        let mut one_second = tokio::time::interval(std::time::Duration::from_secs(crate::DEFAULT_METRIC_RESET_TIME_INTERVAL));
+
+        tokio::spawn(async move {
+            info!("Capturing Metrics");
+
+            loop {
+                let txs_sent: Vec<String> = self.txs_sent.iter().map(|v| v.clone()).collect();
+                self.txs_sent.clear();
+
+                let metrics = crate::metrics::Metrics {
+                    total_txs: txs_sent.len(),
+                    txs_confirmed: self
+                        .confirmed_block_listenser
+                        .num_of_sigs_commited(&txs_sent)
+                        .await,
+                    txs_finalized: self
+                        .finalized_block_listenser
+                        .num_of_sigs_commited(&txs_sent)
+                        .await,
+                    in_secs: crate::DEFAULT_METRIC_RESET_TIME_INTERVAL
+                };
+
+                log::warn!("{metrics:?}");
+
+                *self.metrics.write().await = metrics;
+
+                one_second.tick().await;
+            }
         })
     }
 
@@ -94,7 +137,7 @@ impl LiteBridge {
             .http_only()
             .build(http_addr.clone())
             .await?
-            .start(self.into_rpc())?;
+            .start(self.clone().into_rpc())?;
 
         let ws_server = tokio::spawn(async move {
             info!("Websocket Server started at {ws_addr:?}");
@@ -119,12 +162,24 @@ impl LiteBridge {
             services.push(tx_sender.execute());
         }
 
+        #[cfg(feature = "metrics")]
+        services.push(self.capture_metrics());
+
         Ok(services)
     }
 }
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
+    #[allow(unreachable_code)]
+    async fn get_metrics(&self) -> crate::rpc::Result<crate::metrics::Metrics> {
+        #[cfg(feature = "metrics")]
+        {
+            return Ok(self.metrics.read().await.to_owned());
+        }
+        panic!("server not compiled with metrics support")
+    }
+
     async fn send_transaction(
         &self,
         tx: String,
@@ -140,6 +195,9 @@ impl LiteRpcServer for LiteBridge {
         let sig = bincode::deserialize::<VersionedTransaction>(&raw_tx)
             .unwrap()
             .signatures[0];
+
+        #[cfg(feature = "metrics")]
+        self.txs_sent.insert(sig.to_string());
 
         if let Some(tx_sender) = &self.tx_sender {
             tx_sender.enqnueue_tx(raw_tx);
