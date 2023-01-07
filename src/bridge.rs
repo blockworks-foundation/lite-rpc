@@ -81,15 +81,15 @@ impl LiteBridge {
             info!("Capturing Metrics");
 
             loop {
-//                let mut txs_sent = dashmap::DashSet::new();
+                //                let mut txs_sent = dashmap::DashSet::new();
 
-//                std::mem::swap(&mut txs_sent, &mut self.txs_sent);
+                //                std::mem::swap(&mut txs_sent, &mut self.txs_sent);
 
                 let txs_sent: Vec<String> = self.txs_sent.iter().map(|v| v.clone()).collect();
                 self.txs_sent.clear();
 
                 let metrics = crate::metrics::Metrics {
-                    total_txs: self.txs_sent.len(),
+                    total_txs: txs_sent.len(),
                     txs_confirmed: self
                         .confirmed_block_listenser
                         .num_of_sigs_commited(&txs_sent)
