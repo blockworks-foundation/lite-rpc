@@ -74,18 +74,19 @@ impl LiteBridge {
     }
 
     #[cfg(feature = "metrics")]
-    pub fn capture_metrics(mut self) -> JoinHandle<anyhow::Result<()>> {
+    pub fn capture_metrics(self) -> JoinHandle<anyhow::Result<()>> {
         let mut one_second = tokio::time::interval(std::time::Duration::from_secs(10));
 
         tokio::spawn(async move {
             info!("Capturing Metrics");
 
             loop {
-                let mut txs_sent = dashmap::DashSet::new();
+//                let mut txs_sent = dashmap::DashSet::new();
 
-                std::mem::swap(&mut txs_sent, &mut self.txs_sent);
+//                std::mem::swap(&mut txs_sent, &mut self.txs_sent);
 
-                let txs_sent: Vec<String> = txs_sent.into_iter().collect();
+                let txs_sent: Vec<String> = self.txs_sent.iter().map(|v| v.clone()).collect();
+                self.txs_sent.clear();
 
                 let metrics = crate::metrics::Metrics {
                     total_txs: self.txs_sent.len(),
@@ -172,7 +173,6 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-
     #[allow(unreachable_code)]
     async fn get_metrics(&self) -> crate::rpc::Result<crate::metrics::Metrics> {
         #[cfg(feature = "metrics")]
