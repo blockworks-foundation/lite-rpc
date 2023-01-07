@@ -44,6 +44,6 @@ pub trait LiteRpc {
         config: Option<RpcRequestAirdropConfig>,
     ) -> Result<String>;
 
-    #[subscription(name = "signatureSubscribe", unsubscribe="signatureUnsubscribe", item=RpcResponse<Option<TransactionError>>)]
+    #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<serde_json::Value>)]
     fn signature_subscribe(&self, signature: String, commitment_config: CommitmentConfig);
 }

@@ -148,7 +148,7 @@ impl BlockListener {
                     info!("{comfirmation_status:?} {sig}");
 
                     // subscribers
-                    if let Some((_, mut sink)) = self.signature_subscribers.remove(&sig) {
+                    if let Some((sig, mut sink)) = self.signature_subscribers.remove(&sig) {
                         warn!("notification {}", sig);
                         // none if transaction succeeded
                         sink.send(&RpcResponse {
@@ -156,7 +156,7 @@ impl BlockListener {
                                 slot,
                                 api_version: None,
                             },
-                            value: None::<TransactionError>,
+                            value: serde_json::json!({ "err": None::<TransactionError> }),
                         })
                         .unwrap();
                     }

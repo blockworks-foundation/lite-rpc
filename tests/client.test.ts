@@ -8,8 +8,9 @@ test('send and confirm transaction', async () => {
     const toAccount = Keypair.generate().publicKey;
 
     const airdropSignature = await connection.requestAirdrop(payer.publicKey, LAMPORTS_PER_SOL * 2);
-    console.log('airdrop signature ' + airdropSignature);
+    console.log('airdrop signature  ' + airdropSignature);
     await connection.confirmTransaction(airdropSignature, 'finalized');
+    console.log('confirmed');
 
     const transaction = new Transaction();
 
