@@ -8,13 +8,15 @@ use log::{info, warn};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
+    rpc_response::{Response as RpcResponse, RpcResponseContext},
 };
-use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_sdk::{
+    commitment_config::{CommitmentConfig, CommitmentLevel},
+    transaction::TransactionError,
+};
 
-use solana_sdk::transaction::TransactionError;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
-use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
+use tokio::{sync::RwLock, task::JoinHandle};
 
 /// Background worker which listen's to new blocks
 /// and keeps a track of confirmed txs
@@ -149,7 +151,14 @@ impl BlockListener {
                     if let Some((_, mut sink)) = self.signature_subscribers.remove(&sig) {
                         warn!("notification {}", sig);
                         // none if transaction succeeded
-                        sink.send::<Option<TransactionError>>(&None).unwrap();
+                        sink.send(&RpcResponse {
+                            context: RpcResponseContext {
+                                slot,
+                                api_version: None,
+                            },
+                            value: None::<TransactionError>,
+                        })
+                        .unwrap();
                     }
 
                     self.blocks.insert(
