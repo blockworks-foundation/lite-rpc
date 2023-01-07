@@ -23,8 +23,9 @@ use tokio::{sync::RwLock, task::JoinHandle};
 #[derive(Clone)]
 pub struct BlockListener {
     pub_sub_client: Arc<PubsubClient>,
-    pub blocks: Arc<DashMap<String, TransactionStatus>>,
     commitment_config: CommitmentConfig,
+
+    pub blocks: Arc<DashMap<String, TransactionStatus>>,
     latest_block_info: Arc<RwLock<BlockInformation>>,
     signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
 }
@@ -69,6 +70,16 @@ impl BlockListener {
         }
 
         commitment_levels
+    }
+
+    pub async fn num_of_sigs_commited(&self, sigs: &[String]) -> usize {
+        let mut num_of_sigs_commited = 0;
+        for sig in sigs {
+            if self.blocks.contains_key(sig) {
+                num_of_sigs_commited += 1;
+            }
+        }
+        num_of_sigs_commited
     }
 
     pub async fn get_slot(&self) -> u64 {
@@ -176,5 +187,9 @@ impl BlockListener {
 
             bail!("Stopped Listening to {commitment:?} blocks")
         })
+    }
+
+    pub fn capture_metrics(self) -> JoinHandle<anyhow::Result<()>> {
+        tokio::spawn(async move { Ok(()) })
     }
 }

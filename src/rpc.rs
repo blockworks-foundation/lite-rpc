@@ -8,6 +8,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionStatus;
 
 use crate::configs::SendTransactionConfig;
+use crate::metrics::Metrics;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -43,6 +44,9 @@ pub trait LiteRpc {
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
     ) -> Result<String>;
+
+    #[method(name = "getMetrics")]
+    async fn get_metrics(&self) -> Result<Metrics>;
 
     #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<serde_json::Value>)]
     fn signature_subscribe(&self, signature: String, commitment_config: CommitmentConfig);

@@ -8,6 +8,7 @@ pub mod encoding;
 pub mod errors;
 pub mod rpc;
 pub mod workers;
+pub mod metrics;
 
 pub type WireTransaction = Vec<u8>;
 

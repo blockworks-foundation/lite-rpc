@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "A lite version of solana rpc to send and confirm transactions"
 
+[features]
+default = []
+metrics = []
+
 [workspace]
 members = [
     "bench-utils"
