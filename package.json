@@ -4,6 +4,7 @@
   "repository": "https://github.com/blockworks-foundation/lite-rpc.git",
   "license": "MIT",
   "devDependencies": {
+    "@solana/spl-token": "^0.3.6",
     "@solana/web3.js": "^1.73.0",
     "@types/jest": "^29.2.5",
     "jest": "^29.3.1",

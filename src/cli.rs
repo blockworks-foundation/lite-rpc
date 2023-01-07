@@ -8,9 +8,9 @@ pub struct Args {
     pub rpc_addr: String,
     #[arg(short, long, default_value_t = String::from(DEFAULT_WS_ADDR))]
     pub ws_addr: String,
-    #[arg(short, long, default_value_t = String::from("127.0.0.1:8890"))]
+    #[arg(long, default_value_t = String::from("127.0.0.1:8890"))]
     pub lite_rpc_http_addr: String,
-    #[arg(short, long, default_value_t = String::from("127.0.0.1:8891"))]
+    #[arg(short='s', long, default_value_t = String::from("127.0.0.1:8891"))]
     pub lite_rpc_ws_addr: String,
     #[arg(short, long, default_value_t = false)]
     pub batch_transactions: bool,
