@@ -1,8 +1,7 @@
-
 use jsonrpc_core::{ErrorCode, IoHandler};
 use soketto::handshake::{server, Server};
 use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
-use std::{net::SocketAddr, str::FromStr, thread::JoinHandle, collections::{BTreeSet}, sync::{RwLock}};
+use std::{collections::BTreeSet, net::SocketAddr, str::FromStr, sync::RwLock, thread::JoinHandle};
 use stream_cancel::{Trigger, Tripwire};
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
@@ -75,10 +74,8 @@ impl LiteRpcPubSubImpl {
                     Ok(set) => {
                         set.insert(new_subsription_id);
                         Ok(new_subsription_id)
-                    },
-                    Err(_) => {
-                        Err(Error::new(jsonrpc_core::ErrorCode::InternalError))
                     }
+                    Err(_) => Err(Error::new(jsonrpc_core::ErrorCode::InternalError)),
                 }
             }
         }
@@ -91,13 +88,11 @@ impl LiteRpcPubSubImpl {
             Ok(set) => {
                 if set.contains(&id) {
                     set.remove(&id);
-                    return Ok(true)
+                    return Ok(true);
                 }
-                return Ok(false)
-            },
-            Err(_) => {
-                Err(Error::new(jsonrpc_core::ErrorCode::InternalError))
+                return Ok(false);
             }
+            Err(_) => Err(Error::new(jsonrpc_core::ErrorCode::InternalError)),
         }
     }
 }
@@ -137,10 +132,8 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
             Ok(set) => {
                 set.insert(0);
                 Ok(0)
-            },
-            Err(_) => {
-                Err(Error::new(jsonrpc_core::ErrorCode::InternalError))
             }
+            Err(_) => Err(Error::new(jsonrpc_core::ErrorCode::InternalError)),
         }
     }
 
@@ -152,13 +145,11 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
             Ok(set) => {
                 if set.contains(&0) {
                     set.remove(&0);
-                    return Ok(true)
+                    return Ok(true);
                 }
-                return Ok(false)
-            },
-            Err(_) => {
-                Err(Error::new(jsonrpc_core::ErrorCode::InternalError))
+                return Ok(false);
             }
+            Err(_) => Err(Error::new(jsonrpc_core::ErrorCode::InternalError)),
         }
     }
 }

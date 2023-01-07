@@ -5,13 +5,14 @@ use solana_client::{
     tpu_client::TpuClientConfig,
 };
 use solana_pubsub_client::pubsub_client::{PubsubBlockClientSubscription, PubsubClient};
-use solana_sdk::transaction::Transaction;
+use solana_sdk::{transaction::Transaction, transport::TransportError};
 use std::{
     str::FromStr,
-    sync::Mutex,
+    sync::{Mutex, RwLock},
     thread::{Builder, JoinHandle},
     time::{Duration, Instant},
 };
+use tokio::runtime::Runtime;
 
 use crate::context::{
     BlockInformation, LiteRpcContext, NotificationType, PerformanceCounter, SignatureNotification,
@@ -42,7 +43,7 @@ use {
     },
 };
 
-const TPU_BATCH_SIZE: usize = 8;
+const TPU_BATCH_SIZE: usize = 1;
 
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
@@ -63,9 +64,14 @@ impl LightRpcRequestProcessor {
         websocket_url: &str,
         notification_sender: Sender<NotificationType>,
         performance_counter: PerformanceCounter,
+        runtime: Arc<Runtime>,
     ) -> LightRpcRequestProcessor {
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
-        let context = Arc::new(LiteRpcContext::new(rpc_client.clone(), notification_sender));
+        let context = Arc::new(LiteRpcContext::new(
+            rpc_client.clone(),
+            notification_sender,
+            runtime,
+        ));
 
         let connection_cache = Arc::new(ConnectionCache::default());
         println!("ws_url {}", websocket_url);
@@ -93,14 +99,15 @@ impl LightRpcRequestProcessor {
                 CommitmentLevel::Finalized,
                 performance_counter.clone(),
             ),
-            Self::build_thread_to_process_transactions(
-                json_rpc_url.to_string(),
-                websocket_url.to_string(),
-                &context,
-                tpu_consumer.clone(),
-                performance_counter.clone(),
-            ),
         ];
+
+        Self::build_thread_to_process_transactions(
+            json_rpc_url.to_string(),
+            websocket_url.to_string(),
+            context.clone(),
+            tpu_consumer.clone(),
+            performance_counter.clone(),
+        );
 
         LightRpcRequestProcessor {
             rpc_client,
@@ -159,19 +166,54 @@ impl LightRpcRequestProcessor {
             .unwrap()
     }
 
+    fn match_send_results_and_update_counters(
+        fut_res: std::result::Result<(), TransportError>,
+        count: u64,
+        performance_counters: PerformanceCounter,
+        consecutive_errors: Arc<RwLock<u8>>,
+    ) {
+        match fut_res {
+            Ok(_) => {
+                let consecutive_errors_count = {
+                    let lock = consecutive_errors.read().unwrap();
+                    *lock
+                };
+                if consecutive_errors_count > 0 {
+                    let mut lock = consecutive_errors.write().unwrap();
+                    *lock = 0;
+                }
+
+                performance_counters
+                    .total_transactions_sent
+                    .fetch_add(count, Ordering::Relaxed);
+            }
+            Err(e) => {
+                println!(
+                    "Got error while sending transaction batch of size {}, error {}",
+                    count,
+                    e.to_string()
+                );
+                performance_counters
+                    .transaction_sent_error
+                    .fetch_add(count, Ordering::Relaxed);
+                let mut lock = consecutive_errors.write().unwrap();
+                *lock += 1;
+            }
+        };
+    }
+
     fn build_thread_to_process_transactions(
         json_rpc_url: String,
         websocket_url: String,
-        context: &Arc<LiteRpcContext>,
+        context: Arc<LiteRpcContext>,
         receiver: Receiver<Transaction>,
         performance_counters: PerformanceCounter,
-    ) -> JoinHandle<()> {
-        let context = context.clone();
-        Builder::new()
-            .name("thread working on confirmation block".to_string())
-            .spawn(move || {
-            let rpc_client =
-                Arc::new(RpcClient::new(json_rpc_url.to_string()));
+    ) {
+        let runtime = context.runtime.clone();
+
+        runtime.spawn(async move {
+            let context = context.clone();
+            let rpc_client = Arc::new(RpcClient::new(json_rpc_url.to_string()));
 
             let mut connection_cache = Arc::new(ConnectionCache::default());
             let tpu_client = TpuClient::new_with_connection_cache(
@@ -180,14 +222,19 @@ impl LightRpcRequestProcessor {
                 TpuClientConfig::default(), // value for max fanout slots
                 connection_cache.clone(),
             );
-            let mut tpu_client = Arc::new(tpu_client.unwrap());
-            let mut consecutive_errors: u8 = 0;
+            let mut tpu_client_original = Arc::new(tpu_client.unwrap());
+            let consecutive_errors: Arc<RwLock<u8>> = Arc::new(RwLock::new(0));
 
             loop {
+                let context = context.clone();
                 let recv_res = receiver.recv();
+                let tpu_client = tpu_client_original.clone();
+                let performance_counters = performance_counters.clone();
+                let consecutive_errors = consecutive_errors.clone();
+
                 match recv_res {
                     Ok(transaction) => {
-                        let (fut_res, count) = if TPU_BATCH_SIZE > 1 {
+                        if TPU_BATCH_SIZE > 1 {
                             let mut transactions_vec = vec![transaction];
                             let mut time_remaining = Duration::from_micros(1000);
                             for _i in 1..TPU_BATCH_SIZE {
@@ -204,9 +251,6 @@ impl LightRpcRequestProcessor {
                                 }
                             }
                             let count: u64 = transactions_vec.len() as u64;
-                            let slice = transactions_vec.as_slice();
-                            let fut_res = tpu_client.try_send_transaction_batch(slice);
-
                             // insert sent transactions into signature status map
                             transactions_vec.iter().for_each(|x| {
                                 let signature = x.signatures[0].to_string();
@@ -219,9 +263,22 @@ impl LightRpcRequestProcessor {
                                     },
                                 );
                             });
-                            (fut_res, count)
+
+                            let tpu_client = tpu_client.clone();
+                            let performance_counters = performance_counters.clone();
+                            let consecutive_errors = consecutive_errors.clone();
+
+                            tokio::spawn(async move {
+                                let slice = transactions_vec.as_slice();
+                                let fut_res = tpu_client.try_send_transaction_batch(slice);
+                                Self::match_send_results_and_update_counters(
+                                    fut_res,
+                                    count,
+                                    performance_counters,
+                                    consecutive_errors,
+                                );
+                            });
                         } else {
-                            let fut_res = tpu_client.try_send_transaction(&transaction);
                             let signature = transaction.signatures[0].to_string();
                             context.signature_status.insert(
                                 signature.clone(),
@@ -231,37 +288,40 @@ impl LightRpcRequestProcessor {
                                     created: Instant::now(),
                                 },
                             );
-                            (fut_res, 1)
+
+                            let tpu_client = tpu_client.clone();
+                            let performance_counters = performance_counters.clone();
+                            let consecutive_errors = consecutive_errors.clone();
+
+                            tokio::spawn(async move {
+                                let fut_res = tpu_client.try_send_transaction(&transaction);
+                                Self::match_send_results_and_update_counters(
+                                    fut_res,
+                                    1,
+                                    performance_counters,
+                                    consecutive_errors,
+                                );
+                            });
                         };
 
-                        match fut_res {
-                            Ok(_) => {
-                                consecutive_errors = 0;
-
-                                performance_counters
-                                .total_transactions_sent
-                                .fetch_add(count, Ordering::Relaxed);
-                            },
-                            Err(e) => {
-                                println!("Got error while sending transaction batch of size {}, error {}", count, e.to_string());
-                                consecutive_errors += 1;
-                                if consecutive_errors > 3 {
-                                    connection_cache = Arc::new(ConnectionCache::default());
-
-                                    let new_tpu_client = TpuClient::new_with_connection_cache(
-                                        rpc_client.clone(),
-                                        websocket_url.as_str(),
-                                        TpuClientConfig::default(), // value for max fanout slots
-                                        connection_cache.clone(),
-                                    );
-                                    // reset TPU connection
-                                    tpu_client = Arc::new(new_tpu_client.unwrap());
-                                }
-                                performance_counters
-                                    .transaction_sent_error
-                                    .fetch_add(count, Ordering::Relaxed);
-                            }
+                        let consecutive_errors_count = {
+                            let lock = consecutive_errors.read().unwrap();
+                            *lock
                         };
+                        if consecutive_errors_count > 3 {
+                            connection_cache = Arc::new(ConnectionCache::default());
+
+                            let new_tpu_client = TpuClient::new_with_connection_cache(
+                                rpc_client.clone(),
+                                websocket_url.as_str(),
+                                TpuClientConfig::default(), // value for max fanout slots
+                                connection_cache.clone(),
+                            );
+                            // reset TPU connection
+                            tpu_client_original = Arc::new(new_tpu_client.unwrap());
+                            let mut lock = consecutive_errors.write().unwrap();
+                            *lock = 0;
+                        }
                     }
                     Err(e) => {
                         println!("got error on tpu channel {}", e.to_string());
@@ -269,7 +329,7 @@ impl LightRpcRequestProcessor {
                     }
                 };
             }
-        }).unwrap()
+        });
     }
 
     fn process_block(

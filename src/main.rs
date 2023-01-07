@@ -84,11 +84,22 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
     let lite_rpc = lite_rpc::LightRpc;
     io.extend_with(lite_rpc.to_delegate());
 
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(64)
+            .on_thread_start(move || renice_this_thread(0).unwrap())
+            .thread_name("solLiteRpcProcessor")
+            .enable_all()
+            .build()
+            .expect("Runtime"),
+    );
+
     let mut request_processor = LightRpcRequestProcessor::new(
         rpc_url.as_str(),
         &websocket_url,
         notification_sender,
         performance_counter.clone(),
+        runtime.clone(),
     );
     let _cleaning_thread = {
         // build cleaning thread
@@ -101,16 +112,6 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
             })
             .unwrap()
     };
-
-    let runtime = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(64)
-            .on_thread_start(move || renice_this_thread(0).unwrap())
-            .thread_name("solLiteRpcProcessor")
-            .enable_all()
-            .build()
-            .expect("Runtime"),
-    );
     let max_request_body_size: usize = 50 * (1 << 10);
 
     let socket_addr = format!("0.0.0.0:{}", port).parse::<SocketAddr>().unwrap();

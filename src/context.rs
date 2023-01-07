@@ -5,9 +5,7 @@ use solana_client::{
     rpc_client::RpcClient,
     rpc_response::{ProcessedSignatureResult, RpcResponseContext, RpcSignatureResult, SlotInfo},
 };
-use solana_rpc::rpc_subscription_tracker::{
-    SignatureSubscriptionParams, SubscriptionParams,
-};
+use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     signature::Signature,
@@ -21,7 +19,7 @@ use std::{
     thread::{self, Builder, JoinHandle},
     time::{Duration, Instant},
 };
-use tokio::sync::broadcast;
+use tokio::{runtime::Runtime, sync::broadcast};
 
 pub struct BlockInformation {
     pub block_hash: RwLock<String>,
@@ -56,6 +54,7 @@ pub struct SignatureStatus {
 }
 
 pub struct LiteRpcContext {
+    pub runtime: Arc<Runtime>,
     pub signature_status: DashMap<String, SignatureStatus>,
     pub finalized_block_info: BlockInformation,
     pub confirmed_block_info: BlockInformation,
@@ -63,8 +62,13 @@ pub struct LiteRpcContext {
 }
 
 impl LiteRpcContext {
-    pub fn new(rpc_client: Arc<RpcClient>, notification_sender: Sender<NotificationType>) -> Self {
+    pub fn new(
+        rpc_client: Arc<RpcClient>,
+        notification_sender: Sender<NotificationType>,
+        runtime: Arc<Runtime>,
+    ) -> Self {
         LiteRpcContext {
+            runtime: runtime,
             signature_status: DashMap::new(),
             confirmed_block_info: BlockInformation::new(
                 rpc_client.clone(),
@@ -349,7 +353,7 @@ impl PerformanceCounter {
     }
 }
 
-const PRINT_COUNTERS : bool = true;
+const PRINT_COUNTERS: bool = true;
 pub fn launch_performance_updating_thread(
     performance_counter: PerformanceCounter,
 ) -> JoinHandle<()> {
