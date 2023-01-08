@@ -143,19 +143,17 @@ impl BlockListener {
                 };
 
                 for sig in signatures {
-                    let Some(mut tx_status) = self.txs_sent.get_mut(&sig) else {
-                        continue;
+                    if let Some(mut tx_status) = self.txs_sent.get_mut(&sig) {
+                        info!("{comfirmation_status:?} {sig}");
+
+                        *tx_status.value_mut() = Some(TransactionStatus {
+                            slot,
+                            confirmations: None, //TODO: talk about this
+                            status: Ok(()),      // legacy field
+                            err: None,
+                            confirmation_status: Some(comfirmation_status.clone()),
+                        });
                     };
-
-                    info!("{comfirmation_status:?} {sig}");
-
-                    *tx_status.value_mut() = Some(TransactionStatus {
-                        slot,
-                        confirmations: None, //TODO: talk about this
-                        status: Ok(()),      // legacy field
-                        err: None,
-                        confirmation_status: Some(comfirmation_status.clone()),
-                    });
 
                     // subscribers
                     if let Some((sig, mut sink)) = self.signature_subscribers.remove(&sig) {
