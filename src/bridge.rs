@@ -98,18 +98,18 @@ impl LiteBridge {
             loop {
                 one_second.tick().await;
 
-                let total_txs_sent = self.txs_sent.len();
-                let mut total_txs_confirmed: usize = 0;
-                let mut total_txs_finalized: usize = 0;
+                let txs_sent = self.txs_sent.len();
+                let mut txs_confirmed: usize = 0;
+                let mut txs_finalized: usize = 0;
 
                 for tx in self.txs_sent.iter() {
                     if let Some(tx) = tx.value() {
                         match tx.confirmation_status() {
-                            TransactionConfirmationStatus::Confirmed => total_txs_confirmed += 1,
+                            TransactionConfirmationStatus::Confirmed => txs_confirmed += 1,
                             TransactionConfirmationStatus::Finalized => {
-                                total_txs_confirmed += 1;
-                                total_txs_finalized += 1;
-                            },
+                                txs_confirmed += 1;
+                                txs_finalized += 1;
+                            }
                             _ => (),
                         }
                     }
@@ -117,15 +117,13 @@ impl LiteBridge {
 
                 let mut metrics = self.metrics.write().await;
 
-                metrics.txs_sent_in_one_sec = total_txs_sent - metrics.total_txs_sent;
-                metrics.txs_confirmed_in_one_sec =
-                    total_txs_confirmed - metrics.total_txs_confirmed;
-                metrics.txs_finalized_in_one_sec =
-                    total_txs_finalized - metrics.total_txs_finalized;
+                metrics.txs_ps = txs_sent - metrics.txs_sent;
+                metrics.txs_confirmed_ps = txs_confirmed - metrics.txs_confirmed;
+                metrics.txs_finalized_ps = txs_finalized - metrics.txs_finalized;
 
-                metrics.total_txs_sent = total_txs_sent;
-                metrics.total_txs_confirmed = total_txs_confirmed;
-                metrics.total_txs_finalized = total_txs_finalized;
+                metrics.txs_sent = txs_sent;
+                metrics.txs_confirmed = txs_confirmed;
+                metrics.txs_finalized = txs_finalized;
 
                 log::info!("{metrics:?}");
             }
