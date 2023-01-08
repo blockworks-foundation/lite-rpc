@@ -106,7 +106,10 @@ impl LiteBridge {
                     if let Some(tx) = tx.value() {
                         match tx.confirmation_status() {
                             TransactionConfirmationStatus::Confirmed => total_txs_confirmed += 1,
-                            TransactionConfirmationStatus::Finalized => total_txs_finalized += 1,
+                            TransactionConfirmationStatus::Finalized => {
+                                total_txs_confirmed += 1;
+                                total_txs_finalized += 1;
+                            },
                             _ => (),
                         }
                     }
@@ -124,7 +127,7 @@ impl LiteBridge {
                 metrics.total_txs_confirmed = total_txs_confirmed;
                 metrics.total_txs_finalized = total_txs_finalized;
 
-                log::warn!("{metrics:?}");
+                log::info!("{metrics:?}");
             }
         })
     }
