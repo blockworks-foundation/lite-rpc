@@ -290,13 +290,17 @@ impl LiteRpcServer for LiteBridge {
     ) -> crate::rpc::Result<String> {
         let pubkey = Pubkey::from_str(&pubkey_str).unwrap();
 
-        Ok(self
+        let airdrop_sig = self
             .tpu_client
             .rpc_client()
             .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
             .await
             .unwrap()
-            .to_string())
+            .to_string();
+
+        self.txs_sent.insert(airdrop_sig.clone(), None);
+
+        Ok(airdrop_sig)
     }
 
     fn signature_subscribe(
