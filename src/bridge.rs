@@ -218,7 +218,6 @@ impl LiteRpcServer for LiteBridge {
             .unwrap()
             .signatures[0];
 
-        #[cfg(feature = "metrics")]
         self.txs_sent.insert(sig.to_string(), None);
 
         if let Some(tx_sender) = &self.tx_sender {
