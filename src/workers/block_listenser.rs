@@ -80,7 +80,7 @@ impl BlockListener {
     }
 
     pub fn signature_subscribe(&self, signature: String, sink: SubscriptionSink) {
-        warn!("subscribing {signature}");
+//        warn!("subscribing {signature}");
 
         let _ = self.signature_subscribers.insert(signature, sink);
     }
@@ -155,7 +155,7 @@ impl BlockListener {
 
                     // subscribers
                     if let Some((sig, mut sink)) = self.signature_subscribers.remove(&sig) {
-                        info!("notification {}", sig);
+//                        info!("notification {}", sig);
                         // none if transaction succeeded
                         sink.send(&RpcResponse {
                             context: RpcResponseContext {
