@@ -6,9 +6,9 @@ pub mod cli;
 pub mod configs;
 pub mod encoding;
 pub mod errors;
+pub mod metrics;
 pub mod rpc;
 pub mod workers;
-pub mod metrics;
 
 pub type WireTransaction = Vec<u8>;
 

@@ -67,9 +67,7 @@ async fn send_and_confirm_txs() {
             let tx_status = txs_sent.get(&sig).unwrap();
 
             if let Some(tx_status) = tx_status.value() {
-                if tx_status.confirmation_status()
-                    == TransactionConfirmationStatus::Confirmed
-                {
+                if tx_status.confirmation_status() == TransactionConfirmationStatus::Confirmed {
                     return;
                 }
             }
