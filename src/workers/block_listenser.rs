@@ -4,7 +4,7 @@ use anyhow::{bail, Context};
 use dashmap::DashMap;
 use futures::StreamExt;
 use jsonrpsee::SubscriptionSink;
-use log::{info, warn};
+use log::{info};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
@@ -154,7 +154,7 @@ impl BlockListener {
                     };
 
                     // subscribers
-                    if let Some((sig, mut sink)) = self.signature_subscribers.remove(&sig) {
+                    if let Some((_sig, mut sink)) = self.signature_subscribers.remove(&sig) {
 //                        info!("notification {}", sig);
                         // none if transaction succeeded
                         sink.send(&RpcResponse {
