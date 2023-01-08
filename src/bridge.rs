@@ -24,7 +24,7 @@ use solana_sdk::{
     pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
-use solana_transaction_status::{TransactionStatus};
+use solana_transaction_status::TransactionStatus;
 use tokio::{net::ToSocketAddrs, task::JoinHandle};
 
 /// A bridge between clients and tpu
@@ -260,23 +260,10 @@ impl LiteRpcServer for LiteBridge {
         sigs: Vec<String>,
         _config: Option<solana_client::rpc_config::RpcSignatureStatusConfig>,
     ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
-        let mut sig_statuses = self
-            .confirmed_block_listenser
-            .get_signature_statuses(&sigs)
-            .await;
-
-        // merge
-        let mut sig_index = 0;
-        for finalized_block in self
-            .finalized_block_listenser
-            .get_signature_statuses(&sigs)
-            .await
-        {
-            if let Some(finalized_block) = finalized_block {
-                sig_statuses[sig_index] = Some(finalized_block);
-            }
-            sig_index += 0;
-        }
+        let sig_statuses = sigs
+            .iter()
+            .map(|sig| self.txs_sent.get(sig).and_then(|v| v.clone()))
+            .collect();
 
         Ok(RpcResponse {
             context: RpcResponseContext {

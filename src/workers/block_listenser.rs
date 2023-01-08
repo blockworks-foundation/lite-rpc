@@ -18,8 +18,6 @@ use solana_sdk::{
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::{sync::RwLock, task::JoinHandle};
 
-
-
 /// Background worker which listen's to new blocks
 /// and keeps a track of confirmed txs
 #[derive(Clone)]
@@ -59,22 +57,6 @@ impl BlockListener {
             commitment_config,
             signature_subscribers: Default::default(),
         })
-    }
-
-    /// # Return
-    /// commitment_level for the list of txs from the cache
-    pub async fn get_signature_statuses(&self, sigs: &[String]) -> Vec<Option<TransactionStatus>> {
-        let mut commitment_levels = Vec::with_capacity(sigs.len());
-
-        for sig in sigs {
-            commitment_levels.push(
-                self.txs_sent
-                    .get(sig)
-                    .map_or_else(|| None, |some| some.value().clone()),
-            );
-        }
-
-        commitment_levels
     }
 
     pub async fn num_of_sigs_commited(&self, sigs: &[String]) -> usize {
