@@ -1,4 +1,3 @@
-
 use crate::{
     configs::SendTransactionConfig,
     encoding::BinaryEncoding,
@@ -10,12 +9,13 @@ use std::{ops::Deref, str::FromStr, sync::Arc};
 
 use anyhow::bail;
 
+use dashmap::DashMap;
 use log::info;
 use reqwest::Url;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 use solana_client::{
-    nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
+    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient, tpu_client::TpuClient},
     rpc_config::{RpcContextConfig, RpcRequestAirdropConfig},
     rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
@@ -24,7 +24,7 @@ use solana_sdk::{
     pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
-use solana_transaction_status::TransactionStatus;
+use solana_transaction_status::{TransactionStatus};
 use tokio::{net::ToSocketAddrs, task::JoinHandle};
 
 /// A bridge between clients and tpu
@@ -35,8 +35,7 @@ pub struct LiteBridge {
     pub tx_sender: Option<TxSender>,
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
-    #[cfg(feature = "metrics")]
-    pub txs_sent: Arc<dashmap::DashSet<String>>,
+    pub txs_sent: Arc<DashMap<String, Option<TransactionStatus>>>,
     #[cfg(feature = "metrics")]
     pub metrics: Arc<tokio::sync::RwLock<crate::metrics::Metrics>>,
 }
@@ -52,10 +51,24 @@ impl LiteBridge {
         let tpu_client =
             Arc::new(TpuClient::new(rpc_client.clone(), ws_addr, Default::default()).await?);
 
-        let finalized_block_listenser =
-            BlockListener::new(rpc_client.clone(), ws_addr, CommitmentConfig::finalized()).await?;
-        let confirmed_block_listenser =
-            BlockListener::new(rpc_client.clone(), ws_addr, CommitmentConfig::confirmed()).await?;
+        let pub_sub_client = Arc::new(PubsubClient::new(ws_addr).await?);
+        let txs_sent = Arc::new(DashMap::new());
+
+        let finalized_block_listenser = BlockListener::new(
+            pub_sub_client.clone(),
+            rpc_client.clone(),
+            txs_sent.clone(),
+            CommitmentConfig::finalized(),
+        )
+        .await?;
+
+        let confirmed_block_listenser = BlockListener::new(
+            pub_sub_client,
+            rpc_client.clone(),
+            txs_sent.clone(),
+            CommitmentConfig::confirmed(),
+        )
+        .await?;
 
         Ok(Self {
             tx_sender: if batch_transactions {
@@ -67,8 +80,7 @@ impl LiteBridge {
             confirmed_block_listenser,
             rpc_url,
             tpu_client,
-            #[cfg(feature = "metrics")]
-            txs_sent: Default::default(),
+            txs_sent,
             #[cfg(feature = "metrics")]
             metrics: Default::default(),
         })
@@ -76,33 +88,43 @@ impl LiteBridge {
 
     #[cfg(feature = "metrics")]
     pub fn capture_metrics(self) -> JoinHandle<anyhow::Result<()>> {
-        let mut one_second = tokio::time::interval(std::time::Duration::from_secs(crate::DEFAULT_METRIC_RESET_TIME_INTERVAL));
+        use solana_transaction_status::TransactionConfirmationStatus;
+
+        let mut one_second = tokio::time::interval(std::time::Duration::from_secs(1));
 
         tokio::spawn(async move {
             info!("Capturing Metrics");
 
             loop {
-                let txs_sent: Vec<String> = self.txs_sent.iter().map(|v| v.clone()).collect();
-                self.txs_sent.clear();
+                one_second.tick().await;
 
-                let metrics = crate::metrics::Metrics {
-                    total_txs: txs_sent.len(),
-                    txs_confirmed: self
-                        .confirmed_block_listenser
-                        .num_of_sigs_commited(&txs_sent)
-                        .await,
-                    txs_finalized: self
-                        .finalized_block_listenser
-                        .num_of_sigs_commited(&txs_sent)
-                        .await,
-                    in_secs: crate::DEFAULT_METRIC_RESET_TIME_INTERVAL
-                };
+                let total_txs_sent = self.txs_sent.len();
+                let mut total_txs_confirmed: usize = 0;
+                let mut total_txs_finalized: usize = 0;
+
+                for tx in self.txs_sent.iter() {
+                    if let Some(tx) = tx.value() {
+                        match tx.confirmation_status() {
+                            TransactionConfirmationStatus::Confirmed => total_txs_confirmed += 1,
+                            TransactionConfirmationStatus::Finalized => total_txs_finalized += 1,
+                            _ => (),
+                        }
+                    }
+                }
+
+                let mut metrics = self.metrics.write().await;
+
+                metrics.txs_sent_in_one_sec = total_txs_sent - metrics.total_txs_sent;
+                metrics.txs_confirmed_in_one_sec =
+                    total_txs_confirmed - metrics.total_txs_confirmed;
+                metrics.txs_finalized_in_one_sec =
+                    total_txs_finalized - metrics.total_txs_finalized;
+
+                metrics.total_txs_sent = total_txs_sent;
+                metrics.total_txs_confirmed = total_txs_confirmed;
+                metrics.total_txs_finalized = total_txs_finalized;
 
                 log::warn!("{metrics:?}");
-
-                *self.metrics.write().await = metrics;
-
-                one_second.tick().await;
             }
         })
     }
@@ -197,7 +219,7 @@ impl LiteRpcServer for LiteBridge {
             .signatures[0];
 
         #[cfg(feature = "metrics")]
-        self.txs_sent.insert(sig.to_string());
+        self.txs_sent.insert(sig.to_string(), None);
 
         if let Some(tx_sender) = &self.tx_sender {
             tx_sender.enqnueue_tx(raw_tx);

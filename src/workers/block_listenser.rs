@@ -18,14 +18,15 @@ use solana_sdk::{
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::{sync::RwLock, task::JoinHandle};
 
+
+
 /// Background worker which listen's to new blocks
 /// and keeps a track of confirmed txs
 #[derive(Clone)]
 pub struct BlockListener {
     pub_sub_client: Arc<PubsubClient>,
     commitment_config: CommitmentConfig,
-
-    pub blocks: Arc<DashMap<String, TransactionStatus>>,
+    txs_sent: Arc<DashMap<String, Option<TransactionStatus>>>,
     latest_block_info: Arc<RwLock<BlockInformation>>,
     signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
 }
@@ -38,18 +39,18 @@ struct BlockInformation {
 
 impl BlockListener {
     pub async fn new(
+        pub_sub_client: Arc<PubsubClient>,
         rpc_client: Arc<RpcClient>,
-        ws_url: &str,
+        txs_sent: Arc<DashMap<String, Option<TransactionStatus>>>,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<Self> {
-        let pub_sub_client = Arc::new(PubsubClient::new(ws_url).await?);
         let (latest_block_hash, block_height) = rpc_client
             .get_latest_blockhash_with_commitment(commitment_config)
             .await?;
 
         Ok(Self {
             pub_sub_client,
-            blocks: Default::default(),
+            txs_sent,
             latest_block_info: Arc::new(RwLock::new(BlockInformation {
                 slot: rpc_client.get_slot().await?,
                 blockhash: latest_block_hash.to_string(),
@@ -66,7 +67,11 @@ impl BlockListener {
         let mut commitment_levels = Vec::with_capacity(sigs.len());
 
         for sig in sigs {
-            commitment_levels.push(self.blocks.get(sig).map(|some| some.value().clone()));
+            commitment_levels.push(
+                self.txs_sent
+                    .get(sig)
+                    .map_or_else(|| None, |some| some.value().clone()),
+            );
         }
 
         commitment_levels
@@ -75,7 +80,7 @@ impl BlockListener {
     pub async fn num_of_sigs_commited(&self, sigs: &[String]) -> usize {
         let mut num_of_sigs_commited = 0;
         for sig in sigs {
-            if self.blocks.contains_key(sig) {
+            if self.txs_sent.contains_key(sig) {
                 num_of_sigs_commited += 1;
             }
         }
@@ -156,7 +161,19 @@ impl BlockListener {
                 };
 
                 for sig in signatures {
+                    let Some(mut tx_status) = self.txs_sent.get_mut(&sig) else {
+                        continue;
+                    };
+
                     info!("{comfirmation_status:?} {sig}");
+
+                    *tx_status.value_mut() = Some(TransactionStatus {
+                        slot,
+                        confirmations: None, //TODO: talk about this
+                        status: Ok(()),      // legacy field
+                        err: None,
+                        confirmation_status: Some(comfirmation_status.clone()),
+                    });
 
                     // subscribers
                     if let Some((sig, mut sink)) = self.signature_subscribers.remove(&sig) {
@@ -171,17 +188,6 @@ impl BlockListener {
                         })
                         .unwrap();
                     }
-
-                    self.blocks.insert(
-                        sig,
-                        TransactionStatus {
-                            slot,
-                            confirmations: None, //TODO: talk about this
-                            status: Ok(()),      // legacy field
-                            err: None,
-                            confirmation_status: Some(comfirmation_status.clone()),
-                        },
-                    );
                 }
             }
 

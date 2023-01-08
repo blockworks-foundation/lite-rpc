@@ -2,15 +2,19 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bench_utils::helpers::BenchHelper;
+use dashmap::DashMap;
 use futures::future::try_join_all;
 use lite_rpc::{
     encoding::BinaryEncoding,
     workers::{BlockListener, TxSender},
     DEFAULT_LITE_RPC_ADDR, DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR,
 };
-use solana_client::nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient};
+use solana_client::nonblocking::{
+    pubsub_client::PubsubClient, rpc_client::RpcClient, tpu_client::TpuClient,
+};
 
 use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
+use solana_transaction_status::TransactionConfirmationStatus;
 
 #[tokio::test]
 async fn send_and_confirm_txs() {
@@ -24,9 +28,13 @@ async fn send_and_confirm_txs() {
             .unwrap(),
     );
 
+    let pub_sub_client = Arc::new(PubsubClient::new(DEFAULT_WS_ADDR).await.unwrap());
+    let txs_sent = Arc::new(DashMap::new());
+
     let block_listener = BlockListener::new(
+        pub_sub_client.clone(),
         rpc_client.clone(),
-        DEFAULT_WS_ADDR,
+        txs_sent.clone(),
         CommitmentConfig::confirmed(),
     )
     .await
@@ -56,8 +64,14 @@ async fn send_and_confirm_txs() {
         let sig = sig.to_string();
 
         for _ in 0..2 {
-            if block_listener.blocks.contains_key(&sig) {
-                return;
+            let tx_status = txs_sent.get(&sig).unwrap();
+
+            if let Some(tx_status) = tx_status.value() {
+                if tx_status.confirmation_status()
+                    == TransactionConfirmationStatus::Confirmed
+                {
+                    return;
+                }
             }
 
             tokio::time::sleep(Duration::from_millis(800)).await;
