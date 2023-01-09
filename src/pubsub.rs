@@ -1,18 +1,29 @@
 use jsonrpc_core::{ErrorCode, IoHandler};
 use soketto::handshake::{server, Server};
 use solana_rpc::rpc_subscription_tracker::{SignatureSubscriptionParams, SubscriptionParams};
-use std::{collections::BTreeSet, net::SocketAddr, str::FromStr, sync::RwLock, thread::JoinHandle};
+use solana_sdk::commitment_config::CommitmentLevel;
+use std::{
+    collections::HashMap, net::SocketAddr, str::FromStr, sync::RwLock, thread::JoinHandle,
+    time::Instant,
+};
 use stream_cancel::{Trigger, Tripwire};
 use tokio::{net::TcpStream, pin, select};
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
-use crate::context::{LiteRpcSubsrciptionControl, PerformanceCounter};
+use crate::context::{
+    LiteRpcSubsrciptionControl, Notification, NotificationParams, PerformanceCounter, Response,
+    RpcNotificationContext, RpcNotificationResponse,
+};
 use {
     jsonrpc_core::{Error, Result},
     jsonrpc_derive::rpc,
     solana_rpc_client_api::config::*,
     solana_sdk::signature::Signature,
     std::sync::Arc,
+};
+
+use solana_client::rpc_response::{
+    ProcessedSignatureResult, ReceivedSignatureResult, RpcSignatureResult,
 };
 
 type SubscriptionId = u64;
@@ -44,41 +55,43 @@ pub trait LiteRpcPubSub {
 #[derive(Clone)]
 pub struct LiteRpcPubSubImpl {
     subscription_control: Arc<LiteRpcSubsrciptionControl>,
-    pub current_subscriptions: Arc<RwLock<BTreeSet<u64>>>,
+    pub current_subscriptions: Arc<RwLock<HashMap<u64, SubscriptionParams>>>,
 }
 
 impl LiteRpcPubSubImpl {
     pub fn new(subscription_control: Arc<LiteRpcSubsrciptionControl>) -> Self {
         Self {
-            current_subscriptions: Arc::new(RwLock::new(BTreeSet::new())),
+            current_subscriptions: Arc::new(RwLock::new(HashMap::new())),
             subscription_control,
         }
     }
 
     fn subscribe(&self, params: SubscriptionParams) -> Result<SubscriptionId> {
-        match self
+        let id = match self
             .subscription_control
             .subscriptions
             .entry(params.clone())
         {
-            dashmap::mapref::entry::Entry::Occupied(x) => Ok(*x.get()),
+            dashmap::mapref::entry::Entry::Occupied(x) => x.get().0,
             dashmap::mapref::entry::Entry::Vacant(x) => {
                 let new_subscription_id = self
                     .subscription_control
                     .last_subscription_id
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let new_subsription_id = SubscriptionId::from(new_subscription_id);
-                x.insert(new_subsription_id);
-                let mut lock = self.current_subscriptions.write();
-                match &mut lock {
-                    Ok(set) => {
-                        set.insert(new_subsription_id);
-                        Ok(new_subsription_id)
-                    }
-                    Err(_) => Err(Error::new(jsonrpc_core::ErrorCode::InternalError)),
-                }
+                x.insert((new_subsription_id, Instant::now()));
+                new_subscription_id
             }
+        };
+
+        let mut lock = self.current_subscriptions.write();
+        match &mut lock {
+            Ok(set) => {
+                set.insert(id, params);
+            }
+            Err(_) => return Err(Error::new(jsonrpc_core::ErrorCode::InternalError)),
         }
+        Ok(id)
     }
 
     fn unsubscribe(&self, id: SubscriptionId) -> Result<bool> {
@@ -86,7 +99,7 @@ impl LiteRpcPubSubImpl {
 
         match &mut lock {
             Ok(set) => {
-                if set.contains(&id) {
+                if set.contains_key(&id) {
                     set.remove(&id);
                     return Ok(true);
                 }
@@ -129,8 +142,8 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
     fn slot_subscribe(&self) -> Result<SubscriptionId> {
         let mut lock = self.current_subscriptions.write();
         match &mut lock {
-            Ok(set) => {
-                set.insert(0);
+            Ok(map) => {
+                map.insert(0, SubscriptionParams::Slot);
                 Ok(0)
             }
             Err(_) => Err(Error::new(jsonrpc_core::ErrorCode::InternalError)),
@@ -142,9 +155,9 @@ impl LiteRpcPubSub for LiteRpcPubSubImpl {
         let mut lock = self.current_subscriptions.write();
 
         match &mut lock {
-            Ok(set) => {
-                if set.contains(&0) {
-                    set.remove(&0);
+            Ok(map) => {
+                if map.contains_key(&0) {
+                    map.remove(&0);
                     return Ok(true);
                 }
                 return Ok(false);
@@ -202,10 +215,81 @@ async fn handle_connection(
                         Err(err) => return Err(err.into()),
                     },
                     result = broadcast_receiver.recv() => {
-                        if let Ok(x) = result {
-                            if rpc_impl.current_subscriptions.read().unwrap().contains(&x.subscription_id) {
-                                sender.send_text(&x.json).await?;
+                        let send_message = match result {
+                            Ok(broadcast_message) => {
+                                let current_subscriptions = {
+                                    match rpc_impl.current_subscriptions.read()
+                                    {
+                                        Ok(current_subscriptions) => Some(current_subscriptions),
+                                        _ => None,
+                                    }
+                                };
+                                match current_subscriptions {
+                                    Some(current_subscriptions) => {
+                                    let value = current_subscriptions.get(&broadcast_message.subscription_id);
+                                    match value {
+                                        Some(params) => {
+                                            match params {
+                                                SubscriptionParams::Signature(params) => {
+                                                    let slot = broadcast_message.slot.slot;
+                                                    
+                                                    let value = Response::from(RpcNotificationResponse {
+                                                        context: RpcNotificationContext { slot },
+                                                        value: RpcSignatureResult::ProcessedSignature(
+                                                                ProcessedSignatureResult { err: broadcast_message.err.clone() },
+                                                            )
+                                                    });
+                                                    let subscription_id = broadcast_message.subscription_id;
+
+                                                    let notification = Notification {
+                                                        jsonrpc: Some(jsonrpc_core::Version::V2),
+                                                        method: &"signatureNotification",
+                                                        params: NotificationParams {
+                                                            result: value,
+                                                            subscription: subscription_id,
+                                                        },
+                                                    };
+                                                    let json = serde_json::to_string(&notification).unwrap();
+
+                                                    if params.commitment.commitment.eq(&CommitmentLevel::Finalized) {
+                                                        // remove as after finalized there are no more messages
+                                                        let mut subscriptions = rpc_impl.current_subscriptions.write().unwrap();
+                                                        subscriptions.remove(&subscription_id);
+                                                    }
+                                                    Some(json)
+                                                },
+                                                SubscriptionParams::Slot => {
+                                                    let value = broadcast_message.slot;
+                                                    let notification = Notification {
+                                                        jsonrpc: Some(jsonrpc_core::Version::V2),
+                                                        method: &"slotNotification",
+                                                        params: NotificationParams {
+                                                            result: value,
+                                                            subscription: broadcast_message.subscription_id,
+                                                        },
+                                                    };
+                                                    let json = serde_json::to_string(&notification).unwrap();
+                                                    Some(json)
+                                                },
+                                                _ => {
+                                                    // not handled by lite rpc
+                                                    None
+                                                }
+                                            }
+                                        }
+                                        None => {
+                                            // do nothing we are not subscribed to this event
+                                            None
+                                        }
+                                    }
+                                },
+                                _ => None,
                             }
+                            },
+                            _ => None,
+                        };
+                        if let Some(json) = send_message {
+                            sender.send_text(&json).await?;
                         }
                     },
                 }

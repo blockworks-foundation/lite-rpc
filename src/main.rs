@@ -23,7 +23,14 @@ use crate::{
 };
 use cli::Args;
 
-fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String) {
+fn run(
+    port: u16,
+    subscription_port: u16,
+    rpc_url: String,
+    websocket_url: String,
+    batch_size: u16,
+    fanout: u8,
+) {
     let rpc_url = if rpc_url.is_empty() {
         let (_, rpc_url) = ConfigInput::compute_json_rpc_url_setting(
             rpc_url.as_str(),
@@ -69,16 +76,6 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
         subscription_port,
         performance_counter.clone(),
     );
-    let _broadcast_thread = {
-        // build broadcasting thread
-        let pubsub_control = pubsub_control.clone();
-        std::thread::Builder::new()
-            .name("broadcasting thread".to_string())
-            .spawn(move || {
-                pubsub_control.start_broadcasting();
-            })
-            .unwrap()
-    };
 
     let mut io = MetaIoHandler::default();
     let lite_rpc = lite_rpc::LightRpc;
@@ -94,12 +91,34 @@ fn run(port: u16, subscription_port: u16, rpc_url: String, websocket_url: String
             .expect("Runtime"),
     );
 
+    {
+        // start broadcasting task
+        let pubsub_control = pubsub_control.clone();
+        runtime.spawn(async move {
+            pubsub_control.start_broadcasting();
+        });
+    }
+    {
+        // start broadcasting cleanup task
+        // cleanup subscriptions every 2 mintues
+        let pubsub_control = pubsub_control.clone();
+        runtime.spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                ticker.tick().await;
+                pubsub_control.cleanup_subscriptions();
+            }
+        });
+    }
+
     let mut request_processor = LightRpcRequestProcessor::new(
         rpc_url.as_str(),
         &websocket_url,
         notification_sender,
         performance_counter.clone(),
         runtime.clone(),
+        batch_size,
+        fanout,
     );
     let _cleaning_thread = {
         // build cleaning thread
@@ -146,6 +165,20 @@ pub fn main() {
         subscription_port,
         rpc_url,
         websocket_url,
+        batch_size,
+        fanout,
     } = cli_command;
-    run(port, subscription_port, rpc_url, websocket_url)
+
+    if fanout < 1 || fanout > 100 {
+        println!("fanout should be min 1 and max 100");
+        return;
+    }
+    run(
+        port,
+        subscription_port,
+        rpc_url,
+        websocket_url,
+        batch_size,
+        fanout,
+    )
 }

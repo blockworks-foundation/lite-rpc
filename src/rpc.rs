@@ -43,8 +43,6 @@ use {
     },
 };
 
-const TPU_BATCH_SIZE: usize = 1;
-
 #[derive(Clone)]
 pub struct LightRpcRequestProcessor {
     pub rpc_client: Arc<RpcClient>,
@@ -65,16 +63,19 @@ impl LightRpcRequestProcessor {
         notification_sender: Sender<NotificationType>,
         performance_counter: PerformanceCounter,
         runtime: Arc<Runtime>,
+        batch_size: u16,
+        fanout: u8,
     ) -> LightRpcRequestProcessor {
         let rpc_client = Arc::new(RpcClient::new(json_rpc_url));
         let context = Arc::new(LiteRpcContext::new(
             rpc_client.clone(),
             notification_sender,
             runtime,
+            batch_size,
+            fanout,
         ));
 
         let connection_cache = Arc::new(ConnectionCache::default());
-        println!("ws_url {}", websocket_url);
         // subscribe for confirmed_blocks
         let (client_confirmed, receiver_confirmed) =
             Self::subscribe_block(websocket_url, CommitmentLevel::Confirmed).unwrap();
@@ -219,7 +220,9 @@ impl LightRpcRequestProcessor {
             let tpu_client = TpuClient::new_with_connection_cache(
                 rpc_client.clone(),
                 websocket_url.as_str(),
-                TpuClientConfig::default(), // value for max fanout slots
+                TpuClientConfig {
+                    fanout_slots: context.fanout as u64,
+                }, // value for max fanout slots
                 connection_cache.clone(),
             );
             let mut tpu_client_original = Arc::new(tpu_client.unwrap());
@@ -234,10 +237,10 @@ impl LightRpcRequestProcessor {
 
                 match recv_res {
                     Ok(transaction) => {
-                        if TPU_BATCH_SIZE > 1 {
+                        if context.batch_size > 1 {
                             let mut transactions_vec = vec![transaction];
                             let mut time_remaining = Duration::from_micros(1000);
-                            for _i in 1..TPU_BATCH_SIZE {
+                            for _i in 1..context.batch_size {
                                 let start = std::time::Instant::now();
                                 let another = receiver.recv_timeout(time_remaining);
 
@@ -391,7 +394,7 @@ impl LightRpcRequestProcessor {
                                                 .unwrap(),
                                             commitment,
                                             slot: block_update.slot,
-                                            error: transaction_error.clone().map(|x| x.to_string()),
+                                            error: transaction_error.clone(),
                                         };
                                         if let Err(e) = notification_sender.send(
                                             NotificationType::Signature(signature_notification),
@@ -736,21 +739,37 @@ pub mod lite_rpc {
                                 Some(TransactionStatus {
                                     slot,
                                     confirmations: None,
-                                    status: Ok(()),
+                                    status: match &value.error {
+                                        Some(x) => Err(x.clone()),
+                                        None => Ok(()),
+                                    },
                                     err: value.error.clone(),
                                     confirmation_status: Some(status),
                                 })
                             }
-                            None => None,
+                            None => Some(TransactionStatus {
+                                slot: confirmed_slot,
+                                confirmations: None,
+                                status: Ok(()),
+                                err: None,
+                                confirmation_status: Some(TransactionConfirmationStatus::Processed),
+                            }),
                         },
-                        None => None,
+                        None => Some(TransactionStatus {
+                            slot: confirmed_slot,
+                            confirmations: None,
+                            status: Ok(()),
+                            err: None,
+                            confirmation_status: Some(TransactionConfirmationStatus::Processed),
+                        }),
                     }
                 })
                 .collect_vec();
-            Ok(RpcResponse {
+            let response = RpcResponse {
                 context: RpcResponseContext::new(confirmed_slot),
                 value: status,
-            })
+            };
+            Ok(response)
         }
 
         fn request_airdrop(
