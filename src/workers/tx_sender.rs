@@ -52,7 +52,7 @@ impl TxSender {
 
         let mut batch_index = 0;
 
-        for (index, tx) in self.enqueued_txs.read().unwrap().iter().enumerate() {
+        for (index, tx) in enqueued_txs.iter().enumerate() {
             if index % tx_batch_size == 0 {
                 tx_batch.push(Vec::with_capacity(tx_batch_size));
                 batch_index += 1;

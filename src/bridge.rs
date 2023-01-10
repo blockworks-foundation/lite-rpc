@@ -211,8 +211,6 @@ impl LiteRpcServer for LiteBridge {
             .unwrap()
             .signatures[0];
 
-        self.tpu_client.send_wire_transaction(raw_tx.clone()).await;
-
         self.tx_sender.enqnueue_tx(sig.to_string(), raw_tx);
 
         Ok(BinaryEncoding::Base58.encode(sig))
