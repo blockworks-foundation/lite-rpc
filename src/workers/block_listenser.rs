@@ -10,10 +10,7 @@ use solana_client::{
     rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
     rpc_response::{Response as RpcResponse, RpcResponseContext},
 };
-use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel},
-    transaction::TransactionError,
-};
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
 use solana_transaction_status::{
     TransactionConfirmationStatus, TransactionStatus, UiTransactionStatusMeta,
@@ -161,7 +158,7 @@ impl BlockListener {
                             slot,
                             confirmations: None, //TODO: talk about this
                             status,
-                            err,
+                            err: err.clone(),
                             confirmation_status: Some(comfirmation_status.clone()),
                         });
                     };
@@ -175,7 +172,7 @@ impl BlockListener {
                                 slot,
                                 api_version: None,
                             },
-                            value: serde_json::json!({ "err": None::<TransactionError> }),
+                            value: serde_json::json!({ "err": err }),
                         })
                         .unwrap();
                     }
