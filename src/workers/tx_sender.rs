@@ -9,11 +9,13 @@ use solana_client::nonblocking::tpu_client::TpuClient;
 
 use tokio::task::JoinHandle;
 
-use crate::WireTransaction;
+use crate::{TxsSent, WireTransaction};
 
 /// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
 #[derive(Clone)]
 pub struct TxSender {
+    /// Tx(s) forwarded to tpu
+    pub txs_sent: TxsSent,
     /// Transactions queue for retrying
     enqueued_txs: Arc<RwLock<Vec<WireTransaction>>>,
     /// TpuClient to call the tpu port
@@ -25,10 +27,12 @@ impl TxSender {
         Self {
             enqueued_txs: Default::default(),
             tpu_client,
+            txs_sent: Default::default(),
         }
     }
     /// en-queue transaction if it doesn't already exist
-    pub fn enqnueue_tx(&self, raw_tx: WireTransaction) {
+    pub fn enqnueue_tx(&self, sig: String, raw_tx: WireTransaction) {
+        self.txs_sent.insert(sig, None);
         self.enqueued_txs.write().unwrap().push(raw_tx);
     }
 

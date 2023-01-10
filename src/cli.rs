@@ -1,4 +1,6 @@
-use crate::{DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR};
+use crate::{
+    DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS, DEFAULT_TX_BATCH_SIZE, DEFAULT_WS_ADDR,
+};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -13,9 +15,9 @@ pub struct Args {
     #[arg(short = 's', long, default_value_t = String::from("127.0.0.1:8891"))]
     pub lite_rpc_ws_addr: String,
     /// batch size of each batch forward
-    #[arg(short = 'b', long, default_value_t = 64usize)]
+    #[arg(short = 'b', long, default_value_t = DEFAULT_TX_BATCH_SIZE)]
     pub tx_batch_size: usize,
     /// interval between each batch forward
-    #[arg(short = 'i', long, default_value_t = 2u64)]
+    #[arg(short = 'i', long, default_value_t = DEFAULT_TX_BATCH_INTERVAL_MS)]
     pub tx_batch_interval_ms: u64,
 }

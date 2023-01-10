@@ -9,7 +9,6 @@ use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::bail;
 
-use dashmap::DashMap;
 use log::info;
 use reqwest::Url;
 
@@ -35,7 +34,6 @@ pub struct LiteBridge {
     pub tx_sender: TxSender,
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
-    pub txs_sent: Arc<DashMap<String, Option<TransactionStatus>>>,
     #[cfg(feature = "metrics")]
     pub metrics: Arc<tokio::sync::RwLock<crate::metrics::Metrics>>,
 }
@@ -48,12 +46,13 @@ impl LiteBridge {
             Arc::new(TpuClient::new(rpc_client.clone(), ws_addr, Default::default()).await?);
 
         let pub_sub_client = Arc::new(PubsubClient::new(ws_addr).await?);
-        let txs_sent = Arc::new(DashMap::new());
+
+        let tx_sender = TxSender::new(tpu_client.clone());
 
         let finalized_block_listenser = BlockListener::new(
             pub_sub_client.clone(),
             rpc_client.clone(),
-            txs_sent.clone(),
+            tx_sender.txs_sent.clone(),
             CommitmentConfig::finalized(),
         )
         .await?;
@@ -61,12 +60,10 @@ impl LiteBridge {
         let confirmed_block_listenser = BlockListener::new(
             pub_sub_client,
             rpc_client.clone(),
-            txs_sent.clone(),
+            tx_sender.txs_sent.clone(),
             CommitmentConfig::confirmed(),
         )
         .await?;
-
-        let tx_sender = TxSender::new(tpu_client.clone());
 
         Ok(Self {
             tx_sender,
@@ -74,7 +71,6 @@ impl LiteBridge {
             confirmed_block_listenser,
             rpc_url,
             tpu_client,
-            txs_sent,
             #[cfg(feature = "metrics")]
             metrics: Default::default(),
         })
@@ -92,11 +88,11 @@ impl LiteBridge {
             loop {
                 one_second.tick().await;
 
-                let txs_sent = self.txs_sent.len();
+                let txs_sent = self.tx_sender.txs_sent.len();
                 let mut txs_confirmed: usize = 0;
                 let mut txs_finalized: usize = 0;
 
-                for tx in self.txs_sent.iter() {
+                for tx in self.tx_sender.txs_sent.iter() {
                     if let Some(tx) = tx.value() {
                         match tx.confirmation_status() {
                             TransactionConfirmationStatus::Confirmed => txs_confirmed += 1,
@@ -215,9 +211,7 @@ impl LiteRpcServer for LiteBridge {
             .unwrap()
             .signatures[0];
 
-        self.txs_sent.insert(sig.to_string(), None);
-
-        self.tx_sender.enqnueue_tx(raw_tx);
+        self.tx_sender.enqnueue_tx(sig.to_string(), raw_tx);
 
         Ok(BinaryEncoding::Base58.encode(sig))
     }
@@ -255,7 +249,7 @@ impl LiteRpcServer for LiteBridge {
     ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
         let sig_statuses = sigs
             .iter()
-            .map(|sig| self.txs_sent.get(sig).and_then(|v| v.clone()))
+            .map(|sig| self.tx_sender.txs_sent.get(sig).and_then(|v| v.clone()))
             .collect();
 
         Ok(RpcResponse {
@@ -291,7 +285,7 @@ impl LiteRpcServer for LiteBridge {
             .unwrap()
             .to_string();
 
-        self.txs_sent.insert(airdrop_sig.clone(), None);
+        self.tx_sender.txs_sent.insert(airdrop_sig.clone(), None);
 
         Ok(airdrop_sig)
     }
