@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
 use bench_utils::helpers::BenchHelper;
-use jsonrpsee::tracing::info;
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
-use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::native_token::LAMPORTS_PER_SOL;
+use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
 
 use simplelog::*;
 
@@ -64,13 +62,10 @@ async fn send_and_confirm_tx_rpc_client() {
         .await
         .unwrap();
 
-    let tx = bench_helper.generate_txs(1, &funded_payer).await.unwrap()[0];
+    let tx = &bench_helper.generate_txs(1, &funded_payer).await.unwrap()[0];
     let sig = tx.get_signature();
 
-    bench_helper
-        .send_and_confirm_transaction(&tx)
-        .await
-        .unwrap();
+    bench_helper.send_and_confirm_transaction(tx).await.unwrap();
 
     info!("Sent and Confirmed {sig}");
 }

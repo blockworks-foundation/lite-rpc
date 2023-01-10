@@ -15,7 +15,9 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 
-use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
+use solana_transaction_status::{
+    TransactionConfirmationStatus, TransactionStatus, UiTransactionStatusMeta,
+};
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use super::TxSender;
@@ -110,7 +112,7 @@ impl BlockListener {
                         commitment: Some(self.commitment_config),
                         encoding: None,
                         transaction_details: Some(
-                            solana_transaction_status::TransactionDetails::Signatures,
+                            solana_transaction_status::TransactionDetails::Full,
                         ),
                         show_rewards: None,
                         max_supported_transaction_version: None,
@@ -134,6 +136,10 @@ impl BlockListener {
 
                 let blockhash = block.blockhash;
 
+                let Some(transactions) = block.transactions else {
+                    continue;
+                };
+
                 let Some(signatures) = block.signatures else {
                     continue;
                 };
@@ -144,13 +150,18 @@ impl BlockListener {
                     block_height,
                 };
 
+                let mut transactions = transactions.into_iter();
+
                 for sig in signatures {
+                    let UiTransactionStatusMeta { err, status, .. } =
+                        transactions.next().unwrap().meta.unwrap();
+
                     if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
                         tx_status.value_mut().status = Some(TransactionStatus {
                             slot,
                             confirmations: None, //TODO: talk about this
-                            status: Ok(()),      // legacy field
-                            err: None,
+                            status,
+                            err,
                             confirmation_status: Some(comfirmation_status.clone()),
                         });
                     };
