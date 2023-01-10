@@ -1,5 +1,5 @@
 use crate::{
-    DEFAULT_CLEAN_INTERVAL_MS, DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS,
+    DEFAULT_CLEAN_INTERVAL_MS, DEFAULT_FANOUT_SIZE, DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS,
     DEFAULT_TX_BATCH_SIZE, DEFAULT_WS_ADDR,
 };
 use clap::Parser;
@@ -18,6 +18,9 @@ pub struct Args {
     /// batch size of each batch forward
     #[arg(short = 'b', long, default_value_t = DEFAULT_TX_BATCH_SIZE)]
     pub tx_batch_size: usize,
+    /// tpu fanout
+    #[arg(short = 'f', long, default_value_t = DEFAULT_FANOUT_SIZE) ]
+    pub fanout_size: u64,
     /// interval between each batch forward
     #[arg(short = 'i', long, default_value_t = DEFAULT_TX_BATCH_INTERVAL_MS)]
     pub tx_batch_interval_ms: u64,

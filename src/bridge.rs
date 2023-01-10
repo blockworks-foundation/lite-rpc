@@ -17,6 +17,7 @@ use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient, tpu_client::TpuClient},
     rpc_config::{RpcContextConfig, RpcRequestAirdropConfig},
     rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
+    tpu_client::TpuClientConfig,
 };
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
@@ -38,11 +39,21 @@ pub struct LiteBridge {
 }
 
 impl LiteBridge {
-    pub async fn new(rpc_url: reqwest::Url, ws_addr: &str) -> anyhow::Result<Self> {
+    pub async fn new(
+        rpc_url: reqwest::Url,
+        ws_addr: &str,
+        fanout_slots: u64,
+    ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.to_string()));
 
-        let tpu_client =
-            Arc::new(TpuClient::new(rpc_client.clone(), ws_addr, Default::default()).await?);
+        let tpu_client = Arc::new(
+            TpuClient::new(
+                rpc_client.clone(),
+                ws_addr,
+                TpuClientConfig { fanout_slots },
+            )
+            .await?,
+        );
 
         let pub_sub_client = Arc::new(PubsubClient::new(ws_addr).await?);
 
