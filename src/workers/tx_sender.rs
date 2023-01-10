@@ -42,8 +42,6 @@ impl TxSender {
 
         let len = enqueued_txs.len();
 
-        info!("sending {len} tx(s)");
-
         if len == 0 {
             return;
         }
@@ -82,6 +80,11 @@ impl TxSender {
 
         #[allow(unreachable_code)]
         tokio::spawn(async move {
+            info!(
+                "Batching tx(s) with batch size of {tx_batch_size} every {}ms",
+                tx_send_interval.as_millis()
+            );
+
             loop {
                 interval.tick().await;
                 self.retry_txs(tx_batch_size).await;
