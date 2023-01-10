@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use bench_utils::helpers::BenchHelper;
+use jsonrpsee::tracing::info;
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
@@ -12,7 +13,7 @@ use simplelog::*;
 const AMOUNT: usize = 5;
 
 #[tokio::test]
-async fn send_and_confirm_tx() {
+async fn send_and_confirm_txs_get_signature_statuses() {
     TermLogger::init(
         LevelFilter::Info,
         Config::default(),
@@ -51,4 +52,25 @@ async fn send_and_confirm_tx() {
     }
 
     info!("Sent and Confirmed {AMOUNT} tx(s)");
+}
+
+#[tokio::test]
+async fn send_and_confirm_tx_rpc_client() {
+    let rpc_client = Arc::new(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
+    let bench_helper = BenchHelper::new(rpc_client.clone());
+
+    let funded_payer = bench_helper
+        .new_funded_payer(LAMPORTS_PER_SOL * 2)
+        .await
+        .unwrap();
+
+    let tx = bench_helper.generate_txs(1, &funded_payer).await.unwrap()[0];
+    let sig = tx.get_signature();
+
+    bench_helper
+        .send_and_confirm_transaction(&tx)
+        .await
+        .unwrap();
+
+    info!("Sent and Confirmed {sig}");
 }
