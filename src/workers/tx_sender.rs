@@ -37,12 +37,10 @@ impl TxSender {
     }
 
     /// retry enqued_tx(s)
-    pub async fn retry_txs(&self, tx_batch_size: usize) {
+    pub async fn forward_txs(&self, tx_batch_size: usize) {
         let mut enqueued_txs = Vec::new();
 
         std::mem::swap(&mut enqueued_txs, &mut self.enqueued_txs.write().unwrap());
-
-        let enqueued_txs = self.enqueued_txs.read().unwrap().clone();
 
         let len = enqueued_txs.len();
 
@@ -91,7 +89,7 @@ impl TxSender {
 
             loop {
                 interval.tick().await;
-                self.retry_txs(tx_batch_size).await;
+                self.forward_txs(tx_batch_size).await;
             }
 
             // to give the correct type to JoinHandle
