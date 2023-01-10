@@ -64,12 +64,15 @@ impl LiteBridge {
         )
         .await?;
 
+        let metrics_capture = MetricsCapture::new(tx_sender.clone());
+
         Ok(Self {
             tx_sender,
             finalized_block_listenser,
             confirmed_block_listenser,
             rpc_url,
             tpu_client,
+            metrics_capture,
         })
     }
 
@@ -123,7 +126,7 @@ impl LiteBridge {
             bail!("HTTP server stopped");
         });
 
-        let metrics_capture = MetricsCapture::new(self.tx_sender.clone()).capture();
+        let metrics_capture = self.metrics_capture.capture();
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
             [
