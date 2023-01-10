@@ -8,7 +8,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionStatus;
 
 use crate::configs::SendTransactionConfig;
-use crate::metrics::Metrics;
+use crate::workers::Metrics;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

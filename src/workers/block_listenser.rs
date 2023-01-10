@@ -18,15 +18,17 @@ use solana_sdk::{
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::{sync::RwLock, task::JoinHandle};
 
+use super::TxSender;
+
 /// Background worker which listen's to new blocks
 /// and keeps a track of confirmed txs
 #[derive(Clone)]
 pub struct BlockListener {
     pub_sub_client: Arc<PubsubClient>,
     commitment_config: CommitmentConfig,
-    txs_sent: Arc<DashMap<String, Option<TransactionStatus>>>,
+    tx_sender: TxSender,
     latest_block_info: Arc<RwLock<BlockInformation>>,
-    signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
+    pub signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
 }
 
 struct BlockInformation {
@@ -39,7 +41,7 @@ impl BlockListener {
     pub async fn new(
         pub_sub_client: Arc<PubsubClient>,
         rpc_client: Arc<RpcClient>,
-        txs_sent: Arc<DashMap<String, Option<TransactionStatus>>>,
+        tx_sender: TxSender,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<Self> {
         let (latest_block_hash, block_height) = rpc_client
@@ -48,7 +50,7 @@ impl BlockListener {
 
         Ok(Self {
             pub_sub_client,
-            txs_sent,
+            tx_sender,
             latest_block_info: Arc::new(RwLock::new(BlockInformation {
                 slot: rpc_client.get_slot().await?,
                 blockhash: latest_block_hash.to_string(),
@@ -62,7 +64,7 @@ impl BlockListener {
     pub async fn num_of_sigs_commited(&self, sigs: &[String]) -> usize {
         let mut num_of_sigs_commited = 0;
         for sig in sigs {
-            if self.txs_sent.contains_key(sig) {
+            if self.tx_sender.txs_sent.contains_key(sig) {
                 num_of_sigs_commited += 1;
             }
         }
@@ -143,8 +145,8 @@ impl BlockListener {
                 };
 
                 for sig in signatures {
-                    if let Some(mut tx_status) = self.txs_sent.get_mut(&sig) {
-                        *tx_status.value_mut() = Some(TransactionStatus {
+                    if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
+                        tx_status.value_mut().status = Some(TransactionStatus {
                             slot,
                             confirmations: None, //TODO: talk about this
                             status: Ok(()),      // legacy field
@@ -171,9 +173,5 @@ impl BlockListener {
 
             bail!("Stopped Listening to {commitment:?} blocks")
         })
-    }
-
-    pub fn capture_metrics(self) -> JoinHandle<anyhow::Result<()>> {
-        tokio::spawn(async move { Ok(()) })
     }
 }

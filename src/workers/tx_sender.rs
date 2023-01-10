@@ -1,25 +1,42 @@
 use std::{
     sync::{Arc, RwLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
+use dashmap::DashMap;
 use log::{info, warn};
 
 use solana_client::nonblocking::tpu_client::TpuClient;
 
+use solana_transaction_status::TransactionStatus;
 use tokio::task::JoinHandle;
 
-use crate::{TxsSent, WireTransaction};
+pub type WireTransaction = Vec<u8>;
 
 /// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
 #[derive(Clone)]
 pub struct TxSender {
     /// Tx(s) forwarded to tpu
-    pub txs_sent: TxsSent,
+    pub txs_sent: Arc<DashMap<String, TxProps>>,
     /// Transactions queue for retrying
     enqueued_txs: Arc<RwLock<Vec<WireTransaction>>>,
     /// TpuClient to call the tpu port
     tpu_client: Arc<TpuClient>,
+}
+
+/// Transaction Properties
+pub struct TxProps {
+    pub status: Option<TransactionStatus>,
+    pub sent_at: Instant,
+}
+
+impl Default for TxProps {
+    fn default() -> Self {
+        Self {
+            status: Default::default(),
+            sent_at: Instant::now(),
+        }
+    }
 }
 
 impl TxSender {
@@ -32,7 +49,7 @@ impl TxSender {
     }
     /// en-queue transaction if it doesn't already exist
     pub fn enqnueue_tx(&self, sig: String, raw_tx: WireTransaction) {
-        self.txs_sent.insert(sig, None);
+        self.txs_sent.insert(sig, TxProps::default());
         self.enqueued_txs.write().unwrap().push(raw_tx);
     }
 

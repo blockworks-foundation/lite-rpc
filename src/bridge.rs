@@ -2,7 +2,7 @@ use crate::{
     configs::SendTransactionConfig,
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
-    workers::{BlockListener, TxSender},
+    workers::{BlockListener, Cleaner, Metrics, MetricsCapture, TxSender},
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
@@ -34,8 +34,6 @@ pub struct LiteBridge {
     pub tx_sender: TxSender,
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
-    #[cfg(feature = "metrics")]
-    pub metrics: Arc<tokio::sync::RwLock<crate::metrics::Metrics>>,
 }
 
 impl LiteBridge {
@@ -52,7 +50,7 @@ impl LiteBridge {
         let finalized_block_listenser = BlockListener::new(
             pub_sub_client.clone(),
             rpc_client.clone(),
-            tx_sender.txs_sent.clone(),
+            tx_sender.clone(),
             CommitmentConfig::finalized(),
         )
         .await?;
@@ -60,7 +58,7 @@ impl LiteBridge {
         let confirmed_block_listenser = BlockListener::new(
             pub_sub_client,
             rpc_client.clone(),
-            tx_sender.txs_sent.clone(),
+            tx_sender.clone(),
             CommitmentConfig::confirmed(),
         )
         .await?;
@@ -71,52 +69,6 @@ impl LiteBridge {
             confirmed_block_listenser,
             rpc_url,
             tpu_client,
-            #[cfg(feature = "metrics")]
-            metrics: Default::default(),
-        })
-    }
-
-    #[cfg(feature = "metrics")]
-    pub fn capture_metrics(self) -> JoinHandle<anyhow::Result<()>> {
-        use solana_transaction_status::TransactionConfirmationStatus;
-
-        let mut one_second = tokio::time::interval(std::time::Duration::from_secs(1));
-
-        tokio::spawn(async move {
-            info!("Capturing Metrics");
-
-            loop {
-                one_second.tick().await;
-
-                let txs_sent = self.tx_sender.txs_sent.len();
-                let mut txs_confirmed: usize = 0;
-                let mut txs_finalized: usize = 0;
-
-                for tx in self.tx_sender.txs_sent.iter() {
-                    if let Some(tx) = tx.value() {
-                        match tx.confirmation_status() {
-                            TransactionConfirmationStatus::Confirmed => txs_confirmed += 1,
-                            TransactionConfirmationStatus::Finalized => {
-                                txs_confirmed += 1;
-                                txs_finalized += 1;
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-
-                let mut metrics = self.metrics.write().await;
-
-                metrics.txs_ps = txs_sent - metrics.txs_sent;
-                metrics.txs_confirmed_ps = txs_confirmed - metrics.txs_confirmed;
-                metrics.txs_finalized_ps = txs_finalized - metrics.txs_finalized;
-
-                metrics.txs_sent = txs_sent;
-                metrics.txs_confirmed = txs_confirmed;
-                metrics.txs_finalized = txs_finalized;
-
-                log::info!("{metrics:?}");
-            }
         })
     }
 
@@ -135,7 +87,8 @@ impl LiteBridge {
         ws_addr: T,
         tx_batch_size: usize,
         tx_send_interval: Duration,
-    ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
+        clean_interval: Duration,
+    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 7]> {
         let finalized_block_listenser = self.finalized_block_listenser.clone().listen();
 
         let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen();
@@ -169,17 +122,24 @@ impl LiteBridge {
             bail!("HTTP server stopped");
         });
 
-        #[cfg(feature = "metrics")]
-        let capture_metrics = self.capture_metrics();
+        let metrics_capture = MetricsCapture::new(self.tx_sender.clone()).capture();
+        let cleaner = Cleaner::new(
+            self.tx_sender.clone(),
+            [
+                self.finalized_block_listenser.clone(),
+                self.confirmed_block_listenser.clone(),
+            ],
+        )
+        .start(clean_interval);
 
-        Ok(vec![
+        Ok([
             ws_server,
             http_server,
             tx_sender,
             finalized_block_listenser,
             confirmed_block_listenser,
-            #[cfg(feature = "metrics")]
-            capture_metrics,
+            metrics_capture,
+            cleaner,
         ])
     }
 }
@@ -187,7 +147,7 @@ impl LiteBridge {
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
     #[allow(unreachable_code)]
-    async fn get_metrics(&self) -> crate::rpc::Result<crate::metrics::Metrics> {
+    async fn get_metrics(&self) -> crate::rpc::Result<Metrics> {
         #[cfg(feature = "metrics")]
         {
             return Ok(self.metrics.read().await.to_owned());
@@ -249,7 +209,12 @@ impl LiteRpcServer for LiteBridge {
     ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
         let sig_statuses = sigs
             .iter()
-            .map(|sig| self.tx_sender.txs_sent.get(sig).and_then(|v| v.clone()))
+            .map(|sig| {
+                self.tx_sender
+                    .txs_sent
+                    .get(sig)
+                    .and_then(|v| v.status.clone())
+            })
             .collect();
 
         Ok(RpcResponse {
@@ -285,7 +250,9 @@ impl LiteRpcServer for LiteBridge {
             .unwrap()
             .to_string();
 
-        self.tx_sender.txs_sent.insert(airdrop_sig.clone(), None);
+        self.tx_sender
+            .txs_sent
+            .insert(airdrop_sig.clone(), Default::default());
 
         Ok(airdrop_sig)
     }

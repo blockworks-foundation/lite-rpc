@@ -23,9 +23,11 @@ pub async fn main() -> anyhow::Result<()> {
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         tx_batch_interval_ms,
+        clean_interval_ms,
     } = Args::parse();
 
     let tx_batch_interval_ms = Duration::from_millis(tx_batch_interval_ms);
+    let clean_interval_ms = Duration::from_millis(clean_interval_ms);
 
     let light_bridge = LiteBridge::new(Url::from_str(&rpc_addr).unwrap(), &ws_addr).await?;
 
@@ -35,6 +37,7 @@ pub async fn main() -> anyhow::Result<()> {
             lite_rpc_ws_addr,
             tx_batch_size,
             tx_batch_interval_ms,
+            clean_interval_ms,
         )
         .await?;
 

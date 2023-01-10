@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -22,14 +23,14 @@ impl BinaryEncoding {
     pub fn decode<D: AsRef<[u8]>>(&self, to_decode: D) -> Result<Vec<u8>, BinaryCodecError> {
         match self {
             Self::Base58 => Ok(bs58::decode(to_decode).into_vec()?),
-            Self::Base64 => Ok(base64::decode(to_decode)?),
+            Self::Base64 => Ok(base64::engine::general_purpose::STANDARD.decode(to_decode)?),
         }
     }
 
     pub fn encode<E: AsRef<[u8]>>(&self, to_encode: E) -> String {
         match self {
             Self::Base58 => bs58::encode(to_encode).into_string(),
-            Self::Base64 => base64::encode(to_encode),
+            Self::Base64 => base64::engine::general_purpose::STANDARD.encode(to_encode),
         }
     }
 }

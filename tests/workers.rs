@@ -35,7 +35,7 @@ async fn send_and_confirm_txs() {
     let block_listener = BlockListener::new(
         pub_sub_client.clone(),
         rpc_client.clone(),
-        tx_sender.txs_sent.clone(),
+        tx_sender.clone(),
         CommitmentConfig::confirmed(),
     )
     .await
@@ -67,7 +67,7 @@ async fn send_and_confirm_txs() {
         for _ in 0..2 {
             let tx_status = tx_sender.txs_sent.get(&sig).unwrap();
 
-            if let Some(tx_status) = tx_status.value() {
+            if let Some(tx_status) = &tx_status.value().status {
                 if tx_status.confirmation_status() == TransactionConfirmationStatus::Confirmed {
                     return;
                 }
