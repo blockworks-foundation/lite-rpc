@@ -32,6 +32,10 @@ impl MetricsCapture {
         }
     }
 
+    pub async fn get_metrics(&self) -> Metrics {
+        self.metrics.read().await.to_owned()
+    }
+
     pub fn capture(self) -> JoinHandle<anyhow::Result<()>> {
         let mut one_second = tokio::time::interval(std::time::Duration::from_secs(1));
 

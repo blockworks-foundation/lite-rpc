@@ -34,6 +34,7 @@ pub struct LiteBridge {
     pub tx_sender: TxSender,
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
+    pub metrics_capture: MetricsCapture,
 }
 
 impl LiteBridge {
@@ -146,13 +147,8 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-    #[allow(unreachable_code)]
     async fn get_metrics(&self) -> crate::rpc::Result<Metrics> {
-        #[cfg(feature = "metrics")]
-        {
-            return Ok(self.metrics.read().await.to_owned());
-        }
-        panic!("server not compiled with metrics support")
+        return Ok(self.metrics_capture.get_metrics().await);
     }
 
     async fn send_transaction(
