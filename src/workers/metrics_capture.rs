@@ -64,8 +64,7 @@ impl MetricsCapture {
 
                 let mut metrics = self.metrics.write().await;
 
-                metrics.txs_ps = txs_sent.checked_sub(metrics.txs_sent)
-                    .unwrap_or_default();
+                metrics.txs_ps = txs_sent.checked_sub(metrics.txs_sent).unwrap_or_default();
                 metrics.txs_confirmed_ps = txs_confirmed
                     .checked_sub(metrics.txs_confirmed)
                     .unwrap_or_default();
