@@ -5,7 +5,7 @@ use crate::{
     workers::{BlockListener, TxSender},
 };
 
-use std::{ops::Deref, str::FromStr, sync::Arc};
+use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::bail;
 
@@ -32,7 +32,7 @@ use tokio::{net::ToSocketAddrs, task::JoinHandle};
 pub struct LiteBridge {
     pub tpu_client: Arc<TpuClient>,
     pub rpc_url: Url,
-    pub tx_sender: Option<TxSender>,
+    pub tx_sender: TxSender,
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
     pub txs_sent: Arc<DashMap<String, Option<TransactionStatus>>>,
@@ -41,11 +41,7 @@ pub struct LiteBridge {
 }
 
 impl LiteBridge {
-    pub async fn new(
-        rpc_url: reqwest::Url,
-        ws_addr: &str,
-        batch_transactions: bool,
-    ) -> anyhow::Result<Self> {
+    pub async fn new(rpc_url: reqwest::Url, ws_addr: &str) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.to_string()));
 
         let tpu_client =
@@ -70,12 +66,10 @@ impl LiteBridge {
         )
         .await?;
 
+        let tx_sender = TxSender::new(tpu_client.clone());
+
         Ok(Self {
-            tx_sender: if batch_transactions {
-                Some(TxSender::new(tpu_client.clone()))
-            } else {
-                None
-            },
+            tx_sender,
             finalized_block_listenser,
             confirmed_block_listenser,
             rpc_url,
@@ -143,12 +137,17 @@ impl LiteBridge {
         self,
         http_addr: T,
         ws_addr: T,
+        tx_batch_size: usize,
+        tx_send_interval: Duration,
     ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
-        let tx_sender = self.tx_sender.clone();
-
         let finalized_block_listenser = self.finalized_block_listenser.clone().listen();
 
         let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen();
+
+        let tx_sender = self
+            .tx_sender
+            .clone()
+            .execute(tx_batch_size, tx_send_interval);
 
         let ws_server_handle = ServerBuilder::default()
             .ws_only()
@@ -174,21 +173,18 @@ impl LiteBridge {
             bail!("HTTP server stopped");
         });
 
-        let mut services = vec![
+        #[cfg(feature = "metrics")]
+        let capture_metrics = self.capture_metrics();
+
+        Ok(vec![
             ws_server,
             http_server,
+            tx_sender,
             finalized_block_listenser,
             confirmed_block_listenser,
-        ];
-
-        if let Some(tx_sender) = tx_sender {
-            services.push(tx_sender.execute());
-        }
-
-        #[cfg(feature = "metrics")]
-        services.push(self.capture_metrics());
-
-        Ok(services)
+            #[cfg(feature = "metrics")]
+            capture_metrics,
+        ])
     }
 }
 
@@ -221,11 +217,7 @@ impl LiteRpcServer for LiteBridge {
 
         self.txs_sent.insert(sig.to_string(), None);
 
-        if let Some(tx_sender) = &self.tx_sender {
-            tx_sender.enqnueue_tx(raw_tx);
-        } else {
-            self.tpu_client.send_wire_transaction(raw_tx.clone()).await;
-        }
+        self.tx_sender.enqnueue_tx(raw_tx);
 
         Ok(BinaryEncoding::Base58.encode(sig))
     }

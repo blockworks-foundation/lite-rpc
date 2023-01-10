@@ -1,5 +1,7 @@
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use log::{info, warn};
 
@@ -7,7 +9,7 @@ use solana_client::nonblocking::tpu_client::TpuClient;
 
 use tokio::task::JoinHandle;
 
-use crate::{WireTransaction, DEFAULT_TX_RETRY_BATCH_SIZE};
+use crate::WireTransaction;
 
 /// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
 #[derive(Clone)]
@@ -31,7 +33,7 @@ impl TxSender {
     }
 
     /// retry enqued_tx(s)
-    pub async fn retry_txs(&self) {
+    pub async fn retry_txs(&self, tx_batch_size: usize) {
         let mut enqueued_txs = Vec::new();
 
         std::mem::swap(&mut enqueued_txs, &mut self.enqueued_txs.write().unwrap());
@@ -46,13 +48,13 @@ impl TxSender {
             return;
         }
 
-        let mut tx_batch = Vec::with_capacity(len / DEFAULT_TX_RETRY_BATCH_SIZE);
+        let mut tx_batch = Vec::with_capacity(len / tx_batch_size);
 
         let mut batch_index = 0;
 
         for (index, tx) in self.enqueued_txs.read().unwrap().iter().enumerate() {
-            if index % DEFAULT_TX_RETRY_BATCH_SIZE == 0 {
-                tx_batch.push(Vec::with_capacity(DEFAULT_TX_RETRY_BATCH_SIZE));
+            if index % tx_batch_size == 0 {
+                tx_batch.push(Vec::with_capacity(tx_batch_size));
                 batch_index += 1;
             }
 
@@ -70,15 +72,19 @@ impl TxSender {
         }
     }
 
-    /// retry and confirm transactions every 800ms (avg time to confirm tx)
-    pub fn execute(self) -> JoinHandle<anyhow::Result<()>> {
-        let mut interval = tokio::time::interval(Duration::from_millis(80));
+    /// retry and confirm transactions every 2ms (avg time to confirm tx)
+    pub fn execute(
+        self,
+        tx_batch_size: usize,
+        tx_send_interval: Duration,
+    ) -> JoinHandle<anyhow::Result<()>> {
+        let mut interval = tokio::time::interval(tx_send_interval);
 
         #[allow(unreachable_code)]
         tokio::spawn(async move {
             loop {
                 interval.tick().await;
-                self.retry_txs().await;
+                self.retry_txs(tx_batch_size).await;
             }
 
             // to give the correct type to JoinHandle

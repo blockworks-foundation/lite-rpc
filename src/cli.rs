@@ -8,10 +8,14 @@ pub struct Args {
     pub rpc_addr: String,
     #[arg(short, long, default_value_t = String::from(DEFAULT_WS_ADDR))]
     pub ws_addr: String,
-    #[arg(short='l',long, default_value_t = String::from("127.0.0.1:8890"))]
+    #[arg(short = 'l', long, default_value_t = String::from("127.0.0.1:8890"))]
     pub lite_rpc_http_addr: String,
-    #[arg(short='s', long, default_value_t = String::from("127.0.0.1:8891"))]
+    #[arg(short = 's', long, default_value_t = String::from("127.0.0.1:8891"))]
     pub lite_rpc_ws_addr: String,
-    #[arg(short, long, default_value_t = false)]
-    pub batch_transactions: bool,
+    /// batch size of each batch forward
+    #[arg(short = 'b', long, default_value_t = 64usize)]
+    pub tx_batch_size: usize,
+    /// interval between each batch forward
+    #[arg(short = 'i', long, default_value_t = 2u64)]
+    pub tx_batch_interval_ms: u64,
 }

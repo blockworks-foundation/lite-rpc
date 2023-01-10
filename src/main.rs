@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::Context;
 use clap::Parser;
@@ -18,21 +19,25 @@ pub async fn main() -> anyhow::Result<()> {
     let Args {
         rpc_addr,
         ws_addr,
-        batch_transactions,
+        tx_batch_size,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
+        tx_batch_interval_ms,
     } = Args::parse();
 
-    let light_bridge = LiteBridge::new(
-        Url::from_str(&rpc_addr).unwrap(),
-        &ws_addr,
-        batch_transactions,
-    )
-    .await?;
+    let tx_batch_interval_ms = Duration::from_millis(tx_batch_interval_ms);
+
+    let light_bridge = LiteBridge::new(Url::from_str(&rpc_addr).unwrap(), &ws_addr).await?;
 
     let services = light_bridge
-        .start_services(lite_rpc_http_addr, lite_rpc_ws_addr)
+        .start_services(
+            lite_rpc_http_addr,
+            lite_rpc_ws_addr,
+            tx_batch_size,
+            tx_batch_interval_ms,
+        )
         .await?;
+
     let services = futures::future::try_join_all(services);
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
