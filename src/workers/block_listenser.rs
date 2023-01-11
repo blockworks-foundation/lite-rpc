@@ -150,6 +150,8 @@ impl BlockListener {
                 let mut transactions = transactions.into_iter();
 
                 for sig in signatures {
+                    info!("{sig}");
+
                     let UiTransactionStatusMeta { err, status, .. } =
                         transactions.next().unwrap().meta.unwrap();
 
