@@ -1,12 +1,19 @@
 use std::{
-    sync::{atomic::AtomicU64, Arc},
+    sync::{
+        atomic::{AtomicU64, AtomicU8, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
 use dashmap::DashMap;
 use log::{info, warn};
 
-use solana_client::nonblocking::tpu_client::TpuClient;
+use solana_client::{
+    connection_cache::ConnectionCache,
+    nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
+    tpu_client::TpuClientConfig,
+};
 
 use crossbeam_channel::{Receiver, Sender};
 use solana_transaction_status::TransactionStatus;
@@ -23,9 +30,13 @@ pub struct TxSender {
     sender_channel: Sender<(String, Vec<u8>)>,
     /// Reciever channel
     recv_channel: Receiver<(String, Vec<u8>)>,
-    /// TpuClient to call the tpu port
-    tpu_client: Arc<TpuClient>,
+
     pub nb_tx_sent: Arc<AtomicU64>,
+    // rpc client
+    rpc_client: Arc<RpcClient>,
+    // websockets url
+    web_sockets_url: String,
+    fanout_slots: u64,
 }
 
 /// Transaction Properties
@@ -44,12 +55,14 @@ impl Default for TxProps {
 }
 
 impl TxSender {
-    pub fn new(tpu_client: Arc<TpuClient>) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient>, web_sockets_url: &str, fanout_slots: u64) -> Self {
         let (sender, reciever) = crossbeam_channel::unbounded();
         Self {
             sender_channel: sender,
             recv_channel: reciever,
-            tpu_client,
+            rpc_client,
+            fanout_slots,
+            web_sockets_url: web_sockets_url.to_string(),
             txs_sent: Default::default(),
             nb_tx_sent: Arc::new(AtomicU64::new(0)),
         }
@@ -71,11 +84,29 @@ impl TxSender {
                 tx_send_interval.as_millis()
             );
 
+            let mut tpu_client_mutable = Arc::new(
+                TpuClient::new(self.rpc_client.clone(), &self.web_sockets_url, TpuClientConfig { fanout_slots: self.fanout_slots })
+                .await
+                .unwrap(),
+            );
+
+            let consecutive_errors: Arc<AtomicU8> = Arc::new(AtomicU8::new(0));
             loop {
-                let tpu_client = self.tpu_client.clone();
+                let previous_errors = consecutive_errors.load(Ordering::Relaxed);
+                // if are 4 consecutive errors, we reset the tpu client
+                if previous_errors > 4 {
+                    tpu_client_mutable = Arc::new(
+                        TpuClient::new(self.rpc_client.clone(), &self.web_sockets_url, TpuClientConfig { fanout_slots: self.fanout_slots })
+                        .await
+                        .unwrap(),
+                    );
+                }
+
+                let tpu_client = tpu_client_mutable.clone();
                 let recv_res = self.recv_channel.recv();
                 let txs_sent = self.txs_sent.clone();
                 let nb_tx_sent = self.nb_tx_sent.clone();
+                let consecutive_errors = consecutive_errors.clone();
                 match recv_res {
                     Ok((signature, transaction)) => {
                         if tx_batch_size > 1 {
@@ -113,6 +144,8 @@ impl TxSender {
                                         signatures.iter().for_each(|signature| {
                                             txs_sent.insert(signature.clone(), TxProps::default());
                                         });
+                                        // reset consecutive errors
+                                        consecutive_errors.swap(0, Ordering::Relaxed);
                                     }
                                     Err(e) => {
                                         warn!(
@@ -120,16 +153,17 @@ impl TxSender {
                                             signatures.len(),
                                             e
                                         );
-                                        // insert sent transactions into signature status map
+                                        consecutive_errors.fetch_add(1, Ordering::Relaxed);
+                                        // insert sent transactions into signature status map so that we can signal client when it ask for status
                                         signatures.iter().for_each(|signature| {
                                             txs_sent.insert(signature.clone(), TxProps{
                                                 sent_at: Instant::now(),
                                                 status: Some( TransactionStatus {
                                                     slot: 0,
                                                     confirmations: None,
-                                                    status: Err(solana_sdk::transaction::TransactionError::ClusterMaintenance),
-                                                    err: Some(solana_sdk::transaction::TransactionError::ClusterMaintenance),
-                                                    confirmation_status: Some(solana_transaction_status::TransactionConfirmationStatus::Processed)
+                                                    status: Err(solana_sdk::transaction::TransactionError::SanitizeFailure),
+                                                    err: Some(solana_sdk::transaction::TransactionError::SanitizeFailure),
+                                                    confirmation_status: Some(solana_transaction_status::TransactionConfirmationStatus::Finalized)
                                                 })
                                             });
                                         });
@@ -141,16 +175,18 @@ impl TxSender {
                             if sent_success {
                                 nb_tx_sent.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                                 txs_sent.insert(signature, TxProps::default());
+                                consecutive_errors.swap(0, Ordering::Relaxed);
                             } else {
+                                consecutive_errors.fetch_add(1, Ordering::Relaxed);
                                 // insert sent transactions into signature status map
                                 txs_sent.insert(signature.clone(), TxProps{
                                         sent_at: Instant::now(),
                                         status: Some( TransactionStatus {
                                             slot: 0,
                                             confirmations: None,
-                                            status: Err(solana_sdk::transaction::TransactionError::ClusterMaintenance),
-                                            err: Some(solana_sdk::transaction::TransactionError::ClusterMaintenance),
-                                            confirmation_status: Some(solana_transaction_status::TransactionConfirmationStatus::Processed)
+                                            status: Err(solana_sdk::transaction::TransactionError::SanitizeFailure),
+                                            err: Some(solana_sdk::transaction::TransactionError::SanitizeFailure),
+                                            confirmation_status: Some(solana_transaction_status::TransactionConfirmationStatus::Finalized)
                                         })
                                     });
                             }

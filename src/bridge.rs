@@ -13,11 +13,9 @@ use log::info;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 use solana_client::{
-    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient, tpu_client::TpuClient},
-    rpc_client::SerializableTransaction,
+    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient,},
     rpc_config::{RpcContextConfig, RpcRequestAirdropConfig},
-    rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
-    tpu_client::TpuClientConfig,
+    rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo}, rpc_client::SerializableTransaction,
 };
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
@@ -31,7 +29,7 @@ use tokio::{net::ToSocketAddrs, task::JoinHandle};
 /// A bridge between clients and tpu
 #[derive(Clone)]
 pub struct LiteBridge {
-    pub tpu_client: Arc<TpuClient>,
+    pub rpc_client: Arc<RpcClient>,
     pub rpc_url: String,
     pub tx_sender: TxSender,
     pub finalized_block_listenser: BlockListener,
@@ -43,18 +41,9 @@ impl LiteBridge {
     pub async fn new(rpc_url: String, ws_addr: &str, fanout_slots: u64) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
 
-        let tpu_client = Arc::new(
-            TpuClient::new(
-                rpc_client.clone(),
-                ws_addr,
-                TpuClientConfig { fanout_slots },
-            )
-            .await?,
-        );
-
         let pub_sub_client = Arc::new(PubsubClient::new(ws_addr).await?);
 
-        let tx_sender = TxSender::new(tpu_client.clone());
+        let tx_sender = TxSender::new(rpc_client.clone(), ws_addr, fanout_slots);
 
         let finalized_block_listenser = BlockListener::new(
             pub_sub_client.clone(),
@@ -75,11 +64,11 @@ impl LiteBridge {
         let metrics_capture = MetricsCapture::new(tx_sender.clone());
 
         Ok(Self {
+            rpc_client,
             tx_sender,
             finalized_block_listenser,
             confirmed_block_listenser,
             rpc_url,
-            tpu_client,
             metrics_capture,
         })
     }
@@ -233,8 +222,7 @@ impl LiteRpcServer for LiteBridge {
         let block_listner = self.get_block_listner(commitment);
 
         let is_valid = match self
-            .tpu_client
-            .rpc_client()
+            .rpc_client
             .is_blockhash_valid(&blockhash, commitment)
             .await
         {
@@ -301,8 +289,7 @@ impl LiteRpcServer for LiteBridge {
         };
 
         let airdrop_sig = match self
-            .tpu_client
-            .rpc_client()
+            .rpc_client
             .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
             .await
         {
@@ -340,6 +327,6 @@ impl Deref for LiteBridge {
     type Target = RpcClient;
 
     fn deref(&self) -> &Self::Target {
-        self.tpu_client.rpc_client()
+        self.rpc_client.as_ref()
     }
 }

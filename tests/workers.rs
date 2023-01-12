@@ -9,7 +9,7 @@ use lite_rpc::{
     DEFAULT_WS_ADDR,
 };
 use solana_client::nonblocking::{
-    pubsub_client::PubsubClient, rpc_client::RpcClient, tpu_client::TpuClient,
+    pubsub_client::PubsubClient, rpc_client::RpcClient,
 };
 
 use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
@@ -21,15 +21,9 @@ async fn send_and_confirm_txs() {
     let lite_client = Arc::new(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
     let bench_helper = BenchHelper::new(lite_client.clone());
 
-    let tpu_client = Arc::new(
-        TpuClient::new(rpc_client.clone(), DEFAULT_WS_ADDR, Default::default())
-            .await
-            .unwrap(),
-    );
-
     let pub_sub_client = Arc::new(PubsubClient::new(DEFAULT_WS_ADDR).await.unwrap());
 
-    let tx_sender = TxSender::new(tpu_client);
+    let tx_sender = TxSender::new(rpc_client.clone(), DEFAULT_WS_ADDR, 12,);
 
     let block_listener = BlockListener::new(
         pub_sub_client.clone(),
