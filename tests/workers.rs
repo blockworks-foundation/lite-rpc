@@ -8,9 +8,7 @@ use lite_rpc::{
     DEFAULT_LITE_RPC_ADDR, DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS, DEFAULT_TX_BATCH_SIZE,
     DEFAULT_WS_ADDR,
 };
-use solana_client::nonblocking::{
-    pubsub_client::PubsubClient, rpc_client::RpcClient,
-};
+use solana_client::nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient};
 
 use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
 use solana_transaction_status::TransactionConfirmationStatus;
@@ -23,7 +21,7 @@ async fn send_and_confirm_txs() {
 
     let pub_sub_client = Arc::new(PubsubClient::new(DEFAULT_WS_ADDR).await.unwrap());
 
-    let tx_sender = TxSender::new(rpc_client.clone(), DEFAULT_WS_ADDR, 12,);
+    let tx_sender = TxSender::new(rpc_client.clone(), DEFAULT_WS_ADDR, 12);
 
     let block_listener = BlockListener::new(
         pub_sub_client.clone(),

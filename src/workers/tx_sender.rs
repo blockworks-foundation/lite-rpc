@@ -10,7 +10,6 @@ use dashmap::DashMap;
 use log::{info, warn};
 
 use solana_client::{
-    connection_cache::ConnectionCache,
     nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
     tpu_client::TpuClientConfig,
 };
@@ -85,7 +84,13 @@ impl TxSender {
             );
 
             let mut tpu_client_mutable = Arc::new(
-                TpuClient::new(self.rpc_client.clone(), &self.web_sockets_url, TpuClientConfig { fanout_slots: self.fanout_slots })
+                TpuClient::new(
+                    self.rpc_client.clone(),
+                    &self.web_sockets_url,
+                    TpuClientConfig {
+                        fanout_slots: self.fanout_slots,
+                    },
+                )
                 .await
                 .unwrap(),
             );
@@ -96,7 +101,13 @@ impl TxSender {
                 // if are 4 consecutive errors, we reset the tpu client
                 if previous_errors > 4 {
                     tpu_client_mutable = Arc::new(
-                        TpuClient::new(self.rpc_client.clone(), &self.web_sockets_url, TpuClientConfig { fanout_slots: self.fanout_slots })
+                        TpuClient::new(
+                            self.rpc_client.clone(),
+                            &self.web_sockets_url,
+                            TpuClientConfig {
+                                fanout_slots: self.fanout_slots,
+                            },
+                        )
                         .await
                         .unwrap(),
                     );
