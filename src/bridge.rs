@@ -14,6 +14,7 @@ use log::info;
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient, tpu_client::TpuClient},
+    rpc_client::SerializableTransaction,
     rpc_config::{RpcContextConfig, RpcRequestAirdropConfig},
     rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
     tpu_client::TpuClientConfig,
@@ -157,10 +158,6 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-    async fn get_metrics(&self) -> crate::rpc::Result<Metrics> {
-        return Ok(self.metrics_capture.get_metrics().await);
-    }
-
     async fn send_transaction(
         &self,
         tx: String,
@@ -171,11 +168,21 @@ impl LiteRpcServer for LiteBridge {
             max_retries: _,
         } = send_transaction_config.unwrap_or_default();
 
-        let raw_tx = encoding.decode(tx).unwrap();
+        let raw_tx = match encoding.decode(tx) {
+            Ok(raw_tx) => raw_tx,
+            Err(err) => {
+                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+            }
+        };
 
-        let sig = bincode::deserialize::<VersionedTransaction>(&raw_tx)
-            .unwrap()
-            .signatures[0];
+        let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
+            Ok(tx) => tx,
+            Err(err) => {
+                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+            }
+        };
+
+        let sig = tx.get_signature();
 
         self.tx_sender.enqnueue_tx(sig.to_string(), raw_tx).await;
 
@@ -216,16 +223,26 @@ impl LiteRpcServer for LiteBridge {
         let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
         let commitment = CommitmentConfig { commitment };
 
-        let blockhash = Hash::from_str(&blockhash).unwrap();
+        let blockhash = match Hash::from_str(&blockhash) {
+            Ok(blockhash) => blockhash,
+            Err(err) => {
+                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+            }
+        };
 
         let block_listner = self.get_block_listner(commitment);
 
-        let is_valid = self
+        let is_valid = match self
             .tpu_client
             .rpc_client()
             .is_blockhash_valid(&blockhash, commitment)
             .await
-            .unwrap();
+        {
+            Ok(is_valid) => is_valid,
+            Err(err) => {
+                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+            }
+        };
 
         let slot = block_listner.get_slot().await;
 
@@ -276,21 +293,34 @@ impl LiteRpcServer for LiteBridge {
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
     ) -> crate::rpc::Result<String> {
-        let pubkey = Pubkey::from_str(&pubkey_str).unwrap();
+        let pubkey = match Pubkey::from_str(&pubkey_str) {
+            Ok(pubkey) => pubkey,
+            Err(err) => {
+                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+            }
+        };
 
-        let airdrop_sig = self
+        let airdrop_sig = match self
             .tpu_client
             .rpc_client()
             .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
             .await
-            .unwrap()
-            .to_string();
+        {
+            Ok(airdrop_sig) => airdrop_sig.to_string(),
+            Err(err) => {
+                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+            }
+        };
 
         self.tx_sender
             .txs_sent
             .insert(airdrop_sig.clone(), Default::default());
 
         Ok(airdrop_sig)
+    }
+
+    async fn get_metrics(&self) -> crate::rpc::Result<Metrics> {
+        return Ok(self.metrics_capture.get_metrics().await);
     }
 
     fn signature_subscribe(

@@ -108,7 +108,7 @@ impl BlockListener {
                         commitment: Some(self.commitment_config),
                         encoding: None,
                         transaction_details: Some(
-                            solana_transaction_status::TransactionDetails::Full,
+                            solana_transaction_status::TransactionDetails::Accounts,
                         ),
                         show_rewards: None,
                         max_supported_transaction_version: None,
@@ -135,19 +135,12 @@ impl BlockListener {
                 let Some(transactions) = block.transactions else {
                     continue;
                 };
-                //
-                //                let Some(signatures) = block.signatures else {
-                //                    info!("no signatures");
-                //                    continue;
-                //                };
 
                 *self.latest_block_info.write().await = BlockInformation {
                     slot,
                     blockhash,
                     block_height,
                 };
-
-                //                let mut transactions = transactions.into_iter();
 
                 for tx in transactions {
                     let Some(UiTransactionStatusMeta { err, status, .. }) = tx.meta else {
@@ -182,8 +175,7 @@ impl BlockListener {
                                 api_version: None,
                             },
                             value: serde_json::json!({ "err": err }),
-                        })
-                        .unwrap();
+                        })?;
                     }
                 }
             }

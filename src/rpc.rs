@@ -1,4 +1,3 @@
-use jsonrpsee::core::Error;
 use jsonrpsee::proc_macros::rpc;
 use solana_client::rpc_config::{
     RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
@@ -12,7 +11,7 @@ use crate::{
     workers::Metrics,
 };
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, jsonrpsee::core::Error>;
 
 #[rpc(server)]
 pub trait LiteRpc {
