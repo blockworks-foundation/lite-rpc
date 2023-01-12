@@ -2047,6 +2047,7 @@ dependencies = [
  "bytes",
  "clap 4.0.32",
  "const_env",
+ "crossbeam-channel",
  "dashmap",
  "futures",
  "jsonrpsee",

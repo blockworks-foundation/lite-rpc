@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
 use log::{info, warn};
 use solana_transaction_status::TransactionConfirmationStatus;
@@ -16,10 +16,10 @@ pub struct MetricsCapture {
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct Metrics {
-    pub txs_sent: usize,
+    pub txs_sent: u64,
     pub txs_confirmed: usize,
     pub txs_finalized: usize,
-    pub txs_ps: usize,
+    pub txs_ps: u64,
     pub txs_confirmed_ps: usize,
     pub txs_finalized_ps: usize,
     pub mem_used: Option<usize>,
@@ -46,7 +46,7 @@ impl MetricsCapture {
             loop {
                 one_second.tick().await;
 
-                let txs_sent = self.tx_sender.txs_sent.len();
+                let txs_sent = self.tx_sender.nb_tx_sent.load(Ordering::Relaxed);
                 let mut txs_confirmed: usize = 0;
                 let mut txs_finalized: usize = 0;
 
