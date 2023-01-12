@@ -10,7 +10,6 @@ use bench::{
     metrics::{AvgMetric, Metric},
 };
 use clap::Parser;
-//use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::{

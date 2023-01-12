@@ -18,5 +18,4 @@ pub struct Args {
     /// Lite Rpc Address
     #[arg(short = 'l', long, default_value_t = String::from("http://127.0.0.1:8890"))]
     pub lite_rpc_addr: String,
-
 }
