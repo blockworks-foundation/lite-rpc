@@ -1,5 +1,5 @@
 use crate::{
-    configs::SendTransactionConfig,
+    configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
     workers::{BlockListener, Cleaner, Metrics, MetricsCapture, TxSender},
@@ -10,7 +10,6 @@ use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 use anyhow::bail;
 
 use log::info;
-use reqwest::Url;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 use solana_client::{
@@ -21,6 +20,7 @@ use solana_client::{
 };
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
+    hash::Hash,
     pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
@@ -31,7 +31,7 @@ use tokio::{net::ToSocketAddrs, task::JoinHandle};
 #[derive(Clone)]
 pub struct LiteBridge {
     pub tpu_client: Arc<TpuClient>,
-    pub rpc_url: Url,
+    pub rpc_url: String,
     pub tx_sender: TxSender,
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
@@ -39,12 +39,8 @@ pub struct LiteBridge {
 }
 
 impl LiteBridge {
-    pub async fn new(
-        rpc_url: reqwest::Url,
-        ws_addr: &str,
-        fanout_slots: u64,
-    ) -> anyhow::Result<Self> {
-        let rpc_client = Arc::new(RpcClient::new(rpc_url.to_string()));
+    pub async fn new(rpc_url: String, ws_addr: &str, fanout_slots: u64) -> anyhow::Result<Self> {
+        let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
 
         let tpu_client = Arc::new(
             TpuClient::new(
@@ -209,6 +205,36 @@ impl LiteRpcServer for LiteBridge {
                 blockhash,
                 last_valid_block_height,
             },
+        })
+    }
+
+    async fn is_blockhash_valid(
+        &self,
+        blockhash: String,
+        config: Option<IsBlockHashValidConfig>,
+    ) -> crate::rpc::Result<RpcResponse<bool>> {
+        let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
+        let commitment = CommitmentConfig { commitment };
+
+        let blockhash = Hash::from_str(&blockhash).unwrap();
+
+        let block_listner = self.get_block_listner(commitment);
+
+        let is_valid = self
+            .tpu_client
+            .rpc_client()
+            .is_blockhash_valid(&blockhash, commitment)
+            .await
+            .unwrap();
+
+        let slot = block_listner.get_slot().await;
+
+        Ok(RpcResponse {
+            context: RpcResponseContext {
+                slot,
+                api_version: None,
+            },
+            value: is_valid,
         })
     }
 

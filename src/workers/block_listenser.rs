@@ -7,6 +7,7 @@ use jsonrpsee::SubscriptionSink;
 use log::info;
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
+    rpc_client::SerializableTransaction,
     rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
     rpc_response::{Response as RpcResponse, RpcResponseContext},
 };
@@ -81,8 +82,6 @@ impl BlockListener {
     }
 
     pub fn signature_subscribe(&self, signature: String, sink: SubscriptionSink) {
-        //        warn!("subscribing {signature}");
-
         let _ = self.signature_subscribers.insert(signature, sink);
     }
 
@@ -136,10 +135,11 @@ impl BlockListener {
                 let Some(transactions) = block.transactions else {
                     continue;
                 };
-
-                let Some(signatures) = block.signatures else {
-                    continue;
-                };
+                //
+                //                let Some(signatures) = block.signatures else {
+                //                    info!("no signatures");
+                //                    continue;
+                //                };
 
                 *self.latest_block_info.write().await = BlockInformation {
                     slot,
@@ -147,13 +147,20 @@ impl BlockListener {
                     block_height,
                 };
 
-                let mut transactions = transactions.into_iter();
+                //                let mut transactions = transactions.into_iter();
 
-                for sig in signatures {
-                    info!("{sig}");
+                for tx in transactions {
+                    let Some(UiTransactionStatusMeta { err, status, .. }) = tx.meta else {
+                        info!("tx with no meta");
+                        continue;
+                    };
 
-                    let UiTransactionStatusMeta { err, status, .. } =
-                        transactions.next().unwrap().meta.unwrap();
+                    let Some(tx) = tx.transaction.decode() else {
+                        info!("unable to decode tx");
+                        continue;
+                    };
+
+                    let sig = tx.get_signature().to_string();
 
                     if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
                         tx_status.value_mut().status = Some(TransactionStatus {

@@ -7,8 +7,10 @@ use solana_client::rpc_response::{Response as RpcResponse, RpcBlockhash, RpcVers
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionStatus;
 
-use crate::configs::SendTransactionConfig;
-use crate::workers::Metrics;
+use crate::{
+    configs::{IsBlockHashValidConfig, SendTransactionConfig},
+    workers::Metrics,
+};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -26,6 +28,13 @@ pub trait LiteRpc {
         &self,
         config: Option<RpcContextConfig>,
     ) -> Result<RpcResponse<RpcBlockhash>>;
+
+    #[method(name = "isBlockhashValid")]
+    async fn is_blockhash_valid(
+        &self,
+        blockhash: String,
+        config: Option<IsBlockHashValidConfig>,
+    ) -> Result<RpcResponse<bool>>;
 
     #[method(name = "getSignatureStatuses")]
     async fn get_signature_statuses(
