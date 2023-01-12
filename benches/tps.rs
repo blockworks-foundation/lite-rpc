@@ -15,21 +15,13 @@ use solana_sdk::{
     commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL, signature::Signature,
 };
 
-use simplelog::*;
-
 const NUM_OF_TXS: usize = 20_000;
 const NUM_OF_RUNS: usize = 1;
 const CSV_FILE_NAME: &str = "metrics.csv";
 
 #[tokio::main]
 async fn main() {
-    TermLogger::init(
-        LevelFilter::Info,
-        Config::default(),
-        TerminalMode::Mixed,
-        ColorChoice::Auto,
-    )
-    .unwrap();
+    tracing_subscriber::fmt::init();
 
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
         DEFAULT_LITE_RPC_ADDR.to_string(),

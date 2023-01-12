@@ -25,6 +25,6 @@ pub struct Args {
     #[arg(short = 'i', long, default_value_t = DEFAULT_TX_BATCH_INTERVAL_MS)]
     pub tx_batch_interval_ms: u64,
     /// interval between clean
-    #[arg(short = 'i', long, default_value_t = DEFAULT_CLEAN_INTERVAL_MS)]
+    #[arg(short = 'c', long, default_value_t = DEFAULT_CLEAN_INTERVAL_MS)]
     pub clean_interval_ms: u64,
 }

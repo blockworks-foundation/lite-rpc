@@ -39,3 +39,4 @@ dashmap = "5.4.0"
 const_env = "0.1.2"
 jsonrpsee = { version = "0.16.2", features = ["macros", "full"] }
 tracing-subscriber = "0.3.16"
+procinfo = "0.4.2"

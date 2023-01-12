@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::info;
+use log::{info, warn};
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::{sync::RwLock, task::JoinHandle};
 
@@ -22,6 +22,7 @@ pub struct Metrics {
     pub txs_ps: usize,
     pub txs_confirmed_ps: usize,
     pub txs_finalized_ps: usize,
+    pub mem_used: Option<usize>,
 }
 
 impl MetricsCapture {
@@ -75,6 +76,14 @@ impl MetricsCapture {
                 metrics.txs_sent = txs_sent;
                 metrics.txs_confirmed = txs_confirmed;
                 metrics.txs_finalized = txs_finalized;
+
+                metrics.mem_used = match procinfo::pid::statm_self() {
+                    Ok(statm) => Some(statm.size),
+                    Err(err) => {
+                        warn!("Error capturing memory consumption {err}");
+                        None
+                    }
+                };
 
                 log::info!("{metrics:?}");
             }

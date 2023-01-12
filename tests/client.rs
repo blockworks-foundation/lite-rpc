@@ -6,19 +6,11 @@ use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
 
-use simplelog::*;
-
 const AMOUNT: usize = 5;
 
 #[tokio::test]
 async fn send_and_confirm_txs_get_signature_statuses() {
-    TermLogger::init(
-        LevelFilter::Info,
-        Config::default(),
-        TerminalMode::Mixed,
-        ColorChoice::Auto,
-    )
-    .unwrap();
+    tracing_subscriber::fmt::init();
 
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
     let bench_helper = BenchHelper::new(rpc_client.clone());
