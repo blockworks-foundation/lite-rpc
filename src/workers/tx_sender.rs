@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, RwLock},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -9,7 +9,7 @@ use log::{info, warn};
 use solana_client::nonblocking::tpu_client::TpuClient;
 
 use solana_transaction_status::TransactionStatus;
-use tokio::task::JoinHandle;
+use tokio::{sync::RwLock, task::JoinHandle};
 
 pub type WireTransaction = Vec<u8>;
 
@@ -19,7 +19,7 @@ pub struct TxSender {
     /// Tx(s) forwarded to tpu
     pub txs_sent: Arc<DashMap<String, TxProps>>,
     /// Transactions queue for retrying
-    enqueued_txs: Arc<RwLock<Vec<WireTransaction>>>,
+    enqueued_txs: Arc<RwLock<Vec<(String, WireTransaction)>>>,
     /// TpuClient to call the tpu port
     tpu_client: Arc<TpuClient>,
 }
@@ -48,45 +48,50 @@ impl TxSender {
         }
     }
     /// en-queue transaction if it doesn't already exist
-    pub fn enqnueue_tx(&self, sig: String, raw_tx: WireTransaction) {
-        self.txs_sent.insert(sig, TxProps::default());
-        self.enqueued_txs.write().unwrap().push(raw_tx);
+    pub async fn enqnueue_tx(&self, sig: String, raw_tx: WireTransaction) {
+        self.enqueued_txs.write().await.push((sig, raw_tx));
     }
 
     /// retry enqued_tx(s)
     pub async fn forward_txs(&self, tx_batch_size: usize) {
-        let mut enqueued_txs = Vec::new();
-
-        std::mem::swap(&mut enqueued_txs, &mut self.enqueued_txs.write().unwrap());
-
-        let len = enqueued_txs.len();
-
-        if len == 0 {
+        if self.enqueued_txs.read().await.is_empty() {
             return;
         }
 
-        let mut tx_batch = Vec::with_capacity(len / tx_batch_size);
+        let mut enqueued_txs = Vec::new();
+        std::mem::swap(&mut enqueued_txs, &mut *self.enqueued_txs.write().await);
 
-        let mut batch_index = 0;
+        let mut tx_remaining = enqueued_txs.len();
+        let mut enqueued_txs = enqueued_txs.into_iter();
+        let tpu_client = self.tpu_client.clone();
+        let txs_sent = self.txs_sent.clone();
 
-        for (index, tx) in enqueued_txs.iter().enumerate() {
-            if index % tx_batch_size == 0 {
-                tx_batch.push(Vec::with_capacity(tx_batch_size));
-                batch_index += 1;
+        tokio::spawn(async move {
+            while tx_remaining != 0 {
+                let mut batch = Vec::with_capacity(tx_batch_size);
+                let mut sigs = Vec::with_capacity(tx_batch_size);
+
+                for (batched, (sig, tx)) in enqueued_txs.by_ref().enumerate() {
+                    batch.push(tx);
+                    sigs.push(sig);
+                    tx_remaining -= 1;
+                    if batched == tx_batch_size {
+                        break;
+                    }
+                }
+
+                match tpu_client.try_send_wire_transaction_batch(batch).await {
+                    Ok(_) => {
+                        for sig in sigs {
+                            txs_sent.insert(sig, TxProps::default());
+                        }
+                    }
+                    Err(err) => {
+                        warn!("{err}");
+                    }
+                }
             }
-
-            tx_batch[batch_index - 1].push(tx.to_owned());
-        }
-
-        for tx_batch in tx_batch {
-            if let Err(err) = self
-                .tpu_client
-                .try_send_wire_transaction_batch(tx_batch)
-                .await
-            {
-                warn!("{err}");
-            }
-        }
+        });
     }
 
     /// retry and confirm transactions every 2ms (avg time to confirm tx)

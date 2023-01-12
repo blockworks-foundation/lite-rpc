@@ -177,7 +177,7 @@ impl LiteRpcServer for LiteBridge {
             .unwrap()
             .signatures[0];
 
-        self.tx_sender.enqnueue_tx(sig.to_string(), raw_tx);
+        self.tx_sender.enqnueue_tx(sig.to_string(), raw_tx).await;
 
         Ok(BinaryEncoding::Base58.encode(sig))
     }
