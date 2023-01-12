@@ -34,8 +34,8 @@ futures = "0.3.25"
 bytes = "1.3.0"
 anyhow = "1.0.68"
 log = "0.4.17"
-simplelog = "0.12.0"
 clap = { version = "4.0.32", features = ["derive"] }
 dashmap = "5.4.0"
 const_env = "0.1.2"
 jsonrpsee = { version = "0.16.2", features = ["macros", "full"] }
+tracing-subscriber = "0.3.16"

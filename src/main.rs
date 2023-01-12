@@ -3,16 +3,10 @@ use std::time::Duration;
 use anyhow::Context;
 use clap::Parser;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
-use simplelog::*;
 
 #[tokio::main]
 pub async fn main() -> anyhow::Result<()> {
-    TermLogger::init(
-        LevelFilter::Info,
-        Config::default(),
-        TerminalMode::Mixed,
-        ColorChoice::Auto,
-    )?;
+    tracing_subscriber::fmt::init();
 
     let Args {
         rpc_addr,
