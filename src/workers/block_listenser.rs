@@ -108,7 +108,7 @@ impl BlockListener {
                         commitment: Some(self.commitment_config),
                         encoding: None,
                         transaction_details: Some(
-                            solana_transaction_status::TransactionDetails::Accounts,
+                            solana_transaction_status::TransactionDetails::Full,
                         ),
                         show_rewards: None,
                         max_supported_transaction_version: None,
