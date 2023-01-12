@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-solana-client = "1.14.11"
-solana-sdk = "1.14.11"
+solana-client = "1.14.12"
+solana-sdk = "1.14.12"
 log = "0.4.17"
 anyhow = "1.0.68"
 serde = "1.0.152"
