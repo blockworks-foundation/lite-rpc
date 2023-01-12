@@ -26,16 +26,17 @@ async fn main() {
         runs,
         run_interval_ms,
         metrics_file_name,
+        lite_rpc_addr,
     } = Args::parse();
 
     let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
 
+    info!("Connecting to {lite_rpc_addr}");
+
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
-        DEFAULT_LITE_RPC_ADDR.to_string(),
+        lite_rpc_addr,
         CommitmentConfig::confirmed(),
     ));
-
-    info!("Connecting to {DEFAULT_LITE_RPC_ADDR}");
 
     let bench_helper = BenchHelper { rpc_client };
 
