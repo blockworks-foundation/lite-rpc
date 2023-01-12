@@ -448,6 +448,7 @@ name = "bench-utils"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap 4.0.32",
  "log",
  "serde",
  "solana-client",

@@ -9,3 +9,4 @@ solana-sdk = "1.14.12"
 log = "0.4.17"
 anyhow = "1.0.68"
 serde = "1.0.152"
+clap = { version = "4.0.32", features = ["derive"] }

@@ -5,9 +5,11 @@ use std::{
 };
 
 use bench_utils::{
+    cli::Args,
     helpers::BenchHelper,
     metrics::{AvgMetric, Metric},
 };
+use clap::Parser;
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
@@ -15,13 +17,18 @@ use solana_sdk::{
     commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL, signature::Signature,
 };
 
-const NUM_OF_TXS: usize = 20_000;
-const NUM_OF_RUNS: usize = 1;
-const CSV_FILE_NAME: &str = "metrics.csv";
-
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+
+    let Args {
+        tx_count,
+        runs,
+        run_interval_ms,
+        metrics_file_name,
+    } = Args::parse();
+
+    let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
 
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
         DEFAULT_LITE_RPC_ADDR.to_string(),
@@ -32,15 +39,19 @@ async fn main() {
 
     let bench_helper = BenchHelper { rpc_client };
 
-    let mut csv_writer = csv::Writer::from_path(CSV_FILE_NAME).unwrap();
+    let mut csv_writer = csv::Writer::from_path(metrics_file_name).unwrap();
 
     let mut avg_metric = AvgMetric::default();
 
-    for run_num in 0..NUM_OF_RUNS {
-        let metric = bench(&bench_helper).await;
-        info!("Run {run_num}: Sent and Confirmed {NUM_OF_TXS} tx(s) in {metric:?} with",);
+    for run_num in 0..runs {
+        let metric = bench(&bench_helper, tx_count).await;
+        info!("Run {run_num}: Sent and Confirmed {tx_count} tx(s) in {metric:?} with",);
+        // update avg metric
         avg_metric += &metric;
+        // write metric to file
         csv_writer.serialize(metric).unwrap();
+        // wait for an interval
+        run_interval_ms.tick().await;
     }
 
     let avg_metric = Metric::from(avg_metric);
@@ -51,14 +62,14 @@ async fn main() {
     csv_writer.flush().unwrap();
 }
 
-async fn bench(bench_helper: &BenchHelper) -> Metric {
+async fn bench(bench_helper: &BenchHelper, tx_count: usize) -> Metric {
     let funded_payer = bench_helper
         .new_funded_payer(LAMPORTS_PER_SOL * 2000)
         .await
         .unwrap();
 
     let txs = bench_helper
-        .generate_txs(NUM_OF_TXS, &funded_payer)
+        .generate_txs(tx_count, &funded_payer)
         .await
         .unwrap();
 
@@ -71,7 +82,7 @@ async fn bench(bench_helper: &BenchHelper) -> Metric {
 
     let start_time = Instant::now();
 
-    info!("Sending and Confirming {NUM_OF_TXS} tx(s)",);
+    info!("Sending and Confirming {tx_count} tx(s)",);
 
     let lite_client = bench_helper.rpc_client.clone();
 
@@ -83,7 +94,7 @@ async fn bench(bench_helper: &BenchHelper) -> Metric {
                 lite_client.send_transaction(&tx).await.unwrap();
                 info!("Tx {}", &tx.signatures[0]);
             }
-            info!("Sent {NUM_OF_TXS} tx(s)");
+            info!("Sent {tx_count} tx(s)");
 
             start_time.elapsed()
         })
@@ -119,7 +130,7 @@ async fn bench(bench_helper: &BenchHelper) -> Metric {
         }
 
         metrics.total_time_elapsed_sec = start_time.elapsed().as_secs_f64();
-        metrics.txs_sent = NUM_OF_TXS as u64;
+        metrics.txs_sent = tx_count as u64;
 
         metrics
     });
