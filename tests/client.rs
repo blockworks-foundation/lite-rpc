@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bench_utils::helpers::BenchHelper;
+use bench::helpers::BenchHelper;
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};

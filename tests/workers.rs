@@ -1,7 +1,6 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use bench_utils::helpers::BenchHelper;
+use bench::helpers::BenchHelper;
 use futures::future::try_join_all;
 use lite_rpc::{
     encoding::BinaryEncoding,

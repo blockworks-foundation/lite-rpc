@@ -1,5 +1,5 @@
 [package]
-name = "bench-utils"
+name = "bench"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,4 +9,7 @@ solana-sdk = "1.14.12"
 log = "0.4.17"
 anyhow = "1.0.68"
 serde = "1.0.152"
+csv = "1.1.6"
 clap = { version = "4.0.32", features = ["derive"] }
+tokio = { version = "1.24.1", features = ["full"]} 
+tracing-subscriber = "0.3.16"

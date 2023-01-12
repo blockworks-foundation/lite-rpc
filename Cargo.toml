@@ -6,16 +6,11 @@ description = "A lite version of solana rpc to send and confirm transactions"
 
 [workspace]
 members = [
-    "bench-utils"
+    "bench"
 ]
 
-[[bench]]
-name="tps"
-harness=false
-
 [dev-dependencies]
-bench-utils = { path = "./bench-utils" }
-csv = "1.1.6"
+bench = { path = "./bench" }
 
 [dependencies]
 solana-client = "1.14.12"

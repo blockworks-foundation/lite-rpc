@@ -444,15 +444,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "bench-utils"
+name = "bench"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap 4.0.32",
+ "csv",
  "log",
  "serde",
  "solana-client",
  "solana-sdk",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2253,13 +2256,12 @@ dependencies = [
  "actix-web",
  "anyhow",
  "base64 0.21.0",
- "bench-utils",
+ "bench",
  "bincode",
  "bs58",
  "bytes",
  "clap 4.0.32",
  "const_env",
- "csv",
  "dashmap",
  "futures",
  "jsonrpsee",

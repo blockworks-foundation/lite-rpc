@@ -4,13 +4,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bench_utils::{
+use bench::{
     cli::Args,
     helpers::BenchHelper,
     metrics::{AvgMetric, Metric},
 };
 use clap::Parser;
-use lite_rpc::DEFAULT_LITE_RPC_ADDR;
+//use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::{
