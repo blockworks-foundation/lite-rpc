@@ -20,4 +20,4 @@ FROM debian:bullseye-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6
 COPY --from=build /app/target/release/lite-rpc /usr/local/bin/
 
-CMD "lite-rpc --rpc-url $RPC_URL --websocket-url $WS_URL"
+CMD lite-rpc --rpc-url "$RPC_URL" --websocket-url "$WS_URL"
