@@ -26,6 +26,6 @@ kill_timeout = 5
     soft_limit = 1024
     type = "connections"
 
-[metrics]
-  path = "/metrics"
-  port = 9091
+# [metrics]
+#   path = "/metrics"
+#   port = 9091
