@@ -22,7 +22,7 @@ pub async fn main() -> anyhow::Result<()> {
     let tx_batch_interval_ms = Duration::from_millis(tx_batch_interval_ms);
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
 
-    let light_bridge = LiteBridge::new(rpc_addr, &ws_addr, fanout_size).await?;
+    let light_bridge = LiteBridge::new(rpc_addr, ws_addr, fanout_size).await?;
 
     let services = light_bridge
         .start_services(

@@ -4,12 +4,13 @@ use bench::helpers::BenchHelper;
 use futures::future::try_join_all;
 use lite_rpc::{
     encoding::BinaryEncoding,
+    tpu_manager::TpuManager,
     workers::{BlockListener, TxSender},
     DEFAULT_LITE_RPC_ADDR, DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS, DEFAULT_TX_BATCH_SIZE,
     DEFAULT_WS_ADDR,
 };
 use solana_client::nonblocking::{
-    pubsub_client::PubsubClient, rpc_client::RpcClient, tpu_client::TpuClient,
+    pubsub_client::PubsubClient, rpc_client::RpcClient,
 };
 
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -22,9 +23,13 @@ async fn send_and_confirm_txs() {
     let bench_helper = BenchHelper::new(lite_client.clone());
 
     let tpu_client = Arc::new(
-        TpuClient::new(rpc_client.clone(), DEFAULT_WS_ADDR, Default::default())
-            .await
-            .unwrap(),
+        TpuManager::new(
+            rpc_client.clone(),
+            DEFAULT_WS_ADDR.into(),
+            Default::default(),
+        )
+        .await
+        .unwrap(),
     );
 
     let pub_sub_client = Arc::new(PubsubClient::new(DEFAULT_WS_ADDR).await.unwrap());

@@ -6,10 +6,10 @@ use std::{
 use dashmap::DashMap;
 use log::{info, warn};
 
-use solana_client::nonblocking::tpu_client::TpuClient;
-
 use solana_transaction_status::TransactionStatus;
 use tokio::{sync::RwLock, task::JoinHandle};
+
+use crate::tpu_manager::TpuManager;
 
 pub type WireTransaction = Vec<u8>;
 
@@ -21,7 +21,7 @@ pub struct TxSender {
     /// Transactions queue for retrying
     enqueued_txs: Arc<RwLock<Vec<(String, WireTransaction)>>>,
     /// TpuClient to call the tpu port
-    tpu_client: Arc<TpuClient>,
+    tpu_manager: Arc<TpuManager>,
 }
 
 /// Transaction Properties
@@ -40,10 +40,10 @@ impl Default for TxProps {
 }
 
 impl TxSender {
-    pub fn new(tpu_client: Arc<TpuClient>) -> Self {
+    pub fn new(tpu_manager: Arc<TpuManager>) -> Self {
         Self {
             enqueued_txs: Default::default(),
-            tpu_client,
+            tpu_manager,
             txs_sent: Default::default(),
         }
     }
@@ -63,7 +63,7 @@ impl TxSender {
 
         let mut tx_remaining = enqueued_txs.len();
         let mut enqueued_txs = enqueued_txs.into_iter();
-        let tpu_client = self.tpu_client.clone();
+        let tpu_client = self.tpu_manager.clone();
         let txs_sent = self.txs_sent.clone();
 
         tokio::spawn(async move {
