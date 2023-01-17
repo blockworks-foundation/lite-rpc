@@ -1,7 +1,6 @@
 use std::{ops::Deref, sync::Arc};
 
 use anyhow::Context;
-use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -32,23 +31,17 @@ impl BenchHelper {
         Self { rpc_client }
     }
 
-    pub async fn new_funded_payer(&self, amount: u64) -> anyhow::Result<Keypair> {
-        let payer = Keypair::new();
-        let payer_pubkey = payer.pubkey().to_string();
+    pub async fn get_payer(&self) -> anyhow::Result<Keypair> {
+        let mut config_dir = dirs::config_dir().context("Unable to get path to user config dir")?;
 
-        // request airdrop to payer
-        let airdrop_sig = self
-            .rpc_client
-            .request_airdrop(&payer.pubkey(), amount)
+        config_dir.push("solana");
+        config_dir.push("id.json");
+
+        let payer = tokio::fs::read_to_string(config_dir.to_str().unwrap())
             .await
-            .context("requesting air drop")?;
-
-        info!("Air Dropping {payer_pubkey} with {amount}L {airdrop_sig}");
-
-        self.wait_till_signature_status(&airdrop_sig, CommitmentConfig::finalized())
-            .await?;
-
-        info!("Air Drop Successful: {airdrop_sig}");
+            .context("Error reading payer file")?;
+        let payer: Vec<u8> = serde_json::from_str(&payer)?;
+        let payer = Keypair::from_bytes(&payer)?;
 
         Ok(payer)
     }

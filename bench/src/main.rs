@@ -12,9 +12,7 @@ use bench::{
 use clap::Parser;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
-use solana_sdk::{
-    commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL, signature::Signature,
-};
+use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
 
 #[tokio::main]
 async fn main() {
@@ -63,10 +61,7 @@ async fn main() {
 }
 
 async fn bench(bench_helper: &BenchHelper, tx_count: usize) -> Metric {
-    let funded_payer = bench_helper
-        .new_funded_payer(LAMPORTS_PER_SOL * 2000)
-        .await
-        .unwrap();
+    let funded_payer = bench_helper.get_payer().await.unwrap();
 
     let txs = bench_helper
         .generate_txs(tx_count, &funded_payer)

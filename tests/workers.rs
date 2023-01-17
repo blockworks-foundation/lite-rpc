@@ -12,7 +12,7 @@ use solana_client::nonblocking::{
     pubsub_client::PubsubClient, rpc_client::RpcClient, tpu_client::TpuClient,
 };
 
-use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionConfirmationStatus;
 
 #[tokio::test]
@@ -49,10 +49,7 @@ async fn send_and_confirm_txs() {
     ]);
 
     let confirm = tokio::spawn(async move {
-        let funded_payer = bench_helper
-            .new_funded_payer(LAMPORTS_PER_SOL * 2)
-            .await
-            .unwrap();
+        let funded_payer = bench_helper.get_payer().await.unwrap();
 
         let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 

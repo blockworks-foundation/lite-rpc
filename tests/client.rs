@@ -4,7 +4,7 @@ use bench::helpers::BenchHelper;
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
-use solana_sdk::{commitment_config::CommitmentConfig, native_token::LAMPORTS_PER_SOL};
+use solana_sdk::commitment_config::CommitmentConfig;
 
 const AMOUNT: usize = 5;
 
@@ -15,10 +15,7 @@ async fn send_and_confirm_txs_get_signature_statuses() {
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
     let bench_helper = BenchHelper::new(rpc_client.clone());
 
-    let funded_payer = bench_helper
-        .new_funded_payer(LAMPORTS_PER_SOL * 2)
-        .await
-        .unwrap();
+    let funded_payer = bench_helper.get_payer().await.unwrap();
 
     let txs = bench_helper
         .generate_txs(AMOUNT, &funded_payer)
@@ -49,10 +46,7 @@ async fn send_and_confirm_tx_rpc_client() {
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
     let bench_helper = BenchHelper::new(rpc_client.clone());
 
-    let funded_payer = bench_helper
-        .new_funded_payer(LAMPORTS_PER_SOL * 2)
-        .await
-        .unwrap();
+    let funded_payer = bench_helper.get_payer().await.unwrap();
 
     let tx = &bench_helper.generate_txs(1, &funded_payer).await.unwrap()[0];
     let sig = tx.get_signature();
