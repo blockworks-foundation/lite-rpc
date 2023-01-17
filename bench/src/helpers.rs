@@ -62,6 +62,7 @@ impl BenchHelper {
             }
         }
     }
+
     pub fn create_transaction(&self, funded_payer: &Keypair, blockhash: Hash) -> Transaction {
         let to_pubkey = Pubkey::new_unique();
 
