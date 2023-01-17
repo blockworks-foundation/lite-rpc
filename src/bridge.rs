@@ -2,7 +2,7 @@ use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
-    tpu_manager::{TpuManager},
+    tpu_manager::TpuManager,
     workers::{BlockListener, Cleaner, Metrics, MetricsCapture, TxSender},
 };
 

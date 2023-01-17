@@ -9,9 +9,7 @@ use lite_rpc::{
     DEFAULT_LITE_RPC_ADDR, DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS, DEFAULT_TX_BATCH_SIZE,
     DEFAULT_WS_ADDR,
 };
-use solana_client::nonblocking::{
-    pubsub_client::PubsubClient, rpc_client::RpcClient,
-};
+use solana_client::nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient};
 
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionConfirmationStatus;
