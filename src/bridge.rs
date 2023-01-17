@@ -3,7 +3,7 @@ use crate::{
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
     tpu_manager::TpuManager,
-    workers::{BlockListener, Cleaner, Metrics, MetricsCapture, TxSender},
+    workers::{BlockListener, Cleaner, Metrics, MetricsCapture, MetricsPostgres, TxSender},
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
@@ -94,7 +94,8 @@ impl LiteBridge {
         tx_batch_size: usize,
         tx_send_interval: Duration,
         clean_interval: Duration,
-    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 7]> {
+        postgres_config: &str,
+    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 8]> {
         let finalized_block_listenser = self.finalized_block_listenser.clone().listen();
 
         let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen();
@@ -128,7 +129,11 @@ impl LiteBridge {
             bail!("HTTP server stopped");
         });
 
-        let metrics_capture = self.metrics_capture.capture();
+        let metrics_capture = self.metrics_capture.clone().capture();
+        let metrics_postgres = MetricsPostgres::new(self.metrics_capture, postgres_config)
+            .await?
+            .sync();
+
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
             [
@@ -145,6 +150,7 @@ impl LiteBridge {
             finalized_block_listenser,
             confirmed_block_listenser,
             metrics_capture,
+            metrics_postgres,
             cleaner,
         ])
     }
