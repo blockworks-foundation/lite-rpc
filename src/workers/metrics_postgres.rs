@@ -1,15 +1,14 @@
 use anyhow::bail;
+use postgres_openssl::MakeTlsConnector;
 use tokio::task::JoinHandle;
-use tokio_postgres::tls::MakeTlsConnect;
-use tokio_postgres::{Client, Connection, Socket};
-use tokio_postgres_openssl::MakeTlsConnector;
+use tokio_postgres::Client;
 
 use openssl::ssl::{SslConnector, SslMethod};
 
 use super::{Metrics, MetricsCapture};
 
 pub struct MetricsPostgres {
-    connection: Connection<Socket, <MakeTlsConnector as MakeTlsConnect<>>::Stream>,
+    connection: JoinHandle<Result<(), tokio_postgres::Error>>,
     client: Client,
     metrics_capture: MetricsCapture,
 }
@@ -20,13 +19,14 @@ impl MetricsPostgres {
         porstgres_config: &str,
     ) -> anyhow::Result<Self> {
         let mut builder = SslConnector::builder(SslMethod::tls()).unwrap();
-        builder.set_ca_file("database_cert.pem").unwrap();
+        builder.set_ca_file("ca.pem")?;
+//        builder.set_private_key("client-key.pem")?;
 
         let connector = MakeTlsConnector::new(builder.build());
         let (client, connection) = tokio_postgres::connect(porstgres_config, connector).await?;
 
         Ok(Self {
-            connection,
+            connection: tokio::spawn(connection),
             client,
             metrics_capture,
         })
