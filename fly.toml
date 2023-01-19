@@ -1,0 +1,31 @@
+app = "solana-lite-rpc"
+kill_signal = "SIGINT"
+kill_timeout = 5
+
+[env]
+  PORT_HTTP = "8890"
+  PORT_WS = "8891"
+
+[[services]]
+  internal_port = 9000
+  processes = ["app"]
+  protocol = "tcp"
+
+  [services.concurrency]
+    hard_limit = 1024
+    soft_limit = 1024
+    type = "connections"
+
+[[services]]
+  internal_port = 9001
+  processes = ["app"]
+  protocol = "tcp"
+
+  [services.concurrency]
+    hard_limit = 1024
+    soft_limit = 1024
+    type = "connections"
+
+# [metrics]
+#   path = "/metrics"
+#   port = 9091

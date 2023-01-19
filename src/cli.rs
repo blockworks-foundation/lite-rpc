@@ -1,44 +1,30 @@
+use crate::{
+    DEFAULT_CLEAN_INTERVAL_MS, DEFAULT_FANOUT_SIZE, DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS,
+    DEFAULT_TX_BATCH_SIZE, DEFAULT_WS_ADDR,
+};
 use clap::Parser;
-use solana_cli_config::ConfigInput;
 
-/// Holds the configuration for a single run of the benchmark
 #[derive(Parser, Debug)]
-#[command(
-    version,
-    about = "A lite version of solana rpc to send and confirm transactions.",
-    long_about = "Lite rpc is optimized to send and confirm transactions for solana blockchain. \
-    When it recieves a transaction it will directly send it to next few leaders. It then adds the signature into internal map. It listen to block subscriptions for confirmed and finalized blocks. \
-    It also has a websocket port for subscription to onSlotChange and onSignature subscriptions. \
-    "
-)]
+#[command(author, version, about, long_about = None)]
 pub struct Args {
-    #[arg(short, long, default_value_t = 9000)]
-    pub port: u16,
-    #[arg(short, long, default_value_t = 9001)]
-    pub subscription_port: u16,
-    #[arg(short, long, default_value_t = String::from("http://localhost:8899"))]
-    pub rpc_url: String,
-    #[arg(short, long,  default_value_t = String::from("ws://localhost:8900"))]
-    pub websocket_url: String,
-}
-
-impl Args {
-    pub fn resolve_address(&mut self) {
-        if self.rpc_url.is_empty() {
-            let (_, rpc_url) = ConfigInput::compute_json_rpc_url_setting(
-                self.rpc_url.as_str(),
-                &ConfigInput::default().json_rpc_url,
-            );
-            self.rpc_url = rpc_url;
-        }
-        if self.websocket_url.is_empty() {
-            let (_, ws_url) = ConfigInput::compute_websocket_url_setting(
-                &self.websocket_url.as_str(),
-                "",
-                self.rpc_url.as_str(),
-                "",
-            );
-            self.websocket_url = ws_url;
-        }
-    }
+    #[arg(short, long, default_value_t = String::from(DEFAULT_RPC_ADDR))]
+    pub rpc_addr: String,
+    #[arg(short, long, default_value_t = String::from(DEFAULT_WS_ADDR))]
+    pub ws_addr: String,
+    #[arg(short = 'l', long, default_value_t = String::from("[::]:8890"))]
+    pub lite_rpc_http_addr: String,
+    #[arg(short = 's', long, default_value_t = String::from("[::]:8891"))]
+    pub lite_rpc_ws_addr: String,
+    /// batch size of each batch forward
+    #[arg(short = 'b', long, default_value_t = DEFAULT_TX_BATCH_SIZE)]
+    pub tx_batch_size: usize,
+    /// tpu fanout
+    #[arg(short = 'f', long, default_value_t = DEFAULT_FANOUT_SIZE) ]
+    pub fanout_size: u64,
+    /// interval between each batch forward
+    #[arg(short = 'i', long, default_value_t = DEFAULT_TX_BATCH_INTERVAL_MS)]
+    pub tx_batch_interval_ms: u64,
+    /// interval between clean
+    #[arg(short = 'c', long, default_value_t = DEFAULT_CLEAN_INTERVAL_MS)]
+    pub clean_interval_ms: u64,
 }
