@@ -1,4 +1,4 @@
-# Lite RPC
+# Lite RPC For Solana Blockchain 
 
 Submitting a [transaction](https://docs.solana.com/terminology#transaction) to be executed on the solana blockchain,
 requires the client to identify the next few leaders based on the
@@ -16,7 +16,7 @@ commodity vms.
 
 1) Subscribe to new blocks using [blockSubscribe](https://docs.solana.com/developing/clients/jsonrpc-api#blocksubscribe---unstable-disabled-by-default)
 2) Subscribing to signatures with pool of rpc servers. (Under development)
-3) Listining to gossip protocol. (Future roadmap)
+3) Listening to gossip protocol. (Future roadmap)
 
 ## Executing
 
