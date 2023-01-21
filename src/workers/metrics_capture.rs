@@ -84,8 +84,6 @@ impl MetricsCapture {
                         None
                     }
                 };
-
-                log::info!("{metrics:?}");
             }
         })
     }
