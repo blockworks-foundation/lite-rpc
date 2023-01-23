@@ -1,3 +1,6 @@
 target
 node_modules
 bench/metrics.csv
+*.pem
+*.pks
+.env
