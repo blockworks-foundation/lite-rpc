@@ -14,11 +14,16 @@ use solana_client::{
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
 use solana_transaction_status::{
-    TransactionConfirmationStatus, TransactionStatus, UiTransactionStatusMeta,
+    TransactionConfirmationStatus, TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta,
 };
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::{
+    sync::{mpsc::Sender, RwLock},
+    task::JoinHandle,
+};
 
-use super::TxSender;
+use crate::postgres::{Postgres, PostgresBlock, PostgresTx};
+
+use super::{TxProps, TxSender};
 
 /// Background worker which listen's to new blocks
 /// and keeps a track of confirmed txs
@@ -35,6 +40,11 @@ struct BlockInformation {
     pub slot: u64,
     pub blockhash: String,
     pub block_height: u64,
+}
+
+pub struct BlockListnerNotificatons {
+    pub block: Sender<UiConfirmedBlock>,
+    pub tx: Sender<TxProps>,
 }
 
 impl BlockListener {
@@ -89,7 +99,7 @@ impl BlockListener {
         self.signature_subscribers.remove(&signature);
     }
 
-    pub fn listen(self) -> JoinHandle<anyhow::Result<()>> {
+    pub fn listen(self, postgres: Option<Postgres>) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             info!("Subscribing to blocks");
 
@@ -142,6 +152,14 @@ impl BlockListener {
                     block_height,
                 };
 
+                if let Some(postgres) = &postgres {
+                    postgres.send_block(PostgresBlock {
+                        slot: slot as i64,
+                        leader_id: 0,   //FIX:
+                        parent_slot: 0, //FIX:
+                    }).await?;
+                }
+
                 for tx in transactions {
                     let Some(UiTransactionStatusMeta { err, status, .. }) = tx.meta else {
                         info!("tx with no meta");
@@ -156,6 +174,18 @@ impl BlockListener {
                     let sig = tx.get_signature().to_string();
 
                     if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
+                        if let Some(postgres) = &postgres {
+                            postgres.send_tx(PostgresTx {
+                                signature: tx.get_signature().as_ref(),
+                                recent_slot: slot as i64,
+                                forwarded_slot: 0,
+                                processed_slot: None,
+                                cu_consumed: None,
+                                cu_requested: None,
+                                quic_response: 0,
+                            }).await?;
+                        }
+
                         tx_status.value_mut().status = Some(TransactionStatus {
                             slot,
                             confirmations: None, //TODO: talk about this
@@ -167,7 +197,6 @@ impl BlockListener {
 
                     // subscribers
                     if let Some((_sig, mut sink)) = self.signature_subscribers.remove(&sig) {
-                        //                        info!("notification {}", sig);
                         // none if transaction succeeded
                         sink.send(&RpcResponse {
                             context: RpcResponseContext {

@@ -6,10 +6,7 @@ use solana_client::rpc_response::{Response as RpcResponse, RpcBlockhash, RpcVers
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionStatus;
 
-use crate::{
-    configs::{IsBlockHashValidConfig, SendTransactionConfig},
-    workers::Metrics,
-};
+use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
 
 pub type Result<T> = std::result::Result<T, jsonrpsee::core::Error>;
 
@@ -52,9 +49,6 @@ pub trait LiteRpc {
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
     ) -> Result<String>;
-
-    #[method(name = "getMetrics")]
-    async fn get_metrics(&self) -> Result<Metrics>;
 
     #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<serde_json::Value>)]
     fn signature_subscribe(&self, signature: String, commitment_config: CommitmentConfig);

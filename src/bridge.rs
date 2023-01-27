@@ -1,9 +1,10 @@
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
+    postgres::Postgres,
     rpc::LiteRpcServer,
     tpu_manager::TpuManager,
-    workers::{BlockListener, Cleaner, Metrics, MetricsCapture, MetricsPostgres, TxSender},
+    workers::{BlockListener, Cleaner, MetricsCapture, TxSender},
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
@@ -29,14 +30,12 @@ use solana_transaction_status::TransactionStatus;
 use tokio::{net::ToSocketAddrs, task::JoinHandle};
 
 /// A bridge between clients and tpu
-#[derive(Clone)]
 pub struct LiteBridge {
     pub rpc_client: Arc<RpcClient>,
     pub tpu_manager: Arc<TpuManager>,
     pub tx_sender: TxSender,
     pub finalized_block_listenser: BlockListener,
     pub confirmed_block_listenser: BlockListener,
-    pub metrics_capture: MetricsCapture,
 }
 
 impl LiteBridge {
@@ -66,15 +65,12 @@ impl LiteBridge {
         )
         .await?;
 
-        let metrics_capture = MetricsCapture::new(tx_sender.clone());
-
         Ok(Self {
             rpc_client,
             tpu_manager,
             tx_sender,
             finalized_block_listenser,
             confirmed_block_listenser,
-            metrics_capture,
         })
     }
 
@@ -96,43 +92,23 @@ impl LiteBridge {
         clean_interval: Duration,
         postgres_config: &str,
     ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 8]> {
-        let finalized_block_listenser = self.finalized_block_listenser.clone().listen();
-
-        let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen();
-
         let tx_sender = self
             .tx_sender
             .clone()
             .execute(tx_batch_size, tx_send_interval);
 
-        let ws_server_handle = ServerBuilder::default()
-            .ws_only()
-            .build(ws_addr.clone())
-            .await?
-            .start(self.clone().into_rpc())?;
+        let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
+        let (postgres_connection, postgres) = Postgres::new(postgres_config).await?;
 
-        let http_server_handle = ServerBuilder::default()
-            .http_only()
-            .build(http_addr.clone())
-            .await?
-            .start(self.clone().into_rpc())?;
+        let finalized_block_listenser = self
+            .finalized_block_listenser
+            .clone()
+            .listen(Some(postgres.clone()));
 
-        let ws_server = tokio::spawn(async move {
-            info!("Websocket Server started at {ws_addr:?}");
-            ws_server_handle.stopped().await;
-            bail!("Websocket server stopped");
-        });
-
-        let http_server = tokio::spawn(async move {
-            info!("HTTP Server started at {http_addr:?}");
-            http_server_handle.stopped().await;
-            bail!("HTTP server stopped");
-        });
-
-        let metrics_capture = self.metrics_capture.clone().capture();
-        let metrics_postgres = MetricsPostgres::new(self.metrics_capture, postgres_config)
-            .await?
-            .sync();
+        let confirmed_block_listenser = self
+            .confirmed_block_listenser
+            .clone()
+            .listen(Some(postgres.clone()));
 
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
@@ -143,14 +119,44 @@ impl LiteBridge {
         )
         .start(clean_interval);
 
+        let rpc = self.into_rpc();
+
+        let (ws_server, http_server) = {
+            let ws_server_handle = ServerBuilder::default()
+                .ws_only()
+                .build(ws_addr.clone())
+                .await?
+                .start(rpc.clone())?;
+
+            let http_server_handle = ServerBuilder::default()
+                .http_only()
+                .build(http_addr.clone())
+                .await?
+                .start(rpc)?;
+
+            let ws_server = tokio::spawn(async move {
+                info!("Websocket Server started at {ws_addr:?}");
+                ws_server_handle.stopped().await;
+                bail!("Websocket server stopped");
+            });
+
+            let http_server = tokio::spawn(async move {
+                info!("HTTP Server started at {http_addr:?}");
+                http_server_handle.stopped().await;
+                bail!("HTTP server stopped");
+            });
+
+            (ws_server, http_server)
+        };
+
         Ok([
             ws_server,
             http_server,
             tx_sender,
             finalized_block_listenser,
             confirmed_block_listenser,
-            metrics_capture,
-            metrics_postgres,
+            postgres_connection,
+            metrics_capture.capture(Some(postgres)),
             cleaner,
         ])
     }
@@ -315,10 +321,6 @@ impl LiteRpcServer for LiteBridge {
             .insert(airdrop_sig.clone(), Default::default());
 
         Ok(airdrop_sig)
-    }
-
-    async fn get_metrics(&self) -> crate::rpc::Result<Metrics> {
-        return Ok(self.metrics_capture.get_metrics().await);
     }
 
     fn signature_subscribe(

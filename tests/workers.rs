@@ -44,7 +44,7 @@ async fn send_and_confirm_txs() {
     .unwrap();
 
     let services = try_join_all(vec![
-        block_listener.clone().listen(),
+        block_listener.clone().listen(None),
         tx_sender.clone().execute(
             DEFAULT_TX_BATCH_SIZE,
             Duration::from_millis(DEFAULT_TX_BATCH_INTERVAL_MS),

@@ -6,6 +6,7 @@ pub mod cli;
 pub mod configs;
 pub mod encoding;
 pub mod errors;
+pub mod postgres;
 pub mod rpc;
 pub mod tpu_manager;
 pub mod workers;
