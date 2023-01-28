@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use log::{info, warn};
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::{sync::RwLock, task::JoinHandle};
@@ -6,9 +8,10 @@ use super::{PostgresMpscSend, TxSender};
 use serde::{Deserialize, Serialize};
 
 /// Background worker which captures metrics
+#[derive(Clone)]
 pub struct MetricsCapture {
     tx_sender: TxSender,
-    metrics: RwLock<Metrics>,
+    metrics: Arc<RwLock<Metrics>>,
 }
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]

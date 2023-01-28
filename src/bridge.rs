@@ -4,8 +4,8 @@ use crate::{
     rpc::LiteRpcServer,
     tpu_manager::TpuManager,
     workers::{
-        BlockInformation, BlockListener, Cleaner, MetricsCapture, Postgres, TxSender,
-        WireTransaction,
+        BlockInformation, BlockListener, Cleaner, MetricsCapture, Postgres, PrometheusSync,
+        TxSender, WireTransaction,
     },
 };
 
@@ -100,7 +100,7 @@ impl LiteBridge {
         tx_send_interval: Duration,
         clean_interval: Duration,
         postgres_config: String,
-    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 9]> {
+    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 10]> {
         let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
         let (postgres_connection, postgres) = Postgres::new(postgres_config).await?;
 
@@ -117,6 +117,7 @@ impl LiteBridge {
         );
 
         let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
+        let prometheus_sync = PrometheusSync::new(metrics_capture.clone()).sync();
 
         let finalized_block_listenser = self
             .finalized_block_listenser
@@ -124,7 +125,6 @@ impl LiteBridge {
             .listen(Some(postgres_send.clone()));
 
         let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen(None);
-
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
             [
@@ -173,6 +173,7 @@ impl LiteBridge {
             postgres_connection,
             postgres,
             metrics_capture.capture(Some(postgres_send)),
+            prometheus_sync,
             cleaner,
         ])
     }
