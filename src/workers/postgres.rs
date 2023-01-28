@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
-use anyhow::Context;
+use anyhow::{bail, Context, Ok};
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
-use tokio::fs;
-use tokio::task::JoinHandle;
+
+use tokio::{
+    fs,
+    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    task::JoinHandle,
+};
 use tokio_postgres::Client;
 
 use native_tls::{Certificate, Identity, TlsConnector};
@@ -14,6 +18,7 @@ pub struct Postgres {
     client: Arc<Client>,
 }
 
+#[derive(Debug)]
 pub struct PostgresTx {
     pub signature: String,
     pub recent_slot: i64,
@@ -24,16 +29,28 @@ pub struct PostgresTx {
     pub quic_response: i16,
 }
 
+#[derive(Debug)]
 pub struct PostgresBlock {
     pub slot: i64,
     pub leader_id: i64,
     pub parent_slot: i64,
 }
 
+#[derive(Debug)]
 pub struct PostgreAccountAddr {
     pub id: u32,
     pub addr: String,
 }
+
+#[derive(Debug)]
+pub enum PostgresMsg {
+    PostgresTx(PostgresTx),
+    PostgresBlock(PostgresBlock),
+    PostgreAccountAddr(PostgreAccountAddr),
+}
+
+pub type PostgresMpscRecv = UnboundedReceiver<PostgresMsg>;
+pub type PostgresMpscSend = UnboundedSender<PostgresMsg>;
 
 impl Postgres {
     /// # Return
@@ -110,5 +127,26 @@ impl Postgres {
         ).await?;
 
         Ok(())
+    }
+
+    pub fn start(self, mut recv: PostgresMpscRecv) -> JoinHandle<anyhow::Result<()>> {
+        tokio::spawn(async move {
+            info!("Writing to postgres");
+
+            while let Some(msg) = recv.recv().await {
+                let Err(err) = (
+                    match msg {
+                    PostgresMsg::PostgresTx(tx) => self.send_tx(tx).await,
+                    PostgresMsg::PostgresBlock(block) => self.send_block(block).await,
+                    PostgresMsg::PostgreAccountAddr(_) => todo!(),
+                } ) else {
+                    continue;
+                };
+
+                warn!("Error writing to postgres {err}");
+            }
+
+            bail!("Postgres channel closed")
+        })
     }
 }

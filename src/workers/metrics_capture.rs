@@ -2,9 +2,7 @@ use log::{info, warn};
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::{sync::RwLock, task::JoinHandle};
 
-use crate::postgres::Postgres;
-
-use super::TxSender;
+use super::{PostgresMpscSend, TxSender};
 use serde::{Deserialize, Serialize};
 
 /// Background worker which captures metrics
@@ -36,7 +34,7 @@ impl MetricsCapture {
         self.metrics.read().await.to_owned()
     }
 
-    pub fn capture(self, postgres: Option<Postgres>) -> JoinHandle<anyhow::Result<()>> {
+    pub fn capture(self, postgres: Option<PostgresMpscSend>) -> JoinHandle<anyhow::Result<()>> {
         let mut one_second = tokio::time::interval(std::time::Duration::from_secs(1));
 
         tokio::spawn(async move {
@@ -85,7 +83,7 @@ impl MetricsCapture {
                 };
 
                 if let Some(_postgres) = &postgres {
-               //     postgres.send_metrics(metrics.clone()).await?;
+                    //     postgres.send_metrics(metrics.clone()).await?;
                 }
             }
         })

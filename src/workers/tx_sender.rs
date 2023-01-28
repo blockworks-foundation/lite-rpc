@@ -14,9 +14,11 @@ use tokio::{
 };
 
 use crate::{
-    postgres::{Postgres, PostgresTx},
     tpu_manager::TpuManager,
+    workers::{PostgresMsg, PostgresTx},
 };
+
+use super::PostgresMpscSend;
 
 pub type WireTransaction = Vec<u8>;
 
@@ -56,13 +58,13 @@ impl TxSender {
     /// retry enqued_tx(s)
     async fn forward_txs(
         &self,
-        sigs: Vec<(String, u64)>,
+        sigs_and_slots: Vec<(String, u64)>,
         txs: Vec<WireTransaction>,
-        postgres: Option<Postgres>,
+        postgres: Option<PostgresMpscSend>,
     ) {
-        assert_eq!(sigs.len(), txs.len());
+        assert_eq!(sigs_and_slots.len(), txs.len());
 
-        if sigs.is_empty() {
+        if sigs_and_slots.is_empty() {
             return;
         }
 
@@ -70,9 +72,10 @@ impl TxSender {
         let txs_sent = self.txs_sent.clone();
 
         tokio::spawn(async move {
+            warn!("sending");
             let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
                 Ok(_) => {
-                    for (sig, _) in &sigs {
+                    for (sig, _) in &sigs_and_slots {
                         txs_sent.insert(sig.to_owned(), TxProps::default());
                     }
                     1
@@ -84,9 +87,9 @@ impl TxSender {
             };
 
             if let Some(postgres) = postgres {
-                for (sig, recent_slot) in sigs {
+                for (sig, recent_slot) in sigs_and_slots {
                     postgres
-                        .send_tx(PostgresTx {
+                        .send(PostgresMsg::PostgresTx(PostgresTx {
                             signature: sig.clone(),
                             recent_slot: recent_slot as i64,
                             forwarded_slot: 0,    // FIX: figure this out
@@ -94,9 +97,8 @@ impl TxSender {
                             cu_consumed: None,    // FIX: figure this out
                             cu_requested: None,   // FIX: figure this out
                             quic_response,
-                        })
-                        .await
-                        .unwrap();
+                        }))
+                        .expect("Error writing to postgres service");
                 }
             }
         });
@@ -108,7 +110,7 @@ impl TxSender {
         mut recv: UnboundedReceiver<(String, WireTransaction, u64)>,
         tx_batch_size: usize,
         tx_send_interval: Duration,
-        postgres: Option<Postgres>,
+        postgres_send: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             info!(
@@ -125,6 +127,7 @@ impl TxSender {
                 while (prev_inst.elapsed() < tx_send_interval) || txs.len() == tx_batch_size {
                     match recv.try_recv() {
                         Ok((sig, tx, slot)) => {
+                            log::warn!("recv");
                             sigs_and_slots.push((sig, slot));
                             txs.push(tx);
                         }
@@ -135,7 +138,7 @@ impl TxSender {
                     }
                 }
 
-                self.forward_txs(sigs_and_slots, txs, postgres.clone())
+                self.forward_txs(sigs_and_slots, txs, postgres_send.clone())
                     .await;
             }
         })

@@ -1,11 +1,11 @@
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
-    postgres::Postgres,
     rpc::LiteRpcServer,
     tpu_manager::TpuManager,
     workers::{
-        BlockInformation, BlockListener, Cleaner, MetricsCapture, TxSender, WireTransaction,
+        BlockInformation, BlockListener, Cleaner, MetricsCapture, Postgres, TxSender,
+        WireTransaction,
     },
 };
 
@@ -100,8 +100,11 @@ impl LiteBridge {
         tx_send_interval: Duration,
         clean_interval: Duration,
         postgres_config: &str,
-    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 8]> {
+    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 9]> {
+        let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
         let (postgres_connection, postgres) = Postgres::new(postgres_config).await?;
+
+        let postgres = postgres.start(postgres_recv);
 
         let (tx_send, tx_recv) = mpsc::unbounded_channel();
         self.tx_send = Some(tx_send);
@@ -110,7 +113,7 @@ impl LiteBridge {
             tx_recv,
             tx_batch_size,
             tx_send_interval,
-            Some(postgres.clone()),
+            Some(postgres_send.clone()),
         );
 
         let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
@@ -118,7 +121,7 @@ impl LiteBridge {
         let finalized_block_listenser = self
             .finalized_block_listenser
             .clone()
-            .listen(Some(postgres.clone()));
+            .listen(Some(postgres_send.clone()));
 
         let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen(None);
 
@@ -168,7 +171,8 @@ impl LiteBridge {
             finalized_block_listenser,
             confirmed_block_listenser,
             postgres_connection,
-            metrics_capture.capture(Some(postgres)),
+            postgres,
+            metrics_capture.capture(Some(postgres_send)),
             cleaner,
         ])
     }
@@ -205,6 +209,7 @@ impl LiteRpcServer for LiteBridge {
             .confirmed_block_listenser
             .get_block_info(&tx.get_recent_blockhash().to_string())
             .await else {
+                log::warn!("block");
                 return Err(jsonrpsee::core::Error::Custom("Blockhash not found in confirmed block store".to_string()));
         };
 

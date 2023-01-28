@@ -21,9 +21,9 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::postgres::{Postgres, PostgresBlock};
+use crate::workers::{PostgresBlock, PostgresMsg};
 
-use super::{TxProps, TxSender};
+use super::{PostgresMpscSend, TxProps, TxSender};
 
 /// Background worker which listen's to new blocks
 /// and keeps a track of confirmed txs
@@ -121,7 +121,7 @@ impl BlockListener {
         self.signature_subscribers.remove(&signature);
     }
 
-    pub fn listen(self, postgres: Option<Postgres>) -> JoinHandle<anyhow::Result<()>> {
+    pub fn listen(self, postgres: Option<PostgresMpscSend>) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             info!("Subscribing to blocks");
 
@@ -176,13 +176,12 @@ impl BlockListener {
 
                 if let Some(postgres) = &postgres {
                     postgres
-                        .send_block(PostgresBlock {
+                        .send(PostgresMsg::PostgresBlock(PostgresBlock {
                             slot: slot as i64,
                             leader_id: 0, //FIX:
                             parent_slot: parent_slot as i64,
-                        })
-                        .await
-                        .unwrap();
+                        }))
+                        .expect("Error sending block to postgres service");
                 }
 
                 for tx in transactions {
