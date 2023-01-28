@@ -6,16 +6,18 @@ use postgres_native_tls::MakeTlsConnector;
 
 use tokio::{
     fs,
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
+    sync::{
+        mpsc::{UnboundedReceiver, UnboundedSender},
+        RwLock,
+    },
     task::JoinHandle,
 };
 use tokio_postgres::Client;
 
 use native_tls::{Certificate, Identity, TlsConnector};
 
-#[derive(Clone)]
 pub struct Postgres {
-    client: Arc<Client>,
+    client: Arc<RwLock<Client>>,
 }
 
 #[derive(Debug)]
@@ -58,7 +60,7 @@ impl Postgres {
     ///
     /// returned join handle is required to be polled
     pub async fn new(
-        porstgres_config: &str,
+        porstgres_config: String,
     ) -> anyhow::Result<(JoinHandle<anyhow::Result<()>>, Self)> {
         let connector = TlsConnector::builder()
             .add_root_certificate(Certificate::from_pem(&fs::read("ca.pem").await?)?)
@@ -72,13 +74,33 @@ impl Postgres {
         info!("making tls config");
 
         let connector = MakeTlsConnector::new(connector);
-        let (client, connection) = tokio_postgres::connect(porstgres_config, connector).await?;
-        let client = Arc::new(client);
+        let (client, connection) =
+            tokio_postgres::connect(&porstgres_config, connector.clone()).await?;
+        let client = Arc::new(RwLock::new(client));
 
-        Ok((
-            tokio::spawn(async move { Ok(connection.await?) }),
-            Self { client },
-        ))
+        let connection = {
+            let client = client.clone();
+
+            #[allow(unreachable_code)]
+            tokio::spawn(async move {
+                let mut connection = connection;
+
+                loop {
+                    if let Err(err) = connection.await {
+                        warn!("Connection to postgres broke {err:?}")
+                    };
+
+                    let f = tokio_postgres::connect(&porstgres_config, connector.clone()).await?;
+
+                    *client.write().await = f.0;
+                    connection = f.1;
+                }
+
+                bail!("Potsgres revival loop failed")
+            })
+        };
+
+        Ok((connection, Self { client }))
     }
 
     pub async fn send_block(&self, block: PostgresBlock) -> anyhow::Result<()> {
@@ -89,6 +111,8 @@ impl Postgres {
         } = block;
 
         self.client
+            .read()
+            .await
             .execute(
                 r#"
                 INSERT INTO lite_rpc.Blocks 
@@ -114,9 +138,7 @@ impl Postgres {
             quic_response,
         } = tx;
 
-        warn!("{}", signature.len());
-
-        self.client.execute(
+        self.client.read().await.execute(
             r#"
                 INSERT INTO lite_rpc.Txs 
                 (signature, recent_slot, forwarded_slot, processed_slot, cu_consumed, cu_requested, quic_response)

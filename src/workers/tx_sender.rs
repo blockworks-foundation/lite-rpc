@@ -127,7 +127,6 @@ impl TxSender {
                 while (prev_inst.elapsed() < tx_send_interval) || txs.len() == tx_batch_size {
                     match recv.try_recv() {
                         Ok((sig, tx, slot)) => {
-                            log::warn!("recv");
                             sigs_and_slots.push((sig, slot));
                             txs.push(tx);
                         }

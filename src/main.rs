@@ -32,7 +32,7 @@ pub async fn main() -> anyhow::Result<()> {
             tx_batch_size,
             tx_batch_interval_ms,
             clean_interval_ms,
-            &postgres_config,
+            postgres_config,
         )
         .await?;
 
