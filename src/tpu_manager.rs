@@ -8,7 +8,7 @@ use solana_client::{
     nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
     tpu_client::TpuClientConfig,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 #[derive(Clone)]
 pub struct TpuManager {
@@ -82,5 +82,9 @@ impl TpuManager {
                 Err(err.into())
             }
         }
+    }
+
+    pub async fn get_tpu_client(&self) -> RwLockReadGuard<TpuClient> {
+        self.tpu_client.read().await
     }
 }

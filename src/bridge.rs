@@ -4,7 +4,7 @@ use crate::{
     postgres::Postgres,
     rpc::LiteRpcServer,
     tpu_manager::TpuManager,
-    workers::{BlockListener, Cleaner, MetricsCapture, TxSender},
+    workers::{BlockInformation, BlockListener, Cleaner, MetricsCapture, TxSender},
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
@@ -105,10 +105,7 @@ impl LiteBridge {
             .clone()
             .listen(Some(postgres.clone()));
 
-        let confirmed_block_listenser = self
-            .confirmed_block_listenser
-            .clone()
-            .listen(None);
+        let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen(None);
 
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
@@ -189,8 +186,16 @@ impl LiteRpcServer for LiteBridge {
         };
 
         let sig = tx.get_signature();
+        let Some(BlockInformation { slot, .. }) = self
+            .confirmed_block_listenser
+            .get_block_info(&tx.get_recent_blockhash().to_string())
+            .await else {
+                return Err(jsonrpsee::core::Error::Custom("Blockhash not found in confirmed block store".to_string()));
+        };
 
-        self.tx_sender.enqnueue_tx(sig.to_string(), raw_tx).await;
+        self.tx_sender
+            .enqnueue_tx(sig.to_string(), raw_tx, slot)
+            .await;
 
         Ok(BinaryEncoding::Base58.encode(sig))
     }
@@ -206,8 +211,8 @@ impl LiteRpcServer for LiteBridge {
         };
 
         let block_listner = self.get_block_listner(commitment_config);
-        let (blockhash, last_valid_block_height) = block_listner.get_latest_blockhash().await;
-        let slot = block_listner.get_slot().await;
+        let (blockhash, BlockInformation { slot, block_height }) =
+            block_listner.get_latest_block_info().await;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -216,7 +221,7 @@ impl LiteRpcServer for LiteBridge {
             },
             value: RpcBlockhash {
                 blockhash,
-                last_valid_block_height,
+                last_valid_block_height: block_height,
             },
         })
     }
@@ -249,7 +254,7 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let slot = block_listner.get_slot().await;
+        let slot = block_listner.get_latest_block_info().await.1.slot;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -277,7 +282,12 @@ impl LiteRpcServer for LiteBridge {
 
         Ok(RpcResponse {
             context: RpcResponseContext {
-                slot: self.finalized_block_listenser.get_slot().await,
+                slot: self
+                    .finalized_block_listenser
+                    .get_latest_block_info()
+                    .await
+                    .1
+                    .slot,
                 api_version: None,
             },
             value: sig_statuses,

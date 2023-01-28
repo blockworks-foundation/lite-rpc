@@ -62,7 +62,7 @@ async fn send_and_confirm_txs() {
         let sig = sig.to_string();
 
         tx_sender
-            .enqnueue_tx(sig.clone(), tx.as_bytes().to_vec())
+            .enqnueue_tx(sig.clone(), tx.as_bytes().to_vec(), 0)
             .await;
 
         for _ in 0..2 {

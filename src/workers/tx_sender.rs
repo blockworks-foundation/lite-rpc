@@ -19,7 +19,7 @@ pub struct TxSender {
     /// Tx(s) forwarded to tpu
     pub txs_sent: Arc<DashMap<String, TxProps>>,
     /// Transactions queue for retrying
-    enqueued_txs: Arc<RwLock<Vec<(String, WireTransaction)>>>,
+    enqueued_txs: Arc<RwLock<Vec<(String, WireTransaction, u64)>>>,
     /// TpuClient to call the tpu port
     tpu_manager: Arc<TpuManager>,
 }
@@ -27,7 +27,12 @@ pub struct TxSender {
 /// Transaction Properties
 pub struct TxProps {
     pub status: Option<TransactionStatus>,
+    /// Time at which transaction was forwarded
     pub sent_at: Instant,
+    /// slot corresponding to the recent blockhash of the tx
+    pub recent_slot: u64,
+    /// current slot estimated by the quic client when forwarding
+    pub forwarded_slot: u64,
 }
 
 impl Default for TxProps {
@@ -35,6 +40,8 @@ impl Default for TxProps {
         Self {
             status: Default::default(),
             sent_at: Instant::now(),
+            recent_slot: Default::default(),
+            forwarded_slot: Default::default(),
         }
     }
 }
@@ -47,9 +54,13 @@ impl TxSender {
             txs_sent: Default::default(),
         }
     }
+
     /// en-queue transaction if it doesn't already exist
-    pub async fn enqnueue_tx(&self, sig: String, raw_tx: WireTransaction) {
-        self.enqueued_txs.write().await.push((sig, raw_tx));
+    pub async fn enqnueue_tx(&self, sig: String, raw_tx: WireTransaction, recent_slot: u64) {
+        self.enqueued_txs
+            .write()
+            .await
+            .push((sig, raw_tx, recent_slot));
     }
 
     /// retry enqued_tx(s)
@@ -69,11 +80,11 @@ impl TxSender {
         tokio::spawn(async move {
             while tx_remaining != 0 {
                 let mut batch = Vec::with_capacity(tx_batch_size);
-                let mut sigs = Vec::with_capacity(tx_batch_size);
+                let mut sigs_and_slots = Vec::with_capacity(tx_batch_size);
 
-                for (batched, (sig, tx)) in enqueued_txs.by_ref().enumerate() {
+                for (batched, (sig, tx, recent_slot)) in enqueued_txs.by_ref().enumerate() {
                     batch.push(tx);
-                    sigs.push(sig);
+                    sigs_and_slots.push((sig, recent_slot));
                     tx_remaining -= 1;
                     if batched == tx_batch_size {
                         break;
@@ -82,8 +93,14 @@ impl TxSender {
 
                 match tpu_client.try_send_wire_transaction_batch(batch).await {
                     Ok(_) => {
-                        for sig in sigs {
-                            txs_sent.insert(sig, TxProps::default());
+                        for (sig, recent_slot) in sigs_and_slots {
+                            txs_sent.insert(
+                                sig,
+                                TxProps {
+                                    recent_slot,
+                                    ..Default::default()
+                                },
+                            );
                         }
                     }
                     Err(err) => {

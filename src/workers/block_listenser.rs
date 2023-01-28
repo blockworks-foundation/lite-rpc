@@ -32,13 +32,14 @@ pub struct BlockListener {
     pub_sub_client: Arc<PubsubClient>,
     commitment_config: CommitmentConfig,
     tx_sender: TxSender,
-    latest_block_info: Arc<RwLock<BlockInformation>>,
+    block_store: Arc<DashMap<String, BlockInformation>>,
+    latest_block_hash: Arc<RwLock<String>>,
     pub signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
 }
 
-struct BlockInformation {
+#[derive(Clone)]
+pub struct BlockInformation {
     pub slot: u64,
-    pub blockhash: String,
     pub block_height: u64,
 }
 
@@ -58,14 +59,20 @@ impl BlockListener {
             .get_latest_blockhash_with_commitment(commitment_config)
             .await?;
 
+        let latest_block_hash = latest_block_hash.to_string();
+        let slot = rpc_client
+            .get_slot_with_commitment(commitment_config)
+            .await?;
+
         Ok(Self {
             pub_sub_client,
             tx_sender,
-            latest_block_info: Arc::new(RwLock::new(BlockInformation {
-                slot: rpc_client.get_slot().await?,
-                blockhash: latest_block_hash.to_string(),
-                block_height,
-            })),
+            latest_block_hash: Arc::new(RwLock::new(latest_block_hash.clone())),
+            block_store: Arc::new({
+                let map = DashMap::new();
+                map.insert(latest_block_hash, BlockInformation { slot, block_height });
+                map
+            }),
             commitment_config,
             signature_subscribers: Default::default(),
         })
@@ -81,14 +88,29 @@ impl BlockListener {
         num_of_sigs_commited
     }
 
-    pub async fn get_slot(&self) -> u64 {
-        self.latest_block_info.read().await.slot
+    pub async fn get_latest_block_info(&self) -> (String, BlockInformation) {
+        let blockhash = &*self.latest_block_hash.read().await;
+
+        (
+            blockhash.to_owned(),
+            self.block_store
+                .get(blockhash)
+                .expect("Latest Block Not in Map")
+                .value()
+                .to_owned(),
+        )
     }
 
-    pub async fn get_latest_blockhash(&self) -> (String, u64) {
-        let block = self.latest_block_info.read().await;
+    pub async fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
+        let Some(info) = self.block_store.get(blockhash) else {
+            return None;
+        };
 
-        (block.blockhash.clone(), block.block_height)
+        Some(info.value().to_owned())
+    }
+
+    pub async fn get_latest_blockhash(&self) -> String {
+        self.latest_block_hash.read().await.to_owned()
     }
 
     pub fn signature_subscribe(&self, signature: String, sink: SubscriptionSink) {
@@ -146,18 +168,18 @@ impl BlockListener {
                     continue;
                 };
 
-                *self.latest_block_info.write().await = BlockInformation {
-                    slot,
-                    blockhash,
-                    block_height,
-                };
+                let parent_slot = block.parent_slot;
+
+                *self.latest_block_hash.write().await = blockhash.clone();
+                self.block_store
+                    .insert(blockhash, BlockInformation { slot, block_height });
 
                 if let Some(postgres) = &postgres {
                     postgres
                         .send_block(PostgresBlock {
                             slot: slot as i64,
-                            leader_id: 0,   //FIX:
-                            parent_slot: 0, //FIX:
+                            leader_id: 0, //FIX:
+                            parent_slot: parent_slot as i64,
                         })
                         .await
                         .unwrap();
@@ -186,7 +208,7 @@ impl BlockListener {
                                     processed_slot: None,
                                     cu_consumed: None,
                                     cu_requested: None,
-                                    quic_response: 0,
+                                    quic_response: i16::from(status.is_ok()),
                                 })
                                 .await
                                 .unwrap();
@@ -194,7 +216,7 @@ impl BlockListener {
 
                         tx_status.value_mut().status = Some(TransactionStatus {
                             slot,
-                            confirmations: None, //TODO: talk about this
+                            confirmations: None,
                             status,
                             err: err.clone(),
                             confirmation_status: Some(comfirmation_status.clone()),
