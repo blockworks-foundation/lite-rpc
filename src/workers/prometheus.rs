@@ -28,7 +28,7 @@ impl PrometheusSync {
 
     async fn handle_stream(&self, stream: &mut TcpStream) -> anyhow::Result<()> {
         let metrics = self.metrics_capture.get_metrics().await;
-        let metrics = serde_prometheus::to_string(&metrics, None, HashMap::new())?;
+        let metrics = serde_prometheus::to_string(&metrics, Some("literpc"), HashMap::new())?;
 
         let response = Self::create_response(&metrics);
 
@@ -43,7 +43,7 @@ impl PrometheusSync {
     pub fn sync(self) -> JoinHandle<anyhow::Result<()>> {
         #[allow(unreachable_code)]
         tokio::spawn(async move {
-            let listener = TcpListener::bind("[::]:9500").await?;
+            let listener = TcpListener::bind("[::]:9091").await?;
 
             loop {
                 let Ok((mut stream, _addr)) =  listener.accept().await else {
