@@ -13,7 +13,10 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::tpu_manager::TpuManager;
+use crate::{
+    postgres::{Postgres, PostgresTx},
+    tpu_manager::TpuManager,
+};
 
 pub type WireTransaction = Vec<u8>;
 
@@ -31,10 +34,6 @@ pub struct TxProps {
     pub status: Option<TransactionStatus>,
     /// Time at which transaction was forwarded
     pub sent_at: Instant,
-    /// slot corresponding to the recent blockhash of the tx
-    pub recent_slot: u64,
-    /// current slot estimated by the quic client when forwarding
-    pub forwarded_slot: u64,
 }
 
 impl Default for TxProps {
@@ -42,8 +41,6 @@ impl Default for TxProps {
         Self {
             status: Default::default(),
             sent_at: Instant::now(),
-            recent_slot: Default::default(),
-            forwarded_slot: Default::default(),
         }
     }
 }
@@ -57,7 +54,12 @@ impl TxSender {
     }
 
     /// retry enqued_tx(s)
-    async fn forward_txs(&self, sigs: Vec<(String, u64)>, txs: Vec<WireTransaction>) {
+    async fn forward_txs(
+        &self,
+        sigs: Vec<(String, u64)>,
+        txs: Vec<WireTransaction>,
+        postgres: Option<Postgres>,
+    ) {
         assert_eq!(sigs.len(), txs.len());
 
         if sigs.is_empty() {
@@ -68,20 +70,33 @@ impl TxSender {
         let txs_sent = self.txs_sent.clone();
 
         tokio::spawn(async move {
-            match tpu_client.try_send_wire_transaction_batch(txs).await {
+            let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
                 Ok(_) => {
-                    for (sig, recent_slot) in sigs {
-                        txs_sent.insert(
-                            sig,
-                            TxProps {
-                                recent_slot,
-                                ..Default::default()
-                            },
-                        );
+                    for (sig, _) in &sigs {
+                        txs_sent.insert(sig.to_owned(), TxProps::default());
                     }
+                    1
                 }
                 Err(err) => {
                     warn!("{err}");
+                    0
+                }
+            };
+
+            if let Some(postgres) = postgres {
+                for (sig, recent_slot) in sigs {
+                    postgres
+                        .send_tx(PostgresTx {
+                            signature: sig.clone(),
+                            recent_slot: recent_slot as i64,
+                            forwarded_slot: 0,    // FIX: figure this out
+                            processed_slot: None, // FIX: figure this out
+                            cu_consumed: None,    // FIX: figure this out
+                            cu_requested: None,   // FIX: figure this out
+                            quic_response,
+                        })
+                        .await
+                        .unwrap();
                 }
             }
         });
@@ -93,6 +108,7 @@ impl TxSender {
         mut recv: UnboundedReceiver<(String, WireTransaction, u64)>,
         tx_batch_size: usize,
         tx_send_interval: Duration,
+        postgres: Option<Postgres>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             info!(
@@ -119,7 +135,8 @@ impl TxSender {
                     }
                 }
 
-                self.forward_txs(sigs_and_slots, txs).await;
+                self.forward_txs(sigs_and_slots, txs, postgres.clone())
+                    .await;
             }
         })
     }

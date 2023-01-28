@@ -21,7 +21,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::postgres::{Postgres, PostgresBlock, PostgresTx};
+use crate::postgres::{Postgres, PostgresBlock};
 
 use super::{TxProps, TxSender};
 
@@ -199,21 +199,6 @@ impl BlockListener {
                     let sig = tx.get_signature().to_string();
 
                     if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
-                        if let Some(postgres) = &postgres {
-                            postgres
-                                .send_tx(PostgresTx {
-                                    signature: sig.clone(),
-                                    recent_slot: slot as i64,
-                                    forwarded_slot: 0,
-                                    processed_slot: None,
-                                    cu_consumed: None,
-                                    cu_requested: None,
-                                    quic_response: i16::from(status.is_ok()),
-                                })
-                                .await
-                                .unwrap();
-                        }
-
                         tx_status.value_mut().status = Some(TransactionStatus {
                             slot,
                             confirmations: None,
