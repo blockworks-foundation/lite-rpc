@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::info;
+use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
 use tokio::fs;
 use tokio::task::JoinHandle;
@@ -14,14 +14,14 @@ pub struct Postgres {
     client: Arc<Client>,
 }
 
-pub struct PostgresTx<'a> {
-    pub signature: &'a [u8],
+pub struct PostgresTx {
+    pub signature: String,
     pub recent_slot: i64,
     pub forwarded_slot: i64,
     pub processed_slot: Option<i64>,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
-    pub quic_response: u32,
+    pub quic_response: i16,
 }
 
 pub struct PostgresBlock {
@@ -86,7 +86,7 @@ impl Postgres {
         Ok(())
     }
 
-    pub async fn send_tx<'a>(&self, tx: PostgresTx<'a>) -> anyhow::Result<()> {
+    pub async fn send_tx(&self, tx: PostgresTx) -> anyhow::Result<()> {
         let PostgresTx {
             signature,
             recent_slot,
@@ -97,12 +97,14 @@ impl Postgres {
             quic_response,
         } = tx;
 
+        warn!("{}", signature.len());
+
         self.client.execute(
             r#"
                 INSERT INTO lite_rpc.Txs 
                 (signature, recent_slot, forwarded_slot, processed_slot, cu_consumed, cu_requested, quic_response)
                 VALUES
-                ($1, $2, $3, $4, $5, $6)
+                ($1, $2, $3, $4, $5, $6, $7)
             "#,
             &[&signature, &recent_slot, &forwarded_slot, &processed_slot, &cu_consumed, &cu_requested, &quic_response],
         ).await?;

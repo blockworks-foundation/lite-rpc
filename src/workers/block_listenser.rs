@@ -153,11 +153,14 @@ impl BlockListener {
                 };
 
                 if let Some(postgres) = &postgres {
-                    postgres.send_block(PostgresBlock {
-                        slot: slot as i64,
-                        leader_id: 0,   //FIX:
-                        parent_slot: 0, //FIX:
-                    }).await?;
+                    postgres
+                        .send_block(PostgresBlock {
+                            slot: slot as i64,
+                            leader_id: 0,   //FIX:
+                            parent_slot: 0, //FIX:
+                        })
+                        .await
+                        .unwrap();
                 }
 
                 for tx in transactions {
@@ -175,15 +178,18 @@ impl BlockListener {
 
                     if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
                         if let Some(postgres) = &postgres {
-                            postgres.send_tx(PostgresTx {
-                                signature: tx.get_signature().as_ref(),
-                                recent_slot: slot as i64,
-                                forwarded_slot: 0,
-                                processed_slot: None,
-                                cu_consumed: None,
-                                cu_requested: None,
-                                quic_response: 0,
-                            }).await?;
+                            postgres
+                                .send_tx(PostgresTx {
+                                    signature: sig.clone(),
+                                    recent_slot: slot as i64,
+                                    forwarded_slot: 0,
+                                    processed_slot: None,
+                                    cu_consumed: None,
+                                    cu_requested: None,
+                                    quic_response: 0,
+                                })
+                                .await
+                                .unwrap();
                         }
 
                         tx_status.value_mut().status = Some(TransactionStatus {

@@ -108,7 +108,7 @@ impl LiteBridge {
         let confirmed_block_listenser = self
             .confirmed_block_listenser
             .clone()
-            .listen(Some(postgres.clone()));
+            .listen(None);
 
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
