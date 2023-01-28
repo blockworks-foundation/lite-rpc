@@ -13,6 +13,7 @@ use solana_client::nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcCli
 
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionConfirmationStatus;
+use tokio::sync::mpsc;
 
 #[tokio::test]
 async fn send_and_confirm_txs() {
@@ -43,9 +44,12 @@ async fn send_and_confirm_txs() {
     .await
     .unwrap();
 
+    let (tx_send, tx_recv) = mpsc::unbounded_channel();
+
     let services = try_join_all(vec![
         block_listener.clone().listen(None),
         tx_sender.clone().execute(
+            tx_recv,
             DEFAULT_TX_BATCH_SIZE,
             Duration::from_millis(DEFAULT_TX_BATCH_INTERVAL_MS),
         ),
@@ -61,9 +65,9 @@ async fn send_and_confirm_txs() {
         let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
         let sig = sig.to_string();
 
-        tx_sender
-            .enqnueue_tx(sig.clone(), tx.as_bytes().to_vec(), 0)
-            .await;
+        tx_send
+            .send((sig.clone(), tx.as_bytes().to_vec(), 0))
+            .unwrap();
 
         for _ in 0..2 {
             let tx_status = tx_sender.txs_sent.get(&sig).unwrap();
