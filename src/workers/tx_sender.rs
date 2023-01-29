@@ -72,7 +72,6 @@ impl TxSender {
         let txs_sent = self.txs_sent.clone();
 
         tokio::spawn(async move {
-            warn!("sending");
             let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
                 Ok(_) => {
                     for (sig, _) in &sigs_and_slots {
