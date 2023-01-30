@@ -99,12 +99,18 @@ impl LiteBridge {
         tx_batch_size: usize,
         tx_send_interval: Duration,
         clean_interval: Duration,
-        postgres_config: String,
-    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 10]> {
-        let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
-        let (postgres_connection, postgres) = Postgres::new(postgres_config).await?;
+        postgres_config: Option<String>,
+    ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
+        let (postgres, postgres_send) = if let Some(postgres_config) = postgres_config {
+            let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
+            let (postgres_connection, postgres) = Postgres::new(postgres_config).await?;
 
-        let postgres = postgres.start(postgres_recv);
+            let postgres = postgres.start(postgres_recv);
+
+            (Some((postgres, postgres_connection)), Some(postgres_send))
+        } else {
+            (None, None)
+        };
 
         let (tx_send, tx_recv) = mpsc::unbounded_channel();
         self.tx_send = Some(tx_send);
@@ -113,7 +119,7 @@ impl LiteBridge {
             tx_recv,
             tx_batch_size,
             tx_send_interval,
-            Some(postgres_send.clone()),
+            postgres_send.clone(),
         );
 
         let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
@@ -122,7 +128,7 @@ impl LiteBridge {
         let finalized_block_listenser = self
             .finalized_block_listenser
             .clone()
-            .listen(Some(postgres_send.clone()));
+            .listen(postgres_send.clone());
 
         let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen(None);
         let cleaner = Cleaner::new(
@@ -164,18 +170,23 @@ impl LiteBridge {
             (ws_server, http_server)
         };
 
-        Ok([
+        let mut services = vec![
             ws_server,
             http_server,
             tx_sender,
             finalized_block_listenser,
             confirmed_block_listenser,
-            postgres_connection,
-            postgres,
-            metrics_capture.capture(Some(postgres_send)),
+            metrics_capture.capture(postgres_send),
             prometheus_sync,
             cleaner,
-        ])
+        ];
+
+        if let Some((postgres, connection)) = postgres {
+            services.push(connection);
+            services.push(postgres);
+        }
+
+        Ok(services)
     }
 }
 

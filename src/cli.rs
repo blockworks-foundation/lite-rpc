@@ -28,6 +28,6 @@ pub struct Args {
     #[arg(short = 'c', long, default_value_t = DEFAULT_CLEAN_INTERVAL_MS)]
     pub clean_interval_ms: u64,
     /// addr to postgres
-    #[arg(short = 'p', long, default_value_t = String::from("host=localhost user=postgres"))]
-    pub postgres_config: String,
+    #[arg(short = 'p', long)]
+    pub postgres_config: Option<String>,
 }

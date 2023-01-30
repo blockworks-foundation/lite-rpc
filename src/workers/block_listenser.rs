@@ -123,14 +123,14 @@ impl BlockListener {
 
     pub fn listen(self, postgres: Option<PostgresMpscSend>) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
-            info!("Subscribing to blocks");
-
             let commitment = self.commitment_config.commitment;
 
             let comfirmation_status = match commitment {
                 CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
                 _ => TransactionConfirmationStatus::Confirmed,
             };
+
+            info!("Subscribing to {commitment:?} blocks");
 
             let (mut recv, _) = self
                 .pub_sub_client
