@@ -37,7 +37,6 @@ dashmap = "5.4.0"
 const_env = "0.1.2"
 jsonrpsee = { version = "0.16.2", features = ["macros", "full"] }
 tracing-subscriber = "0.3.16"
-procinfo = "0.4.2"
 tokio-postgres = "0.7.7"
 native-tls = "0.2.11"
 postgres-native-tls = "0.5.0"

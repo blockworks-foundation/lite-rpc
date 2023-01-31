@@ -124,6 +124,7 @@ impl LiteBridge {
 
         let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
         let prometheus_sync = PrometheusSync::new(metrics_capture.clone()).sync();
+        let metrics_capture = metrics_capture.capture();
 
         let finalized_block_listener = self
             .finalized_block_listener
@@ -176,7 +177,7 @@ impl LiteBridge {
             tx_sender,
             finalized_block_listener,
             confirmed_block_listener,
-            metrics_capture.capture(postgres_send),
+            metrics_capture,
             prometheus_sync,
             cleaner,
         ];
