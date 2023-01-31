@@ -17,6 +17,7 @@ pub async fn main() -> anyhow::Result<()> {
         tx_batch_interval_ms,
         clean_interval_ms,
         fanout_size,
+        postgres_config,
     } = Args::parse();
 
     let tx_batch_interval_ms = Duration::from_millis(tx_batch_interval_ms);
@@ -31,6 +32,7 @@ pub async fn main() -> anyhow::Result<()> {
             tx_batch_size,
             tx_batch_interval_ms,
             clean_interval_ms,
+            postgres_config,
         )
         .await?;
 

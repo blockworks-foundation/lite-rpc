@@ -3,7 +3,10 @@ use crate::{
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
     tpu_manager::TpuManager,
-    workers::{BlockListener, Cleaner, Metrics, MetricsCapture, TxSender},
+    workers::{
+        BlockInformation, BlockListener, Cleaner, MetricsCapture, Postgres, PrometheusSync,
+        TxSender, WireTransaction,
+    },
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
@@ -26,17 +29,21 @@ use solana_sdk::{
     transaction::VersionedTransaction,
 };
 use solana_transaction_status::TransactionStatus;
-use tokio::{net::ToSocketAddrs, task::JoinHandle};
+use tokio::{
+    net::ToSocketAddrs,
+    sync::mpsc::{self, UnboundedSender},
+    task::JoinHandle,
+};
 
 /// A bridge between clients and tpu
-#[derive(Clone)]
 pub struct LiteBridge {
     pub rpc_client: Arc<RpcClient>,
     pub tpu_manager: Arc<TpuManager>,
+    // None if LiteBridge is not executed
+    pub tx_send: Option<UnboundedSender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
-    pub finalized_block_listenser: BlockListener,
-    pub confirmed_block_listenser: BlockListener,
-    pub metrics_capture: MetricsCapture,
+    pub finalized_block_listener: BlockListener,
+    pub confirmed_block_listener: BlockListener,
 }
 
 impl LiteBridge {
@@ -50,7 +57,7 @@ impl LiteBridge {
 
         let tx_sender = TxSender::new(tpu_manager.clone());
 
-        let finalized_block_listenser = BlockListener::new(
+        let finalized_block_listener = BlockListener::new(
             pub_sub_client.clone(),
             rpc_client.clone(),
             tx_sender.clone(),
@@ -58,7 +65,7 @@ impl LiteBridge {
         )
         .await?;
 
-        let confirmed_block_listenser = BlockListener::new(
+        let confirmed_block_listener = BlockListener::new(
             pub_sub_client,
             rpc_client.clone(),
             tx_sender.clone(),
@@ -66,87 +73,120 @@ impl LiteBridge {
         )
         .await?;
 
-        let metrics_capture = MetricsCapture::new(tx_sender.clone());
-
         Ok(Self {
             rpc_client,
             tpu_manager,
+            tx_send: None,
             tx_sender,
-            finalized_block_listenser,
-            confirmed_block_listenser,
-            metrics_capture,
+            finalized_block_listener,
+            confirmed_block_listener,
         })
     }
 
     pub fn get_block_listner(&self, commitment_config: CommitmentConfig) -> BlockListener {
         if let CommitmentLevel::Finalized = commitment_config.commitment {
-            self.finalized_block_listenser.clone()
+            self.finalized_block_listener.clone()
         } else {
-            self.confirmed_block_listenser.clone()
+            self.confirmed_block_listener.clone()
         }
     }
 
     /// List for `JsonRpc` requests
     pub async fn start_services<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
-        self,
+        mut self,
         http_addr: T,
         ws_addr: T,
         tx_batch_size: usize,
         tx_send_interval: Duration,
         clean_interval: Duration,
-    ) -> anyhow::Result<[JoinHandle<anyhow::Result<()>>; 7]> {
-        let finalized_block_listenser = self.finalized_block_listenser.clone().listen();
+        postgres_config: Option<String>,
+    ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
+        let (postgres, postgres_send) = if let Some(postgres_config) = postgres_config {
+            let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
+            let (postgres_connection, postgres) = Postgres::new(postgres_config).await?;
 
-        let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen();
+            let postgres = postgres.start(postgres_recv);
 
-        let tx_sender = self
-            .tx_sender
+            (Some((postgres, postgres_connection)), Some(postgres_send))
+        } else {
+            (None, None)
+        };
+
+        let (tx_send, tx_recv) = mpsc::unbounded_channel();
+        self.tx_send = Some(tx_send);
+
+        let tx_sender = self.tx_sender.clone().execute(
+            tx_recv,
+            tx_batch_size,
+            tx_send_interval,
+            postgres_send.clone(),
+        );
+
+        let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
+        let prometheus_sync = PrometheusSync::new(metrics_capture.clone()).sync();
+
+        let finalized_block_listener = self
+            .finalized_block_listener
             .clone()
-            .execute(tx_batch_size, tx_send_interval);
+            .listen(postgres_send.clone());
 
-        let ws_server_handle = ServerBuilder::default()
-            .ws_only()
-            .build(ws_addr.clone())
-            .await?
-            .start(self.clone().into_rpc())?;
-
-        let http_server_handle = ServerBuilder::default()
-            .http_only()
-            .build(http_addr.clone())
-            .await?
-            .start(self.clone().into_rpc())?;
-
-        let ws_server = tokio::spawn(async move {
-            info!("Websocket Server started at {ws_addr:?}");
-            ws_server_handle.stopped().await;
-            bail!("Websocket server stopped");
-        });
-
-        let http_server = tokio::spawn(async move {
-            info!("HTTP Server started at {http_addr:?}");
-            http_server_handle.stopped().await;
-            bail!("HTTP server stopped");
-        });
-
-        let metrics_capture = self.metrics_capture.capture();
+        let confirmed_block_listener = self.confirmed_block_listener.clone().listen(None);
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
             [
-                self.finalized_block_listenser.clone(),
-                self.confirmed_block_listenser.clone(),
+                self.finalized_block_listener.clone(),
+                self.confirmed_block_listener.clone(),
             ],
         )
         .start(clean_interval);
 
-        Ok([
+        let rpc = self.into_rpc();
+
+        let (ws_server, http_server) = {
+            let ws_server_handle = ServerBuilder::default()
+                .ws_only()
+                .build(ws_addr.clone())
+                .await?
+                .start(rpc.clone())?;
+
+            let http_server_handle = ServerBuilder::default()
+                .http_only()
+                .build(http_addr.clone())
+                .await?
+                .start(rpc)?;
+
+            let ws_server = tokio::spawn(async move {
+                info!("Websocket Server started at {ws_addr:?}");
+                ws_server_handle.stopped().await;
+                bail!("Websocket server stopped");
+            });
+
+            let http_server = tokio::spawn(async move {
+                info!("HTTP Server started at {http_addr:?}");
+                http_server_handle.stopped().await;
+                bail!("HTTP server stopped");
+            });
+
+            (ws_server, http_server)
+        };
+
+        let mut services = vec![
             ws_server,
             http_server,
             tx_sender,
-            finalized_block_listenser,
-            confirmed_block_listenser,
-            metrics_capture,
+            finalized_block_listener,
+            confirmed_block_listener,
+            metrics_capture.capture(postgres_send),
+            prometheus_sync,
             cleaner,
-        ])
+        ];
+
+        if let Some((postgres, connection)) = postgres {
+            services.push(connection);
+            services.push(postgres);
+        }
+
+        Ok(services)
     }
 }
 
@@ -177,8 +217,19 @@ impl LiteRpcServer for LiteBridge {
         };
 
         let sig = tx.get_signature();
+        let Some(BlockInformation { slot, .. }) = self
+            .confirmed_block_listener
+            .get_block_info(&tx.get_recent_blockhash().to_string())
+            .await else {
+                log::warn!("block");
+                return Err(jsonrpsee::core::Error::Custom("Blockhash not found in confirmed block store".to_string()));
+        };
 
-        self.tx_sender.enqnueue_tx(sig.to_string(), raw_tx).await;
+        self.tx_send
+            .as_ref()
+            .expect("Lite Bridge Not Executed")
+            .send((sig.to_string(), raw_tx, slot))
+            .unwrap();
 
         Ok(BinaryEncoding::Base58.encode(sig))
     }
@@ -194,8 +245,8 @@ impl LiteRpcServer for LiteBridge {
         };
 
         let block_listner = self.get_block_listner(commitment_config);
-        let (blockhash, last_valid_block_height) = block_listner.get_latest_blockhash().await;
-        let slot = block_listner.get_slot().await;
+        let (blockhash, BlockInformation { slot, block_height }) =
+            block_listner.get_latest_block_info().await;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -204,7 +255,7 @@ impl LiteRpcServer for LiteBridge {
             },
             value: RpcBlockhash {
                 blockhash,
-                last_valid_block_height,
+                last_valid_block_height: block_height,
             },
         })
     }
@@ -237,7 +288,7 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let slot = block_listner.get_slot().await;
+        let slot = block_listner.get_latest_block_info().await.1.slot;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -265,7 +316,12 @@ impl LiteRpcServer for LiteBridge {
 
         Ok(RpcResponse {
             context: RpcResponseContext {
-                slot: self.finalized_block_listenser.get_slot().await,
+                slot: self
+                    .finalized_block_listener
+                    .get_latest_block_info()
+                    .await
+                    .1
+                    .slot,
                 api_version: None,
             },
             value: sig_statuses,
@@ -309,10 +365,6 @@ impl LiteRpcServer for LiteBridge {
             .insert(airdrop_sig.clone(), Default::default());
 
         Ok(airdrop_sig)
-    }
-
-    async fn get_metrics(&self) -> crate::rpc::Result<Metrics> {
-        return Ok(self.metrics_capture.get_metrics().await);
     }
 
     fn signature_subscribe(
