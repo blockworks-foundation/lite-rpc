@@ -42,8 +42,8 @@ pub struct LiteBridge {
     // None if LiteBridge is not executed
     pub tx_send: Option<UnboundedSender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
-    pub finalized_block_listenser: BlockListener,
-    pub confirmed_block_listenser: BlockListener,
+    pub finalized_block_listener: BlockListener,
+    pub confirmed_block_listener: BlockListener,
 }
 
 impl LiteBridge {
@@ -57,7 +57,7 @@ impl LiteBridge {
 
         let tx_sender = TxSender::new(tpu_manager.clone());
 
-        let finalized_block_listenser = BlockListener::new(
+        let finalized_block_listener = BlockListener::new(
             pub_sub_client.clone(),
             rpc_client.clone(),
             tx_sender.clone(),
@@ -65,7 +65,7 @@ impl LiteBridge {
         )
         .await?;
 
-        let confirmed_block_listenser = BlockListener::new(
+        let confirmed_block_listener = BlockListener::new(
             pub_sub_client,
             rpc_client.clone(),
             tx_sender.clone(),
@@ -78,16 +78,16 @@ impl LiteBridge {
             tpu_manager,
             tx_send: None,
             tx_sender,
-            finalized_block_listenser,
-            confirmed_block_listenser,
+            finalized_block_listener,
+            confirmed_block_listener,
         })
     }
 
     pub fn get_block_listner(&self, commitment_config: CommitmentConfig) -> BlockListener {
         if let CommitmentLevel::Finalized = commitment_config.commitment {
-            self.finalized_block_listenser.clone()
+            self.finalized_block_listener.clone()
         } else {
-            self.confirmed_block_listenser.clone()
+            self.confirmed_block_listener.clone()
         }
     }
 
@@ -125,17 +125,17 @@ impl LiteBridge {
         let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
         let prometheus_sync = PrometheusSync::new(metrics_capture.clone()).sync();
 
-        let finalized_block_listenser = self
-            .finalized_block_listenser
+        let finalized_block_listener = self
+            .finalized_block_listener
             .clone()
             .listen(postgres_send.clone());
 
-        let confirmed_block_listenser = self.confirmed_block_listenser.clone().listen(None);
+        let confirmed_block_listener = self.confirmed_block_listener.clone().listen(None);
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
             [
-                self.finalized_block_listenser.clone(),
-                self.confirmed_block_listenser.clone(),
+                self.finalized_block_listener.clone(),
+                self.confirmed_block_listener.clone(),
             ],
         )
         .start(clean_interval);
@@ -174,8 +174,8 @@ impl LiteBridge {
             ws_server,
             http_server,
             tx_sender,
-            finalized_block_listenser,
-            confirmed_block_listenser,
+            finalized_block_listener,
+            confirmed_block_listener,
             metrics_capture.capture(postgres_send),
             prometheus_sync,
             cleaner,
@@ -218,7 +218,7 @@ impl LiteRpcServer for LiteBridge {
 
         let sig = tx.get_signature();
         let Some(BlockInformation { slot, .. }) = self
-            .confirmed_block_listenser
+            .confirmed_block_listener
             .get_block_info(&tx.get_recent_blockhash().to_string())
             .await else {
                 log::warn!("block");
@@ -317,7 +317,7 @@ impl LiteRpcServer for LiteBridge {
         Ok(RpcResponse {
             context: RpcResponseContext {
                 slot: self
-                    .finalized_block_listenser
+                    .finalized_block_listener
                     .get_latest_block_info()
                     .await
                     .1

@@ -232,7 +232,7 @@ impl BlockListener {
                                 PostgresUpdateTx {
                                     processed_slot: slot as i64,
                                     cu_consumed,
-                                    cu_requested: None, //TODO: cu requested 
+                                    cu_requested: None, //TODO: cu requested
                                 },
                                 sig,
                             ))
