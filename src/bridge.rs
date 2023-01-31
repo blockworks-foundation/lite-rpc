@@ -16,11 +16,11 @@ use anyhow::bail;
 use log::info;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
-use solana_client::{
-    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
-    rpc_client::SerializableTransaction,
-    rpc_config::{RpcContextConfig, RpcRequestAirdropConfig},
-    rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
+use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
+use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_rpc_client_api::{
+    config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
+    response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
@@ -236,8 +236,8 @@ impl LiteRpcServer for LiteBridge {
 
     async fn get_latest_blockhash(
         &self,
-        config: Option<solana_client::rpc_config::RpcContextConfig>,
-    ) -> crate::rpc::Result<RpcResponse<solana_client::rpc_response::RpcBlockhash>> {
+        config: Option<RpcContextConfig>,
+    ) -> crate::rpc::Result<RpcResponse<RpcBlockhash>> {
         let commitment_config = if let Some(RpcContextConfig { commitment, .. }) = config {
             commitment.unwrap_or_default()
         } else {
@@ -302,7 +302,7 @@ impl LiteRpcServer for LiteBridge {
     async fn get_signature_statuses(
         &self,
         sigs: Vec<String>,
-        _config: Option<solana_client::rpc_config::RpcSignatureStatusConfig>,
+        _config: Option<RpcSignatureStatusConfig>,
     ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
         let sig_statuses = sigs
             .iter()

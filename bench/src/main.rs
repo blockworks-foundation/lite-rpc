@@ -11,7 +11,7 @@ use bench::{
 };
 use clap::Parser;
 use log::info;
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
 
 #[tokio::main]

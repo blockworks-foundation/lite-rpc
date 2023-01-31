@@ -5,12 +5,13 @@ use dashmap::DashMap;
 use futures::StreamExt;
 use jsonrpsee::SubscriptionSink;
 use log::info;
-use solana_client::{
-    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
-    rpc_client::SerializableTransaction,
-    rpc_config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
-    rpc_response::{Response as RpcResponse, RpcResponseContext},
+use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
+use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_rpc_client_api::{
+    config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
+    response::{Response as RpcResponse, RpcResponseContext},
 };
+
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
 use solana_transaction_status::{

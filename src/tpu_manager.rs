@@ -4,17 +4,18 @@ use std::sync::{
 };
 
 use log::info;
-use solana_client::{
-    nonblocking::{rpc_client::RpcClient, tpu_client::TpuClient},
-    tpu_client::TpuClientConfig,
-};
+use solana_quic_client::QuicPool;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_tpu_client::{nonblocking::tpu_client::TpuClient, tpu_client::TpuClientConfig};
 use tokio::sync::{RwLock, RwLockReadGuard};
+
+pub type QuicTpuClient = TpuClient<QuicPool>;
 
 #[derive(Clone)]
 pub struct TpuManager {
     error_count: Arc<AtomicU32>,
     rpc_client: Arc<RpcClient>,
-    tpu_client: Arc<RwLock<TpuClient>>,
+    tpu_client: Arc<RwLock<QuicTpuClient>>,
     ws_addr: String,
     fanout_slots: u64,
 }
@@ -41,7 +42,7 @@ impl TpuManager {
         rpc_client: Arc<RpcClient>,
         ws_addr: &str,
         fanout_slots: u64,
-    ) -> anyhow::Result<TpuClient> {
+    ) -> anyhow::Result<QuicTpuClient> {
         Ok(TpuClient::new(
             rpc_client.clone(),
             ws_addr,
@@ -84,7 +85,7 @@ impl TpuManager {
         }
     }
 
-    pub async fn get_tpu_client(&self) -> RwLockReadGuard<TpuClient> {
+    pub async fn get_tpu_client(&self) -> RwLockReadGuard<QuicTpuClient> {
         self.tpu_client.read().await
     }
 }
