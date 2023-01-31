@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::bail;
 use clap::Parser;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
+use log::info;
 
 #[tokio::main]
 pub async fn main() -> anyhow::Result<()> {
@@ -45,6 +46,7 @@ pub async fn main() -> anyhow::Result<()> {
             bail!("Serives quit unexpectedly");
         }
         _ = ctrl_c_signal => {
+            info!("Received ctrl+c signal");
             Ok(())
         }
     }
