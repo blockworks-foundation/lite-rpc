@@ -171,8 +171,6 @@ impl Postgres {
     }
 
     pub async fn update_tx(&self, tx: PostgresUpdateTx, signature: &str) -> anyhow::Result<()> {
-        warn!("updating {signature} with {tx:?}");
-
         let PostgresUpdateTx {
             processed_slot,
             cu_consumed,
