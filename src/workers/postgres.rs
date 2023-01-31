@@ -5,7 +5,6 @@ use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
 
 use tokio::{
-    fs,
     sync::{
         mpsc::{UnboundedReceiver, UnboundedSender},
         RwLock,
@@ -15,6 +14,8 @@ use tokio::{
 use tokio_postgres::Client;
 
 use native_tls::{Certificate, Identity, TlsConnector};
+
+use crate::encoding::BinaryEncoding;
 
 pub struct Postgres {
     client: Arc<RwLock<Client>>,
@@ -67,20 +68,25 @@ impl Postgres {
     /// (connection join handle, Self)
     ///
     /// returned join handle is required to be polled
-    pub async fn new(
-        porstgres_config: String,
-    ) -> anyhow::Result<(JoinHandle<anyhow::Result<()>>, Self)> {
-        let ca_pem = fs::read("ca.pem").await?;
-        //        let ca_pem = BinaryEncoding::Base64
-        //            .decode(ca_pem_b64)
-        //            .context("ca pem decode")?;
+    pub async fn new() -> anyhow::Result<(JoinHandle<anyhow::Result<()>>, Self)> {
+        let ca_pem_b64 = std::env::var("CA_PEM_B64").context("env CA_PEM_B64 not found")?;
+        let client_pks_b64 =
+            std::env::var("CLIENT_PKS_B64").context("env CLIENT_PKS_B64 not found")?;
+        let client_pks_password =
+            std::env::var("CLIENT_PKS_PASS").context("env CLIENT_PKS_PASS not found")?;
+        let pg_config = std::env::var("PG_CONFIG").context("env PG_CONFIG not found")?;
 
-        let client_pks = fs::read("client.pks").await?;
-        //        let client_pks = BinaryEncoding::Base64.decode(client_pks_b64).context("client pks decode")?;
+        let ca_pem = BinaryEncoding::Base64
+            .decode(ca_pem_b64)
+            .context("ca pem decode")?;
+
+        let client_pks = BinaryEncoding::Base64
+            .decode(client_pks_b64)
+            .context("client pks decode")?;
 
         let connector = TlsConnector::builder()
             .add_root_certificate(Certificate::from_pem(&ca_pem)?)
-            .identity(Identity::from_pkcs12(&client_pks, "p").context("Identity")?)
+            .identity(Identity::from_pkcs12(&client_pks, &client_pks_password).context("Identity")?)
             .danger_accept_invalid_hostnames(true)
             .danger_accept_invalid_certs(true)
             .build()?;
@@ -88,8 +94,7 @@ impl Postgres {
         info!("making tls config");
 
         let connector = MakeTlsConnector::new(connector);
-        let (client, connection) =
-            tokio_postgres::connect(&porstgres_config, connector.clone()).await?;
+        let (client, connection) = tokio_postgres::connect(&pg_config, connector.clone()).await?;
         let client = Arc::new(RwLock::new(client));
 
         let connection = {
@@ -104,7 +109,7 @@ impl Postgres {
                         warn!("Connection to postgres broke {err:?}")
                     };
 
-                    let f = tokio_postgres::connect(&porstgres_config, connector.clone()).await?;
+                    let f = tokio_postgres::connect(&pg_config, connector.clone()).await?;
 
                     *client.write().await = f.0;
                     connection = f.1;
@@ -166,6 +171,8 @@ impl Postgres {
     }
 
     pub async fn update_tx(&self, tx: PostgresUpdateTx, signature: &str) -> anyhow::Result<()> {
+        warn!("updating {signature} with {tx:?}");
+
         let PostgresUpdateTx {
             processed_slot,
             cu_consumed,
@@ -177,7 +184,7 @@ impl Postgres {
             .await
             .execute(
                 r#"
-                    UPDATE lite_rpc.Txs 
+                    UPDATE lite_rpc.txs 
                     SET processed_slot = $1, cu_consumed = $2, cu_requested = $3
                     WHERE signature = $4
                 "#,
