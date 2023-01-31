@@ -99,11 +99,11 @@ impl LiteBridge {
         tx_batch_size: usize,
         tx_send_interval: Duration,
         clean_interval: Duration,
-        postgres_config: Option<String>,
+        enable_postgres: bool,
     ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
-        let (postgres, postgres_send) = if let Some(postgres_config) = postgres_config {
+        let (postgres, postgres_send) = if enable_postgres {
             let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
-            let (postgres_connection, postgres) = Postgres::new(postgres_config).await?;
+            let (postgres_connection, postgres) = Postgres::new().await?;
 
             let postgres = postgres.start(postgres_recv);
 

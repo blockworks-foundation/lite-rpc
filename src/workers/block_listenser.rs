@@ -206,6 +206,27 @@ impl BlockListener {
                             err: err.clone(),
                             confirmation_status: Some(comfirmation_status.clone()),
                         });
+
+                        //
+                        // Write to postgres
+                        //
+                        if let Some(postgres) = &postgres {
+                            let cu_consumed = match compute_units_consumed {
+                                OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
+                                _ => None,
+                            };
+
+                            postgres
+                                .send(PostgresMsg::PostgresUpdateTx(
+                                    PostgresUpdateTx {
+                                        processed_slot: slot as i64,
+                                        cu_consumed,
+                                        cu_requested: None, //TODO: cu requested
+                                    },
+                                    sig.clone(),
+                                ))
+                                .unwrap();
+                        }
                     };
 
                     // subscribers
@@ -218,25 +239,6 @@ impl BlockListener {
                             },
                             value: serde_json::json!({ "err": err }),
                         })?;
-                    }
-
-                    let cu_consumed = match compute_units_consumed {
-                        OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
-                        _ => None,
-                    };
-
-                    // write to postgres
-                    if let Some(postgres) = &postgres {
-                        postgres
-                            .send(PostgresMsg::PostgresUpdateTx(
-                                PostgresUpdateTx {
-                                    processed_slot: slot as i64,
-                                    cu_consumed,
-                                    cu_requested: None, //TODO: cu requested
-                                },
-                                sig,
-                            ))
-                            .unwrap();
                     }
                 }
             }
