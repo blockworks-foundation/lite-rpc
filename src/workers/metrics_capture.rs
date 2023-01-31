@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use log::{info, warn};
+use log::info;
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::{sync::RwLock, task::JoinHandle};
 
-use super::{PostgresMpscSend, TxSender};
+use super::TxSender;
 use serde::{Deserialize, Serialize};
 
 /// Background worker which captures metrics
@@ -22,7 +22,6 @@ pub struct Metrics {
     pub txs_ps: usize,
     pub txs_confirmed_ps: usize,
     pub txs_finalized_ps: usize,
-    pub mem_used: Option<usize>,
 }
 
 impl MetricsCapture {
@@ -37,7 +36,7 @@ impl MetricsCapture {
         self.metrics.read().await.to_owned()
     }
 
-    pub fn capture(self, postgres: Option<PostgresMpscSend>) -> JoinHandle<anyhow::Result<()>> {
+    pub fn capture(self) -> JoinHandle<anyhow::Result<()>> {
         let mut one_second = tokio::time::interval(std::time::Duration::from_secs(1));
 
         tokio::spawn(async move {
@@ -76,18 +75,6 @@ impl MetricsCapture {
                 metrics.txs_sent = txs_sent;
                 metrics.txs_confirmed = txs_confirmed;
                 metrics.txs_finalized = txs_finalized;
-
-                metrics.mem_used = match procinfo::pid::statm_self() {
-                    Ok(statm) => Some(statm.size),
-                    Err(err) => {
-                        warn!("Error capturing memory consumption {err}");
-                        None
-                    }
-                };
-
-                if let Some(_postgres) = &postgres {
-                    //     postgres.send_metrics(metrics.clone()).await?;
-                }
             }
         })
     }
