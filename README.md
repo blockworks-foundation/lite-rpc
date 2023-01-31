@@ -48,6 +48,20 @@ $ cd bench and cargo run --release
 
 Find a new file named `metrics.csv` in the project root.
 
+## Metrics and Postgres
+
+LiteRpc implements a postgres service that can write to a postgres database tables as defined
+in `./migrations`
+
+### env variables
+
+| env               | purpose                     |
+| ---------         | ------                      |
+| `CA_PEM_B64`      | Base64 encoded `ca.pem`     |
+| `CLIENT_PKS_B64`  | Base64 encoded `client.pks` |
+| `CLIENT_PKS_PASS` | Password to `client.pks`    |
+| `PG_CONFIG`       | Postgres Connection Config  |
+
 ## License & Copyright
 
 Copyright (c) 2022 Blockworks Foundation
