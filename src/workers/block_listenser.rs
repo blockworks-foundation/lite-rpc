@@ -14,14 +14,15 @@ use solana_client::{
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
 use solana_transaction_status::{
-    TransactionConfirmationStatus, TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta,
+    option_serializer::OptionSerializer, TransactionConfirmationStatus, TransactionStatus,
+    UiConfirmedBlock, UiTransactionStatusMeta,
 };
 use tokio::{
     sync::{mpsc::Sender, RwLock},
     task::JoinHandle,
 };
 
-use crate::workers::{PostgresBlock, PostgresMsg};
+use crate::workers::{PostgresBlock, PostgresMsg, PostgresUpdateTx};
 
 use super::{PostgresMpscSend, TxProps, TxSender};
 
@@ -185,7 +186,7 @@ impl BlockListener {
                 }
 
                 for tx in transactions {
-                    let Some(UiTransactionStatusMeta { err, status, .. }) = tx.meta else {
+                    let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
                         info!("tx with no meta");
                         continue;
                     };
@@ -217,6 +218,25 @@ impl BlockListener {
                             },
                             value: serde_json::json!({ "err": err }),
                         })?;
+                    }
+
+                    let cu_consumed = match compute_units_consumed {
+                        OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
+                        _ => None,
+                    };
+
+                    // write to postgres
+                    if let Some(postgres) = &postgres {
+                        postgres
+                            .send(PostgresMsg::PostgresUpdateTx(
+                                PostgresUpdateTx {
+                                    processed_slot: slot as i64,
+                                    cu_consumed,
+                                    cu_requested: None, //TODO: cu requested 
+                                },
+                                sig,
+                            ))
+                            .unwrap();
                     }
                 }
             }

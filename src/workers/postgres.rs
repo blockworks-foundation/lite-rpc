@@ -32,6 +32,13 @@ pub struct PostgresTx {
 }
 
 #[derive(Debug)]
+pub struct PostgresUpdateTx {
+    pub processed_slot: i64,
+    pub cu_consumed: Option<i64>,
+    pub cu_requested: Option<i64>,
+}
+
+#[derive(Debug)]
 pub struct PostgresBlock {
     pub slot: i64,
     pub leader_id: i64,
@@ -49,6 +56,7 @@ pub enum PostgresMsg {
     PostgresTx(PostgresTx),
     PostgresBlock(PostgresBlock),
     PostgreAccountAddr(PostgreAccountAddr),
+    PostgresUpdateTx(PostgresUpdateTx, String),
 }
 
 pub type PostgresMpscRecv = UnboundedReceiver<PostgresMsg>;
@@ -62,11 +70,17 @@ impl Postgres {
     pub async fn new(
         porstgres_config: String,
     ) -> anyhow::Result<(JoinHandle<anyhow::Result<()>>, Self)> {
+        let ca_pem = fs::read("ca.pem").await?;
+        //        let ca_pem = BinaryEncoding::Base64
+        //            .decode(ca_pem_b64)
+        //            .context("ca pem decode")?;
+
+        let client_pks = fs::read("client.pks").await?;
+        //        let client_pks = BinaryEncoding::Base64.decode(client_pks_b64).context("client pks decode")?;
+
         let connector = TlsConnector::builder()
-            .add_root_certificate(Certificate::from_pem(&fs::read("ca.pem").await?)?)
-            .identity(
-                Identity::from_pkcs12(&fs::read("client.pks").await?, "p").context("Identity")?,
-            )
+            .add_root_certificate(Certificate::from_pem(&ca_pem)?)
+            .identity(Identity::from_pkcs12(&client_pks, "p").context("Identity")?)
             .danger_accept_invalid_hostnames(true)
             .danger_accept_invalid_certs(true)
             .build()?;
@@ -151,6 +165,29 @@ impl Postgres {
         Ok(())
     }
 
+    pub async fn update_tx(&self, tx: PostgresUpdateTx, signature: &str) -> anyhow::Result<()> {
+        let PostgresUpdateTx {
+            processed_slot,
+            cu_consumed,
+            cu_requested,
+        } = tx;
+
+        self.client
+            .read()
+            .await
+            .execute(
+                r#"
+                    UPDATE lite_rpc.Txs 
+                    SET processed_slot = $1, cu_consumed = $2, cu_requested = $3
+                    WHERE signature = $4
+                "#,
+                &[&processed_slot, &cu_consumed, &cu_requested, &signature],
+            )
+            .await?;
+
+        Ok(())
+    }
+
     pub fn start(self, mut recv: PostgresMpscRecv) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             info!("Writing to postgres");
@@ -159,6 +196,7 @@ impl Postgres {
                 let Err(err) = (
                     match msg {
                     PostgresMsg::PostgresTx(tx) => self.send_tx(tx).await,
+                    PostgresMsg::PostgresUpdateTx(tx, sig) => self.update_tx(tx, &sig).await,
                     PostgresMsg::PostgresBlock(block) => self.send_block(block).await,
                     PostgresMsg::PostgreAccountAddr(_) => todo!(),
                 } ) else {
