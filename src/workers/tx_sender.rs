@@ -118,12 +118,10 @@ impl TxSender {
             );
 
             loop {
-                let prev_inst = tokio::time::Instant::now();
-
                 let mut sigs_and_slots = Vec::with_capacity(tx_batch_size);
                 let mut txs = Vec::with_capacity(tx_batch_size);
 
-                while (prev_inst.elapsed() < tx_send_interval) || txs.len() == tx_batch_size {
+                while txs.len() <= tx_batch_size {
                     match recv.try_recv() {
                         Ok((sig, tx, slot)) => {
                             sigs_and_slots.push((sig, slot));
@@ -132,12 +130,16 @@ impl TxSender {
                         Err(TryRecvError::Disconnected) => {
                             bail!("Channel Disconnected");
                         }
-                        _ => {}
+                        _ => {
+                            break;
+                        }
                     }
                 }
 
                 self.forward_txs(sigs_and_slots, txs, postgres_send.clone())
                     .await;
+
+                tokio::time::sleep(tx_send_interval).await;
             }
         })
     }

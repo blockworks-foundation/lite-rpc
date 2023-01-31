@@ -1,8 +1,9 @@
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::bail;
 use clap::Parser;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
+use log::info;
 
 #[tokio::main]
 pub async fn main() -> anyhow::Result<()> {
@@ -41,11 +42,12 @@ pub async fn main() -> anyhow::Result<()> {
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
-        services = services => {
-            services.context("Some services exited unexpectedly")?;
+        _ = services => {
+            bail!("Services quit unexpectedly");
         }
-        _ = ctrl_c_signal => {}
+        _ = ctrl_c_signal => {
+            info!("Received ctrl+c signal");
+            Ok(())
+        }
     }
-
-    Ok(())
 }
