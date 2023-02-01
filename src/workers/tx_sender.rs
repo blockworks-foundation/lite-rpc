@@ -86,15 +86,17 @@ impl TxSender {
             };
 
             if let Some(postgres) = postgres {
+                let forwarded_slot = tpu_client.get_tpu_client().await.get_current_slot();
+
                 for (sig, recent_slot) in sigs_and_slots {
                     postgres
                         .send(PostgresMsg::PostgresTx(PostgresTx {
                             signature: sig.clone(),
                             recent_slot: recent_slot as i64,
-                            forwarded_slot: 0,    // FIX: figure this out
-                            processed_slot: None, // FIX: figure this out
-                            cu_consumed: None,    // FIX: figure this out
-                            cu_requested: None,   // FIX: figure this out
+                            forwarded_slot,
+                            processed_slot: None,
+                            cu_consumed: None,
+                            cu_requested: None,
                             quic_response,
                         }))
                         .expect("Error writing to postgres service");
