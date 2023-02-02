@@ -13,14 +13,14 @@ members = [
 bench = { path = "./bench" }
 
 [dependencies]
-solana-sdk = { path = "../solana/sdk/" }
-solana-rpc-client = { path = "../solana/rpc-client/" }
-solana-rpc-client-api = { path = "../solana/rpc-client-api/" }
-solana-tpu-client = { path = "../solana/tpu-client/" }
-solana-quic-client= { path = "../solana/quic-client/" }
-solana-pubsub-client = { path = "../solana/pubsub-client/" }
-solana-transaction-status = { path = "../solana/transaction-status/" }
-solana-version = { path = "../solana/version/" }
+solana-sdk = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-rpc-client = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-rpc-client-api= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-tpu-client= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-quic-client= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-pubsub-client= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-transaction-status = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-version= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.91"
 tokio = { version = "1.25.0", features = ["full"]} 
