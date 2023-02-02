@@ -96,7 +96,7 @@ impl BlockListener {
             blockhash.to_owned(),
             self.block_store
                 .get(blockhash)
-                .expect("Latest Block Not in Map")
+                .expect("Internal Error: Block store race condition")
                 .value()
                 .to_owned(),
         )
@@ -171,9 +171,12 @@ impl BlockListener {
 
                 let parent_slot = block.parent_slot;
 
-                *self.latest_block_hash.write().await = blockhash.clone();
+                // Write to block store first in order to prevent
+                // any race condition i.e prevent some one to
+                // ask the map what it doesn't have rn
                 self.block_store
-                    .insert(blockhash, BlockInformation { slot, block_height });
+                    .insert(blockhash.clone(), BlockInformation { slot, block_height });
+                *self.latest_block_hash.write().await = blockhash;
 
                 if let Some(postgres) = &postgres {
                     postgres
