@@ -164,18 +164,12 @@ impl BlockListener {
 
                 let parent_slot = block.parent_slot;
 
-<<<<<<< HEAD
-                self.block_store
-                    .insert(blockhash, BlockInformation { slot, block_height });
-                *self.latest_block_hash.write().await = blockhash.clone();
-=======
                 // Write to block store first in order to prevent
                 // any race condition i.e prevent some one to
                 // ask the map what it doesn't have rn
                 self.block_store
                     .insert(blockhash.clone(), BlockInformation { slot, block_height });
                 *self.latest_block_hash.write().await = blockhash;
->>>>>>> fix_block_race_condition
 
                 if let Some(postgres) = &postgres {
                     let Some(rewards) = block.rewards else {
