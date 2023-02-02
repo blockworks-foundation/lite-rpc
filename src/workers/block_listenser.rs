@@ -19,11 +19,14 @@ use solana_transaction_status::{
     TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta,
 };
 use tokio::{
-    sync::{mpsc::Sender, RwLock},
+    sync::{mpsc::Sender},
     task::JoinHandle,
 };
 
-use crate::workers::{PostgresBlock, PostgresMsg, PostgresUpdateTx};
+use crate::{
+    block_store::{BlockStore},
+    workers::{PostgresBlock, PostgresMsg, PostgresUpdateTx},
+};
 
 use super::{PostgresMpscSend, TxProps, TxSender};
 
@@ -32,10 +35,8 @@ use super::{PostgresMpscSend, TxProps, TxSender};
 #[derive(Clone)]
 pub struct BlockListener {
     pub_sub_client: Arc<PubsubClient>,
-    commitment_config: CommitmentConfig,
     tx_sender: TxSender,
-    block_store: Arc<DashMap<String, BlockInformation>>,
-    latest_block_hash: Arc<RwLock<String>>,
+    block_store: BlockStore,
     pub signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
 }
 
@@ -51,25 +52,18 @@ pub struct BlockListnerNotificatons {
 }
 
 impl BlockListener {
-    pub async fn new(
+    pub fn new(
         pub_sub_client: Arc<PubsubClient>,
-        rpc_client: Arc<RpcClient>,
+        _rpc_client: Arc<RpcClient>,
         tx_sender: TxSender,
-        commitment_config: CommitmentConfig,
-    ) -> anyhow::Result<Self> {
-
-        Ok(Self {
+        block_store: BlockStore,
+    ) -> Self {
+        Self {
             pub_sub_client,
             tx_sender,
-            latest_block_hash: Arc::new(RwLock::new(latest_block_hash.clone())),
-            block_store: Arc::new({
-                let map = DashMap::new();
-                map.insert(latest_block_hash, BlockInformation { slot, block_height });
-                map
-            }),
-            commitment_config,
+            block_store,
             signature_subscribers: Default::default(),
-        })
+        }
     }
 
     pub async fn num_of_sigs_commited(&self, sigs: &[String]) -> usize {
@@ -82,31 +76,6 @@ impl BlockListener {
         num_of_sigs_commited
     }
 
-    pub async fn get_latest_block_info(&self) -> (String, BlockInformation) {
-        let blockhash = &*self.latest_block_hash.read().await;
-
-        (
-            blockhash.to_owned(),
-            self.block_store
-                .get(blockhash)
-                .expect("Race Condition: Latest block not in block store")
-                .value()
-                .to_owned(),
-        )
-    }
-
-    pub async fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
-        let Some(info) = self.block_store.get(blockhash) else {
-            return None;
-        };
-
-        Some(info.value().to_owned())
-    }
-
-    pub async fn get_latest_blockhash(&self) -> String {
-        self.latest_block_hash.read().await.to_owned()
-    }
-
     pub fn signature_subscribe(&self, signature: String, sink: SubscriptionSink) {
         let _ = self.signature_subscribers.insert(signature, sink);
     }
@@ -115,9 +84,13 @@ impl BlockListener {
         self.signature_subscribers.remove(&signature);
     }
 
-    pub fn listen(self, postgres: Option<PostgresMpscSend>) -> JoinHandle<anyhow::Result<()>> {
+    pub fn listen(
+        self,
+        commitment_config: CommitmentConfig,
+        postgres: Option<PostgresMpscSend>,
+    ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
-            let commitment = self.commitment_config.commitment;
+            let commitment = commitment_config.commitment;
 
             let comfirmation_status = match commitment {
                 CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
@@ -131,7 +104,7 @@ impl BlockListener {
                 .block_subscribe(
                     RpcBlockSubscribeFilter::All,
                     Some(RpcBlockSubscribeConfig {
-                        commitment: Some(self.commitment_config),
+                        commitment: Some(commitment_config),
                         encoding: None,
                         transaction_details: Some(
                             solana_transaction_status::TransactionDetails::Full,
@@ -164,12 +137,13 @@ impl BlockListener {
 
                 let parent_slot = block.parent_slot;
 
-                // Write to block store first in order to prevent
-                // any race condition i.e prevent some one to
-                // ask the map what it doesn't have rn
                 self.block_store
-                    .insert(blockhash.clone(), BlockInformation { slot, block_height });
-                *self.latest_block_hash.write().await = blockhash;
+                    .add_block(
+                        blockhash.clone(),
+                        BlockInformation { slot, block_height },
+                        commitment_config,
+                    )
+                    .await;
 
                 if let Some(postgres) = &postgres {
                     let Some(rewards) = block.rewards else {
@@ -182,12 +156,12 @@ impl BlockListener {
                         continue;
                     };
 
-                    let leader_id = &leader_reward.pubkey;
+                    let _leader_id = &leader_reward.pubkey;
 
                     postgres
                         .send(PostgresMsg::PostgresBlock(PostgresBlock {
                             slot: slot as i64,
-                            leader_id, //FIX:
+                            leader_id: 0, //FIX:
                             parent_slot: parent_slot as i64,
                         }))
                         .expect("Error sending block to postgres service");

@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use bench::helpers::BenchHelper;
 use futures::future::try_join_all;
 use lite_rpc::{
+    block_store::BlockStore,
     encoding::BinaryEncoding,
     tpu_manager::TpuManager,
     workers::{BlockListener, TxSender},
@@ -35,20 +36,21 @@ async fn send_and_confirm_txs() {
     let pub_sub_client = Arc::new(PubsubClient::new(DEFAULT_WS_ADDR).await.unwrap());
 
     let tx_sender = TxSender::new(tpu_client);
+    let block_store = BlockStore::new(&rpc_client).await.unwrap();
 
     let block_listener = BlockListener::new(
         pub_sub_client.clone(),
         rpc_client.clone(),
         tx_sender.clone(),
-        CommitmentConfig::confirmed(),
-    )
-    .await
-    .unwrap();
+        block_store,
+    );
 
     let (tx_send, tx_recv) = mpsc::unbounded_channel();
 
     let services = try_join_all(vec![
-        block_listener.clone().listen(None),
+        block_listener
+            .clone()
+            .listen(CommitmentConfig::confirmed(), None),
         tx_sender.clone().execute(
             tx_recv,
             DEFAULT_TX_BATCH_SIZE,

@@ -16,7 +16,7 @@ pub struct TpuManager {
     error_count: Arc<AtomicU32>,
     rpc_client: Arc<RpcClient>,
     tpu_client: Arc<RwLock<QuicTpuClient>>,
-    ws_addr: String,
+    pub ws_addr: String,
     fanout_slots: u64,
 }
 

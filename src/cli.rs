@@ -29,5 +29,5 @@ pub struct Args {
     pub clean_interval_ms: u64,
     /// addr to postgres
     #[arg(short = 'p', long)]
-    pub enable_postgres: bool 
+    pub enable_postgres: bool,
 }

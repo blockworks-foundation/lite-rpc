@@ -1,4 +1,5 @@
 use crate::{
+    block_store::BlockStore,
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
@@ -23,9 +24,7 @@ use solana_rpc_client_api::{
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel},
-    hash::Hash,
-    pubkey::Pubkey,
+    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
 use solana_transaction_status::TransactionStatus;
@@ -42,14 +41,13 @@ pub struct LiteBridge {
     // None if LiteBridge is not executed
     pub tx_send: Option<UnboundedSender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
-    pub finalized_block_listener: BlockListener,
-    pub confirmed_block_listener: BlockListener,
+    pub block_listner: BlockListener,
+    pub block_store: BlockStore,
 }
 
 impl LiteBridge {
     pub async fn new(rpc_url: String, ws_addr: String, fanout_slots: u64) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
-
         let pub_sub_client = Arc::new(PubsubClient::new(&ws_addr).await?);
 
         let tpu_manager =
@@ -57,38 +55,23 @@ impl LiteBridge {
 
         let tx_sender = TxSender::new(tpu_manager.clone());
 
-        let finalized_block_listener = BlockListener::new(
+        let block_store = BlockStore::new(&rpc_client).await?;
+
+        let block_listner = BlockListener::new(
             pub_sub_client.clone(),
             rpc_client.clone(),
             tx_sender.clone(),
-            CommitmentConfig::finalized(),
-        )
-        .await?;
-
-        let confirmed_block_listener = BlockListener::new(
-            pub_sub_client,
-            rpc_client.clone(),
-            tx_sender.clone(),
-            CommitmentConfig::confirmed(),
-        )
-        .await?;
+            block_store.clone(),
+        );
 
         Ok(Self {
             rpc_client,
             tpu_manager,
             tx_send: None,
             tx_sender,
-            finalized_block_listener,
-            confirmed_block_listener,
+            block_listner,
+            block_store,
         })
-    }
-
-    pub fn get_block_listner(&self, commitment_config: CommitmentConfig) -> BlockListener {
-        if let CommitmentLevel::Finalized = commitment_config.commitment {
-            self.finalized_block_listener.clone()
-        } else {
-            self.confirmed_block_listener.clone()
-        }
     }
 
     /// List for `JsonRpc` requests
@@ -127,19 +110,17 @@ impl LiteBridge {
         let metrics_capture = metrics_capture.capture();
 
         let finalized_block_listener = self
-            .finalized_block_listener
+            .block_listner
             .clone()
-            .listen(postgres_send.clone());
+            .listen(CommitmentConfig::finalized(), postgres_send.clone());
 
-        let confirmed_block_listener = self.confirmed_block_listener.clone().listen(None);
-        let cleaner = Cleaner::new(
-            self.tx_sender.clone(),
-            [
-                self.finalized_block_listener.clone(),
-                self.confirmed_block_listener.clone(),
-            ],
-        )
-        .start(clean_interval);
+        let confirmed_block_listener = self
+            .block_listner
+            .clone()
+            .listen(CommitmentConfig::confirmed(), None);
+
+        let cleaner =
+            Cleaner::new(self.tx_sender.clone(), self.block_listner.clone()).start(clean_interval);
 
         let rpc = self.into_rpc();
 
@@ -219,11 +200,11 @@ impl LiteRpcServer for LiteBridge {
 
         let sig = tx.get_signature();
         let Some(BlockInformation { slot, .. }) = self
-            .confirmed_block_listener
+            .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
             .await else {
                 log::warn!("block");
-                return Err(jsonrpsee::core::Error::Custom("Blockhash not found in confirmed block store".to_string()));
+                return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
         self.tx_send
@@ -245,9 +226,10 @@ impl LiteRpcServer for LiteBridge {
             CommitmentConfig::default()
         };
 
-        let block_listner = self.get_block_listner(commitment_config);
-        let (blockhash, BlockInformation { slot, block_height }) =
-            block_listner.get_latest_block_info().await;
+        let (blockhash, BlockInformation { slot, block_height }) = self
+            .block_store
+            .get_latest_block_info(commitment_config)
+            .await;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -276,8 +258,6 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let block_listner = self.get_block_listner(commitment);
-
         let is_valid = match self
             .rpc_client
             .is_blockhash_valid(&blockhash, commitment)
@@ -289,7 +269,12 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let slot = block_listner.get_latest_block_info().await.1.slot;
+        let slot = self
+            .block_store
+            .get_latest_block_info(commitment)
+            .await
+            .1
+            .slot;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -318,8 +303,8 @@ impl LiteRpcServer for LiteBridge {
         Ok(RpcResponse {
             context: RpcResponseContext {
                 slot: self
-                    .finalized_block_listener
-                    .get_latest_block_info()
+                    .block_store
+                    .get_latest_block_info(CommitmentConfig::finalized())
                     .await
                     .1
                     .slot,
@@ -372,11 +357,10 @@ impl LiteRpcServer for LiteBridge {
         &self,
         mut sink: SubscriptionSink,
         signature: String,
-        commitment_config: CommitmentConfig,
+        _commitment_config: CommitmentConfig,
     ) -> SubscriptionResult {
         sink.accept()?;
-        self.get_block_listner(commitment_config)
-            .signature_subscribe(signature, sink);
+        self.block_listner.signature_subscribe(signature, sink);
         Ok(())
     }
 }
