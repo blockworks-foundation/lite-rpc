@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-solana-sdk = { path = "../../solana/sdk/" }
-solana-rpc-client = { path = "../../solana/rpc-client/" }
+solana-sdk = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-rpc-client = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
 log = "0.4.17"
 anyhow = "1.0.68"
 serde = "1.0.152"

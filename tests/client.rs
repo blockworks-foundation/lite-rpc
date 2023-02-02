@@ -3,8 +3,7 @@ use std::sync::Arc;
 use bench::helpers::BenchHelper;
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use log::info;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client::rpc_client::SerializableTransaction;
+use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::commitment_config::CommitmentConfig;
 
 const AMOUNT: usize = 5;
