@@ -86,14 +86,14 @@ impl TxSender {
             };
 
             if let Some(postgres) = postgres {
-                let forwarded_slot = tpu_client.get_tpu_client().await.get_current_slot();
+                let forwarded_slot = tpu_client.get_tpu_client().await.estimated_current_slot();
 
                 for (sig, recent_slot) in sigs_and_slots {
                     postgres
                         .send(PostgresMsg::PostgresTx(PostgresTx {
                             signature: sig.clone(),
                             recent_slot: recent_slot as i64,
-                            forwarded_slot,
+                            forwarded_slot: forwarded_slot as i64,
                             processed_slot: None,
                             cu_consumed: None,
                             cu_requested: None,
