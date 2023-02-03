@@ -18,13 +18,10 @@ use solana_transaction_status::{
     option_serializer::OptionSerializer, RewardType, TransactionConfirmationStatus,
     TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta,
 };
-use tokio::{
-    sync::{mpsc::Sender},
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc::Sender, task::JoinHandle};
 
 use crate::{
-    block_store::{BlockStore},
+    block_store::BlockStore,
     workers::{PostgresBlock, PostgresMsg, PostgresUpdateTx},
 };
 
@@ -40,7 +37,7 @@ pub struct BlockListener {
     pub signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
@@ -119,7 +116,7 @@ impl BlockListener {
             info!("Listening to {commitment:?} blocks");
 
             while let Some(block) = recv.as_mut().next().await {
-                let slot = block.value.slot;
+                let slot = block.context.slot;
 
                 let Some(block) = block.value.block else {
                     continue;
