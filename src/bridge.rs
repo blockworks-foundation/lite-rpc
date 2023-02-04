@@ -17,6 +17,7 @@ use anyhow::bail;
 use log::info;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
+
 use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_rpc_client_api::{
@@ -82,6 +83,7 @@ impl LiteBridge {
         tx_send_interval: Duration,
         clean_interval: Duration,
         enable_postgres: bool,
+        prometheus_addr: T,
     ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
         let (postgres, postgres_send) = if enable_postgres {
             let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
@@ -104,9 +106,8 @@ impl LiteBridge {
             postgres_send.clone(),
         );
 
-        let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
-        let prometheus_sync = PrometheusSync::new(metrics_capture.clone()).sync();
-        let metrics_capture = metrics_capture.capture();
+        let metrics_capture = MetricsCapture::new(self.tx_sender.clone()).capture();
+        let prometheus_sync = PrometheusSync.sync(prometheus_addr);
 
         let finalized_block_listener = self
             .block_listner

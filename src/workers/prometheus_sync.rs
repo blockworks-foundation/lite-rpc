@@ -1,23 +1,13 @@
-use std::collections::HashMap;
-
+use prometheus::{Encoder, TextEncoder};
 use tokio::{
     io::AsyncWriteExt,
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream, ToSocketAddrs},
     task::JoinHandle,
 };
 
-use super::MetricsCapture;
-
-#[derive(Clone)]
-pub struct PrometheusSync {
-    metrics_capture: MetricsCapture,
-}
+pub struct PrometheusSync;
 
 impl PrometheusSync {
-    pub fn new(metrics_capture: MetricsCapture) -> Self {
-        Self { metrics_capture }
-    }
-
     fn create_response(payload: &str) -> String {
         format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
@@ -27,10 +17,16 @@ impl PrometheusSync {
     }
 
     async fn handle_stream(&self, stream: &mut TcpStream) -> anyhow::Result<()> {
-        let metrics = self.metrics_capture.get_metrics().await;
-        let metrics = serde_prometheus::to_string(&metrics, Some("literpc"), HashMap::new())?;
+        let mut metrics_buffer = Vec::new();
+        let encoder = TextEncoder::new();
 
-        let response = Self::create_response(&metrics);
+        let metric_families = prometheus::gather();
+        encoder
+            .encode(&metric_families, &mut metrics_buffer)
+            .unwrap();
+
+        let metrics_buffer = String::from_utf8(metrics_buffer).unwrap();
+        let response = Self::create_response(&metrics_buffer);
 
         stream.writable().await?;
         stream.write_all(response.as_bytes()).await?;
@@ -40,10 +36,10 @@ impl PrometheusSync {
         Ok(())
     }
 
-    pub fn sync(self) -> JoinHandle<anyhow::Result<()>> {
+    pub fn sync(self, addr: impl ToSocketAddrs + Send + 'static) -> JoinHandle<anyhow::Result<()>> {
         #[allow(unreachable_code)]
         tokio::spawn(async move {
-            let listener = TcpListener::bind("[::]:9091").await?;
+            let listener = TcpListener::bind(addr).await?;
 
             loop {
                 let Ok((mut stream, _addr)) =  listener.accept().await else {

@@ -7,6 +7,7 @@ use anyhow::bail;
 use dashmap::DashMap;
 use log::{info, warn};
 
+use prometheus::{register_counter, Counter};
 use solana_transaction_status::TransactionStatus;
 use tokio::{
     sync::mpsc::{error::TryRecvError, UnboundedReceiver},
@@ -19,6 +20,11 @@ use crate::{
 };
 
 use super::PostgresMpscSend;
+
+lazy_static::lazy_static! {
+    static ref TXS_SENT: Counter =
+        register_counter!("txs_sent", "Number of transactions forwarded to tpu").unwrap();
+}
 
 pub type WireTransaction = Vec<u8>;
 
@@ -77,6 +83,9 @@ impl TxSender {
                     for (sig, _) in &sigs_and_slots {
                         txs_sent.insert(sig.to_owned(), TxProps::default());
                     }
+                    // metrics
+                    TXS_SENT.inc_by(sigs_and_slots.len() as f64);
+
                     1
                 }
                 Err(err) => {

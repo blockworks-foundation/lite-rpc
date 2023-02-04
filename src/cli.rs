@@ -27,7 +27,10 @@ pub struct Args {
     /// interval between clean
     #[arg(short = 'c', long, default_value_t = DEFAULT_CLEAN_INTERVAL_MS)]
     pub clean_interval_ms: u64,
-    /// addr to postgres
+    /// enable logging to postgres
     #[arg(short = 'p', long)]
     pub enable_postgres: bool,
+    /// enable metrics to prometheus at addr
+    #[arg(short = 'm', long, default_value_t = String::from("[::]:9091"))]
+    pub prometheus_addr: String,
 }

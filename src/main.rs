@@ -19,6 +19,7 @@ pub async fn main() -> anyhow::Result<()> {
         clean_interval_ms,
         fanout_size,
         enable_postgres,
+        prometheus_addr,
     } = Args::parse();
 
     let tx_batch_interval_ms = Duration::from_millis(tx_batch_interval_ms);
@@ -34,6 +35,7 @@ pub async fn main() -> anyhow::Result<()> {
             tx_batch_interval_ms,
             clean_interval_ms,
             enable_postgres,
+            prometheus_addr,
         )
         .await?;
 

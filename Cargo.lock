@@ -364,7 +364,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-rpc-client",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "tokio",
  "tracing-subscriber",
 ]
@@ -1145,12 +1145,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "doc-comment"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
-
-[[package]]
 name = "eager"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1332,12 +1326,6 @@ checksum = "a9c384f161156f5260c24a097c56119f9be8c798586aecc13afbcbe7b7e26bf8"
 dependencies = [
  "percent-encoding",
 ]
-
-[[package]]
-name = "ftoa"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca45aac12b6c561b6289bc68957cb1db3dccf870e1951d590202de5e24f1dd35"
 
 [[package]]
 name = "futures"
@@ -1640,6 +1628,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "hermit-abi"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "856b5cb0902c2b6d65d5fd97dfa30f9b70c7538e770b98eab5ed52d8db923e01"
+
+[[package]]
 name = "histogram"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1717,9 +1711,9 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "hyper"
-version = "0.14.23"
+version = "0.14.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "034711faac9d2166cb1baf1a2fb0b60b1f277f8492fd72176c17f3515e1abd3c"
+checksum = "5e011372fa0b68db8350aa7a248930ecc7839bf46d8485577d69f117a75f164c"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -1819,7 +1813,6 @@ checksum = "1885e79c1fc4b10f0e172c475f458b7f7b93061064d98c3293e98c5ba0c8b399"
 dependencies = [
  "autocfg",
  "hashbrown 0.12.3",
- "serde",
 ]
 
 [[package]]
@@ -1870,14 +1863,14 @@ checksum = "30e22bd8629359895450b59ea7a776c850561b96a3b1d31321c1949d9e6c9146"
 
 [[package]]
 name = "is-terminal"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28dfb6c8100ccc63462345b67d1bbc3679177c75ee4bf59bf29c8b1d110b8189"
+checksum = "22e18b0a45d56fe973d6db23972bf5bc46f988a4a2385deac9cc29572f09daef"
 dependencies = [
- "hermit-abi 0.2.6",
+ "hermit-abi 0.3.0",
  "io-lifetimes",
  "rustix",
- "windows-sys 0.42.0",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -2205,17 +2198,18 @@ dependencies = [
  "dashmap",
  "futures",
  "jsonrpsee",
+ "lazy_static",
  "log",
  "native-tls",
  "postgres-native-tls",
+ "prometheus",
  "serde",
  "serde_json",
- "serde_prometheus",
  "solana-pubsub-client",
  "solana-quic-client",
  "solana-rpc-client",
  "solana-rpc-client-api",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-tpu-client",
  "solana-transaction-status",
  "solana-version",
@@ -2287,6 +2281,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "memoffset"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d61c719bcfbcf5d62b3a09efa6088de8c54bc0bfcd3ea7ae39fcc186108b8de1"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "merlin"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2312,9 +2315,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.6.4"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2e212582ede878b109755efd0773a4f0f4ec851584cf0aefbeb4d9ecc114822"
+checksum = "b275950c28b37e794e8c55d88aeb5e139d0ce23fdbbeda68f8d7174abdf9e8fa"
 dependencies = [
  "adler",
 ]
@@ -2894,6 +2897,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "449811d15fbdf5ceb5c1144416066429cf82316e2ec8ce0c1f6f8a02e7bbcf8c"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "protobuf",
+ "thiserror",
+]
+
+[[package]]
+name = "protobuf"
+version = "2.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
+
+[[package]]
 name = "qstring"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3233,16 +3257,16 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.36.7"
+version = "0.36.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4fdebc4b395b7fbb9ab11e462e20ed9051e7b16e42d24042c776eca0ac81b03"
+checksum = "f43abb88211988493c1abb44a70efa56ff0ce98f233b7b276146f1f3f7ba9644"
 dependencies = [
  "bitflags",
  "errno",
  "io-lifetimes",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.42.0",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -3435,21 +3459,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_prometheus"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25fcd6131bac47a32328d1ba1ee15a27f8d91ab2e5920dba71dbe93d2648f6b1"
-dependencies = [
- "ftoa",
- "indexmap",
- "itoa 0.4.8",
- "lazy_static",
- "regex",
- "serde",
- "snafu",
-]
-
-[[package]]
 name = "serde_urlencoded"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3609,27 +3618,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 
 [[package]]
-name = "snafu"
-version = "0.6.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eab12d3c261b2308b0d80c26fffb58d17eba81a4be97890101f416b478c79ca7"
-dependencies = [
- "doc-comment",
- "snafu-derive",
-]
-
-[[package]]
-name = "snafu-derive"
-version = "0.6.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1508efa03c362e23817f96cde18abed596a25219a8b2c66e8db33c03543d315b"
-dependencies = [
- "proc-macro2 1.0.50",
- "quote 1.0.23",
- "syn 1.0.107",
-]
-
-[[package]]
 name = "socket2"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3671,7 +3659,7 @@ dependencies = [
  "serde_json",
  "solana-address-lookup-table-program",
  "solana-config-program",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "spl-token",
  "spl-token-2022",
  "thiserror",
@@ -3690,11 +3678,11 @@ dependencies = [
  "num-traits",
  "rustc_version 0.4.0",
  "serde",
- "solana-frozen-abi 1.15.0",
- "solana-frozen-abi-macro 1.15.0",
- "solana-program 1.15.0",
+ "solana-frozen-abi 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-frozen-abi-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-program 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-program-runtime",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
 ]
 
@@ -3708,14 +3696,14 @@ dependencies = [
  "serde",
  "serde_derive",
  "solana-program-runtime",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
 ]
 
 [[package]]
 name = "solana-frozen-abi"
-version = "1.14.13"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f44a019070a6cec4d3ad8605c5caa65bdaa13f00b5f1849340f44ffea63b625b"
+checksum = "ffc55e72b77452b4469a7f46c3526cbddb4a43382370d5c1112dc108569cfe16"
 dependencies = [
  "ahash",
  "blake3",
@@ -3740,7 +3728,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sha2 0.10.6",
- "solana-frozen-abi-macro 1.14.13",
+ "solana-frozen-abi-macro 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "subtle",
  "thiserror",
 ]
@@ -3773,16 +3761,16 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "sha2 0.10.6",
- "solana-frozen-abi-macro 1.15.0",
+ "solana-frozen-abi-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "subtle",
  "thiserror",
 ]
 
 [[package]]
 name = "solana-frozen-abi-macro"
-version = "1.14.13"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be23cc7a382f54dfe1348edb94610e5cc146b8eb21563cdd04062a403c75ba62"
+checksum = "a7084605b674cf344312c3a2a9c0de05126c2ff4d3d77cc6746f236ca3c4cb53"
 dependencies = [
  "proc-macro2 1.0.50",
  "quote 1.0.23",
@@ -3803,9 +3791,9 @@ dependencies = [
 
 [[package]]
 name = "solana-logger"
-version = "1.14.13"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "447d16a70a1b5383736ef44801050c0e1affd022303b22ed899352f958c2de4b"
+checksum = "dae1169570b4f086a42f340b86b698b8b64dfa0f931f2a4f0f3c5b18195d6711"
 dependencies = [
  "env_logger",
  "lazy_static",
@@ -3828,7 +3816,7 @@ version = "1.15.0"
 source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
 dependencies = [
  "log",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
 ]
 
 [[package]]
@@ -3841,7 +3829,7 @@ dependencies = [
  "lazy_static",
  "log",
  "reqwest",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
 ]
 
 [[package]]
@@ -3858,8 +3846,8 @@ dependencies = [
  "serde",
  "serde_derive",
  "socket2",
- "solana-logger 1.15.0",
- "solana-sdk 1.15.0",
+ "solana-logger 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-version",
  "tokio",
  "url",
@@ -3887,16 +3875,20 @@ dependencies = [
  "serde",
  "solana-metrics",
  "solana-rayon-threadlimit",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-vote-program",
 ]
 
 [[package]]
 name = "solana-program"
-version = "1.14.13"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0937481f080f5dd495fae456c94718a7bacf30fb5fdabb02dcb8a9622e446d5"
+checksum = "3442ab665ded18fd8526213027a2c05035164b7696e7bf535b7c2d7fa75536fe"
 dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "array-bytes",
  "base64 0.13.1",
  "bincode",
  "bitflags",
@@ -3917,7 +3909,8 @@ dependencies = [
  "libc",
  "libsecp256k1",
  "log",
- "memoffset 0.6.5",
+ "memoffset 0.8.0",
+ "num-bigint 0.4.3",
  "num-derive",
  "num-traits",
  "parking_lot",
@@ -3931,9 +3924,9 @@ dependencies = [
  "serde_json",
  "sha2 0.10.6",
  "sha3 0.10.6",
- "solana-frozen-abi 1.14.13",
- "solana-frozen-abi-macro 1.14.13",
- "solana-sdk-macro 1.14.13",
+ "solana-frozen-abi 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-frozen-abi-macro 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-sdk-macro 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror",
  "tiny-bip39",
  "wasm-bindgen",
@@ -3984,9 +3977,9 @@ dependencies = [
  "serde_json",
  "sha2 0.10.6",
  "sha3 0.10.6",
- "solana-frozen-abi 1.15.0",
- "solana-frozen-abi-macro 1.15.0",
- "solana-sdk-macro 1.15.0",
+ "solana-frozen-abi 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-frozen-abi-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-sdk-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
  "tiny-bip39",
  "wasm-bindgen",
@@ -4011,11 +4004,11 @@ dependencies = [
  "rand 0.7.3",
  "rustc_version 0.4.0",
  "serde",
- "solana-frozen-abi 1.15.0",
- "solana-frozen-abi-macro 1.15.0",
+ "solana-frozen-abi 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-frozen-abi-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-measure",
  "solana-metrics",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana_rbpf",
  "thiserror",
 ]
@@ -4035,7 +4028,7 @@ dependencies = [
  "serde_json",
  "solana-account-decoder",
  "solana-rpc-client-api",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -4063,7 +4056,7 @@ dependencies = [
  "solana-metrics",
  "solana-net-utils",
  "solana-rpc-client-api",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-streamer",
  "solana-tpu-client",
  "thiserror",
@@ -4097,7 +4090,7 @@ dependencies = [
  "serde_json",
  "solana-account-decoder",
  "solana-rpc-client-api",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-transaction-status",
  "solana-version",
  "solana-vote-program",
@@ -4118,7 +4111,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "solana-account-decoder",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-transaction-status",
  "solana-version",
  "spl-token-2022",
@@ -4127,9 +4120,9 @@ dependencies = [
 
 [[package]]
 name = "solana-sdk"
-version = "1.14.13"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "390e7481c56dda2ceab2652beeda30a533e9667b34861a2eb4eec92fa1d826d7"
+checksum = "73788ea1793a23a3d24d1d9ed81a64dbbdd02dac058e0e363a604135e351e670"
 dependencies = [
  "assert_matches",
  "base64 0.13.1",
@@ -4154,6 +4147,7 @@ dependencies = [
  "memmap2",
  "num-derive",
  "num-traits",
+ "num_enum",
  "pbkdf2 0.11.0",
  "qstring",
  "rand 0.7.3",
@@ -4164,13 +4158,14 @@ dependencies = [
  "serde_bytes",
  "serde_derive",
  "serde_json",
+ "serde_with",
  "sha2 0.10.6",
  "sha3 0.10.6",
- "solana-frozen-abi 1.14.13",
- "solana-frozen-abi-macro 1.14.13",
- "solana-logger 1.14.13",
- "solana-program 1.14.13",
- "solana-sdk-macro 1.14.13",
+ "solana-frozen-abi 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-frozen-abi-macro 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-logger 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-program 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-sdk-macro 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror",
  "uriparse",
  "wasm-bindgen",
@@ -4218,11 +4213,11 @@ dependencies = [
  "serde_with",
  "sha2 0.10.6",
  "sha3 0.10.6",
- "solana-frozen-abi 1.15.0",
- "solana-frozen-abi-macro 1.15.0",
- "solana-logger 1.15.0",
- "solana-program 1.15.0",
- "solana-sdk-macro 1.15.0",
+ "solana-frozen-abi 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-frozen-abi-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-logger 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-program 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-sdk-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
  "uriparse",
  "wasm-bindgen",
@@ -4230,9 +4225,9 @@ dependencies = [
 
 [[package]]
 name = "solana-sdk-macro"
-version = "1.14.13"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33d0acbad862093ea123f3a27364336dcb0c8373522cd6810496a34e932c56c1"
+checksum = "e9e216372c12c4bd820afd02ab90564472e14e1ff609b6737e9d832749370656"
 dependencies = [
  "bs58",
  "proc-macro2 1.0.50",
@@ -4277,7 +4272,7 @@ dependencies = [
  "rustls",
  "solana-metrics",
  "solana-perf",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
  "tokio",
  "x509-parser",
@@ -4302,7 +4297,7 @@ dependencies = [
  "solana-pubsub-client",
  "solana-rpc-client",
  "solana-rpc-client-api",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
  "tokio",
 ]
@@ -4324,7 +4319,7 @@ dependencies = [
  "serde_json",
  "solana-account-decoder",
  "solana-address-lookup-table-program",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "spl-associated-token-account",
  "spl-memo",
  "spl-token",
@@ -4342,9 +4337,9 @@ dependencies = [
  "semver 1.0.16",
  "serde",
  "serde_derive",
- "solana-frozen-abi 1.15.0",
- "solana-frozen-abi-macro 1.15.0",
- "solana-sdk 1.15.0",
+ "solana-frozen-abi 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-frozen-abi-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
 ]
 
 [[package]]
@@ -4359,20 +4354,20 @@ dependencies = [
  "rustc_version 0.4.0",
  "serde",
  "serde_derive",
- "solana-frozen-abi 1.15.0",
- "solana-frozen-abi-macro 1.15.0",
+ "solana-frozen-abi 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-frozen-abi-macro 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-metrics",
- "solana-program 1.15.0",
+ "solana-program 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "solana-program-runtime",
- "solana-sdk 1.15.0",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
 ]
 
 [[package]]
 name = "solana-zk-token-sdk"
-version = "1.14.13"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cebca4083e982ae01583d1a590c4d679e6f648a4761364ddfb43026d2c433142"
+checksum = "ffa4276fd41317c7367f665684410430c8ddae065af6e997b98a26a201ca2c1e"
 dependencies = [
  "aes-gcm-siv",
  "arrayref",
@@ -4392,8 +4387,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3 0.9.1",
- "solana-program 1.14.13",
- "solana-sdk 1.14.13",
+ "solana-program 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "solana-sdk 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "subtle",
  "thiserror",
  "zeroize",
@@ -4444,7 +4439,7 @@ dependencies = [
  "borsh",
  "num-derive",
  "num-traits",
- "solana-program 1.14.13",
+ "solana-program 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "spl-token",
  "spl-token-2022",
  "thiserror",
@@ -4456,7 +4451,7 @@ version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd0dc6f70db6bacea7ff25870b016a65ba1d1b6013536f08e4fd79a8f9005325"
 dependencies = [
- "solana-program 1.14.13",
+ "solana-program 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -4470,7 +4465,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_enum",
- "solana-program 1.14.13",
+ "solana-program 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror",
 ]
 
@@ -4485,7 +4480,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "num_enum",
- "solana-program 1.14.13",
+ "solana-program 1.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "solana-zk-token-sdk",
  "spl-memo",
  "spl-token",
@@ -4674,9 +4669,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec_macros"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
+checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"

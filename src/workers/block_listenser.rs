@@ -5,6 +5,7 @@ use dashmap::DashMap;
 use futures::StreamExt;
 use jsonrpsee::SubscriptionSink;
 use log::info;
+use prometheus::{histogram_opts, opts, register_counter, register_histogram, Counter, Histogram};
 use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_rpc_client_api::{
@@ -26,6 +27,23 @@ use crate::{
 };
 
 use super::{PostgresMpscSend, TxProps, TxSender};
+
+lazy_static::lazy_static! {
+    static ref TT_RECV_CON_BLOCK: Histogram = register_histogram!(histogram_opts!(
+        "tt_recv_con_block",
+        "Time to receive confirmed block from block subscribe",
+    ))
+    .unwrap();
+    static ref TT_RECV_FIN_BLOCK: Histogram = register_histogram!(histogram_opts!(
+        "tt_recv_fin_block",
+        "Time to receive finalized block from block subscribe",
+    ))
+    .unwrap();
+    static ref TXS_CONFIRMED: Counter =
+        register_counter!(opts!("txs_confirmed", "Number of Transactions Confirmed")).unwrap();
+    static ref TXS_FINALIZED: Counter =
+        register_counter!(opts!("txs_finalized", "Number of Transactions Finalized")).unwrap();
+}
 
 /// Background worker which listen's to new blocks
 /// and keeps a track of confirmed txs
@@ -114,7 +132,19 @@ impl BlockListener {
 
             info!("Listening to {commitment:?} blocks");
 
-            while let Some(block) = recv.as_mut().next().await {
+            loop {
+                let timer = if commitment_config.is_finalized() {
+                    TT_RECV_FIN_BLOCK.start_timer()
+                } else {
+                    TT_RECV_CON_BLOCK.start_timer()
+                };
+
+                let Some(block) = recv.as_mut().next().await else {
+                    bail!("PubSub broke");
+                };
+
+                timer.observe_duration();
+
                 let slot = block.context.slot;
 
                 let Some(block) = block.value.block else {
@@ -177,6 +207,17 @@ impl BlockListener {
                     let sig = tx.get_signature().to_string();
 
                     if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
+                        //
+                        // Metrics
+                        //
+                        if status.is_ok() {
+                            if commitment_config.is_finalized() {
+                                TXS_FINALIZED.inc();
+                            } else {
+                                TXS_CONFIRMED.inc();
+                            }
+                        }
+
                         tx_status.value_mut().status = Some(TransactionStatus {
                             slot,
                             confirmations: None,
@@ -220,8 +261,6 @@ impl BlockListener {
                     }
                 }
             }
-
-            bail!("Stopped Listening to {commitment:?} blocks")
         })
     }
 }

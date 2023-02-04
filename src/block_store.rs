@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use log::info;
+
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::RwLock;
@@ -92,7 +92,6 @@ impl BlockStore {
         block_info: BlockInformation,
         commitment_config: CommitmentConfig,
     ) {
-        info!("{commitment_config:?} {blockhash:?}, {block_info:?}");
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
