@@ -6,7 +6,7 @@ use futures::StreamExt;
 use jsonrpsee::SubscriptionSink;
 use log::info;
 use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
-use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_rpc_client_api::{
     config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
     response::{Response as RpcResponse, RpcResponseContext},
@@ -51,7 +51,6 @@ pub struct BlockListnerNotificatons {
 impl BlockListener {
     pub fn new(
         pub_sub_client: Arc<PubsubClient>,
-        _rpc_client: Arc<RpcClient>,
         tx_sender: TxSender,
         block_store: BlockStore,
     ) -> Self {

@@ -59,7 +59,6 @@ impl LiteBridge {
 
         let block_listner = BlockListener::new(
             pub_sub_client.clone(),
-            rpc_client.clone(),
             tx_sender.clone(),
             block_store.clone(),
         );
