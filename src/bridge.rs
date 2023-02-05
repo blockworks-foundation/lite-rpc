@@ -75,6 +75,7 @@ impl LiteBridge {
     }
 
     /// List for `JsonRpc` requests
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_services<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
         mut self,
         http_addr: T,

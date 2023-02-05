@@ -60,9 +60,9 @@ impl BlockStore {
 
     pub fn get_latest_blockhash(&self, commitment_config: CommitmentConfig) -> Arc<RwLock<String>> {
         if commitment_config.is_finalized() {
-            self.latest_confirmed_blockhash.clone()
-        } else {
             self.latest_finalized_blockhash.clone()
+        } else {
+            self.latest_confirmed_blockhash.clone()
         }
     }
 
