@@ -25,7 +25,7 @@ use solana_rpc_client_api::{
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
-    commitment_config::{self, CommitmentConfig},
+    commitment_config::{CommitmentConfig},
     hash::Hash,
     pubkey::Pubkey,
     transaction::VersionedTransaction,
