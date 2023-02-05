@@ -25,7 +25,9 @@ use solana_rpc_client_api::{
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
-    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey,
+    commitment_config::{self, CommitmentConfig},
+    hash::Hash,
+    pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
 use solana_transaction_status::TransactionStatus;
@@ -221,11 +223,9 @@ impl LiteRpcServer for LiteBridge {
         &self,
         config: Option<RpcContextConfig>,
     ) -> crate::rpc::Result<RpcResponse<RpcBlockhash>> {
-        let commitment_config = if let Some(RpcContextConfig { commitment, .. }) = config {
-            commitment.unwrap_or_default()
-        } else {
-            CommitmentConfig::default()
-        };
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
 
         let (blockhash, BlockInformation { slot, block_height }) = self
             .block_store
