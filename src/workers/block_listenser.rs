@@ -4,7 +4,7 @@ use anyhow::{bail, Context};
 use dashmap::DashMap;
 use futures::StreamExt;
 use jsonrpsee::SubscriptionSink;
-use log::info;
+use log::{info, warn};
 use prometheus::{histogram_opts, opts, register_counter, register_histogram, Counter, Histogram};
 use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
 use solana_rpc_client::rpc_client::SerializableTransaction;
@@ -49,7 +49,6 @@ lazy_static::lazy_static! {
 /// and keeps a track of confirmed txs
 #[derive(Clone)]
 pub struct BlockListener {
-    pub_sub_client: Arc<PubsubClient>,
     tx_sender: TxSender,
     block_store: BlockStore,
     pub signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
@@ -67,13 +66,8 @@ pub struct BlockListnerNotificatons {
 }
 
 impl BlockListener {
-    pub fn new(
-        pub_sub_client: Arc<PubsubClient>,
-        tx_sender: TxSender,
-        block_store: BlockStore,
-    ) -> Self {
+    pub fn new(tx_sender: TxSender, block_store: BlockStore) -> Self {
         Self {
-            pub_sub_client,
             tx_sender,
             block_store,
             signature_subscribers: Default::default(),
@@ -98,168 +92,183 @@ impl BlockListener {
         self.signature_subscribers.remove(&signature);
     }
 
+    pub async fn listen_from_pubsub(
+        self,
+        pubsub_client: &PubsubClient,
+        commitment_config: CommitmentConfig,
+        postgres: &Option<PostgresMpscSend>,
+    ) -> anyhow::Result<()> {
+        let commitment = commitment_config.commitment;
+
+        let comfirmation_status = match commitment {
+            CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
+            _ => TransactionConfirmationStatus::Confirmed,
+        };
+
+        info!("Subscribing to {commitment:?} blocks");
+
+        let (mut recv, _) = pubsub_client
+            .block_subscribe(
+                RpcBlockSubscribeFilter::All,
+                Some(RpcBlockSubscribeConfig {
+                    commitment: Some(commitment_config),
+                    encoding: None,
+                    transaction_details: Some(solana_transaction_status::TransactionDetails::Full),
+                    show_rewards: None,
+                    max_supported_transaction_version: None,
+                }),
+            )
+            .await
+            .context("Error calling block_subscribe")?;
+
+        info!("Listening to {commitment:?} blocks");
+
+        loop {
+            let timer = if commitment_config.is_finalized() {
+                TT_RECV_FIN_BLOCK.start_timer()
+            } else {
+                TT_RECV_CON_BLOCK.start_timer()
+            };
+
+            let Some(block) = recv.as_mut().next().await else {
+                    bail!("PubSub broke");
+                };
+
+            timer.observe_duration();
+
+            let slot = block.context.slot;
+
+            let Some(block) = block.value.block else {
+                    continue;
+                };
+
+            let Some(block_height) = block.block_height else {
+                    continue;
+                };
+
+            let blockhash = block.blockhash;
+
+            let Some(transactions) = block.transactions else {
+                    continue;
+                };
+
+            let parent_slot = block.parent_slot;
+
+            self.block_store
+                .add_block(
+                    blockhash.clone(),
+                    BlockInformation { slot, block_height },
+                    commitment_config,
+                )
+                .await;
+
+            if let Some(postgres) = &postgres {
+                let Some(rewards) = block.rewards else {
+                        continue;
+                    };
+
+                let Some(leader_reward) = rewards
+                        .iter()
+                        .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
+                        continue;
+                    };
+
+                let _leader_id = &leader_reward.pubkey;
+
+                postgres
+                    .send(PostgresMsg::PostgresBlock(PostgresBlock {
+                        slot: slot as i64,
+                        leader_id: 0, //FIX:
+                        parent_slot: parent_slot as i64,
+                    }))
+                    .expect("Error sending block to postgres service");
+            }
+
+            for tx in transactions {
+                let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
+                        info!("tx with no meta");
+                        continue;
+                    };
+
+                let Some(tx) = tx.transaction.decode() else {
+                        info!("unable to decode tx");
+                        continue;
+                    };
+
+                let sig = tx.get_signature().to_string();
+
+                if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
+                    //
+                    // Metrics
+                    //
+                    if status.is_ok() {
+                        if commitment_config.is_finalized() {
+                            TXS_FINALIZED.inc();
+                        } else {
+                            TXS_CONFIRMED.inc();
+                        }
+                    }
+
+                    tx_status.value_mut().status = Some(TransactionStatus {
+                        slot,
+                        confirmations: None,
+                        status,
+                        err: err.clone(),
+                        confirmation_status: Some(comfirmation_status.clone()),
+                    });
+
+                    //
+                    // Write to postgres
+                    //
+                    if let Some(postgres) = &postgres {
+                        let cu_consumed = match compute_units_consumed {
+                            OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
+                            _ => None,
+                        };
+
+                        postgres
+                            .send(PostgresMsg::PostgresUpdateTx(
+                                PostgresUpdateTx {
+                                    processed_slot: slot as i64,
+                                    cu_consumed,
+                                    cu_requested: None, //TODO: cu requested
+                                },
+                                sig.clone(),
+                            ))
+                            .unwrap();
+                    }
+                };
+
+                // subscribers
+                if let Some((_sig, mut sink)) = self.signature_subscribers.remove(&sig) {
+                    // none if transaction succeeded
+                    sink.send(&RpcResponse {
+                        context: RpcResponseContext {
+                            slot,
+                            api_version: None,
+                        },
+                        value: serde_json::json!({ "err": err }),
+                    })?;
+                }
+            }
+        }
+    }
+
     pub fn listen(
         self,
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
-            let commitment = commitment_config.commitment;
-
-            let comfirmation_status = match commitment {
-                CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
-                _ => TransactionConfirmationStatus::Confirmed,
-            };
-
-            info!("Subscribing to {commitment:?} blocks");
-
-            let (mut recv, _) = self
-                .pub_sub_client
-                .block_subscribe(
-                    RpcBlockSubscribeFilter::All,
-                    Some(RpcBlockSubscribeConfig {
-                        commitment: Some(commitment_config),
-                        encoding: None,
-                        transaction_details: Some(
-                            solana_transaction_status::TransactionDetails::Full,
-                        ),
-                        show_rewards: None,
-                        max_supported_transaction_version: None,
-                    }),
-                )
-                .await
-                .context("Error calling block_subscribe")?;
-
-            info!("Listening to {commitment:?} blocks");
-
             loop {
-                let timer = if commitment_config.is_finalized() {
-                    TT_RECV_FIN_BLOCK.start_timer()
-                } else {
-                    TT_RECV_CON_BLOCK.start_timer()
-                };
-
-                let Some(block) = recv.as_mut().next().await else {
-                    bail!("PubSub broke");
-                };
-
-                timer.observe_duration();
-
-                let slot = block.context.slot;
-
-                let Some(block) = block.value.block else {
-                    continue;
-                };
-
-                let Some(block_height) = block.block_height else {
-                    continue;
-                };
-
-                let blockhash = block.blockhash;
-
-                let Some(transactions) = block.transactions else {
-                    continue;
-                };
-
-                let parent_slot = block.parent_slot;
-
-                self.block_store
-                    .add_block(
-                        blockhash.clone(),
-                        BlockInformation { slot, block_height },
-                        commitment_config,
-                    )
-                    .await;
-
-                if let Some(postgres) = &postgres {
-                    let Some(rewards) = block.rewards else {
-                        continue;
-                    };
-
-                    let Some(leader_reward) = rewards
-                        .iter()
-                        .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
-                        continue;
-                    };
-
-                    let _leader_id = &leader_reward.pubkey;
-
-                    postgres
-                        .send(PostgresMsg::PostgresBlock(PostgresBlock {
-                            slot: slot as i64,
-                            leader_id: 0, //FIX:
-                            parent_slot: parent_slot as i64,
-                        }))
-                        .expect("Error sending block to postgres service");
-                }
-
-                for tx in transactions {
-                    let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
-                        info!("tx with no meta");
-                        continue;
-                    };
-
-                    let Some(tx) = tx.transaction.decode() else {
-                        info!("unable to decode tx");
-                        continue;
-                    };
-
-                    let sig = tx.get_signature().to_string();
-
-                    if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
-                        //
-                        // Metrics
-                        //
-                        if status.is_ok() {
-                            if commitment_config.is_finalized() {
-                                TXS_FINALIZED.inc();
-                            } else {
-                                TXS_CONFIRMED.inc();
-                            }
-                        }
-
-                        tx_status.value_mut().status = Some(TransactionStatus {
-                            slot,
-                            confirmations: None,
-                            status,
-                            err: err.clone(),
-                            confirmation_status: Some(comfirmation_status.clone()),
-                        });
-
-                        //
-                        // Write to postgres
-                        //
-                        if let Some(postgres) = &postgres {
-                            let cu_consumed = match compute_units_consumed {
-                                OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
-                                _ => None,
-                            };
-
-                            postgres
-                                .send(PostgresMsg::PostgresUpdateTx(
-                                    PostgresUpdateTx {
-                                        processed_slot: slot as i64,
-                                        cu_consumed,
-                                        cu_requested: None, //TODO: cu requested
-                                    },
-                                    sig.clone(),
-                                ))
-                                .unwrap();
-                        }
-                    };
-
-                    // subscribers
-                    if let Some((_sig, mut sink)) = self.signature_subscribers.remove(&sig) {
-                        // none if transaction succeeded
-                        sink.send(&RpcResponse {
-                            context: RpcResponseContext {
-                                slot,
-                                api_version: None,
-                            },
-                            value: serde_json::json!({ "err": err }),
-                        })?;
-                    }
-                }
+                let ws_addr = &self.tx_sender.tpu_manager.ws_addr;
+                let pub_sub_client = PubsubClient::new(ws_addr).await?;
+                let err = self
+                    .clone()
+                    .listen_from_pubsub(&pub_sub_client, commitment_config, &postgres)
+                    .await
+                    .unwrap_err();
+                warn!("{commitment_config:?} Block Subscribe error {err}");
             }
         })
     }

@@ -10,7 +10,6 @@ use lite_rpc::{
     DEFAULT_LITE_RPC_ADDR, DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS, DEFAULT_TX_BATCH_SIZE,
     DEFAULT_WS_ADDR,
 };
-use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -33,12 +32,10 @@ async fn send_and_confirm_txs() {
         .unwrap(),
     );
 
-    let pub_sub_client = Arc::new(PubsubClient::new(DEFAULT_WS_ADDR).await.unwrap());
-
     let tx_sender = TxSender::new(tpu_client);
     let block_store = BlockStore::new(&rpc_client).await.unwrap();
 
-    let block_listener = BlockListener::new(pub_sub_client.clone(), tx_sender.clone(), block_store);
+    let block_listener = BlockListener::new(tx_sender.clone(), block_store);
 
     let (tx_send, tx_recv) = mpsc::unbounded_channel();
 

@@ -34,7 +34,7 @@ pub struct TxSender {
     /// Tx(s) forwarded to tpu
     pub txs_sent: Arc<DashMap<String, TxProps>>,
     /// TpuClient to call the tpu port
-    tpu_manager: Arc<TpuManager>,
+    pub tpu_manager: Arc<TpuManager>,
 }
 
 /// Transaction Properties

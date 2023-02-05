@@ -18,16 +18,13 @@ use log::info;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 
-use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
-    commitment_config::{CommitmentConfig},
-    hash::Hash,
-    pubkey::Pubkey,
+    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
 use solana_transaction_status::TransactionStatus;
@@ -51,7 +48,6 @@ pub struct LiteBridge {
 impl LiteBridge {
     pub async fn new(rpc_url: String, ws_addr: String, fanout_slots: u64) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
-        let pub_sub_client = Arc::new(PubsubClient::new(&ws_addr).await?);
 
         let tpu_manager =
             Arc::new(TpuManager::new(rpc_client.clone(), ws_addr, fanout_slots).await?);
@@ -60,11 +56,7 @@ impl LiteBridge {
 
         let block_store = BlockStore::new(&rpc_client).await?;
 
-        let block_listner = BlockListener::new(
-            pub_sub_client.clone(),
-            tx_sender.clone(),
-            block_store.clone(),
-        );
+        let block_listner = BlockListener::new(tx_sender.clone(), block_store.clone());
 
         Ok(Self {
             rpc_client,
