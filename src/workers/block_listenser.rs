@@ -39,6 +39,14 @@ lazy_static::lazy_static! {
         "Time to receive finalized block from block subscribe",
     ))
     .unwrap();
+    static ref FIN_BLOCKS_RECV: Counter =
+        register_counter!(opts!("fin_blocks_recv", "Number of Finalized Blocks Received")).unwrap();
+    static ref CON_BLOCKS_RECV: Counter =
+        register_counter!(opts!("con_blocks_recv", "Number of Confirmed Blocks Received")).unwrap();
+    static ref INCOMPLETE_FIN_BLOCKS_RECV: Counter =
+        register_counter!(opts!("incomplete_fin_blocks_recv", "Number of Incomplete Finalized Blocks Received")).unwrap();
+    static ref INCOMPLETE_CON_BLOCKS_RECV: Counter =
+        register_counter!(opts!("incomplete_con_blocks_recv", "Number of Incomplete Confirmed Blocks Received")).unwrap();
     static ref TXS_CONFIRMED: Counter =
         register_counter!(opts!("txs_confirmed", "Number of Transactions Confirmed")).unwrap();
     static ref TXS_FINALIZED: Counter =
@@ -92,6 +100,14 @@ impl BlockListener {
         self.signature_subscribers.remove(&signature);
     }
 
+    fn increment_invalid_block_metric(commitment_config: CommitmentConfig) {
+        if commitment_config.is_finalized() {
+            INCOMPLETE_FIN_BLOCKS_RECV.inc();
+        } else {
+            INCOMPLETE_CON_BLOCKS_RECV.inc();
+        }
+    }
+
     pub async fn listen_from_pubsub(
         self,
         pubsub_client: &PubsubClient,
@@ -131,27 +147,35 @@ impl BlockListener {
             };
 
             let Some(block) = recv.as_mut().next().await else {
-                    bail!("PubSub broke");
-                };
+                bail!("PubSub broke");
+            };
 
             timer.observe_duration();
+
+            if commitment_config.is_finalized() {
+                FIN_BLOCKS_RECV.inc();
+            } else {
+                CON_BLOCKS_RECV.inc();
+            };
 
             let slot = block.context.slot;
 
             let Some(block) = block.value.block else {
-                    continue;
-                };
+                Self::increment_invalid_block_metric(commitment_config);
+                continue;
+            };
 
             let Some(block_height) = block.block_height else {
-                    continue;
-                };
-
-            let blockhash = block.blockhash;
+                Self::increment_invalid_block_metric(commitment_config);
+                continue;
+            };
 
             let Some(transactions) = block.transactions else {
-                    continue;
-                };
+                Self::increment_invalid_block_metric(commitment_config);
+                continue;
+            };
 
+            let blockhash = block.blockhash;
             let parent_slot = block.parent_slot;
 
             self.block_store
