@@ -7,16 +7,16 @@ use super::{BlockListener, TxSender};
 
 /// Background worker which cleans up memory  
 #[derive(Clone)]
-pub struct Cleaner<const N: usize> {
+pub struct Cleaner {
     tx_sender: TxSender,
-    block_listeners: [BlockListener; N],
+    block_listenser: BlockListener,
 }
 
-impl<const N: usize> Cleaner<N> {
-    pub fn new(tx_sender: TxSender, block_listeners: [BlockListener; N]) -> Self {
+impl Cleaner {
+    pub fn new(tx_sender: TxSender, block_listenser: BlockListener) -> Self {
         Self {
             tx_sender,
-            block_listeners,
+            block_listenser,
         }
     }
 
@@ -38,21 +38,19 @@ impl<const N: usize> Cleaner<N> {
 
     /// Clean Signature Subscribers from Block Listeners
     pub fn clean_block_listeners(&self) {
-        for block_listenser in &self.block_listeners {
-            let mut to_remove = vec![];
+        let mut to_remove = vec![];
 
-            for subscriber in block_listenser.signature_subscribers.iter() {
-                if subscriber.value().is_closed() {
-                    to_remove.push(subscriber.key().to_owned());
-                }
+        for subscriber in self.block_listenser.signature_subscribers.iter() {
+            if subscriber.value().is_closed() {
+                to_remove.push(subscriber.key().to_owned());
             }
-
-            for to_remove in &to_remove {
-                block_listenser.signature_subscribers.remove(to_remove);
-            }
-
-            info!("Cleaned {} Signature Subscribers", to_remove.len());
         }
+
+        for to_remove in &to_remove {
+            self.block_listenser.signature_subscribers.remove(to_remove);
+        }
+
+        info!("Cleaned {} Signature Subscribers", to_remove.len());
     }
 
     pub fn start(self, ttl_duration: Duration) -> JoinHandle<anyhow::Result<()>> {

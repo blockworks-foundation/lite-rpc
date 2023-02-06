@@ -1,4 +1,5 @@
 use crate::{
+    block_store::BlockStore,
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
@@ -16,16 +17,15 @@ use anyhow::bail;
 use log::info;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
-use solana_client::{
-    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
-    rpc_client::SerializableTransaction,
-    rpc_config::{RpcContextConfig, RpcRequestAirdropConfig},
-    rpc_response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
+
+use prometheus::{opts, register_counter, Counter};
+use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_rpc_client_api::{
+    config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
+    response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel},
-    hash::Hash,
-    pubkey::Pubkey,
+    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey,
     transaction::VersionedTransaction,
 };
 use solana_transaction_status::TransactionStatus;
@@ -35,6 +35,24 @@ use tokio::{
     task::JoinHandle,
 };
 
+lazy_static::lazy_static! {
+    static ref RPC_SEND_TX: Counter =
+        register_counter!(opts!("rpc_send_tx", "RPC call send transaction")).unwrap();
+    static ref RPC_GET_LATEST_BLOCKHASH: Counter =
+        register_counter!(opts!("rpc_get_latest_blockhash", "RPC call to get latest block hash")).unwrap();
+    static ref RPC_IS_BLOCKHASH_VALID: Counter =
+        register_counter!(opts!("rpc_is_blockhash_valid", "RPC call to check if blockhash is vali calld")).unwrap();
+    static ref RPC_GET_SIGNATURE_STATUSES: Counter =
+        register_counter!(opts!("rpc_get_signature_statuses", "RPC call to get signature statuses")).unwrap();
+    static ref RPC_GET_VERSION: Counter =
+        register_counter!(opts!("rpc_get_version", "RPC call to version")).unwrap();
+    static ref RPC_REQUEST_AIRDROP: Counter =
+        register_counter!(opts!("rpc_airdrop", "RPC call to request airdrop")).unwrap();
+    static ref RPC_SIGNATURE_SUBSCRIBE: Counter =
+        register_counter!(opts!("rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
+
+}
+
 /// A bridge between clients and tpu
 pub struct LiteBridge {
     pub rpc_client: Arc<RpcClient>,
@@ -42,56 +60,35 @@ pub struct LiteBridge {
     // None if LiteBridge is not executed
     pub tx_send: Option<UnboundedSender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
-    pub finalized_block_listener: BlockListener,
-    pub confirmed_block_listener: BlockListener,
+    pub block_listner: BlockListener,
+    pub block_store: BlockStore,
 }
 
 impl LiteBridge {
     pub async fn new(rpc_url: String, ws_addr: String, fanout_slots: u64) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
 
-        let pub_sub_client = Arc::new(PubsubClient::new(&ws_addr).await?);
-
         let tpu_manager =
             Arc::new(TpuManager::new(rpc_client.clone(), ws_addr, fanout_slots).await?);
 
         let tx_sender = TxSender::new(tpu_manager.clone());
 
-        let finalized_block_listener = BlockListener::new(
-            pub_sub_client.clone(),
-            rpc_client.clone(),
-            tx_sender.clone(),
-            CommitmentConfig::finalized(),
-        )
-        .await?;
+        let block_store = BlockStore::new(&rpc_client).await?;
 
-        let confirmed_block_listener = BlockListener::new(
-            pub_sub_client,
-            rpc_client.clone(),
-            tx_sender.clone(),
-            CommitmentConfig::confirmed(),
-        )
-        .await?;
+        let block_listner = BlockListener::new(tx_sender.clone(), block_store.clone());
 
         Ok(Self {
             rpc_client,
             tpu_manager,
             tx_send: None,
             tx_sender,
-            finalized_block_listener,
-            confirmed_block_listener,
+            block_listner,
+            block_store,
         })
     }
 
-    pub fn get_block_listner(&self, commitment_config: CommitmentConfig) -> BlockListener {
-        if let CommitmentLevel::Finalized = commitment_config.commitment {
-            self.finalized_block_listener.clone()
-        } else {
-            self.confirmed_block_listener.clone()
-        }
-    }
-
     /// List for `JsonRpc` requests
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_services<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
         mut self,
         http_addr: T,
@@ -100,6 +97,7 @@ impl LiteBridge {
         tx_send_interval: Duration,
         clean_interval: Duration,
         enable_postgres: bool,
+        prometheus_addr: T,
     ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
         let (postgres, postgres_send) = if enable_postgres {
             let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
@@ -122,24 +120,21 @@ impl LiteBridge {
             postgres_send.clone(),
         );
 
-        let metrics_capture = MetricsCapture::new(self.tx_sender.clone());
-        let prometheus_sync = PrometheusSync::new(metrics_capture.clone()).sync();
-        let metrics_capture = metrics_capture.capture();
+        let metrics_capture = MetricsCapture::new(self.tx_sender.clone()).capture();
+        let prometheus_sync = PrometheusSync.sync(prometheus_addr);
 
         let finalized_block_listener = self
-            .finalized_block_listener
+            .block_listner
             .clone()
-            .listen(postgres_send.clone());
+            .listen(CommitmentConfig::finalized(), postgres_send.clone());
 
-        let confirmed_block_listener = self.confirmed_block_listener.clone().listen(None);
-        let cleaner = Cleaner::new(
-            self.tx_sender.clone(),
-            [
-                self.finalized_block_listener.clone(),
-                self.confirmed_block_listener.clone(),
-            ],
-        )
-        .start(clean_interval);
+        let confirmed_block_listener = self
+            .block_listner
+            .clone()
+            .listen(CommitmentConfig::confirmed(), None);
+
+        let cleaner =
+            Cleaner::new(self.tx_sender.clone(), self.block_listner.clone()).start(clean_interval);
 
         let rpc = self.into_rpc();
 
@@ -198,6 +193,8 @@ impl LiteRpcServer for LiteBridge {
         tx: String,
         send_transaction_config: Option<SendTransactionConfig>,
     ) -> crate::rpc::Result<String> {
+        RPC_SEND_TX.inc();
+
         let SendTransactionConfig {
             encoding,
             max_retries: _,
@@ -219,11 +216,11 @@ impl LiteRpcServer for LiteBridge {
 
         let sig = tx.get_signature();
         let Some(BlockInformation { slot, .. }) = self
-            .confirmed_block_listener
+            .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
             .await else {
                 log::warn!("block");
-                return Err(jsonrpsee::core::Error::Custom("Blockhash not found in confirmed block store".to_string()));
+                return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
         self.tx_send
@@ -237,17 +234,18 @@ impl LiteRpcServer for LiteBridge {
 
     async fn get_latest_blockhash(
         &self,
-        config: Option<solana_client::rpc_config::RpcContextConfig>,
-    ) -> crate::rpc::Result<RpcResponse<solana_client::rpc_response::RpcBlockhash>> {
-        let commitment_config = if let Some(RpcContextConfig { commitment, .. }) = config {
-            commitment.unwrap_or_default()
-        } else {
-            CommitmentConfig::default()
-        };
+        config: Option<RpcContextConfig>,
+    ) -> crate::rpc::Result<RpcResponse<RpcBlockhash>> {
+        RPC_GET_LATEST_BLOCKHASH.inc();
 
-        let block_listner = self.get_block_listner(commitment_config);
-        let (blockhash, BlockInformation { slot, block_height }) =
-            block_listner.get_latest_block_info().await;
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
+
+        let (blockhash, BlockInformation { slot, block_height }) = self
+            .block_store
+            .get_latest_block_info(commitment_config)
+            .await;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -266,6 +264,8 @@ impl LiteRpcServer for LiteBridge {
         blockhash: String,
         config: Option<IsBlockHashValidConfig>,
     ) -> crate::rpc::Result<RpcResponse<bool>> {
+        RPC_IS_BLOCKHASH_VALID.inc();
+
         let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
         let commitment = CommitmentConfig { commitment };
 
@@ -275,8 +275,6 @@ impl LiteRpcServer for LiteBridge {
                 return Err(jsonrpsee::core::Error::Custom(err.to_string()));
             }
         };
-
-        let block_listner = self.get_block_listner(commitment);
 
         let is_valid = match self
             .rpc_client
@@ -289,7 +287,12 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let slot = block_listner.get_latest_block_info().await.1.slot;
+        let slot = self
+            .block_store
+            .get_latest_block_info(commitment)
+            .await
+            .1
+            .slot;
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -303,8 +306,10 @@ impl LiteRpcServer for LiteBridge {
     async fn get_signature_statuses(
         &self,
         sigs: Vec<String>,
-        _config: Option<solana_client::rpc_config::RpcSignatureStatusConfig>,
+        _config: Option<RpcSignatureStatusConfig>,
     ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
+        RPC_GET_SIGNATURE_STATUSES.inc();
+
         let sig_statuses = sigs
             .iter()
             .map(|sig| {
@@ -318,8 +323,8 @@ impl LiteRpcServer for LiteBridge {
         Ok(RpcResponse {
             context: RpcResponseContext {
                 slot: self
-                    .finalized_block_listener
-                    .get_latest_block_info()
+                    .block_store
+                    .get_latest_block_info(CommitmentConfig::finalized())
                     .await
                     .1
                     .slot,
@@ -330,6 +335,8 @@ impl LiteRpcServer for LiteBridge {
     }
 
     fn get_version(&self) -> crate::rpc::Result<RpcVersionInfo> {
+        RPC_GET_VERSION.inc();
+
         let version = solana_version::Version::default();
         Ok(RpcVersionInfo {
             solana_core: version.to_string(),
@@ -343,6 +350,8 @@ impl LiteRpcServer for LiteBridge {
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
     ) -> crate::rpc::Result<String> {
+        RPC_REQUEST_AIRDROP.inc();
+
         let pubkey = match Pubkey::from_str(&pubkey_str) {
             Ok(pubkey) => pubkey,
             Err(err) => {
@@ -372,11 +381,11 @@ impl LiteRpcServer for LiteBridge {
         &self,
         mut sink: SubscriptionSink,
         signature: String,
-        commitment_config: CommitmentConfig,
+        _commitment_config: CommitmentConfig,
     ) -> SubscriptionResult {
+        RPC_SIGNATURE_SUBSCRIBE.inc();
         sink.accept()?;
-        self.get_block_listner(commitment_config)
-            .signature_subscribe(signature, sink);
+        self.block_listner.signature_subscribe(signature, sink);
         Ok(())
     }
 }

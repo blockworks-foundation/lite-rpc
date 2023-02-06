@@ -7,6 +7,7 @@ use anyhow::bail;
 use dashmap::DashMap;
 use log::{info, warn};
 
+use prometheus::{register_counter, Counter};
 use solana_transaction_status::TransactionStatus;
 use tokio::{
     sync::mpsc::{error::TryRecvError, UnboundedReceiver},
@@ -20,6 +21,11 @@ use crate::{
 
 use super::PostgresMpscSend;
 
+lazy_static::lazy_static! {
+    static ref TXS_SENT: Counter =
+        register_counter!("txs_sent", "Number of transactions forwarded to tpu").unwrap();
+}
+
 pub type WireTransaction = Vec<u8>;
 
 /// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
@@ -28,7 +34,7 @@ pub struct TxSender {
     /// Tx(s) forwarded to tpu
     pub txs_sent: Arc<DashMap<String, TxProps>>,
     /// TpuClient to call the tpu port
-    tpu_manager: Arc<TpuManager>,
+    pub tpu_manager: Arc<TpuManager>,
 }
 
 /// Transaction Properties
@@ -77,6 +83,9 @@ impl TxSender {
                     for (sig, _) in &sigs_and_slots {
                         txs_sent.insert(sig.to_owned(), TxProps::default());
                     }
+                    // metrics
+                    TXS_SENT.inc_by(sigs_and_slots.len() as f64);
+
                     1
                 }
                 Err(err) => {
@@ -86,15 +95,17 @@ impl TxSender {
             };
 
             if let Some(postgres) = postgres {
+                let forwarded_slot = tpu_client.get_tpu_client().await.estimated_current_slot();
+
                 for (sig, recent_slot) in sigs_and_slots {
                     postgres
                         .send(PostgresMsg::PostgresTx(PostgresTx {
                             signature: sig.clone(),
                             recent_slot: recent_slot as i64,
-                            forwarded_slot: 0,    // FIX: figure this out
-                            processed_slot: None, // FIX: figure this out
-                            cu_consumed: None,    // FIX: figure this out
-                            cu_requested: None,   // FIX: figure this out
+                            forwarded_slot: forwarded_slot as i64,
+                            processed_slot: None,
+                            cu_consumed: None,
+                            cu_requested: None,
                             quic_response,
                         }))
                         .expect("Error writing to postgres service");

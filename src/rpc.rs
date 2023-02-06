@@ -1,8 +1,8 @@
 use jsonrpsee::proc_macros::rpc;
-use solana_client::rpc_config::{
+use solana_rpc_client_api::config::{
     RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
 };
-use solana_client::rpc_response::{Response as RpcResponse, RpcBlockhash, RpcVersionInfo};
+use solana_rpc_client_api::response::{Response as RpcResponse, RpcBlockhash, RpcVersionInfo};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionStatus;
 
