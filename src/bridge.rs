@@ -34,6 +34,7 @@ use tokio::{
     sync::mpsc::{self, UnboundedSender},
     task::JoinHandle,
 };
+use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: Counter =
@@ -247,6 +248,8 @@ impl LiteRpcServer for LiteBridge {
             .get_latest_block_info(commitment_config)
             .await;
 
+        info!("glb {blockhash} {slot} {block_height}");
+
         Ok(RpcResponse {
             context: RpcResponseContext {
                 slot,
@@ -254,7 +257,7 @@ impl LiteRpcServer for LiteBridge {
             },
             value: RpcBlockhash {
                 blockhash,
-                last_valid_block_height: block_height,
+                last_valid_block_height: block_height + (MAX_RECENT_BLOCKHASHES as u64),
             },
         })
     }
