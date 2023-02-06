@@ -1,4 +1,3 @@
-
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
@@ -8,8 +7,8 @@ async fn blockhash() -> anyhow::Result<()> {
 
     let mut prev_blockhash = lite_rpc.get_latest_blockhash().await.unwrap();
 
-    for _ in 0..5 {
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    for _ in 0..60 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(3000)).await;
 
         let blockhash = lite_rpc.get_latest_blockhash().await.unwrap();
 

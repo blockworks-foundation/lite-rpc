@@ -1,11 +1,11 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use std::{
+    collections::{BTreeSet, VecDeque},
+    sync::Arc,
 };
 
 use dashmap::DashMap;
 use jsonrpsee::SubscriptionSink;
-use log::{error, info, warn};
+use log::{info, warn};
 use prometheus::{histogram_opts, opts, register_counter, register_histogram, Counter, Histogram};
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -20,11 +20,14 @@ use solana_sdk::{
 };
 
 use solana_transaction_status::{
-    option_serializer::OptionSerializer, EncodedTransaction, RewardType,
-    TransactionConfirmationStatus, TransactionDetails, TransactionStatus, UiConfirmedBlock,
-    UiTransactionEncoding, UiTransactionStatusMeta,
+    option_serializer::OptionSerializer, RewardType, TransactionConfirmationStatus,
+    TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
+    UiTransactionStatusMeta,
 };
-use tokio::{sync::mpsc::Sender, task::JoinHandle};
+use tokio::{
+    sync::{mpsc::Sender, Mutex},
+    task::JoinHandle,
+};
 
 use crate::{
     block_store::BlockStore,
@@ -72,6 +75,7 @@ pub struct BlockListener {
 pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
+    pub blockhash: String,
 }
 
 pub struct BlockListnerNotificatons {
@@ -105,8 +109,7 @@ impl BlockListener {
         commitment_config: CommitmentConfig,
         sink: SubscriptionSink,
     ) {
-        let _ = self
-            .signature_subscribers
+        self.signature_subscribers
             .insert((signature, commitment_config), sink);
     }
 
@@ -129,6 +132,7 @@ impl BlockListener {
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
     ) -> anyhow::Result<()> {
+        //info!("indexing slot {} commitment {}", slot, commitment_config.commitment);
         let comfirmation_status = match commitment_config.commitment {
             CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
             _ => TransactionConfirmationStatus::Confirmed,
@@ -148,8 +152,8 @@ impl BlockListener {
                     transaction_details: Some(TransactionDetails::Full),
                     commitment: Some(commitment_config),
                     max_supported_transaction_version: Some(0),
-                    encoding: Some(UiTransactionEncoding::JsonParsed),
-                    ..Default::default()
+                    encoding: Some(UiTransactionEncoding::Binary),
+                    rewards: Some(false),
                 },
             )
             .await?;
@@ -157,6 +161,7 @@ impl BlockListener {
         timer.observe_duration();
 
         if commitment_config.is_finalized() {
+            info!("finalized slot {}", slot);
             FIN_BLOCKS_RECV.inc();
         } else {
             CON_BLOCKS_RECV.inc();
@@ -177,8 +182,11 @@ impl BlockListener {
 
         self.block_store
             .add_block(
-                blockhash.clone(),
-                BlockInformation { slot, block_height },
+                BlockInformation {
+                    slot,
+                    block_height,
+                    blockhash: blockhash.clone(),
+                },
                 commitment_config,
             )
             .await;
@@ -211,13 +219,14 @@ impl BlockListener {
                 continue;
             };
 
-            let sig = match tx.transaction {
-                EncodedTransaction::Json(json) => json.signatures[0].to_string(),
-                _ => {
-                    error!("Expected jsonParsed encoded tx");
+            let tx = match tx.transaction.decode() {
+                Some(tx) => tx,
+                None => {
+                    warn!("transaction could not be decoded");
                     continue;
                 }
             };
+            let sig = tx.signatures[0].to_string();
 
             if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
                 //
@@ -283,23 +292,34 @@ impl BlockListener {
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
-        let (send, recv) = flume::unbounded();
-        let get_block_errors = Arc::new(AtomicU64::new(0));
-
+        let slots_task_queue = Arc::new(Mutex::new(VecDeque::<(u64, u8)>::new()));
+        // task to fetch blocks
         for _i in 0..6 {
             let this = self.clone();
             let postgres = postgres.clone();
-            let recv = recv.clone();
-            let send = send.clone();
-            let get_block_errors = get_block_errors.clone();
+            let slots_task_queue = slots_task_queue.clone();
 
             tokio::spawn(async move {
-                while let Ok(slot) = recv.recv_async().await {
-                    if get_block_errors.load(Ordering::Relaxed) > 6 {
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                        get_block_errors.fetch_sub(1, Ordering::Relaxed);
+                let slots_task_queue = slots_task_queue.clone();
+                loop {
+                    let (slot, error_count) = {
+                        let mut queue = slots_task_queue.lock().await;
+                        match queue.pop_front() {
+                            Some(t) => t,
+                            None => {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                continue;
+                            }
+                        }
+                    };
+
+                    if error_count > 10 {
+                        warn!(
+                            "unable to get block at slot {} and commitment {}",
+                            slot, commitment_config.commitment
+                        );
+                        continue;
                     }
-                    //                    println!("{i} thread in slot {slot}");
 
                     if let Err(err) = this
                         .index_slot(slot, commitment_config, postgres.clone())
@@ -308,76 +328,67 @@ impl BlockListener {
                         warn!(
                             "Error while indexing {commitment_config:?} block with slot {slot} {err}"
                         );
-
-                        get_block_errors.fetch_add(1, Ordering::Relaxed);
-                        send.send_async(slot).await.unwrap();
+                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                        {
+                            let mut queue = slots_task_queue.lock().await;
+                            queue.push_back((slot, error_count + 1));
+                        }
                     };
                     //   println!("{i} thread done slot {slot}");
                 }
             });
         }
 
-        let (latest_slot_send, mut latest_slot_recv) = tokio::sync::mpsc::channel(1);
-
-        {
-            let this = self.clone();
-            let latest_slot_send = latest_slot_send.clone();
-
-            tokio::spawn(async move {
-                while let Some(latest_slot) = latest_slot_recv.recv().await {
-                    if let Err(err) = this
-                        .index_slot(latest_slot, commitment_config, postgres.clone())
-                        .await
-                    {
-                        warn!(
-                            "Error while indexing latest {commitment_config:?} block with slot {latest_slot} {err}"
-                        );
-
-                        get_block_errors.fetch_add(1, Ordering::Relaxed);
-                        latest_slot_send.send(latest_slot).await.unwrap();
-                    };
-                }
-            });
-        }
-
-
-
+        let rpc_client = self.rpc_client.clone();
         tokio::spawn(async move {
-            let mut slot = self
+            let slots_task_queue = slots_task_queue.clone();
+            let last_latest_slot = self
                 .block_store
                 .get_latest_block_info(commitment_config)
                 .await
-                .1
                 .slot;
+            // -5 for warmup
+            let mut last_latest_slot = last_latest_slot - 5;
 
+            // storage for recent slots processed
+            const SLOT_PROCESSED_SIZE: usize = 128;
+            let mut slot_processed = BTreeSet::<u64>::new();
+            let rpc_client = rpc_client.clone();
             loop {
-                info!("{commitment_config:?} {slot}");
-
-                let mut new_block_slots = self
-                    .rpc_client
-                    .get_blocks_with_commitment(slot, None, commitment_config)
+                let new_slot = rpc_client
+                    .get_slot_with_commitment(commitment_config)
                     .await?;
 
+                // filter already processed slots
+                let new_block_slots: Vec<u64> = (last_latest_slot..new_slot)
+                    .filter(|x| !slot_processed.contains(x))
+                    .map(|x| x)
+                    .collect();
+
                 if new_block_slots.is_empty() {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                     println!("no slots");
 
                     continue;
                 }
+                //info!("Received new slots {commitment_config:?} {last_latest_slot}");
 
-                info!("Received new slots");
+                let latest_slot = *new_block_slots.last().unwrap();
 
-                let Some(latest_slot) = new_block_slots.pop() else {
-                    warn!("Didn't receive any block slots for {slot}");
-                   continue; 
-                };
-
-                slot = latest_slot;
-                latest_slot_send.send(latest_slot).await?;
-
-                for slot in new_block_slots {
-                    send.send_async(slot).await?;
+                // context for lock
+                {
+                    let mut lock = slots_task_queue.lock().await;
+                    for slot in new_block_slots {
+                        lock.push_back((slot, 0));
+                        if slot_processed.insert(slot) && slot_processed.len() > SLOT_PROCESSED_SIZE
+                        {
+                            slot_processed.pop_first();
+                        }
+                    }
                 }
+
+                last_latest_slot = latest_slot;
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             }
         })
     }
