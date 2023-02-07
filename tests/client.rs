@@ -17,9 +17,7 @@ async fn send_and_confirm_txs_get_signature_statuses() {
     let funded_payer = BenchHelper::get_payer().await.unwrap();
     let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
-    let txs = BenchHelper::generate_txs(AMOUNT, &funded_payer, blockhash)
-        .await
-        .unwrap();
+    let txs = BenchHelper::generate_txs(AMOUNT, &funded_payer, blockhash);
 
     info!("Sending and Confirming {AMOUNT} tx(s)");
 
@@ -45,9 +43,7 @@ async fn send_and_confirm_tx_rpc_client() {
     let funded_payer = BenchHelper::get_payer().await.unwrap();
     let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
-    let tx = &BenchHelper::generate_txs(1, &funded_payer, blockhash)
-        .await
-        .unwrap()[0];
+    let tx = &BenchHelper::generate_txs(1, &funded_payer, blockhash)[0];
 
     let sig = tx.get_signature();
 

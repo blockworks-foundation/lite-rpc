@@ -20,10 +20,12 @@ pub async fn send_and_confirm_memo(
     let payer = BenchHelper::get_payer().await?;
     let blockhash = send_rpc.get_latest_blockhash().await?;
 
-    let memo_tx = BenchHelper::create_memo_tx(b"hi", &payer, blockhash).await?;
+    let memo_tx = BenchHelper::create_memo_tx(b"hi", &payer, blockhash);
     let memo_sig = send_rpc.send_transaction(&memo_tx).await?;
 
     confirm_rpc.confirm_transaction(&memo_sig).await?;
+
+    println!("{memo_sig}");
 
     Ok(())
 }

@@ -62,31 +62,27 @@ impl BenchHelper {
         Transaction::new(&[funded_payer], message, blockhash)
     }
 
-    pub async fn generate_txs(
+    #[inline]
+    pub fn generate_txs(
         num_of_txs: usize,
         funded_payer: &Keypair,
         blockhash: Hash,
-    ) -> anyhow::Result<Vec<Transaction>> {
-        let mut txs = Vec::with_capacity(num_of_txs);
+    ) -> Vec<Transaction> {
+        (0..num_of_txs)
+            .into_iter()
+            .map(|_| Self::create_memo_tx(b"hello" ,funded_payer, blockhash))
+            .collect()
+    }  
 
-        for _ in 0..num_of_txs {
-            txs.push(Self::create_transaction(funded_payer, blockhash));
-        }
-
-        Ok(txs)
-    }
-
-    pub async fn create_memo_tx(
+    pub fn create_memo_tx(
         msg: &[u8],
         payer: &Keypair,
         blockhash: Hash,
-    ) -> anyhow::Result<Transaction> {
-        let memo = Pubkey::from_str(MEMO_PROGRAM_ID)?;
+    ) -> Transaction {
+        let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
 
         let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
         let message = Message::new(&[instruction], Some(&payer.pubkey()));
-        let tx = Transaction::new(&[payer], message, blockhash);
-
-        Ok(tx)
+        Transaction::new(&[payer], message, blockhash)
     }
 }
