@@ -390,11 +390,12 @@ impl LiteRpcServer for LiteBridge {
         &self,
         mut sink: SubscriptionSink,
         signature: String,
-        _commitment_config: CommitmentConfig,
+        commitment_config: CommitmentConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
         sink.accept()?;
-        self.block_listner.signature_subscribe(signature, sink);
+        self.block_listner
+            .signature_subscribe(signature, commitment_config, sink);
         Ok(())
     }
 }
