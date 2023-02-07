@@ -24,6 +24,7 @@ use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
+use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey,
     transaction::VersionedTransaction,
@@ -34,7 +35,6 @@ use tokio::{
     sync::mpsc::{self, UnboundedSender},
     task::JoinHandle,
 };
-use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: Counter =
@@ -76,7 +76,8 @@ impl LiteBridge {
 
         let block_store = BlockStore::new(&rpc_client).await?;
 
-        let block_listner = BlockListener::new(tx_sender.clone(), block_store.clone());
+        let block_listner =
+            BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store.clone());
 
         Ok(Self {
             rpc_client,
