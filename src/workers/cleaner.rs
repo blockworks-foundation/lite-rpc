@@ -33,7 +33,9 @@ impl Cleaner {
             self.tx_sender.txs_sent.remove(to_remove);
         }
 
-        info!("Cleaned {} txs", to_remove.len());
+        if !to_remove.is_empty() {
+            info!("Cleaned {} txs", to_remove.len());
+        }
     }
 
     /// Clean Signature Subscribers from Block Listeners
