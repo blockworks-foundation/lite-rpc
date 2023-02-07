@@ -3,10 +3,10 @@ use std::sync::Arc;
 use dashmap::DashMap;
 use futures::future::try_join_all;
 use jsonrpsee::SubscriptionSink;
-use log::{info, warn};
+use log::{error, info, warn};
 use prometheus::{histogram_opts, opts, register_counter, register_histogram, Counter, Histogram};
 
-use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::RpcBlockConfig,
     response::{Response as RpcResponse, RpcResponseContext},
@@ -18,8 +18,9 @@ use solana_sdk::{
 };
 
 use solana_transaction_status::{
-    option_serializer::OptionSerializer, RewardType, TransactionConfirmationStatus,
-    TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta,
+    option_serializer::OptionSerializer, EncodedTransaction, RewardType,
+    TransactionConfirmationStatus, TransactionDetails, TransactionStatus, UiConfirmedBlock,
+    UiTransactionEncoding, UiTransactionStatusMeta,
 };
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 
@@ -136,6 +137,8 @@ impl BlockListener {
                 RpcBlockConfig {
                     transaction_details: Some(TransactionDetails::Full),
                     commitment: Some(commitment_config),
+                    max_supported_transaction_version: Some(0),
+                    encoding: Some(UiTransactionEncoding::JsonParsed),
                     ..Default::default()
                 },
             )
@@ -195,16 +198,17 @@ impl BlockListener {
 
         for tx in transactions {
             let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
-                         info!("tx with no meta");
-                         continue;
-                    };
+                info!("tx with no meta");
+                continue;
+            };
 
-            let Some(tx) = tx.transaction.decode() else {
-                         info!("unable to decode tx");
-                        continue;
-                    };
-
-            let sig = tx.get_signature().to_string();
+            let sig = match tx.transaction {
+                EncodedTransaction::Json(json) => json.signatures[0].to_string(),
+                _ => {
+                    error!("Expected jsonParsed encoded tx");
+                    continue;
+                }
+            };
 
             if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
                 //
