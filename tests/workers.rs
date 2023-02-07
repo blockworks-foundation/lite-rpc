@@ -36,7 +36,7 @@ async fn send_and_confirm_txs() {
     let tx_sender = TxSender::new(tpu_client);
     let block_store = BlockStore::new(&rpc_client).await.unwrap();
 
-    let block_listener = BlockListener::new(tx_sender.clone(), block_store);
+    let block_listener = BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store);
 
     let (tx_send, tx_recv) = mpsc::unbounded_channel();
 
