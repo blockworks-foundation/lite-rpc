@@ -81,7 +81,8 @@ impl LiteBridge {
 
         let block_store = BlockStore::new(&rpc_client).await?;
 
-        let block_listner = BlockListener::new(tx_sender.clone(), block_store.clone());
+        let block_listner =
+            BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store.clone());
 
         Ok(Self {
             rpc_client,
