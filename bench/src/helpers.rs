@@ -1,10 +1,11 @@
-use std::{ops::Deref, sync::Arc};
+use std::{ops::Deref, str::FromStr, sync::Arc};
 
 use anyhow::Context;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     hash::Hash,
+    instruction::Instruction,
     message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
@@ -12,6 +13,8 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
+
+const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
 #[derive(Clone)]
 pub struct BenchHelper {
@@ -89,5 +92,20 @@ impl BenchHelper {
         }
 
         Ok(txs)
+    }
+
+    pub async fn send_and_confirm_memo(
+        &self,
+        msg: &[u8],
+        payer: &Keypair,
+        blockhash: Hash,
+    ) -> anyhow::Result<String> {
+        let memo = Pubkey::from_str(MEMO_PROGRAM_ID)?;
+
+        let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
+        let message = Message::new(&[instruction], Some(&payer.pubkey()));
+        let tx = Transaction::new(&[payer], message, blockhash);
+
+        Ok(self.send_and_confirm_transaction(&tx).await?.to_string())
     }
 }
