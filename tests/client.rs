@@ -13,12 +13,11 @@ async fn send_and_confirm_txs_get_signature_statuses() {
     tracing_subscriber::fmt::init();
 
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
-    let bench_helper = BenchHelper::new(rpc_client.clone());
 
-    let funded_payer = bench_helper.get_payer().await.unwrap();
+    let funded_payer = BenchHelper::get_payer().await.unwrap();
+    let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
-    let txs = bench_helper
-        .generate_txs(AMOUNT, &funded_payer)
+    let txs = BenchHelper::generate_txs(AMOUNT, &funded_payer, blockhash)
         .await
         .unwrap();
 
@@ -32,8 +31,7 @@ async fn send_and_confirm_txs_get_signature_statuses() {
     for tx in &txs {
         let sig = tx.get_signature();
         info!("Confirming {sig}");
-        bench_helper
-            .wait_till_signature_status(sig, CommitmentConfig::confirmed())
+        BenchHelper::wait_till_signature_status(&rpc_client, sig, CommitmentConfig::confirmed())
             .await
             .unwrap();
     }
@@ -43,15 +41,17 @@ async fn send_and_confirm_txs_get_signature_statuses() {
 
 #[tokio::test]
 async fn send_and_confirm_tx_rpc_client() {
-    let rpc_client = Arc::new(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
-    let bench_helper = BenchHelper::new(rpc_client.clone());
+    let rpc_client = RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string());
+    let funded_payer = BenchHelper::get_payer().await.unwrap();
+    let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
-    let funded_payer = bench_helper.get_payer().await.unwrap();
+    let tx = &BenchHelper::generate_txs(1, &funded_payer, blockhash)
+        .await
+        .unwrap()[0];
 
-    let tx = &bench_helper.generate_txs(1, &funded_payer).await.unwrap()[0];
     let sig = tx.get_signature();
 
-    bench_helper.send_and_confirm_transaction(tx).await.unwrap();
+    rpc_client.send_and_confirm_transaction(tx).await.unwrap();
 
     info!("Sent and Confirmed {sig}");
 }

@@ -1,4 +1,4 @@
-use std::{ops::Deref, str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 use anyhow::Context;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -16,25 +16,10 @@ use solana_sdk::{
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
-#[derive(Clone)]
-pub struct BenchHelper {
-    pub rpc_client: Arc<RpcClient>,
-}
-
-impl Deref for BenchHelper {
-    type Target = RpcClient;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rpc_client
-    }
-}
+pub struct BenchHelper;
 
 impl BenchHelper {
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
-        Self { rpc_client }
-    }
-
-    pub async fn get_payer(&self) -> anyhow::Result<Keypair> {
+    pub async fn get_payer() -> anyhow::Result<Keypair> {
         let mut config_dir = dirs::config_dir().context("Unable to get path to user config dir")?;
 
         config_dir.push("solana");
@@ -50,13 +35,12 @@ impl BenchHelper {
     }
 
     pub async fn wait_till_signature_status(
-        &self,
+        rpc_client: &RpcClient,
         sig: &Signature,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
         loop {
-            if let Some(err) = self
-                .rpc_client
+            if let Some(err) = rpc_client
                 .get_signature_status_with_commitment(sig, commitment_config)
                 .await?
             {
@@ -66,7 +50,7 @@ impl BenchHelper {
         }
     }
 
-    pub fn create_transaction(&self, funded_payer: &Keypair, blockhash: Hash) -> Transaction {
+    pub fn create_transaction(funded_payer: &Keypair, blockhash: Hash) -> Transaction {
         let to_pubkey = Pubkey::new_unique();
 
         // transfer instruction
@@ -79,33 +63,30 @@ impl BenchHelper {
     }
 
     pub async fn generate_txs(
-        &self,
         num_of_txs: usize,
         funded_payer: &Keypair,
+        blockhash: Hash,
     ) -> anyhow::Result<Vec<Transaction>> {
         let mut txs = Vec::with_capacity(num_of_txs);
 
-        let blockhash = self.rpc_client.get_latest_blockhash().await?;
-
         for _ in 0..num_of_txs {
-            txs.push(self.create_transaction(funded_payer, blockhash));
+            txs.push(Self::create_transaction(funded_payer, blockhash));
         }
 
         Ok(txs)
     }
 
-    pub async fn send_and_confirm_memo(
-        &self,
+    pub async fn create_memo_tx(
         msg: &[u8],
         payer: &Keypair,
         blockhash: Hash,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<Transaction> {
         let memo = Pubkey::from_str(MEMO_PROGRAM_ID)?;
 
         let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
         let message = Message::new(&[instruction], Some(&payer.pubkey()));
         let tx = Transaction::new(&[payer], message, blockhash);
 
-        Ok(self.send_and_confirm_transaction(&tx).await?.to_string())
+        Ok(tx)
     }
 }
