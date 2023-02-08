@@ -99,6 +99,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ansi_term"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d52a9bb7ec0cf484c551830a7ce27bd20d67eac647e1befb56b0be4ee39a55d2"
+dependencies = [
+ "winapi",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -636,6 +645,21 @@ dependencies = [
 
 [[package]]
 name = "clap"
+version = "2.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0610544180c38b88101fecf2dd634b174a62eef6946f84dfc6a7127512b381c"
+dependencies = [
+ "ansi_term",
+ "atty",
+ "bitflags",
+ "strsim 0.8.0",
+ "textwrap 0.11.0",
+ "unicode-width",
+ "vec_map",
+]
+
+[[package]]
+name = "clap"
 version = "3.2.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71655c45cb9845d3270c9d6df84ebe72b4dad3c2ba3f7023ad47c144e4e473a5"
@@ -645,9 +669,9 @@ dependencies = [
  "clap_lex 0.2.4",
  "indexmap",
  "once_cell",
- "strsim",
+ "strsim 0.10.0",
  "termcolor",
- "textwrap",
+ "textwrap 0.16.0",
 ]
 
 [[package]]
@@ -661,7 +685,7 @@ dependencies = [
  "clap_lex 0.3.1",
  "is-terminal",
  "once_cell",
- "strsim",
+ "strsim 0.10.0",
  "termcolor",
 ]
 
@@ -996,7 +1020,7 @@ dependencies = [
  "ident_case",
  "proc-macro2 1.0.51",
  "quote 1.0.23",
- "strsim",
+ "strsim 0.10.0",
  "syn 1.0.107",
 ]
 
@@ -1068,6 +1092,18 @@ dependencies = [
  "proc-macro2 1.0.51",
  "quote 1.0.23",
  "syn 1.0.107",
+]
+
+[[package]]
+name = "dialoguer"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af3c796f3b0b408d9fd581611b47fa850821fcb84aa640b83a3c1a5be2d691f2"
+dependencies = [
+ "console",
+ "shell-words",
+ "tempfile",
+ "zeroize",
 ]
 
 [[package]]
@@ -1221,6 +1257,18 @@ version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "828de45d0ca18782232dfb8f3ea9cc428e8ced380eb26a520baaacfc70de39ce"
 dependencies = [
+ "proc-macro2 1.0.51",
+ "quote 1.0.23",
+ "syn 1.0.107",
+]
+
+[[package]]
+name = "enum_dispatch"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11f36e95862220b211a6e2aa5eca09b4fa391b13cd52ceb8035a24bf65a79de2"
+dependencies = [
+ "once_cell",
  "proc-macro2 1.0.51",
  "quote 1.0.23",
  "syn 1.0.107",
@@ -2205,6 +2253,7 @@ dependencies = [
  "prometheus",
  "serde",
  "serde_json",
+ "solana-client",
  "solana-pubsub-client",
  "solana-quic-client",
  "solana-rpc-client",
@@ -3217,6 +3266,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpassword"
+version = "7.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6678cf63ab3491898c0d021b493c94c9b221d91295294a2a5746eacbe5928322"
+dependencies = [
+ "libc",
+ "rtoolbox",
+ "winapi",
+]
+
+[[package]]
+name = "rtoolbox"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "034e22c514f5c0cb8a10ff341b9b048b5ceb21591f31c8f44c43b960f9b3524a"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3572,6 +3642,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell-words"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24188a676b6ae68c3b2cb3a01be17fbf7240ce009799bb56d5b1409051e78fde"
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3684,6 +3760,56 @@ dependencies = [
  "solana-program-runtime",
  "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
+]
+
+[[package]]
+name = "solana-clap-utils"
+version = "1.15.0"
+source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
+dependencies = [
+ "chrono",
+ "clap 2.34.0",
+ "rpassword",
+ "solana-perf",
+ "solana-remote-wallet",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "thiserror",
+ "tiny-bip39",
+ "uriparse",
+ "url",
+]
+
+[[package]]
+name = "solana-client"
+version = "1.15.0"
+source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
+dependencies = [
+ "async-trait",
+ "bincode",
+ "enum_dispatch",
+ "futures",
+ "futures-util",
+ "indexmap",
+ "indicatif",
+ "log",
+ "quinn",
+ "rand 0.7.3",
+ "rayon",
+ "solana-measure",
+ "solana-metrics",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-quic-client",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-rpc-client-nonce-utils",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-streamer",
+ "solana-thin-client",
+ "solana-tpu-client",
+ "solana-udp-client",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -4073,6 +4199,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-remote-wallet"
+version = "1.15.0"
+source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
+dependencies = [
+ "console",
+ "dialoguer",
+ "log",
+ "num-derive",
+ "num-traits",
+ "parking_lot",
+ "qstring",
+ "semver 1.0.16",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "thiserror",
+ "uriparse",
+]
+
+[[package]]
 name = "solana-rpc-client"
 version = "1.15.0"
 source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
@@ -4115,6 +4259,18 @@ dependencies = [
  "solana-transaction-status",
  "solana-version",
  "spl-token-2022",
+ "thiserror",
+]
+
+[[package]]
+name = "solana-rpc-client-nonce-utils"
+version = "1.15.0"
+source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
+dependencies = [
+ "clap 2.34.0",
+ "solana-clap-utils",
+ "solana-rpc-client",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
  "thiserror",
 ]
 
@@ -4279,6 +4435,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-thin-client"
+version = "1.15.0"
+source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
+dependencies = [
+ "bincode",
+ "log",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-tpu-client",
+]
+
+[[package]]
 name = "solana-tpu-client"
 version = "1.15.0"
 source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
@@ -4325,6 +4494,20 @@ dependencies = [
  "spl-token",
  "spl-token-2022",
  "thiserror",
+]
+
+[[package]]
+name = "solana-udp-client"
+version = "1.15.0"
+source = "git+https://github.com/blockworks-foundation/solana?branch=lite_rpc#04daf93c153bdce7f461ad284843c21c63ca621f"
+dependencies = [
+ "async-trait",
+ "solana-net-utils",
+ "solana-sdk 1.15.0 (git+https://github.com/blockworks-foundation/solana?branch=lite_rpc)",
+ "solana-streamer",
+ "solana-tpu-client",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -4499,6 +4682,12 @@ dependencies = [
 
 [[package]]
 name = "strsim"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
+
+[[package]]
+name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
@@ -4564,6 +4753,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be55cf8942feac5c765c2c993422806843c9a9a45d4d5c407ad6dd2ea95eb9b6"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "textwrap"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
+dependencies = [
+ "unicode-width",
 ]
 
 [[package]]
@@ -5041,6 +5239,12 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "vec_map"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1bddf1187be692e79c5ffeab891132dfb0f236ed36a43c7ed39f1165ee20191"
 
 [[package]]
 name = "version_check"
