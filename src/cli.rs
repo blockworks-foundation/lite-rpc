@@ -33,4 +33,6 @@ pub struct Args {
     /// enable metrics to prometheus at addr
     #[arg(short = 'm', long, default_value_t = String::from("[::]:9091"))]
     pub prometheus_addr: String,
+    #[arg(short = 'k', long, default_value_t = String::new())]
+    pub identity_keypair: String,
 }
