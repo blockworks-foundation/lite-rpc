@@ -24,6 +24,11 @@ function delay(ms: number) {
 export async function main() {
 
     const connection = new Connection(url, 'confirmed');
+    console.log('get latest blockhash')
+    const blockhash = await connection.getLatestBlockhash({
+        commitment: 'finalized'
+    });
+    console.log('blockhash : ' + blockhash.blockhash);
     const authority = Keypair.fromSecretKey(
         Uint8Array.from(
             JSON.parse(
@@ -35,12 +40,13 @@ export async function main() {
 
     const users = InFile.users.map(x => Keypair.fromSecretKey(Uint8Array.from(x.secretKey)));
     const userAccounts = InFile.tokenAccounts.map(x => new PublicKey(x));
-    let signatures_to_unpack: TransactionSignature[][] = [];
+    let signatures_to_unpack: TransactionSignature[][] = new Array<TransactionSignature[]>(forSeconds);
     let time_taken_to_send = [];
 
     for (let i = 0; i < forSeconds; ++i) {
+        console.log('Sending transaction ' + i);
         const start = performance.now();
-        let signatures: TransactionSignature[] = [];
+        signatures_to_unpack[i] = new Array<TransactionSignature>(tps);
         const blockhash = (await connection.getLatestBlockhash()).blockhash;
         for (let j = 0; j < tps; ++j) {
             const toIndex = Math.floor(Math.random() * users.length);
@@ -50,18 +56,14 @@ export async function main() {
             }
             const userFrom = userAccounts[fromIndex];
             const userTo = userAccounts[toIndex];
-            if (skip_confirmations === false) {
-                const transaction = new Transaction().add(
-                    splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, Math.ceil(Math.random() * 100))
-                );
-                transaction.recentBlockhash = blockhash;
-                transaction.feePayer = authority.publicKey;
-                const p = connection.sendTransaction(transaction, [authority, users[fromIndex]], { skipPreflight: true });
-                signatures.push(await p)
-            }
-        }
-        if (skip_confirmations === false) {
-            signatures_to_unpack.push(signatures)
+
+            const transaction = new Transaction().add(
+                splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, Math.ceil((Math.random()+1) * 100))
+            );
+            transaction.recentBlockhash = blockhash;
+            transaction.feePayer = authority.publicKey;
+
+            connection.sendTransaction(transaction, [authority, users[fromIndex]], { skipPreflight: true }).then(p => {signatures_to_unpack[i][j] = p});
         }
         const end = performance.now();
         const diff = (end - start);
@@ -82,6 +84,7 @@ export async function main() {
             const signatures = signatures_to_unpack[i];
             for (const signature of signatures) {
                 const confirmed = await connection.getSignatureStatus(signature);
+                console.log(i + "  " + signature + "  " + confirmed);
                 if (confirmed != null && confirmed.value != null && confirmed.value.err == null) {
                     successes[i]++;
                 } else {

@@ -97,14 +97,17 @@ impl BlockStore {
         commitment_config: CommitmentConfig,
     ) {
         let blockhash = block_info.blockhash.clone();
-        info!("ab {blockhash} {block_info:?}");
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
         self.blocks.insert(blockhash, block_info.clone());
-        *self
-            .get_latest_blockinfo_lock(commitment_config)
-            .write()
-            .await = block_info;
+        let last_recent_block = self.get_latest_block_info(commitment_config).await;
+
+        if last_recent_block.slot < block_info.slot {
+            *self
+                .get_latest_blockinfo_lock(commitment_config)
+                .write()
+                .await = block_info;
+        }
     }
 }

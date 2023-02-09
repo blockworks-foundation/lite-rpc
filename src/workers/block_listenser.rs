@@ -1,7 +1,11 @@
+<<<<<<< HEAD
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+=======
+use std::{sync::Arc, collections::BTreeSet};
+>>>>>>> 3d87924 (block pooling refactoring and rework on the test scripts)
 
 use dashmap::DashMap;
 use jsonrpsee::SubscriptionSink;
@@ -24,7 +28,7 @@ use solana_transaction_status::{
     TransactionConfirmationStatus, TransactionDetails, TransactionStatus, UiConfirmedBlock,
     UiTransactionEncoding, UiTransactionStatusMeta,
 };
-use tokio::{sync::mpsc::Sender, task::JoinHandle};
+use tokio::{sync::mpsc::Sender, task::JoinHandle, sync::RwLock};
 
 use crate::{
     block_store::BlockStore,
@@ -215,13 +219,14 @@ impl BlockListener {
                 continue;
             };
 
-            let sig = match tx.transaction {
-                EncodedTransaction::Binary( signature, _) => signature,
-                _ => {
-                    error!("Expected binary encoded tx");
+            let tx = match tx.transaction.decode() {
+                Some(tx) => tx,
+                None => {
+                    warn!("transaction could not be decoded");
                     continue;
                 }
             };
+            let sig = tx.signatures[0].to_string();
 
             if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
                 //
@@ -367,6 +372,10 @@ impl BlockListener {
                     .rpc_client
                     .get_blocks_with_commitment(slot, None, commitment_config)
                     .await?;
+                let block_slots: Vec<u64> = {
+                    let slot_processed = slot_processed.read().await;
+                    block_slots.iter().filter(|x| !slot_processed.contains(*x)).map(|x| *x).collect()
+                };
 
                 if new_block_slots.is_empty() {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
