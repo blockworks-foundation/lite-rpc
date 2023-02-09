@@ -249,7 +249,11 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (blockhash, BlockInformation { slot, block_height }) = self
+        let BlockInformation {
+            slot,
+            block_height,
+            blockhash,
+        } = self
             .block_store
             .get_latest_block_info(commitment_config)
             .await;
@@ -300,7 +304,6 @@ impl LiteRpcServer for LiteBridge {
             .block_store
             .get_latest_block_info(commitment)
             .await
-            .1
             .slot;
 
         Ok(RpcResponse {
@@ -335,7 +338,6 @@ impl LiteRpcServer for LiteBridge {
                     .block_store
                     .get_latest_block_info(CommitmentConfig::finalized())
                     .await
-                    .1
                     .slot,
                 api_version: None,
             },

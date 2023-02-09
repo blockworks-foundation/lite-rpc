@@ -72,6 +72,7 @@ pub struct BlockListener {
 pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
+    pub blockhash: String,
 }
 
 pub struct BlockListnerNotificatons {
@@ -105,7 +106,7 @@ impl BlockListener {
         commitment_config: CommitmentConfig,
         sink: SubscriptionSink,
     ) {
-        let _ = self
+        self
             .signature_subscribers
             .insert((signature, commitment_config), sink);
     }
@@ -147,8 +148,8 @@ impl BlockListener {
                 RpcBlockConfig {
                     transaction_details: Some(TransactionDetails::Full),
                     commitment: Some(commitment_config),
-                    max_supported_transaction_version: Some(0),
-                    encoding: Some(UiTransactionEncoding::JsonParsed),
+                    max_supported_transaction_version: None,
+                    encoding: Some(UiTransactionEncoding::Base58),
                     ..Default::default()
                 },
             )
@@ -177,8 +178,11 @@ impl BlockListener {
 
         self.block_store
             .add_block(
-                blockhash.clone(),
-                BlockInformation { slot, block_height },
+                BlockInformation {
+                    slot,
+                    block_height,
+                    blockhash: blockhash.clone(),
+                },
                 commitment_config,
             )
             .await;
@@ -212,9 +216,9 @@ impl BlockListener {
             };
 
             let sig = match tx.transaction {
-                EncodedTransaction::Json(json) => json.signatures[0].to_string(),
+                EncodedTransaction::Binary( signature, _) => signature,
                 _ => {
-                    error!("Expected jsonParsed encoded tx");
+                    error!("Expected binary encoded tx");
                     continue;
                 }
             };
@@ -352,6 +356,12 @@ impl BlockListener {
 
             loop {
                 info!("{commitment_config:?} {slot}");
+                let BlockInformation {
+                    slot: latest_slot, ..
+                } = self
+                    .block_store
+                    .get_latest_block_info(commitment_config)
+                    .await;
 
                 let mut new_block_slots = self
                     .rpc_client
