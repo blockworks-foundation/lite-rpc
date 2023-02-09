@@ -74,7 +74,7 @@ export async function main() {
     }
 
     console.log('finish sending transactions');
-    await delay(5000)
+    await delay(30000)
     console.log('checking for confirmations');
     if (skip_confirmations === false) {
         const size = signatures_to_unpack.length

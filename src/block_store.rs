@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 
-use log::info;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::RwLock;

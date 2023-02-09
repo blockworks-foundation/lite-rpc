@@ -24,7 +24,6 @@ use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
-use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
     transaction::VersionedTransaction,
