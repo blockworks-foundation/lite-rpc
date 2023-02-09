@@ -1,7 +1,9 @@
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 
 use dashmap::DashMap;
-use futures::future::try_join_all;
 use jsonrpsee::SubscriptionSink;
 use log::{error, info, warn};
 use prometheus::{histogram_opts, opts, register_counter, register_histogram, Counter, Histogram};
@@ -190,8 +192,7 @@ impl BlockListener {
                       .iter()
                       .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
                 return Ok(());
-
-                     };
+            };
 
             let _leader_id = &leader_reward.pubkey;
 
@@ -277,51 +278,106 @@ impl BlockListener {
 
         Ok(())
     }
-
     pub fn listen(
         self,
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
-        tokio::spawn(async move {
-            let commitment = commitment_config.commitment;
+        let (send, recv) = flume::unbounded();
+        let get_block_errors = Arc::new(AtomicU64::new(0));
 
-            info!("Listening to {commitment:?} blocks");
+        for _i in 0..6 {
+            let this = self.clone();
+            let postgres = postgres.clone();
+            let recv = recv.clone();
+            let send = send.clone();
+            let get_block_errors = get_block_errors.clone();
+
+            tokio::spawn(async move {
+                while let Ok(slot) = recv.recv_async().await {
+                    if get_block_errors.load(Ordering::Relaxed) > 6 {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                        get_block_errors.fetch_sub(1, Ordering::Relaxed);
+                    }
+                    //                    println!("{i} thread in slot {slot}");
+
+                    if let Err(err) = this
+                        .index_slot(slot, commitment_config, postgres.clone())
+                        .await
+                    {
+                        warn!(
+                            "Error while indexing {commitment_config:?} block with slot {slot} {err}"
+                        );
+
+                        get_block_errors.fetch_add(1, Ordering::Relaxed);
+                        send.send_async(slot).await.unwrap();
+                    };
+                    //   println!("{i} thread done slot {slot}");
+                }
+            });
+        }
+
+        let (latest_slot_send, mut latest_slot_recv) = tokio::sync::mpsc::channel(1);
+
+        {
+            let this = self.clone();
+            let latest_slot_send = latest_slot_send.clone();
+
+            tokio::spawn(async move {
+                while let Some(latest_slot) = latest_slot_recv.recv().await {
+                    if let Err(err) = this
+                        .index_slot(latest_slot, commitment_config, postgres.clone())
+                        .await
+                    {
+                        warn!(
+                            "Error while indexing latest {commitment_config:?} block with slot {latest_slot} {err}"
+                        );
+
+                        get_block_errors.fetch_add(1, Ordering::Relaxed);
+                        latest_slot_send.send(latest_slot).await.unwrap();
+                    };
+                }
+            });
+        }
+
+
+
+        tokio::spawn(async move {
+            let mut slot = self
+                .block_store
+                .get_latest_block_info(commitment_config)
+                .await
+                .1
+                .slot;
 
             loop {
-                let (
-                    _,
-                    BlockInformation {
-                        slot: latest_slot,
-                        block_height: _,
-                    },
-                ) = self
-                    .block_store
-                    .get_latest_block_info(commitment_config)
-                    .await;
+                info!("{commitment_config:?} {slot}");
 
-                let block_slots = self
+                let mut new_block_slots = self
                     .rpc_client
-                    .get_blocks_with_commitment(latest_slot, None, commitment_config)
+                    .get_blocks_with_commitment(slot, None, commitment_config)
                     .await?;
 
-                let block_future_handlers = block_slots.into_iter().map(|slot| {
-                    let this = self.clone();
-                    let postgres = postgres.clone();
+                if new_block_slots.is_empty() {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    println!("no slots");
 
-                    tokio::spawn(async move {
-                        if let Err(err) = this
-                            .index_slot(slot, commitment_config, postgres.clone())
-                            .await
-                        {
-                            warn!(
-                                "Error while indexing {commitment_config:?} block with slot {slot} {err}"
-                            );
-                        };
-                    })
-                });
+                    continue;
+                }
 
-                let _ = try_join_all(block_future_handlers).await;
+                info!("Received new slots");
+
+                let Some(latest_slot) = new_block_slots.pop() else {
+                    warn!("Didn't receive any block slots for {slot}");
+                   continue; 
+                };
+
+                slot = latest_slot;
+                latest_slot_send.send(latest_slot).await?;
+
+                for slot in new_block_slots {
+                    send.send_async(slot).await?;
+                }
             }
         })
     }

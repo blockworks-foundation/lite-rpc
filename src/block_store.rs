@@ -97,7 +97,10 @@ impl BlockStore {
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
+        let slot = block_info.slot;
         self.blocks.insert(blockhash.clone(), block_info);
-        *self.get_latest_blockhash(commitment_config).write().await = blockhash;
+        if slot > self.get_latest_block_info(commitment_config).await.1.slot {
+            *self.get_latest_blockhash(commitment_config).write().await = blockhash;
+        }
     }
 }

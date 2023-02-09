@@ -4,10 +4,14 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
 #[tokio::test]
 async fn part_send_n_confirm() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+    log::info!("rpc {DEFAULT_RPC_ADDR} lite {DEFAULT_LITE_RPC_ADDR}");
+
     let rpc_client = RpcClient::new(DEFAULT_RPC_ADDR.to_string());
     let lite_rpc_client = RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string());
 
-    send_and_confirm_memo(&rpc_client, &lite_rpc_client).await?;
+    send_and_confirm_memo(&lite_rpc_client, &lite_rpc_client).await?;
+    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
     send_and_confirm_memo(&lite_rpc_client, &rpc_client).await?;
 
     Ok(())
