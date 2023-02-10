@@ -12,7 +12,7 @@ use lite_rpc::{
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::sync::mpsc;
 
@@ -27,6 +27,7 @@ async fn send_and_confirm_txs() {
             rpc_client.clone(),
             DEFAULT_WS_ADDR.into(),
             Default::default(),
+            Keypair::new(),
         )
         .await
         .unwrap(),
