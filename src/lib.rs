@@ -20,11 +20,11 @@ pub const DEFAULT_WS_ADDR: &str = "ws://0.0.0.0:8900";
 #[from_env]
 pub const DEFAULT_TX_MAX_RETRIES: u16 = 1;
 #[from_env]
-pub const DEFAULT_TX_BATCH_SIZE: usize = 1 << 7;
+pub const DEFAULT_TX_BATCH_SIZE: usize = 12;
 #[from_env]
 pub const DEFAULT_FANOUT_SIZE: u64 = 32;
 #[from_env]
-pub const DEFAULT_TX_BATCH_INTERVAL_MS: u64 = 1;
+pub const DEFAULT_TX_BATCH_INTERVAL_MS: u64 = 5;
 #[from_env]
 pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 5 * 60 * 1000; // five minute
 #[from_env]

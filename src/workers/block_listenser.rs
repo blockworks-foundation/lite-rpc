@@ -23,11 +23,14 @@ use solana_sdk::{
 };
 
 use solana_transaction_status::{
-    option_serializer::OptionSerializer, RewardType,
-    TransactionConfirmationStatus, TransactionDetails, TransactionStatus, UiConfirmedBlock,
-    UiTransactionEncoding, UiTransactionStatusMeta,
+    option_serializer::OptionSerializer, RewardType, TransactionConfirmationStatus,
+    TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
+    UiTransactionStatusMeta,
 };
-use tokio::{sync::{mpsc::Sender, RwLock, Mutex}, task::JoinHandle};
+use tokio::{
+    sync::{mpsc::Sender, Mutex, RwLock},
+    task::JoinHandle,
+};
 
 use crate::{
     block_store::BlockStore,
@@ -132,8 +135,7 @@ impl BlockListener {
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
     ) -> anyhow::Result<()> {
-
-        info!("indexing slot {} commitment {}", slot, commitment_config.commitment);
+        //info!("indexing slot {} commitment {}", slot, commitment_config.commitment);
         let comfirmation_status = match commitment_config.commitment {
             CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
             _ => TransactionConfirmationStatus::Confirmed,
@@ -152,9 +154,9 @@ impl BlockListener {
                 RpcBlockConfig {
                     transaction_details: Some(TransactionDetails::Full),
                     commitment: Some(commitment_config),
-                    max_supported_transaction_version: None,
-                    encoding: Some(UiTransactionEncoding::Base58),
-                    ..Default::default()
+                    max_supported_transaction_version: Some(0),
+                    encoding: Some(UiTransactionEncoding::Binary),
+                    rewards: Some(false),
                 },
             )
             .await?;
@@ -162,6 +164,7 @@ impl BlockListener {
         timer.observe_duration();
 
         if commitment_config.is_finalized() {
+            info!("finalized slot {}", slot);
             FIN_BLOCKS_RECV.inc();
         } else {
             CON_BLOCKS_RECV.inc();
@@ -328,8 +331,11 @@ impl BlockListener {
                         warn!(
                             "Error while indexing {commitment_config:?} block with slot {slot} {err}"
                         );
-                        let mut queue = slots_task_queue.lock().await;
-                        queue.push_back((slot, error_count + 1));
+                        {
+                            let mut queue = slots_task_queue.lock().await;
+                            queue.push_back((slot, error_count + 1));
+                        }
+                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     };
                     //   println!("{i} thread done slot {slot}");
                 }
@@ -352,15 +358,14 @@ impl BlockListener {
             let mut slot_processed = BTreeSet::<u64>::new();
             let rpc_client = rpc_client.clone();
             loop {
-                let new_block_slots = rpc_client
-                    .get_blocks_with_commitment(last_latest_slot, None, commitment_config)
+                let new_slot = rpc_client
+                    .get_slot_with_commitment(commitment_config)
                     .await?;
 
                 // filter already processed slots
-                let new_block_slots: Vec<u64> = new_block_slots
-                    .iter()
-                    .filter(|x| !slot_processed.contains(*x))
-                    .map(|x| *x)
+                let new_block_slots: Vec<u64> = (last_latest_slot..new_slot)
+                    .filter(|x| !slot_processed.contains(x))
+                    .map(|x| x)
                     .collect();
 
                 if new_block_slots.is_empty() {
@@ -369,7 +374,7 @@ impl BlockListener {
 
                     continue;
                 }
-                info!("Received new slots {commitment_config:?} {last_latest_slot}");
+                //info!("Received new slots {commitment_config:?} {last_latest_slot}");
 
                 let latest_slot = *new_block_slots.last().unwrap();
 
@@ -378,14 +383,15 @@ impl BlockListener {
                     let mut lock = slots_task_queue.lock().await;
                     for slot in new_block_slots {
                         lock.push_back((slot, 0));
-                        if slot_processed.insert(slot) && slot_processed.len() > SLOT_PROCESSED_SIZE {
+                        if slot_processed.insert(slot) && slot_processed.len() > SLOT_PROCESSED_SIZE
+                        {
                             slot_processed.pop_first();
                         }
                     }
                 }
 
                 last_latest_slot = latest_slot;
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             }
         })
     }

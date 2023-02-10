@@ -23,7 +23,7 @@ function delay(ms: number) {
 
 export async function main() {
 
-    const connection = new Connection(url, 'confirmed');
+    const connection = new Connection(url, 'finalized');
     console.log('get latest blockhash')
     const blockhash = await connection.getLatestBlockhash({
         commitment: 'finalized'
@@ -47,8 +47,11 @@ export async function main() {
         console.log('Sending transaction ' + i);
         const start = performance.now();
         signatures_to_unpack[i] = new Array<TransactionSignature>(tps);
-        const blockhash = (await connection.getLatestBlockhash()).blockhash;
+        let blockhash = (await connection.getLatestBlockhash()).blockhash;
         for (let j = 0; j < tps; ++j) {
+            if (j%100 == 0) {
+                blockhash = (await connection.getLatestBlockhash()).blockhash;
+            }
             const toIndex = Math.floor(Math.random() * users.length);
             let fromIndex = toIndex;
             while (fromIndex === toIndex) {
@@ -74,7 +77,7 @@ export async function main() {
     }
 
     console.log('finish sending transactions');
-    await delay(30000)
+    await delay(10000)
     console.log('checking for confirmations');
     if (skip_confirmations === false) {
         const size = signatures_to_unpack.length
@@ -84,7 +87,6 @@ export async function main() {
             const signatures = signatures_to_unpack[i];
             for (const signature of signatures) {
                 const confirmed = await connection.getSignatureStatus(signature);
-                console.log(i + "  " + signature + "  " + confirmed);
                 if (confirmed != null && confirmed.value != null && confirmed.value.err == null) {
                     successes[i]++;
                 } else {

@@ -77,41 +77,40 @@ impl TxSender {
         let tpu_client = self.tpu_manager.clone();
         let txs_sent = self.txs_sent.clone();
 
-        tokio::spawn(async move {
-            let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
-                Ok(_) => {
-                    for (sig, _) in &sigs_and_slots {
-                        txs_sent.insert(sig.to_owned(), TxProps::default());
-                    }
-                    // metrics
-                    TXS_SENT.inc_by(sigs_and_slots.len() as f64);
-
-                    1
-                }
-                Err(err) => {
-                    warn!("{err}");
-                    0
-                }
-            };
-
-            if let Some(postgres) = postgres {
-                let forwarded_slot: u64 = tpu_client.estimated_current_slot().await;
-
-                for (sig, recent_slot) in sigs_and_slots {
-                    postgres
-                        .send(PostgresMsg::PostgresTx(PostgresTx {
-                            signature: sig.clone(),
-                            recent_slot: recent_slot as i64,
-                            forwarded_slot: forwarded_slot as i64,
-                            processed_slot: None,
-                            cu_consumed: None,
-                            cu_requested: None,
-                            quic_response,
-                        }))
-                        .expect("Error writing to postgres service");
-                }
+        for (sig, _) in &sigs_and_slots {
+            txs_sent.insert(sig.to_owned(), TxProps::default());
+        }
+        info!("sending {} transactions by tpu size {}", txs.len(), txs_sent.len());
+        
+        let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
+            Ok(_) => {
+                // metrics
+                TXS_SENT.inc_by(sigs_and_slots.len() as f64);
+                1
             }
-        });
+            Err(err) => {
+                warn!("{err}");
+                0
+            }
+        };
+
+        if let Some(postgres) = postgres {
+            let forwarded_slot: u64 = tpu_client.estimated_current_slot().await;
+
+            for (sig, recent_slot) in sigs_and_slots {
+                postgres
+                    .send(PostgresMsg::PostgresTx(PostgresTx {
+                        signature: sig.clone(),
+                        recent_slot: recent_slot as i64,
+                        forwarded_slot: forwarded_slot as i64,
+                        processed_slot: None,
+                        cu_consumed: None,
+                        cu_requested: None,
+                        quic_response,
+                    }))
+                    .expect("Error writing to postgres service");
+            }
+        }
     }
 
     /// retry and confirm transactions every 2ms (avg time to confirm tx)
@@ -131,15 +130,20 @@ impl TxSender {
             loop {
                 let mut sigs_and_slots = Vec::with_capacity(tx_batch_size);
                 let mut txs = Vec::with_capacity(tx_batch_size);
-
+                let mut number_of_tx_senders: u16 = 0;
                 while txs.len() <= tx_batch_size {
-                    match recv.try_recv() {
-                        Ok((sig, tx, slot)) => {
-                            sigs_and_slots.push((sig, slot));
-                            txs.push(tx);
-                        }
-                        Err(TryRecvError::Disconnected) => {
-                            bail!("Channel Disconnected");
+                    let res = tokio::time::timeout(tx_send_interval, recv.recv()).await;
+                    match res {
+                        Ok(value) => {
+                            match value {
+                                Some((sig, tx, slot)) => {
+                                    sigs_and_slots.push((sig, slot));
+                                    txs.push(tx);
+                                },
+                                None => {
+                                    bail!("Channel Disconnected");
+                                }
+                            }
                         }
                         _ => {
                             break;
@@ -149,8 +153,6 @@ impl TxSender {
 
                 self.forward_txs(sigs_and_slots, txs, postgres_send.clone())
                     .await;
-
-                tokio::time::sleep(tx_send_interval).await;
             }
         })
     }

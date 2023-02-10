@@ -26,7 +26,8 @@ const TPU_CONNECTION_CACHE_SIZE: usize = 8;
 pub struct TpuManager {
     error_count: Arc<AtomicU32>,
     rpc_client: Arc<RpcClient>,
-    tpu_client: Arc<RwLock<QuicTpuClient>>,
+    // why arc twice / one is so that we clone rwlock and other so that we can clone tpu client
+    tpu_client: Arc<RwLock<Arc<QuicTpuClient>>>,
     pub ws_addr: String,
     fanout_slots: u64,
     connection_cache: Arc<QuicConnectionCache>,
@@ -54,7 +55,7 @@ impl TpuManager {
             connection_cache.clone(),
         )
         .await?;
-        let tpu_client = Arc::new(RwLock::new(tpu_client));
+        let tpu_client = Arc::new(RwLock::new(Arc::new(tpu_client)));
 
         Ok(Self {
             rpc_client,
@@ -93,21 +94,23 @@ impl TpuManager {
             )
             .await?;
             self.error_count.store(0, Ordering::Relaxed);
-            *self.tpu_client.write().await = tpu_client;
+            *self.tpu_client.write().await = Arc::new(tpu_client);
             info!("TPU Reset after 5 errors");
         }
 
         Ok(())
     }
 
+    async fn get_tpu_client(&self) -> Arc<QuicTpuClient> {
+        self.tpu_client.read().await.clone()
+    }
+
     pub async fn try_send_wire_transaction_batch(
         &self,
         wire_transactions: Vec<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        match self
-            .tpu_client
-            .read()
-            .await
+        let tpu_client = self.get_tpu_client().await;
+        match tpu_client
             .try_send_wire_transaction_batch(wire_transactions)
             .await
         {
@@ -120,6 +123,7 @@ impl TpuManager {
     }
 
     pub async fn estimated_current_slot(&self) -> u64 {
-        self.tpu_client.read().await.estimated_current_slot()
+        let tpu_client = self.get_tpu_client().await;
+        tpu_client.estimated_current_slot()
     }
 }
