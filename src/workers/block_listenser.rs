@@ -314,6 +314,7 @@ impl BlockListener {
                     };
 
                     if error_count > 10 {
+                        // retried for 10 times / there should be no block for this slot
                         warn!(
                             "unable to get block at slot {} and commitment {}",
                             slot, commitment_config.commitment
