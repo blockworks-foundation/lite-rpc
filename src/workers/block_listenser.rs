@@ -1,25 +1,33 @@
-use std::sync::Arc;
+use std::{
+    collections::{BTreeSet, VecDeque},
+    sync::Arc,
+};
 
-use anyhow::{bail, Context};
 use dashmap::DashMap;
-use futures::StreamExt;
 use jsonrpsee::SubscriptionSink;
 use log::{info, warn};
 use prometheus::{histogram_opts, opts, register_counter, register_histogram, Counter, Histogram};
-use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
-use solana_rpc_client::rpc_client::SerializableTransaction;
+
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
-    config::{RpcBlockSubscribeConfig, RpcBlockSubscribeFilter},
+    config::RpcBlockConfig,
     response::{Response as RpcResponse, RpcResponseContext},
 };
 
-use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_sdk::{
+    commitment_config::{CommitmentConfig, CommitmentLevel},
+    slot_history::Slot,
+};
 
 use solana_transaction_status::{
     option_serializer::OptionSerializer, RewardType, TransactionConfirmationStatus,
-    TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta,
+    TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
+    UiTransactionStatusMeta,
 };
-use tokio::{sync::mpsc::Sender, task::JoinHandle};
+use tokio::{
+    sync::{mpsc::Sender, Mutex},
+    task::JoinHandle,
+};
 
 use crate::{
     block_store::BlockStore,
@@ -59,13 +67,15 @@ lazy_static::lazy_static! {
 pub struct BlockListener {
     tx_sender: TxSender,
     block_store: BlockStore,
-    pub signature_subscribers: Arc<DashMap<String, SubscriptionSink>>,
+    rpc_client: Arc<RpcClient>,
+    pub signature_subscribers: Arc<DashMap<(String, CommitmentConfig), SubscriptionSink>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
+    pub blockhash: String,
 }
 
 pub struct BlockListnerNotificatons {
@@ -74,8 +84,9 @@ pub struct BlockListnerNotificatons {
 }
 
 impl BlockListener {
-    pub fn new(tx_sender: TxSender, block_store: BlockStore) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient>, tx_sender: TxSender, block_store: BlockStore) -> Self {
         Self {
+            rpc_client,
             tx_sender,
             block_store,
             signature_subscribers: Default::default(),
@@ -92,12 +103,19 @@ impl BlockListener {
         num_of_sigs_commited
     }
 
-    pub fn signature_subscribe(&self, signature: String, sink: SubscriptionSink) {
-        let _ = self.signature_subscribers.insert(signature, sink);
+    pub fn signature_subscribe(
+        &self,
+        signature: String,
+        commitment_config: CommitmentConfig,
+        sink: SubscriptionSink,
+    ) {
+        self.signature_subscribers
+            .insert((signature, commitment_config), sink);
     }
 
-    pub fn signature_un_subscribe(&self, signature: String) {
-        self.signature_subscribers.remove(&signature);
+    pub fn signature_un_subscribe(&self, signature: String, commitment_config: CommitmentConfig) {
+        self.signature_subscribers
+            .remove(&(signature, commitment_config));
     }
 
     fn increment_invalid_block_metric(commitment_config: CommitmentConfig) {
@@ -108,191 +126,270 @@ impl BlockListener {
         }
     }
 
-    pub async fn listen_from_pubsub(
-        self,
-        pubsub_client: &PubsubClient,
+    pub async fn index_slot(
+        &self,
+        slot: Slot,
         commitment_config: CommitmentConfig,
-        postgres: &Option<PostgresMpscSend>,
+        postgres: Option<PostgresMpscSend>,
     ) -> anyhow::Result<()> {
-        let commitment = commitment_config.commitment;
-
-        let comfirmation_status = match commitment {
+        //info!("indexing slot {} commitment {}", slot, commitment_config.commitment);
+        let comfirmation_status = match commitment_config.commitment {
             CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
             _ => TransactionConfirmationStatus::Confirmed,
         };
 
-        info!("Subscribing to {commitment:?} blocks");
+        let timer = if commitment_config.is_finalized() {
+            TT_RECV_FIN_BLOCK.start_timer()
+        } else {
+            TT_RECV_CON_BLOCK.start_timer()
+        };
 
-        let (mut recv, _) = pubsub_client
-            .block_subscribe(
-                RpcBlockSubscribeFilter::All,
-                Some(RpcBlockSubscribeConfig {
+        let block = self
+            .rpc_client
+            .get_block_with_config(
+                slot,
+                RpcBlockConfig {
+                    transaction_details: Some(TransactionDetails::Full),
                     commitment: Some(commitment_config),
-                    encoding: None,
-                    transaction_details: Some(solana_transaction_status::TransactionDetails::Full),
-                    show_rewards: None,
-                    max_supported_transaction_version: None,
-                }),
+                    max_supported_transaction_version: Some(0),
+                    encoding: Some(UiTransactionEncoding::Binary),
+                    rewards: Some(false),
+                },
             )
-            .await
-            .context("Error calling block_subscribe")?;
+            .await?;
 
-        info!("Listening to {commitment:?} blocks");
+        timer.observe_duration();
 
-        loop {
-            let timer = if commitment_config.is_finalized() {
-                TT_RECV_FIN_BLOCK.start_timer()
-            } else {
-                TT_RECV_CON_BLOCK.start_timer()
-            };
+        if commitment_config.is_finalized() {
+            info!("finalized slot {}", slot);
+            FIN_BLOCKS_RECV.inc();
+        } else {
+            CON_BLOCKS_RECV.inc();
+        };
 
-            let Some(block) = recv.as_mut().next().await else {
-                bail!("PubSub broke");
-            };
+        let Some(block_height) = block.block_height else {
+            Self::increment_invalid_block_metric(commitment_config);
+            return Ok(());
+        };
 
-            timer.observe_duration();
-
-            if commitment_config.is_finalized() {
-                FIN_BLOCKS_RECV.inc();
-            } else {
-                CON_BLOCKS_RECV.inc();
-            };
-
-            let slot = block.context.slot;
-
-            let Some(block) = block.value.block else {
+        let Some(transactions) = block.transactions else {
                 Self::increment_invalid_block_metric(commitment_config);
+                return Ok(());
+         };
+
+        let blockhash = block.blockhash;
+        let parent_slot = block.parent_slot;
+
+        self.block_store
+            .add_block(
+                BlockInformation {
+                    slot,
+                    block_height,
+                    blockhash: blockhash.clone(),
+                },
+                commitment_config,
+            )
+            .await;
+
+        if let Some(postgres) = &postgres {
+            let Some(rewards) = block.rewards else {
+                return Ok(());
+                     };
+
+            let Some(leader_reward) = rewards
+                      .iter()
+                      .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
+                return Ok(());
+            };
+
+            let _leader_id = &leader_reward.pubkey;
+
+            postgres
+                .send(PostgresMsg::PostgresBlock(PostgresBlock {
+                    slot: slot as i64,
+                    leader_id: 0, //FIX:
+                    parent_slot: parent_slot as i64,
+                }))
+                .expect("Error sending block to postgres service");
+        }
+
+        for tx in transactions {
+            let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
+                info!("tx with no meta");
                 continue;
             };
 
-            let Some(block_height) = block.block_height else {
-                Self::increment_invalid_block_metric(commitment_config);
-                continue;
-            };
-
-            let Some(transactions) = block.transactions else {
-                Self::increment_invalid_block_metric(commitment_config);
-                continue;
-            };
-
-            let blockhash = block.blockhash;
-            let parent_slot = block.parent_slot;
-
-            self.block_store
-                .add_block(
-                    blockhash.clone(),
-                    BlockInformation { slot, block_height },
-                    commitment_config,
-                )
-                .await;
-
-            if let Some(postgres) = &postgres {
-                let Some(rewards) = block.rewards else {
-                        continue;
-                    };
-
-                let Some(leader_reward) = rewards
-                        .iter()
-                        .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
-                        continue;
-                    };
-
-                let _leader_id = &leader_reward.pubkey;
-
-                postgres
-                    .send(PostgresMsg::PostgresBlock(PostgresBlock {
-                        slot: slot as i64,
-                        leader_id: 0, //FIX:
-                        parent_slot: parent_slot as i64,
-                    }))
-                    .expect("Error sending block to postgres service");
-            }
-
-            for tx in transactions {
-                let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
-                        info!("tx with no meta");
-                        continue;
-                    };
-
-                let Some(tx) = tx.transaction.decode() else {
-                        info!("unable to decode tx");
-                        continue;
-                    };
-
-                let sig = tx.get_signature().to_string();
-
-                if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
-                    //
-                    // Metrics
-                    //
-                    if status.is_ok() {
-                        if commitment_config.is_finalized() {
-                            TXS_FINALIZED.inc();
-                        } else {
-                            TXS_CONFIRMED.inc();
-                        }
-                    }
-
-                    tx_status.value_mut().status = Some(TransactionStatus {
-                        slot,
-                        confirmations: None,
-                        status,
-                        err: err.clone(),
-                        confirmation_status: Some(comfirmation_status.clone()),
-                    });
-
-                    //
-                    // Write to postgres
-                    //
-                    if let Some(postgres) = &postgres {
-                        let cu_consumed = match compute_units_consumed {
-                            OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
-                            _ => None,
-                        };
-
-                        postgres
-                            .send(PostgresMsg::PostgresUpdateTx(
-                                PostgresUpdateTx {
-                                    processed_slot: slot as i64,
-                                    cu_consumed,
-                                    cu_requested: None, //TODO: cu requested
-                                },
-                                sig.clone(),
-                            ))
-                            .unwrap();
-                    }
-                };
-
-                // subscribers
-                if let Some((_sig, mut sink)) = self.signature_subscribers.remove(&sig) {
-                    // none if transaction succeeded
-                    sink.send(&RpcResponse {
-                        context: RpcResponseContext {
-                            slot,
-                            api_version: None,
-                        },
-                        value: serde_json::json!({ "err": err }),
-                    })?;
+            let tx = match tx.transaction.decode() {
+                Some(tx) => tx,
+                None => {
+                    warn!("transaction could not be decoded");
+                    continue;
                 }
+            };
+            let sig = tx.signatures[0].to_string();
+
+            if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
+                //
+                // Metrics
+                //
+                if status.is_ok() {
+                    if commitment_config.is_finalized() {
+                        TXS_FINALIZED.inc();
+                    } else {
+                        TXS_CONFIRMED.inc();
+                    }
+                }
+
+                tx_status.value_mut().status = Some(TransactionStatus {
+                    slot,
+                    confirmations: None,
+                    status,
+                    err: err.clone(),
+                    confirmation_status: Some(comfirmation_status.clone()),
+                });
+
+                //
+                // Write to postgres
+                //
+                if let Some(postgres) = &postgres {
+                    let cu_consumed = match compute_units_consumed {
+                        OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
+                        _ => None,
+                    };
+
+                    postgres
+                        .send(PostgresMsg::PostgresUpdateTx(
+                            PostgresUpdateTx {
+                                processed_slot: slot as i64,
+                                cu_consumed,
+                                cu_requested: None, //TODO: cu requested
+                            },
+                            sig.clone(),
+                        ))
+                        .unwrap();
+                }
+            };
+
+            // subscribers
+            if let Some((_sig, mut sink)) =
+                self.signature_subscribers.remove(&(sig, commitment_config))
+            {
+                // none if transaction succeeded
+                sink.send(&RpcResponse {
+                    context: RpcResponseContext {
+                        slot,
+                        api_version: None,
+                    },
+                    value: serde_json::json!({ "err": err }),
+                })?;
             }
         }
-    }
 
+        Ok(())
+    }
     pub fn listen(
         self,
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
+        let slots_task_queue = Arc::new(Mutex::new(VecDeque::<(u64, u8)>::new()));
+        // task to fetch blocks
+        for _i in 0..6 {
+            let this = self.clone();
+            let postgres = postgres.clone();
+            let slots_task_queue = slots_task_queue.clone();
+
+            tokio::spawn(async move {
+                let slots_task_queue = slots_task_queue.clone();
+                loop {
+                    let (slot, error_count) = {
+                        let mut queue = slots_task_queue.lock().await;
+                        match queue.pop_front() {
+                            Some(t) => t,
+                            None => {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                continue;
+                            }
+                        }
+                    };
+
+                    if error_count > 10 {
+                        // retried for 10 times / there should be no block for this slot
+                        warn!(
+                            "unable to get block at slot {} and commitment {}",
+                            slot, commitment_config.commitment
+                        );
+                        continue;
+                    }
+
+                    if let Err(err) = this
+                        .index_slot(slot, commitment_config, postgres.clone())
+                        .await
+                    {
+                        warn!(
+                            "Error while indexing {commitment_config:?} block with slot {slot} {err}"
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                        {
+                            let mut queue = slots_task_queue.lock().await;
+                            queue.push_back((slot, error_count + 1));
+                        }
+                    };
+                    //   println!("{i} thread done slot {slot}");
+                }
+            });
+        }
+
+        let rpc_client = self.rpc_client.clone();
         tokio::spawn(async move {
+            let slots_task_queue = slots_task_queue.clone();
+            let last_latest_slot = self
+                .block_store
+                .get_latest_block_info(commitment_config)
+                .await
+                .slot;
+            // -5 for warmup
+            let mut last_latest_slot = last_latest_slot - 5;
+
+            // storage for recent slots processed
+            const SLOT_PROCESSED_SIZE: usize = 128;
+            let mut slot_processed = BTreeSet::<u64>::new();
+            let rpc_client = rpc_client.clone();
             loop {
-                let ws_addr = &self.tx_sender.tpu_manager.ws_addr;
-                let pub_sub_client = PubsubClient::new(ws_addr).await?;
-                let err = self
-                    .clone()
-                    .listen_from_pubsub(&pub_sub_client, commitment_config, &postgres)
-                    .await
-                    .unwrap_err();
-                warn!("{commitment_config:?} Block Subscribe error {err}");
+                let new_slot = rpc_client
+                    .get_slot_with_commitment(commitment_config)
+                    .await?;
+
+                // filter already processed slots
+                let new_block_slots: Vec<u64> = (last_latest_slot..new_slot)
+                    .filter(|x| !slot_processed.contains(x))
+                    .map(|x| x)
+                    .collect();
+
+                if new_block_slots.is_empty() {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                    println!("no slots");
+
+                    continue;
+                }
+                //info!("Received new slots {commitment_config:?} {last_latest_slot}");
+
+                let latest_slot = *new_block_slots.last().unwrap();
+
+                // context for lock
+                {
+                    let mut lock = slots_task_queue.lock().await;
+                    for slot in new_block_slots {
+                        lock.push_back((slot, 0));
+                        if slot_processed.insert(slot) && slot_processed.len() > SLOT_PROCESSED_SIZE
+                        {
+                            slot_processed.pop_first();
+                        }
+                    }
+                }
+
+                last_latest_slot = latest_slot;
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             }
         })
     }

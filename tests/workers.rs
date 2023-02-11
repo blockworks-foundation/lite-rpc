@@ -7,8 +7,7 @@ use lite_rpc::{
     encoding::BinaryEncoding,
     tpu_manager::TpuManager,
     workers::{BlockListener, TxSender},
-    DEFAULT_LITE_RPC_ADDR, DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS, DEFAULT_TX_BATCH_SIZE,
-    DEFAULT_WS_ADDR,
+    DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS, DEFAULT_TX_BATCH_SIZE, DEFAULT_WS_ADDR,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
@@ -19,8 +18,6 @@ use tokio::sync::mpsc;
 #[tokio::test]
 async fn send_and_confirm_txs() {
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_RPC_ADDR.to_string()));
-    let lite_client = Arc::new(RpcClient::new(DEFAULT_LITE_RPC_ADDR.to_string()));
-    let bench_helper = BenchHelper::new(lite_client.clone());
 
     let tpu_client = Arc::new(
         TpuManager::new(
@@ -36,7 +33,7 @@ async fn send_and_confirm_txs() {
     let tx_sender = TxSender::new(tpu_client);
     let block_store = BlockStore::new(&rpc_client).await.unwrap();
 
-    let block_listener = BlockListener::new(tx_sender.clone(), block_store);
+    let block_listener = BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store);
 
     let (tx_send, tx_recv) = mpsc::unbounded_channel();
 
@@ -53,11 +50,11 @@ async fn send_and_confirm_txs() {
     ]);
 
     let confirm = tokio::spawn(async move {
-        let funded_payer = bench_helper.get_payer().await.unwrap();
+        let funded_payer = BenchHelper::get_payer().await.unwrap();
 
         let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
-        let tx = bench_helper.create_transaction(&funded_payer, blockhash);
+        let tx = BenchHelper::create_transaction(&funded_payer, blockhash);
         let sig = tx.signatures[0];
         let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
         let sig = sig.to_string();

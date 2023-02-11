@@ -35,14 +35,12 @@ async fn main() {
         CommitmentConfig::confirmed(),
     ));
 
-    let bench_helper = BenchHelper { rpc_client };
-
     let mut csv_writer = csv::Writer::from_path(metrics_file_name).unwrap();
 
     let mut avg_metric = AvgMetric::default();
 
     for run_num in 0..runs {
-        let metric = bench(&bench_helper, tx_count).await;
+        let metric = bench(rpc_client.clone(), tx_count).await;
         info!("Run {run_num}: Sent and Confirmed {tx_count} tx(s) in {metric:?} with",);
         // update avg metric
         avg_metric += &metric;
@@ -60,13 +58,11 @@ async fn main() {
     csv_writer.flush().unwrap();
 }
 
-async fn bench(bench_helper: &BenchHelper, tx_count: usize) -> Metric {
-    let funded_payer = bench_helper.get_payer().await.unwrap();
+async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize) -> Metric {
+    let funded_payer = BenchHelper::get_payer().await.unwrap();
+    let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
-    let txs = bench_helper
-        .generate_txs(tx_count, &funded_payer)
-        .await
-        .unwrap();
+    let txs = BenchHelper::generate_txs(tx_count, &funded_payer, blockhash);
 
     let mut un_confirmed_txs: HashMap<Signature, Option<Instant>> =
         HashMap::with_capacity(txs.len());
@@ -79,14 +75,12 @@ async fn bench(bench_helper: &BenchHelper, tx_count: usize) -> Metric {
 
     info!("Sending and Confirming {tx_count} tx(s)",);
 
-    let lite_client = bench_helper.rpc_client.clone();
-
     let send_fut = {
-        let lite_client = lite_client.clone();
+        let rpc_client = rpc_client.clone();
 
         tokio::spawn(async move {
             for tx in txs {
-                lite_client.send_transaction(&tx).await.unwrap();
+                rpc_client.send_transaction(&tx).await.unwrap();
                 info!("Tx {}", &tx.signatures[0]);
             }
             info!("Sent {tx_count} tx(s)");
@@ -108,7 +102,7 @@ async fn bench(bench_helper: &BenchHelper, tx_count: usize) -> Metric {
                     *time_elapsed_since_last_confirmed = Some(Instant::now())
                 }
 
-                if lite_client.confirm_transaction(&sig).await.unwrap() {
+                if rpc_client.confirm_transaction(&sig).await.unwrap() {
                     metrics.txs_confirmed += 1;
                     to_remove_txs.push(sig);
                 } else if time_elapsed_since_last_confirmed.unwrap().elapsed()

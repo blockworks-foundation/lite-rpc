@@ -1,10 +1,11 @@
-use std::{ops::Deref, sync::Arc};
+use std::str::FromStr;
 
 use anyhow::Context;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     hash::Hash,
+    instruction::Instruction,
     message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
@@ -13,25 +14,12 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
-#[derive(Clone)]
-pub struct BenchHelper {
-    pub rpc_client: Arc<RpcClient>,
-}
+const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
-impl Deref for BenchHelper {
-    type Target = RpcClient;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rpc_client
-    }
-}
+pub struct BenchHelper;
 
 impl BenchHelper {
-    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
-        Self { rpc_client }
-    }
-
-    pub async fn get_payer(&self) -> anyhow::Result<Keypair> {
+    pub async fn get_payer() -> anyhow::Result<Keypair> {
         let mut config_dir = dirs::config_dir().context("Unable to get path to user config dir")?;
 
         config_dir.push("solana");
@@ -47,13 +35,12 @@ impl BenchHelper {
     }
 
     pub async fn wait_till_signature_status(
-        &self,
+        rpc_client: &RpcClient,
         sig: &Signature,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
         loop {
-            if let Some(err) = self
-                .rpc_client
+            if let Some(err) = rpc_client
                 .get_signature_status_with_commitment(sig, commitment_config)
                 .await?
             {
@@ -63,7 +50,7 @@ impl BenchHelper {
         }
     }
 
-    pub fn create_transaction(&self, funded_payer: &Keypair, blockhash: Hash) -> Transaction {
+    pub fn create_transaction(funded_payer: &Keypair, blockhash: Hash) -> Transaction {
         let to_pubkey = Pubkey::new_unique();
 
         // transfer instruction
@@ -75,19 +62,23 @@ impl BenchHelper {
         Transaction::new(&[funded_payer], message, blockhash)
     }
 
-    pub async fn generate_txs(
-        &self,
+    #[inline]
+    pub fn generate_txs(
         num_of_txs: usize,
         funded_payer: &Keypair,
-    ) -> anyhow::Result<Vec<Transaction>> {
-        let mut txs = Vec::with_capacity(num_of_txs);
+        blockhash: Hash,
+    ) -> Vec<Transaction> {
+        (0..num_of_txs)
+            .into_iter()
+            .map(|_| Self::create_memo_tx(b"hello", funded_payer, blockhash))
+            .collect()
+    }
 
-        let blockhash = self.rpc_client.get_latest_blockhash().await?;
+    pub fn create_memo_tx(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
+        let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
 
-        for _ in 0..num_of_txs {
-            txs.push(self.create_transaction(funded_payer, blockhash));
-        }
-
-        Ok(txs)
+        let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
+        let message = Message::new(&[instruction], Some(&payer.pubkey()));
+        Transaction::new(&[payer], message, blockhash)
     }
 }

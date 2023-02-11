@@ -24,7 +24,6 @@ use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
-use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
     transaction::VersionedTransaction,
@@ -81,7 +80,8 @@ impl LiteBridge {
 
         let block_store = BlockStore::new(&rpc_client).await?;
 
-        let block_listner = BlockListener::new(tx_sender.clone(), block_store.clone());
+        let block_listner =
+            BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store.clone());
 
         Ok(Self {
             rpc_client,
@@ -248,7 +248,11 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (blockhash, BlockInformation { slot, block_height }) = self
+        let BlockInformation {
+            slot,
+            block_height,
+            blockhash,
+        } = self
             .block_store
             .get_latest_block_info(commitment_config)
             .await;
@@ -262,7 +266,7 @@ impl LiteRpcServer for LiteBridge {
             },
             value: RpcBlockhash {
                 blockhash,
-                last_valid_block_height: block_height + (MAX_RECENT_BLOCKHASHES as u64),
+                last_valid_block_height: block_height + 150,
             },
         })
     }
@@ -299,7 +303,6 @@ impl LiteRpcServer for LiteBridge {
             .block_store
             .get_latest_block_info(commitment)
             .await
-            .1
             .slot;
 
         Ok(RpcResponse {
@@ -334,7 +337,6 @@ impl LiteRpcServer for LiteBridge {
                     .block_store
                     .get_latest_block_info(CommitmentConfig::finalized())
                     .await
-                    .1
                     .slot,
                 api_version: None,
             },
@@ -389,11 +391,12 @@ impl LiteRpcServer for LiteBridge {
         &self,
         mut sink: SubscriptionSink,
         signature: String,
-        _commitment_config: CommitmentConfig,
+        commitment_config: CommitmentConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
         sink.accept()?;
-        self.block_listner.signature_subscribe(signature, sink);
+        self.block_listner
+            .signature_subscribe(signature, commitment_config, sink);
         Ok(())
     }
 }
