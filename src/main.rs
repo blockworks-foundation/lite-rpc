@@ -6,7 +6,7 @@ use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 use log::info;
 use solana_sdk::signature::Keypair;
-use tokio::runtime::{self, Builder};
+use tokio::runtime::Builder;
 use std::env;
 
 async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
