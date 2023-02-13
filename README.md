@@ -55,12 +55,14 @@ in `./migrations`
 
 ### env variables
 
-| env               | purpose                     |
-| ---------         | ------                      |
-| `CA_PEM_B64`      | Base64 encoded `ca.pem`     |
-| `CLIENT_PKS_B64`  | Base64 encoded `client.pks` |
-| `CLIENT_PKS_PASS` | Password to `client.pks`    |
-| `PG_CONFIG`       | Postgres Connection Config  |
+| env               | purpose                               |
+| ---------         | ------                                |
+| `CA_PEM_B64`      | Base64 encoded `ca.pem`               |
+| `CLIENT_PKS_B64`  | Base64 encoded `client.pks`           |
+| `CLIENT_PKS_PASS` | Password to `client.pks`              |
+| `PG_CONFIG`       | Postgres Connection Config            |
+| `TPU_IDENTITY`    | Keypair identity of a known validator |
+
 
 ## License & Copyright
 
