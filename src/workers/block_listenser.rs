@@ -20,9 +20,9 @@ use solana_sdk::{
 };
 
 use solana_transaction_status::{
-    option_serializer::OptionSerializer, EncodedTransaction, RewardType,
-    TransactionConfirmationStatus, TransactionDetails, TransactionStatus, UiConfirmedBlock,
-    UiTransactionEncoding, UiTransactionStatusMeta,
+    option_serializer::OptionSerializer, RewardType, TransactionConfirmationStatus,
+    TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
+    UiTransactionStatusMeta,
 };
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 
@@ -149,7 +149,7 @@ impl BlockListener {
                     commitment: Some(commitment_config),
                     max_supported_transaction_version: Some(0),
                     encoding: Some(UiTransactionEncoding::Binary),
-                    ..Default::default()
+                    rewards: None, // this can be turned on later
                 },
             )
             .await?;
@@ -211,13 +211,12 @@ impl BlockListener {
                 continue;
             };
 
-            let sig = match tx.transaction {
-                EncodedTransaction::Json(json) => json.signatures[0].to_string(),
-                _ => {
-                    error!("Expected jsonParsed encoded tx");
-                    continue;
-                }
+            let Some(tx) = tx.transaction.decode() else {
+                error!("Expected Binary encoded tx");
+                continue;
             };
+
+            let sig = tx.signatures[0].to_string();
 
             if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
                 //
@@ -278,6 +277,7 @@ impl BlockListener {
 
         Ok(())
     }
+
     pub fn listen(
         self,
         commitment_config: CommitmentConfig,
@@ -286,7 +286,7 @@ impl BlockListener {
         let (send, recv) = flume::unbounded();
         let get_block_errors = Arc::new(AtomicU64::new(0));
 
-        for _i in 0..6 {
+        for _i in 0..4 {
             let this = self.clone();
             let postgres = postgres.clone();
             let recv = recv.clone();
@@ -317,7 +317,7 @@ impl BlockListener {
             });
         }
 
-        let (latest_slot_send, mut latest_slot_recv) = tokio::sync::mpsc::channel(1);
+        let (latest_slot_send, mut latest_slot_recv) = tokio::sync::mpsc::unbounded_channel();
 
         {
             let this = self.clone();
@@ -334,13 +334,11 @@ impl BlockListener {
                         );
 
                         get_block_errors.fetch_add(1, Ordering::Relaxed);
-                        latest_slot_send.send(latest_slot).await.unwrap();
+                        latest_slot_send.send(latest_slot).unwrap();
                     };
                 }
             });
         }
-
-
 
         tokio::spawn(async move {
             let mut slot = self
@@ -360,7 +358,6 @@ impl BlockListener {
                 if new_block_slots.is_empty() {
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     println!("no slots");
-
                     continue;
                 }
 
@@ -368,11 +365,11 @@ impl BlockListener {
 
                 let Some(latest_slot) = new_block_slots.pop() else {
                     warn!("Didn't receive any block slots for {slot}");
-                   continue; 
+                    continue;
                 };
 
                 slot = latest_slot;
-                latest_slot_send.send(latest_slot).await?;
+                latest_slot_send.send(latest_slot)?;
 
                 for slot in new_block_slots {
                     send.send_async(slot).await?;
@@ -381,4 +378,3 @@ impl BlockListener {
         })
     }
 }
-

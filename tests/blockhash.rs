@@ -1,7 +1,7 @@
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
-const BLOCKHASH_FETCH_INTERVAL_MS: u64 = 2000;
+const BLOCKHASH_FETCH_INTERVAL_MS: u64 = 6000;
 
 #[tokio::test]
 async fn blockhash() -> anyhow::Result<()> {

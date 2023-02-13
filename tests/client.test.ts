@@ -1,4 +1,4 @@
-import { Connection, Keypair, LAMPORTS_PER_SOL, SystemProgram, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction, Signer } from "@solana/web3.js";
+import { Connection, Keypair, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction } from "@solana/web3.js";
 import * as fs from "fs";
 import * as os from "os";
 
@@ -23,7 +23,7 @@ test('send and confirm transaction', async () => {
         })
     );
 
-    const sig = connection.sendTransaction(transaction, [payer]);
+    const sig = await connection.sendTransaction(transaction, [payer]);
 
     console.log(`https://explorer.solana.com/tx/${sig}`)
 
