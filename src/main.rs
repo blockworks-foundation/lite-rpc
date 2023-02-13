@@ -9,7 +9,7 @@ use solana_sdk::signature::Keypair;
 use std::env;
 
 async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
-    if let Some(identity_env_var) = env::var("IDENTITY").ok() {
+    if let Ok(identity_env_var) = env::var("IDENTITY") {
         if let Ok(identity_bytes) = serde_json::from_str::<Vec<u8>>(identity_env_var.as_str()) {
             Keypair::from_bytes(identity_bytes.as_slice()).unwrap()
         } else {

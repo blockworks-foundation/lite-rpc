@@ -102,7 +102,6 @@ impl Postgres {
                 let mut connection = connection;
 
                 loop {
-
                     if let Err(err) = connection.await {
                         warn!("Connection to postgres broke {err:?}");
                     };
@@ -209,11 +208,5 @@ impl Postgres {
 
             bail!("Postgres channel closed")
         })
-    }
-}
-
-impl Default for Postgres {
-    fn default() -> Self {
-        Self::new()
     }
 }

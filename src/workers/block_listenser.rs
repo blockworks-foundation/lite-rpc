@@ -148,7 +148,7 @@ impl BlockListener {
                     transaction_details: Some(TransactionDetails::Full),
                     commitment: Some(commitment_config),
                     max_supported_transaction_version: Some(0),
-                    encoding: Some(UiTransactionEncoding::JsonParsed),
+                    encoding: Some(UiTransactionEncoding::Binary),
                     ..Default::default()
                 },
             )

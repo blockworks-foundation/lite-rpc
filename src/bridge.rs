@@ -261,11 +261,7 @@ impl LiteRpcServer for LiteBridge {
             },
             value: RpcBlockhash {
                 blockhash,
-<<<<<<< HEAD
                 last_valid_block_height: block_height + (MAX_RECENT_BLOCKHASHES as u64),
-=======
-                last_valid_block_height: block_height + 150,
->>>>>>> main
             },
         })
     }

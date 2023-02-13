@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-
-=======
->>>>>>> main
 use lite_rpc::DEFAULT_LITE_RPC_ADDR;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 

@@ -15,7 +15,7 @@ use solana_tpu_client::{
     tpu_client::TpuClientConfig,
     tpu_connection_cache::{NewTpuConfig, TpuConnectionCache},
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 pub type QuicTpuClient = TpuClient<QuicPool>;
 pub type QuicConnectionCache = TpuConnectionCache<QuicPool>;
@@ -27,7 +27,7 @@ pub struct TpuManager {
     error_count: Arc<AtomicU32>,
     rpc_client: Arc<RpcClient>,
     // why arc twice / one is so that we clone rwlock and other so that we can clone tpu client
-    tpu_client: Arc<RwLock<Arc<QuicTpuClient>>>,
+    tpu_client: Arc<RwLock<QuicTpuClient>>,
     pub ws_addr: String,
     fanout_slots: u64,
     connection_cache: Arc<QuicConnectionCache>,
@@ -55,7 +55,7 @@ impl TpuManager {
             connection_cache.clone(),
         )
         .await?;
-        let tpu_client = Arc::new(RwLock::new(Arc::new(tpu_client)));
+        let tpu_client = Arc::new(RwLock::new(tpu_client));
 
         Ok(Self {
             rpc_client,
@@ -94,15 +94,15 @@ impl TpuManager {
             )
             .await?;
             self.error_count.store(0, Ordering::Relaxed);
-            *self.tpu_client.write().await = Arc::new(tpu_client);
+            *self.tpu_client.write().await = tpu_client;
             info!("TPU Reset after 5 errors");
         }
 
         Ok(())
     }
 
-    async fn get_tpu_client(&self) -> Arc<QuicTpuClient> {
-        self.tpu_client.read().await.clone()
+    pub async fn get_tpu_client(&self) -> RwLockReadGuard<QuicTpuClient> {
+        self.tpu_client.read().await
     }
 
     pub async fn try_send_wire_transaction_batch(
