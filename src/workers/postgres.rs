@@ -91,8 +91,6 @@ impl Postgres {
             .danger_accept_invalid_certs(true)
             .build()?;
 
-        info!("making tls config");
-
         let connector = MakeTlsConnector::new(connector);
         let (client, connection) = tokio_postgres::connect(&pg_config, connector.clone()).await?;
         let client = Arc::new(RwLock::new(client));
@@ -100,13 +98,13 @@ impl Postgres {
         let connection = {
             let client = client.clone();
 
-            #[allow(unreachable_code)]
             tokio::spawn(async move {
                 let mut connection = connection;
 
                 loop {
+
                     if let Err(err) = connection.await {
-                        warn!("Connection to postgres broke {err:?}")
+                        warn!("Connection to postgres broke {err:?}");
                     };
 
                     let f = tokio_postgres::connect(&pg_config, connector.clone()).await?;
@@ -114,8 +112,6 @@ impl Postgres {
                     *client.write().await = f.0;
                     connection = f.1;
                 }
-
-                bail!("Potsgres revival loop failed")
             })
         };
 
@@ -213,5 +209,11 @@ impl Postgres {
 
             bail!("Postgres channel closed")
         })
+    }
+}
+
+impl Default for Postgres {
+    fn default() -> Self {
+        Self::new()
     }
 }
