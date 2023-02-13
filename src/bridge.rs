@@ -26,7 +26,7 @@ use solana_rpc_client_api::{
 };
 use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey,
+    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
     transaction::VersionedTransaction,
 };
 use solana_transaction_status::TransactionStatus;
@@ -66,11 +66,16 @@ pub struct LiteBridge {
 }
 
 impl LiteBridge {
-    pub async fn new(rpc_url: String, ws_addr: String, fanout_slots: u64) -> anyhow::Result<Self> {
+    pub async fn new(
+        rpc_url: String,
+        ws_addr: String,
+        fanout_slots: u64,
+        identity: Keypair,
+    ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
 
         let tpu_manager =
-            Arc::new(TpuManager::new(rpc_client.clone(), ws_addr, fanout_slots).await?);
+            Arc::new(TpuManager::new(rpc_client.clone(), ws_addr, fanout_slots, identity).await?);
 
         let tx_sender = TxSender::new(tpu_manager.clone());
 
@@ -256,7 +261,11 @@ impl LiteRpcServer for LiteBridge {
             },
             value: RpcBlockhash {
                 blockhash,
+<<<<<<< HEAD
                 last_valid_block_height: block_height + (MAX_RECENT_BLOCKHASHES as u64),
+=======
+                last_valid_block_height: block_height + 150,
+>>>>>>> main
             },
         })
     }

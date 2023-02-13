@@ -23,7 +23,12 @@ function delay(ms: number) {
 
 export async function main() {
 
-    const connection = new Connection(url, 'confirmed');
+    const connection = new Connection(url, 'finalized');
+    console.log('get latest blockhash')
+    const blockhash = await connection.getLatestBlockhash({
+        commitment: 'finalized'
+    });
+    console.log('blockhash : ' + blockhash.blockhash);
     const authority = Keypair.fromSecretKey(
         Uint8Array.from(
             JSON.parse(
@@ -35,14 +40,18 @@ export async function main() {
 
     const users = InFile.users.map(x => Keypair.fromSecretKey(Uint8Array.from(x.secretKey)));
     const userAccounts = InFile.tokenAccounts.map(x => new PublicKey(x));
-    let signatures_to_unpack: TransactionSignature[][] = [];
+    let signatures_to_unpack: TransactionSignature[][] = new Array<TransactionSignature[]>(forSeconds);
     let time_taken_to_send = [];
 
     for (let i = 0; i < forSeconds; ++i) {
+        console.log('Sending transaction ' + i);
         const start = performance.now();
-        let signatures: TransactionSignature[] = [];
-        const blockhash = (await connection.getLatestBlockhash()).blockhash;
+        signatures_to_unpack[i] = new Array<TransactionSignature>(tps);
+        let blockhash = (await connection.getLatestBlockhash()).blockhash;
         for (let j = 0; j < tps; ++j) {
+            if (j%100 == 0) {
+                blockhash = (await connection.getLatestBlockhash()).blockhash;
+            }
             const toIndex = Math.floor(Math.random() * users.length);
             let fromIndex = toIndex;
             while (fromIndex === toIndex) {
@@ -50,18 +59,14 @@ export async function main() {
             }
             const userFrom = userAccounts[fromIndex];
             const userTo = userAccounts[toIndex];
-            if (skip_confirmations === false) {
-                const transaction = new Transaction().add(
-                    splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, Math.ceil(Math.random() * 100))
-                );
-                transaction.recentBlockhash = blockhash;
-                transaction.feePayer = authority.publicKey;
-                const p = connection.sendTransaction(transaction, [authority, users[fromIndex]], { skipPreflight: true });
-                signatures.push(await p)
-            }
-        }
-        if (skip_confirmations === false) {
-            signatures_to_unpack.push(signatures)
+
+            const transaction = new Transaction().add(
+                splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, Math.ceil((Math.random()+1) * 100))
+            );
+            transaction.recentBlockhash = blockhash;
+            transaction.feePayer = authority.publicKey;
+
+            connection.sendTransaction(transaction, [authority, users[fromIndex]], { skipPreflight: true }).then(p => {signatures_to_unpack[i][j] = p});
         }
         const end = performance.now();
         const diff = (end - start);
@@ -72,7 +77,7 @@ export async function main() {
     }
 
     console.log('finish sending transactions');
-    await delay(5000)
+    await delay(10000)
     console.log('checking for confirmations');
     if (skip_confirmations === false) {
         const size = signatures_to_unpack.length

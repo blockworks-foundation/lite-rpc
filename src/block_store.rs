@@ -54,7 +54,14 @@ impl BlockStore {
             .get_slot_with_commitment(commitment_config)
             .await?;
 
-        Ok((latest_block_hash, BlockInformation { slot, block_height }))
+        Ok((
+            latest_block_hash.clone(),
+            BlockInformation {
+                slot,
+                block_height,
+                blockhash: latest_block_hash,
+            },
+        ))
     }
 
     pub async fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
@@ -70,9 +77,9 @@ impl BlockStore {
         commitment_config: CommitmentConfig,
     ) -> Arc<RwLock<(String, BlockInformation)>> {
         if commitment_config.is_finalized() {
-            self.latest_finalized_blockhash.clone()
+            self.latest_finalized_blockinfo.clone()
         } else {
-            self.latest_confirmed_blockhash.clone()
+            self.latest_confirmed_blockinfo.clone()
         }
     }
 
@@ -103,7 +110,6 @@ impl BlockStore {
 
     pub async fn add_block(
         &self,
-        blockhash: String,
         block_info: BlockInformation,
         commitment_config: CommitmentConfig,
     ) {
