@@ -68,7 +68,7 @@ pub struct BlockListener {
     pub signature_subscribers: Arc<DashMap<(String, CommitmentConfig), SubscriptionSink>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
@@ -347,7 +347,6 @@ impl BlockListener {
                 .block_store
                 .get_latest_block_info(commitment_config)
                 .await
-                .1
                 .slot;
 
             loop {

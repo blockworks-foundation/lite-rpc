@@ -12,8 +12,8 @@ use crate::workers::BlockInformation;
 #[derive(Clone)]
 pub struct BlockStore {
     blocks: Arc<DashMap<String, BlockInformation>>,
-    latest_confirmed_blockhash: Arc<RwLock<String>>,
-    latest_finalized_blockhash: Arc<RwLock<String>>,
+    latest_confirmed_blockhash: Arc<RwLock<(String, BlockInformation)>>,
+    latest_finalized_blockhash: Arc<RwLock<(String, BlockInformation)>>,
 }
 
 impl BlockStore {
@@ -24,8 +24,14 @@ impl BlockStore {
             Self::fetch_latest(rpc_client, CommitmentConfig::finalized()).await?;
 
         Ok(Self {
-            latest_confirmed_blockhash: Arc::new(RwLock::new(confirmed_blockhash.clone())),
-            latest_finalized_blockhash: Arc::new(RwLock::new(finalized_blockhash.clone())),
+            latest_confirmed_blockhash: Arc::new(RwLock::new((
+                confirmed_blockhash.clone(),
+                confirmed_block,
+            ))),
+            latest_finalized_blockhash: Arc::new(RwLock::new((
+                finalized_blockhash.clone(),
+                finalized_block,
+            ))),
             blocks: Arc::new({
                 let map = DashMap::new();
                 map.insert(confirmed_blockhash, confirmed_block);
@@ -59,7 +65,10 @@ impl BlockStore {
         Some(info.value().to_owned())
     }
 
-    pub fn get_latest_blockhash(&self, commitment_config: CommitmentConfig) -> Arc<RwLock<String>> {
+    fn get_latest_block_arc(
+        &self,
+        commitment_config: CommitmentConfig,
+    ) -> Arc<RwLock<(String, BlockInformation)>> {
         if commitment_config.is_finalized() {
             self.latest_finalized_blockhash.clone()
         } else {
@@ -67,24 +76,29 @@ impl BlockStore {
         }
     }
 
+    pub async fn get_latest_blockhash(&self, commitment_config: CommitmentConfig) -> String {
+        self.get_latest_block_arc(commitment_config)
+            .read()
+            .await
+            .0
+            .clone()
+    }
+
     pub async fn get_latest_block_info(
         &self,
         commitment_config: CommitmentConfig,
+    ) -> BlockInformation {
+        self.get_latest_block_arc(commitment_config).read().await.1
+    }
+
+    pub async fn get_latest_block(
+        &self,
+        commitment_config: CommitmentConfig,
     ) -> (String, BlockInformation) {
-        let blockhash = self
-            .get_latest_blockhash(commitment_config)
+        self.get_latest_block_arc(commitment_config)
             .read()
             .await
-            .to_owned();
-
-        let block_info = self
-            .blocks
-            .get(&blockhash)
-            .expect("Race Condition: Latest block not in block store")
-            .value()
-            .to_owned();
-
-        (blockhash, block_info)
+            .clone()
     }
 
     pub async fn add_block(
@@ -99,8 +113,10 @@ impl BlockStore {
         // ask the map what it doesn't have rn
         let slot = block_info.slot;
         self.blocks.insert(blockhash.clone(), block_info);
-        if slot > self.get_latest_block_info(commitment_config).await.1.slot {
-            *self.get_latest_blockhash(commitment_config).write().await = blockhash;
+
+        let latest_block = self.get_latest_block_arc(commitment_config);
+        if slot > latest_block.read().await.1.slot {
+            *latest_block.write().await = (blockhash, block_info);
         }
     }
 }
