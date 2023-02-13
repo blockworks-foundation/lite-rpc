@@ -6,6 +6,7 @@ use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 use log::info;
 use solana_sdk::signature::Keypair;
+use tokio::runtime::{self, Builder};
 use std::env;
 
 async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
@@ -52,6 +53,14 @@ pub async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
     let identity = get_identity_keypair(&identity_keypair).await;
+
+    let runtime = Builder::new_multi_thread()
+        .worker_threads(8)
+        .thread_name("quic-server")
+        .enable_all()
+        .build()
+        .unwrap();
+    let _guard = runtime.enter();
 
     let tx_batch_interval_ms = Duration::from_millis(tx_batch_interval_ms);
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
