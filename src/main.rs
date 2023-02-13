@@ -56,7 +56,7 @@ pub async fn main() -> anyhow::Result<()> {
 
     let runtime = Builder::new_multi_thread()
         .worker_threads(8)
-        .thread_name("quic-server")
+        .thread_name("lite-rpc-workers")
         .enable_all()
         .build()
         .unwrap();
