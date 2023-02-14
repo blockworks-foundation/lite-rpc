@@ -331,7 +331,7 @@ impl BlockListener {
                         continue;
                     }
 
-                    if let Err(err) = this
+                    if let Err(_) = this
                         .index_slot(slot, commitment_config, postgres.clone())
                         .await
                     {
