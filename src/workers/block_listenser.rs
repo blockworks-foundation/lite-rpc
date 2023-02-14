@@ -24,7 +24,7 @@ use solana_transaction_status::{
     TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
     UiTransactionStatusMeta,
 };
-use tokio::{sync::mpsc::Sender, task::JoinHandle};
+use tokio::{sync::mpsc::Sender, task::JoinHandle, time::Instant};
 
 use crate::{
     block_store::BlockStore,
@@ -336,6 +336,7 @@ impl BlockListener {
                         get_block_errors.fetch_sub(1, Ordering::Relaxed);
                     }
                     //                    println!("{i} thread in slot {slot}");
+                    let instant = Instant::now();
 
                     if let Err(err) = this
                         .index_slot(slot, commitment_config, postgres.clone())
@@ -348,6 +349,9 @@ impl BlockListener {
                         get_block_errors.fetch_add(1, Ordering::Relaxed);
                         send.send_async(slot).await.unwrap();
                     };
+
+                    error!("normal {:?}", instant.elapsed());
+
                     //   println!("{i} thread done slot {slot}");
                 }
             });
@@ -361,6 +365,7 @@ impl BlockListener {
 
             tokio::spawn(async move {
                 while let Some(latest_slot) = latest_slot_recv.recv().await {
+                    let instant = Instant::now();
                     if let Err(err) = this
                         .index_slot_partial(latest_slot, commitment_config)
                         .await
@@ -371,6 +376,7 @@ impl BlockListener {
 
                         latest_slot_send.send(latest_slot).unwrap();
                     };
+                    error!("latest {:?}", instant.elapsed());
                 }
             });
         }
