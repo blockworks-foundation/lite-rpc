@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeSet, VecDeque},
-    sync::Arc, time::Instant,
-};
+use std::{collections::VecDeque, sync::Arc, time::Instant};
 
 use dashmap::DashMap;
 use jsonrpsee::SubscriptionSink;
@@ -144,6 +141,8 @@ impl BlockListener {
             TT_RECV_CON_BLOCK.start_timer()
         };
 
+        let start = Instant::now();
+
         let block = self
             .rpc_client
             .get_block_with_config(
@@ -159,8 +158,6 @@ impl BlockListener {
             .await?;
 
         timer.observe_duration();
-
-        let start = Instant::now();
 
         if commitment_config.is_finalized() {
             info!("finalized slot {}", slot);
@@ -192,7 +189,7 @@ impl BlockListener {
                 commitment_config,
             )
             .await;
-        
+
         let mut transactions_processed = 0;
         for tx in transactions {
             let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
@@ -267,7 +264,13 @@ impl BlockListener {
             }
         }
 
-        info!("Number of transactions processed {} for slot {} for commitment {} time taken {}", transactions_processed, slot, commitment_config.commitment, start.elapsed().as_millis());
+        info!(
+            "Number of transactions processed {} for slot {} for commitment {} time taken {} ms",
+            transactions_processed,
+            slot,
+            commitment_config.commitment,
+            start.elapsed().as_millis()
+        );
 
         if let Some(postgres) = &postgres {
             let Some(rewards) = block.rewards else {
@@ -332,9 +335,8 @@ impl BlockListener {
                         .index_slot(slot, commitment_config, postgres.clone())
                         .await
                     {
-                        warn!(
-                            "Error while indexing {commitment_config:?} block with slot {slot} {err}"
-                        );
+                        // usually as we index all the slots even if they are not been processed we get some errors for slot
+                        // as they are not in long term storage of the rpc // we check 10 times before ignoring the slot
                         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                         {
                             let mut queue = slots_task_queue.lock().await;
@@ -358,43 +360,29 @@ impl BlockListener {
             let mut last_latest_slot = last_latest_slot - 5;
 
             // storage for recent slots processed
-            const SLOT_PROCESSED_SIZE: usize = 128;
-            let mut slot_processed = BTreeSet::<u64>::new();
             let rpc_client = rpc_client.clone();
             loop {
                 let new_slot = rpc_client
                     .get_slot_with_commitment(commitment_config)
                     .await?;
 
-                // filter already processed slots
-                let new_block_slots: Vec<u64> = (last_latest_slot..new_slot)
-                    .filter(|x| !slot_processed.contains(x))
-                    .map(|x| x)
-                    .collect();
-
-                if new_block_slots.is_empty() {
+                if last_latest_slot == new_slot {
                     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                     println!("no slots");
-
                     continue;
                 }
-                //info!("Received new slots {commitment_config:?} {last_latest_slot}");
 
-                let latest_slot = *new_block_slots.last().unwrap();
-
+                // filter already processed slots
+                let new_block_slots: Vec<u64> = (last_latest_slot..new_slot).collect();
                 // context for lock
                 {
                     let mut lock = slots_task_queue.lock().await;
                     for slot in new_block_slots {
                         lock.push_back((slot, 0));
-                        if slot_processed.insert(slot) && slot_processed.len() > SLOT_PROCESSED_SIZE
-                        {
-                            slot_processed.pop_first();
-                        }
                     }
                 }
 
-                last_latest_slot = latest_slot;
+                last_latest_slot = new_slot;
                 tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             }
         })
