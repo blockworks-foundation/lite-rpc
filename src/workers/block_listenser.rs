@@ -123,6 +123,42 @@ impl BlockListener {
         }
     }
 
+    pub async fn index_slot_partial(
+        &self,
+        slot: Slot,
+        commitment_config: CommitmentConfig,
+    ) -> anyhow::Result<()> {
+        let block = self
+            .rpc_client
+            .get_block_with_config(
+                slot,
+                RpcBlockConfig {
+                    transaction_details: Some(TransactionDetails::None),
+                    commitment: Some(commitment_config),
+                    max_supported_transaction_version: Some(0),
+                    ..Default::default()
+                },
+            )
+            .await?;
+
+        let Some(block_height) = block.block_height else {
+            Self::increment_invalid_block_metric(commitment_config);
+            return Ok(());
+        };
+
+        let blockhash = block.blockhash;
+
+        self.block_store
+            .add_block(
+                blockhash.clone(),
+                BlockInformation { slot, block_height },
+                commitment_config,
+            )
+            .await;
+
+        Ok(())
+    }
+
     pub async fn index_slot(
         &self,
         slot: Slot,
@@ -326,14 +362,13 @@ impl BlockListener {
             tokio::spawn(async move {
                 while let Some(latest_slot) = latest_slot_recv.recv().await {
                     if let Err(err) = this
-                        .index_slot(latest_slot, commitment_config, postgres.clone())
+                        .index_slot_partial(latest_slot, commitment_config)
                         .await
                     {
                         warn!(
                             "Error while indexing latest {commitment_config:?} block with slot {latest_slot} {err}"
                         );
 
-                        get_block_errors.fetch_add(1, Ordering::Relaxed);
                         latest_slot_send.send(latest_slot).unwrap();
                     };
                 }
@@ -350,7 +385,7 @@ impl BlockListener {
             loop {
                 info!("{commitment_config:?} {slot}");
 
-                let mut new_block_slots = self
+                let new_block_slots = self
                     .rpc_client
                     .get_blocks_with_commitment(slot, None, commitment_config)
                     .await?;
@@ -363,7 +398,7 @@ impl BlockListener {
 
                 info!("Received new slots");
 
-                let Some(latest_slot) = new_block_slots.pop() else {
+                let Some(latest_slot) = new_block_slots.last().cloned() else {
                     warn!("Didn't receive any block slots for {slot}");
                     continue;
                 };
