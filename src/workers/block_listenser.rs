@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeSet, VecDeque},
-    sync::Arc,
+    sync::Arc, time::Instant,
 };
 
 use dashmap::DashMap;
@@ -152,13 +152,15 @@ impl BlockListener {
                     transaction_details: Some(TransactionDetails::Full),
                     commitment: Some(commitment_config),
                     max_supported_transaction_version: Some(0),
-                    encoding: Some(UiTransactionEncoding::Binary),
-                    rewards: Some(false),
+                    encoding: Some(UiTransactionEncoding::Base64),
+                    rewards: Some(true),
                 },
             )
             .await?;
 
         timer.observe_duration();
+
+        let start = Instant::now();
 
         if commitment_config.is_finalized() {
             info!("finalized slot {}", slot);
@@ -190,29 +192,8 @@ impl BlockListener {
                 commitment_config,
             )
             .await;
-
-        if let Some(postgres) = &postgres {
-            let Some(rewards) = block.rewards else {
-                return Ok(());
-                     };
-
-            let Some(leader_reward) = rewards
-                      .iter()
-                      .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
-                return Ok(());
-            };
-
-            let _leader_id = &leader_reward.pubkey;
-
-            postgres
-                .send(PostgresMsg::PostgresBlock(PostgresBlock {
-                    slot: slot as i64,
-                    leader_id: 0, //FIX:
-                    parent_slot: parent_slot as i64,
-                }))
-                .expect("Error sending block to postgres service");
-        }
-
+        
+        let mut transactions_processed = 0;
         for tx in transactions {
             let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
                 info!("tx with no meta");
@@ -226,6 +207,7 @@ impl BlockListener {
                     continue;
                 }
             };
+            transactions_processed += 1;
             let sig = tx.signatures[0].to_string();
 
             if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
@@ -283,6 +265,30 @@ impl BlockListener {
                     value: serde_json::json!({ "err": err }),
                 })?;
             }
+        }
+
+        info!("Number of transactions processed {} for slot {} for commitment {} time taken {}", transactions_processed, slot, commitment_config.commitment, start.elapsed().as_millis());
+
+        if let Some(postgres) = &postgres {
+            let Some(rewards) = block.rewards else {
+                return Ok(());
+            };
+
+            let Some(leader_reward) = rewards
+                      .iter()
+                      .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
+                return Ok(());
+            };
+
+            let _leader_id = &leader_reward.pubkey;
+
+            postgres
+                .send(PostgresMsg::PostgresBlock(PostgresBlock {
+                    slot: slot as i64,
+                    leader_id: 0, //FIX:
+                    parent_slot: parent_slot as i64,
+                }))
+                .expect("Error sending block to postgres service");
         }
 
         Ok(())
