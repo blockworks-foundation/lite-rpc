@@ -31,7 +31,7 @@ async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
