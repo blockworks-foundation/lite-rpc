@@ -20,9 +20,8 @@ use solana_sdk::{
 };
 
 use solana_transaction_status::{
-    option_serializer::OptionSerializer, RewardType, TransactionConfirmationStatus,
-    TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
-    UiTransactionStatusMeta,
+    option_serializer::OptionSerializer, TransactionConfirmationStatus, TransactionDetails,
+    TransactionStatus, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta,
 };
 use tokio::{sync::mpsc::Sender, task::JoinHandle, time::Instant};
 
@@ -220,18 +219,15 @@ impl BlockListener {
             .await;
 
         if let Some(postgres) = &postgres {
-            let Some(rewards) = block.rewards else {
-                return Ok(());
-            };
-
-            let Some(leader_reward) = rewards
-                      .iter()
-                      .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
-                return Ok(());
-            };
-
-            let _leader_id = &leader_reward.pubkey;
-
+            //            if let Some(rewards) = block.rewards {
+            //                let Some(leader_reward) = rewards
+            //                      .iter()
+            //                      .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
+            //
+            //                let _leader_id = &leader_reward.pubkey;
+            //
+            //
+            //            };
             postgres
                 .send(PostgresMsg::PostgresBlock(PostgresBlock {
                     slot: slot as i64,
