@@ -184,7 +184,7 @@ impl BlockListener {
                     transaction_details: Some(TransactionDetails::Full),
                     commitment: Some(commitment_config),
                     max_supported_transaction_version: Some(0),
-                    encoding: Some(UiTransactionEncoding::Binary),
+                    encoding: Some(UiTransactionEncoding::Base64),
                     rewards: None, // this can be turned on later
                 },
             )
@@ -222,7 +222,7 @@ impl BlockListener {
         if let Some(postgres) = &postgres {
             let Some(rewards) = block.rewards else {
                 return Ok(());
-                     };
+            };
 
             let Some(leader_reward) = rewards
                       .iter()
@@ -248,7 +248,7 @@ impl BlockListener {
             };
 
             let Some(tx) = tx.transaction.decode() else {
-                error!("Expected Binary encoded tx");
+                error!("Expected Base64 encoded tx");
                 continue;
             };
 
