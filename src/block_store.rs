@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
+use anyhow::Context;
 use dashmap::DashMap;
 
+use solana_client::rpc_config::RpcBlockConfig;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_transaction_status::TransactionDetails;
 use tokio::sync::RwLock;
 
 use crate::workers::BlockInformation;
@@ -38,14 +41,27 @@ impl BlockStore {
         rpc_client: &RpcClient,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<(String, BlockInformation)> {
-        let (latest_block_hash, block_height) = rpc_client
-            .get_latest_blockhash_with_commitment(commitment_config)
-            .await?;
-
-        let latest_block_hash = latest_block_hash.to_string();
         let slot = rpc_client
             .get_slot_with_commitment(commitment_config)
             .await?;
+
+        let block = rpc_client
+            .get_block_with_config(
+                slot,
+                RpcBlockConfig {
+                    encoding: None,
+                    transaction_details: Some(TransactionDetails::None),
+                    rewards: None,
+                    commitment: Some(commitment_config),
+                    max_supported_transaction_version: Some(0),
+                },
+            )
+            .await?;
+
+        let latest_block_hash = block.blockhash;
+        let block_height = block
+            .block_height
+            .context("Couldn't get block height of latest block for block store")?;
 
         Ok((
             latest_block_hash.clone(),
