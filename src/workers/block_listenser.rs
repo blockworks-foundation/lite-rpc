@@ -27,7 +27,7 @@ use tokio::{
 };
 
 use crate::{
-    block_store::BlockStore,
+    block_store::{BlockInformation, BlockStore},
     workers::{PostgresBlock, PostgresMsg, PostgresUpdateTx},
 };
 
@@ -66,13 +66,6 @@ pub struct BlockListener {
     block_store: BlockStore,
     rpc_client: Arc<RpcClient>,
     pub signature_subscribers: Arc<DashMap<(String, CommitmentConfig), SubscriptionSink>>,
-}
-
-#[derive(Clone, Debug)]
-pub struct BlockInformation {
-    pub slot: u64,
-    pub block_height: u64,
-    pub blockhash: String,
 }
 
 pub struct BlockListnerNotificatons {
@@ -181,11 +174,8 @@ impl BlockListener {
 
         self.block_store
             .add_block(
-                BlockInformation {
-                    slot,
-                    block_height,
-                    blockhash: blockhash.clone(),
-                },
+                blockhash.clone(),
+                BlockInformation { slot, block_height },
                 commitment_config,
             )
             .await;

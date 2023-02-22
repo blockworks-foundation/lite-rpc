@@ -3,19 +3,25 @@ use std::sync::Arc;
 use anyhow::Context;
 use dashmap::DashMap;
 
-use solana_client::rpc_config::RpcBlockConfig;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use log::info;
+use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcBlockConfig};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionDetails;
 use tokio::sync::RwLock;
+use tokio::time::Instant;
 
-use crate::workers::BlockInformation;
+#[derive(Clone, Copy, Debug)]
+pub struct BlockInformation {
+    pub slot: u64,
+    pub block_height: u64,
+}
 
 #[derive(Clone)]
 pub struct BlockStore {
     blocks: Arc<DashMap<String, BlockInformation>>,
-    latest_confirmed_blockinfo: Arc<RwLock<BlockInformation>>,
-    latest_finalized_blockinfo: Arc<RwLock<BlockInformation>>,
+    latest_confirmed_block: Arc<RwLock<(String, BlockInformation)>>,
+    latest_finalized_block: Arc<RwLock<(String, BlockInformation)>>,
+    last_add_block_metric: Arc<RwLock<Instant>>,
 }
 
 impl BlockStore {
@@ -26,14 +32,21 @@ impl BlockStore {
             Self::fetch_latest(rpc_client, CommitmentConfig::finalized()).await?;
 
         Ok(Self {
-            latest_confirmed_blockinfo: Arc::new(RwLock::new(confirmed_block.clone())),
-            latest_finalized_blockinfo: Arc::new(RwLock::new(finalized_block.clone())),
+            latest_confirmed_block: Arc::new(RwLock::new((
+                confirmed_blockhash.clone(),
+                confirmed_block,
+            ))),
+            latest_finalized_block: Arc::new(RwLock::new((
+                finalized_blockhash.clone(),
+                finalized_block,
+            ))),
             blocks: Arc::new({
                 let map = DashMap::new();
                 map.insert(confirmed_blockhash, confirmed_block);
                 map.insert(finalized_blockhash, finalized_block);
                 map
             }),
+            last_add_block_metric: Arc::new(RwLock::new(Instant::now())),
         })
     }
 
@@ -63,14 +76,7 @@ impl BlockStore {
             .block_height
             .context("Couldn't get block height of latest block for block store")?;
 
-        Ok((
-            latest_block_hash.clone(),
-            BlockInformation {
-                slot,
-                block_height,
-                blockhash: latest_block_hash,
-            },
-        ))
+        Ok((latest_block_hash, BlockInformation { slot, block_height }))
     }
 
     pub async fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
@@ -81,48 +87,68 @@ impl BlockStore {
         Some(info.value().to_owned())
     }
 
-    // private
-    fn get_latest_blockinfo_lock(
+    fn get_latest_block_arc(
         &self,
         commitment_config: CommitmentConfig,
-    ) -> Arc<RwLock<BlockInformation>> {
+    ) -> Arc<RwLock<(String, BlockInformation)>> {
         if commitment_config.is_finalized() {
-            self.latest_finalized_blockinfo.clone()
+            self.latest_finalized_block.clone()
         } else {
-            self.latest_confirmed_blockinfo.clone()
+            self.latest_confirmed_block.clone()
         }
+    }
+
+    pub async fn get_latest_blockhash(&self, commitment_config: CommitmentConfig) -> String {
+        self.get_latest_block_arc(commitment_config)
+            .read()
+            .await
+            .0
+            .clone()
     }
 
     pub async fn get_latest_block_info(
         &self,
         commitment_config: CommitmentConfig,
     ) -> BlockInformation {
-        let block_info = self
-            .get_latest_blockinfo_lock(commitment_config)
+        self.get_latest_block_arc(commitment_config).read().await.1
+    }
+
+    pub async fn get_latest_block(
+        &self,
+        commitment_config: CommitmentConfig,
+    ) -> (String, BlockInformation) {
+        self.get_latest_block_arc(commitment_config)
             .read()
             .await
-            .clone();
-
-        block_info
+            .clone()
     }
 
     pub async fn add_block(
         &self,
+        blockhash: String,
         block_info: BlockInformation,
         commitment_config: CommitmentConfig,
     ) {
-        let blockhash = block_info.blockhash.clone();
+        let mut last_add_block_metric = self.last_add_block_metric.write().await;
+
+        info!(
+            "{:?} {blockhash} with info {block_info:?}",
+            last_add_block_metric.elapsed()
+        );
+
+        *last_add_block_metric = Instant::now();
+        drop(last_add_block_metric);
+
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
-        self.blocks.insert(blockhash, block_info.clone());
-        let last_recent_block = self.get_latest_block_info(commitment_config).await;
+        let slot = block_info.slot;
+        self.blocks.insert(blockhash.clone(), block_info);
 
-        if last_recent_block.slot < block_info.slot {
-            *self
-                .get_latest_blockinfo_lock(commitment_config)
-                .write()
-                .await = block_info;
+        let latest_block = self.get_latest_block_arc(commitment_config);
+        if slot > latest_block.read().await.1.slot {
+            *latest_block.write().await = (blockhash, block_info);
         }
     }
 }
+
