@@ -3,11 +3,13 @@ use std::sync::Arc;
 use anyhow::Context;
 use dashmap::DashMap;
 
+use log::info;
 use solana_client::rpc_config::RpcBlockConfig;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionDetails;
 use tokio::sync::RwLock;
+use tokio::time::Instant;
 
 use crate::workers::BlockInformation;
 
@@ -16,6 +18,7 @@ pub struct BlockStore {
     blocks: Arc<DashMap<String, BlockInformation>>,
     latest_confirmed_blockinfo: Arc<RwLock<BlockInformation>>,
     latest_finalized_blockinfo: Arc<RwLock<BlockInformation>>,
+    last_add_block_metric: Arc<RwLock<Instant>>,
 }
 
 impl BlockStore {
@@ -34,6 +37,7 @@ impl BlockStore {
                 map.insert(finalized_blockhash, finalized_block);
                 map
             }),
+            last_add_block_metric: Arc::new(RwLock::new(Instant::now())),
         })
     }
 
@@ -111,6 +115,13 @@ impl BlockStore {
         block_info: BlockInformation,
         commitment_config: CommitmentConfig,
     ) {
+        let mut last_add_block_metric = self.last_add_block_metric.write().await;
+
+        info!("{block_info:?} in {:?}", last_add_block_metric.elapsed());
+
+        *last_add_block_metric = Instant::now();
+        drop(last_add_block_metric);
+
         let blockhash = block_info.blockhash.clone();
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
