@@ -63,7 +63,7 @@ impl TpuManager {
             ws_addr,
             fanout_slots,
             error_count: Default::default(),
-            connection_cache: connection_cache,
+            connection_cache,
         })
     }
 
@@ -101,7 +101,7 @@ impl TpuManager {
         Ok(())
     }
 
-    async fn get_tpu_client(&self) -> Arc<QuicTpuClient> {
+    pub async fn get_tpu_client(&self) -> Arc<QuicTpuClient> {
         self.tpu_client.read().await.clone()
     }
 
