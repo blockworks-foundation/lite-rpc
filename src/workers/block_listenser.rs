@@ -1,6 +1,7 @@
-use std::{collections::VecDeque, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use dashmap::DashMap;
+use futures::future::join_all;
 use jsonrpsee::SubscriptionSink;
 use log::{info, warn};
 use prometheus::{histogram_opts, opts, register_counter, register_histogram, Counter, Histogram};
@@ -21,10 +22,7 @@ use solana_transaction_status::{
     TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
     UiTransactionStatusMeta,
 };
-use tokio::{
-    sync::{mpsc::Sender, Mutex},
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc::Sender, task::JoinHandle};
 
 use crate::{
     block_store::BlockStore,
@@ -296,94 +294,60 @@ impl BlockListener {
 
         Ok(())
     }
+
     pub fn listen(
         self,
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
-        let slots_task_queue = Arc::new(Mutex::new(VecDeque::<(u64, u8)>::new()));
-        // task to fetch blocks
-        for _i in 0..6 {
-            let this = self.clone();
-            let postgres = postgres.clone();
-            let slots_task_queue = slots_task_queue.clone();
-
-            tokio::spawn(async move {
-                let slots_task_queue = slots_task_queue.clone();
-                loop {
-                    let (slot, error_count) = {
-                        let mut queue = slots_task_queue.lock().await;
-                        match queue.pop_front() {
-                            Some(t) => t,
-                            None => {
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                                continue;
-                            }
-                        }
-                    };
-
-                    if error_count > 10 {
-                        // retried for 10 times / there should be no block for this slot
-                        warn!(
-                            "unable to get block at slot {} and commitment {}",
-                            slot, commitment_config.commitment
-                        );
-                        continue;
-                    }
-
-                    if let Err(_) = this
-                        .index_slot(slot, commitment_config, postgres.clone())
-                        .await
-                    {
-                        // usually as we index all the slots even if they are not been processed we get some errors for slot
-                        // as they are not in long term storage of the rpc // we check 10 times before ignoring the slot
-                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                        {
-                            let mut queue = slots_task_queue.lock().await;
-                            queue.push_back((slot, error_count + 1));
-                        }
-                    };
-                    //   println!("{i} thread done slot {slot}");
-                }
-            });
-        }
-
-        let rpc_client = self.rpc_client.clone();
         tokio::spawn(async move {
-            let slots_task_queue = slots_task_queue.clone();
-            let last_latest_slot = self
-                .block_store
-                .get_latest_block_info(commitment_config)
-                .await
-                .slot;
-            // -5 for warmup
-            let mut last_latest_slot = last_latest_slot - 5;
+            let mut latest_slot = self
+                .rpc_client
+                .get_slot_with_commitment(commitment_config)
+                .await?;
 
-            // storage for recent slots processed
-            let rpc_client = rpc_client.clone();
+            info!("Listening to blocks {commitment_config:?}");
+
+            let mut slot_que = Vec::new();
+
             loop {
-                let new_slot = rpc_client
-                    .get_slot_with_commitment(commitment_config)
+                let mut new_block_slots = self
+                    .rpc_client
+                    .get_blocks_with_commitment(latest_slot, None, commitment_config)
                     .await?;
 
-                if last_latest_slot == new_slot {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                    println!("no slots");
+                if new_block_slots.is_empty() {
+                    warn!("{latest_slot} No slots");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     continue;
                 }
 
-                // filter already processed slots
-                let new_block_slots: Vec<u64> = (last_latest_slot..new_slot).collect();
-                // context for lock
-                {
-                    let mut lock = slots_task_queue.lock().await;
-                    for slot in new_block_slots {
-                        lock.push_back((slot, 0));
-                    }
+                let new_latest_slot = *new_block_slots.last().unwrap();
+
+                if latest_slot == new_latest_slot {
+                    warn!("No new slots for {latest_slot}");
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    continue;
                 }
 
-                last_latest_slot = new_slot;
-                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                latest_slot = new_latest_slot;
+
+                // reverse to put latest_slot first
+                new_block_slots.reverse();
+
+                // need not queue up new slots if they are less than 16 and there the queue is empty
+                let slots_to_get_blocks = if slot_que.is_empty() && new_block_slots.len() <= 16 {
+                    new_block_slots
+                } else {
+                    slot_que.append(&mut new_block_slots);
+                    slot_que.split_off(slot_que.len().min(16))
+                };
+
+                let index_futs = slots_to_get_blocks
+                    .into_iter()
+                    .map(|slot| self.index_slot(slot, commitment_config, postgres.clone()));
+
+                join_all(index_futs).await;
             }
         })
     }
