@@ -318,7 +318,7 @@ impl BlockListener {
 
                 if new_block_slots.is_empty() {
                     warn!("{latest_slot} No slots");
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                     continue;
                 }
 
@@ -326,7 +326,7 @@ impl BlockListener {
 
                 if latest_slot == new_latest_slot {
                     warn!("No new slots for {latest_slot}");
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                     continue;
                 }
 
