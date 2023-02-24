@@ -344,10 +344,14 @@ impl BlockListener {
                 };
 
                 let index_futs = slots_to_get_blocks
-                    .into_iter()
-                    .map(|slot| self.index_slot(slot, commitment_config, postgres.clone()));
+                    .iter()
+                    .map(|slot| self.index_slot(*slot, commitment_config, postgres.clone()));
 
-                join_all(index_futs).await;
+                for (index, status) in join_all(index_futs).await.into_iter().enumerate() {
+                    if status.is_err() {
+                        slot_que.push(slots_to_get_blocks[index]);
+                    }
+                }
             }
         })
     }
