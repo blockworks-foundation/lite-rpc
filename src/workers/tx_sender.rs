@@ -10,7 +10,7 @@ use log::{info, warn};
 use prometheus::{register_counter, Counter};
 use solana_transaction_status::TransactionStatus;
 use tokio::{
-    sync::mpsc::{error::TryRecvError, UnboundedReceiver},
+    sync::mpsc::{UnboundedReceiver},
     task::JoinHandle,
 };
 
@@ -146,23 +146,23 @@ impl TxSender {
                 let mut txs = Vec::with_capacity(tx_batch_size);
 
                 while txs.len() <= tx_batch_size {
-                    match recv.try_recv() {
-                        Ok((sig, tx, slot)) => {
-                            sigs_and_slots.push((sig, slot));
-                            txs.push(tx);
-                        }
-                        Err(TryRecvError::Disconnected) => {
-                            bail!("Channel Disconnected");
-                        }
-                        _ => {
+                    match tokio::time::timeout(tx_send_interval, recv.recv()).await {
+                        Ok(value) => match value {
+                            Some((sig, tx, slot)) => {
+                                sigs_and_slots.push((sig, slot));
+                                txs.push(tx);
+                            }
+                            None => {
+                                bail!("Channel Disconnected");
+                            }
+                        },
+                        Err(_) => {
                             break;
                         }
                     }
                 }
 
                 batch_send.send((sigs_and_slots, txs)).await?;
-
-                tokio::time::sleep(tx_send_interval).await;
             }
         })
     }
