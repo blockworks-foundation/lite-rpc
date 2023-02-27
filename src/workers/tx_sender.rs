@@ -10,7 +10,7 @@ use log::{info, warn};
 use prometheus::{register_counter, Counter};
 use solana_transaction_status::TransactionStatus;
 use tokio::{
-    sync::{mpsc::UnboundedReceiver, TryAcquireError},
+    sync::mpsc::{UnboundedReceiver},
     task::JoinHandle,
 };
 
@@ -35,8 +35,6 @@ pub struct TxSender {
     pub txs_sent: Arc<DashMap<String, TxProps>>,
     /// TpuClient to call the tpu port
     pub tpu_manager: Arc<TpuManager>,
-
-    counting_semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 /// Transaction Properties
@@ -60,7 +58,57 @@ impl TxSender {
         Self {
             tpu_manager,
             txs_sent: Default::default(),
-            counting_semaphore: Arc::new(tokio::sync::Semaphore::new(5)),
+        }
+    }
+
+    /// retry enqued_tx(s)
+    async fn forward_txs(
+        &self,
+        sigs_and_slots: Vec<(String, u64)>,
+        txs: Vec<WireTransaction>,
+        postgres: Option<PostgresMpscSend>,
+    ) {
+        assert_eq!(sigs_and_slots.len(), txs.len());
+
+        if sigs_and_slots.is_empty() {
+            return;
+        }
+
+        let tpu_client = self.tpu_manager.clone();
+        let txs_sent = self.txs_sent.clone();
+
+        let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
+            Ok(_) => {
+                for (sig, _) in &sigs_and_slots {
+                    txs_sent.insert(sig.to_owned(), TxProps::default());
+                }
+                // metrics
+                TXS_SENT.inc_by(sigs_and_slots.len() as f64);
+
+                1
+            }
+            Err(err) => {
+                warn!("{err}");
+                0
+            }
+        };
+
+        if let Some(postgres) = postgres {
+            let forwarded_slot = tpu_client.get_tpu_client().await.estimated_current_slot();
+
+            for (sig, recent_slot) in sigs_and_slots {
+                postgres
+                    .send(PostgresMsg::PostgresTx(PostgresTx {
+                        signature: sig.clone(),
+                        recent_slot: recent_slot as i64,
+                        forwarded_slot: forwarded_slot as i64,
+                        processed_slot: None,
+                        cu_consumed: None,
+                        cu_requested: None,
+                        quic_response,
+                    }))
+                    .expect("Error writing to postgres service");
+            }
         }
     }
 
@@ -72,20 +120,33 @@ impl TxSender {
         tx_send_interval: Duration,
         postgres_send: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
+        let (batch_send, batch_recv) = async_channel::unbounded();
+
+        for _i in 0..5 {
+            let this = self.clone();
+            let batch_recv = batch_recv.clone();
+            let postgres_send = postgres_send.clone();
+
+            tokio::spawn(async move {
+                while let Ok((sigs_and_slots, txs)) = batch_recv.recv().await {
+                    this.forward_txs(sigs_and_slots, txs, postgres_send.clone())
+                        .await;
+                }
+            });
+        }
+
         tokio::spawn(async move {
             info!(
-                "Batching tx(s) with batch size of {tx_batch_size} every {} ms",
+                "Batching tx(s) with batch size of {tx_batch_size} every {}ms",
                 tx_send_interval.as_millis()
             );
 
             loop {
                 let mut sigs_and_slots = Vec::with_capacity(tx_batch_size);
                 let mut txs = Vec::with_capacity(tx_batch_size);
-                let mut maybe_permit = None;
-                let counting_semaphore = self.counting_semaphore.clone();
+
                 while txs.len() <= tx_batch_size {
-                    let res = tokio::time::timeout(tx_send_interval, recv.recv()).await;
-                    match res {
+                    match tokio::time::timeout(tx_send_interval, recv.recv()).await {
                         Ok(value) => match value {
                             Some((sig, tx, slot)) => {
                                 sigs_and_slots.push((sig, slot));
@@ -95,84 +156,13 @@ impl TxSender {
                                 bail!("Channel Disconnected");
                             }
                         },
-                        _ => {
-                            let res = counting_semaphore.clone().try_acquire_owned();
-                            match res {
-                                Ok(permit) => {
-                                    maybe_permit = Some(permit);
-                                    break;
-                                }
-                                Err(TryAcquireError::Closed) => {
-                                    bail!("Semaphone permit error");
-                                }
-                                Err(TryAcquireError::NoPermits) => {
-                                    // No permits continue to fetch transactions and batch them
-                                }
-                            }
+                        Err(_) => {
+                            break;
                         }
                     }
                 }
-                assert_eq!(sigs_and_slots.len(), txs.len());
 
-                if sigs_and_slots.is_empty() {
-                    continue;
-                }
-
-                let permit = match maybe_permit {
-                    Some(permit) => permit,
-                    None => {
-                        // get the permit
-                        counting_semaphore.acquire_owned().await.unwrap()
-                    }
-                };
-
-                let postgres_send = postgres_send.clone();
-                let tpu_client = self.tpu_manager.clone();
-                let txs_sent = self.txs_sent.clone();
-                tokio::spawn(async move {
-                    let semaphore_permit = permit;
-
-                    for (sig, _) in &sigs_and_slots {
-                        txs_sent.insert(sig.to_owned(), TxProps::default());
-                    }
-                    info!(
-                        "sending {} transactions by tpu size {}",
-                        txs.len(),
-                        txs_sent.len()
-                    );
-                    let quic_response = {
-                        let _semaphore_permit = semaphore_permit;
-                        match tpu_client.try_send_wire_transaction_batch(txs).await {
-                            Ok(_) => {
-                                // metrics
-                                TXS_SENT.inc_by(sigs_and_slots.len() as f64);
-                                1
-                            }
-                            Err(err) => {
-                                warn!("{err}");
-                                0
-                            }
-                        }
-                    };
-
-                    if let Some(postgres) = postgres_send {
-                        let forwarded_slot: u64 = tpu_client.estimated_current_slot().await;
-
-                        for (sig, recent_slot) in sigs_and_slots {
-                            postgres
-                                .send(PostgresMsg::PostgresTx(PostgresTx {
-                                    signature: sig.clone(),
-                                    recent_slot: recent_slot as i64,
-                                    forwarded_slot: forwarded_slot as i64,
-                                    processed_slot: None,
-                                    cu_consumed: None,
-                                    cu_requested: None,
-                                    quic_response,
-                                }))
-                                .expect("Error writing to postgres service");
-                        }
-                    }
-                });
+                batch_send.send((sigs_and_slots, txs)).await?;
             }
         })
     }
