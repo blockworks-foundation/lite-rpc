@@ -1,12 +1,11 @@
 use crate::{
-    block_store::BlockStore,
+    block_store::{BlockInformation, BlockStore},
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
     tpu_manager::TpuManager,
     workers::{
-        BlockInformation, BlockListener, Cleaner, MetricsCapture, Postgres, PrometheusSync,
-        TxSender, WireTransaction,
+        BlockListener, Cleaner, MetricsCapture, Postgres, PrometheusSync, TxSender, WireTransaction,
     },
 };
 
@@ -248,14 +247,8 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let BlockInformation {
-            slot,
-            block_height,
-            blockhash,
-        } = self
-            .block_store
-            .get_latest_block_info(commitment_config)
-            .await;
+        let (blockhash, BlockInformation { slot, block_height }) =
+            self.block_store.get_latest_block(commitment_config).await;
 
         info!("glb {blockhash} {slot} {block_height}");
 
