@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use dashmap::DashMap;
 use futures::future::join_all;
@@ -309,6 +309,7 @@ impl BlockListener {
             info!("Listening to blocks {commitment_config:?}");
 
             let mut slot_que = Vec::new();
+            let mut slot_retry_check = HashMap::new();
 
             loop {
                 let new_latest_slot = self
@@ -331,7 +332,9 @@ impl BlockListener {
                         new_block_slots
                     } else {
                         slot_que.append(&mut new_block_slots);
-                        slot_que.split_off(slot_que.len().min(16))
+                        let mut last_16 = slot_que.split_off(slot_que.len().min(16));
+                        std::mem::swap(&mut last_16, &mut slot_que);
+                        last_16
                     };
 
                 let index_futs = slots_to_get_blocks
@@ -339,9 +342,20 @@ impl BlockListener {
                     .map(|slot| self.index_slot(*slot, commitment_config, postgres.clone()));
 
                 for (index, status) in join_all(index_futs).await.into_iter().enumerate() {
+                    let slot = slots_to_get_blocks[index];
+
                     if status.is_err() {
-                        slot_que.push(slots_to_get_blocks[index]);
+                        let retries: &mut u32 = slot_retry_check.entry(slot).or_default();
+                        *retries += 1;
+                        if *retries <= 5 {
+                            slot_que.push(slots_to_get_blocks[index]);
+                            continue;
+                        }
+
+                        info!("Failed to fetch slot {slot}");
                     }
+
+                    slot_retry_check.remove(&slot);
                 }
             }
         })
