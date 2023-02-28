@@ -129,15 +129,17 @@ impl BlockStore {
         block_info: BlockInformation,
         commitment_config: CommitmentConfig,
     ) {
-        let mut last_add_block_metric = self.last_add_block_metric.write().await;
+        // create context for add block metric
+        {
+            let mut last_add_block_metric = self.last_add_block_metric.write().await;
 
-        info!(
-            "{:?} {blockhash} with info {block_info:?}",
-            last_add_block_metric.elapsed()
-        );
+            info!(
+                "{:?} {blockhash} with info {block_info:?}",
+                last_add_block_metric.elapsed()
+            );
 
-        *last_add_block_metric = Instant::now();
-        drop(last_add_block_metric);
+            *last_add_block_metric = Instant::now();
+        }
 
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
