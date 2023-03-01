@@ -306,32 +306,36 @@ impl BlockListener {
                         match queue.pop_front() {
                             Some(t) => t,
                             None => {
+                                // no task
                                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                                 continue;
                             }
                         }
                     };
 
-                    if error_count > 10 {
-                        // retried for 10 times / there should be no block for this slot
-                        warn!(
-                            "unable to get block at slot {} and commitment {}",
-                            slot, commitment_config.commitment
-                        );
-                        continue;
-                    }
-
                     if let Err(_) = this
                         .index_slot(slot, commitment_config, postgres.clone())
                         .await
                     {
-                        // usually as we index all the slots even if they are not been processed we get some errors for slot
-                        // as they are not in long term storage of the rpc // we check 10 times before ignoring the slot
-                        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                        {
-                            let mut queue = slots_task_queue.lock().await;
-                            queue.push_back((slot, error_count + 1));
+                        if error_count > 5 {
+                            // retried for 10 times / there should be no block for this slot
+                            warn!(
+                                "unable to get block at slot {} and commitment {}",
+                                slot, commitment_config.commitment
+                            );
+                            continue;
                         }
+                        // usually as we index all the slots even if they are not been processed we get some errors for slot
+                        // as they are not in long term storage of the rpc // we check 5 times before ignoring the slot
+                        let slots_task_queue = slots_task_queue.clone();
+                        // create a task that will add errored task to the queue after a timeout
+                        tokio::spawn( async move {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                            {
+                                let mut queue = slots_task_queue.lock().await;
+                                queue.push_back((slot, error_count + 1));
+                            }
+                        } );
                     };
                     //   println!("{i} thread done slot {slot}");
                 }
