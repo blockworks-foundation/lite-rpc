@@ -9,10 +9,7 @@ use log::{info, warn};
 
 use prometheus::{register_counter, Counter};
 use solana_transaction_status::TransactionStatus;
-use tokio::{
-    sync::mpsc::{UnboundedReceiver},
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
 
 use crate::{
     tpu_manager::TpuManager,
@@ -23,7 +20,7 @@ use super::PostgresMpscSend;
 
 lazy_static::lazy_static! {
     static ref TXS_SENT: Counter =
-        register_counter!("txs_sent", "Number of transactions forwarded to tpu").unwrap();
+        register_counter!("literpc_txs_sent", "Number of transactions forwarded to tpu").unwrap();
 }
 
 pub type WireTransaction = Vec<u8>;

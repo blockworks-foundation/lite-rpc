@@ -39,27 +39,27 @@ use super::{PostgresMpscSend, TxProps, TxSender};
 
 lazy_static::lazy_static! {
     static ref TT_RECV_CON_BLOCK: Histogram = register_histogram!(histogram_opts!(
-        "tt_recv_con_block",
+        "literpc_tt_recv_con_block",
         "Time to receive confirmed block from block subscribe",
     ))
     .unwrap();
     static ref TT_RECV_FIN_BLOCK: Histogram = register_histogram!(histogram_opts!(
-        "tt_recv_fin_block",
+        "literpc_tt_recv_fin_block",
         "Time to receive finalized block from block subscribe",
     ))
     .unwrap();
     static ref FIN_BLOCKS_RECV: Counter =
-        register_counter!(opts!("fin_blocks_recv", "Number of Finalized Blocks Received")).unwrap();
+        register_counter!(opts!("literpc_fin_blocks_recv", "Number of Finalized Blocks Received")).unwrap();
     static ref CON_BLOCKS_RECV: Counter =
-        register_counter!(opts!("con_blocks_recv", "Number of Confirmed Blocks Received")).unwrap();
+        register_counter!(opts!("literpc_con_blocks_recv", "Number of Confirmed Blocks Received")).unwrap();
     static ref INCOMPLETE_FIN_BLOCKS_RECV: Counter =
-        register_counter!(opts!("incomplete_fin_blocks_recv", "Number of Incomplete Finalized Blocks Received")).unwrap();
+        register_counter!(opts!("literpc_incomplete_fin_blocks_recv", "Number of Incomplete Finalized Blocks Received")).unwrap();
     static ref INCOMPLETE_CON_BLOCKS_RECV: Counter =
-        register_counter!(opts!("incomplete_con_blocks_recv", "Number of Incomplete Confirmed Blocks Received")).unwrap();
+        register_counter!(opts!("literpc_incomplete_con_blocks_recv", "Number of Incomplete Confirmed Blocks Received")).unwrap();
     static ref TXS_CONFIRMED: Counter =
-        register_counter!(opts!("txs_confirmed", "Number of Transactions Confirmed")).unwrap();
+        register_counter!(opts!("literpc_txs_confirmed", "Number of Transactions Confirmed")).unwrap();
     static ref TXS_FINALIZED: Counter =
-        register_counter!(opts!("txs_finalized", "Number of Transactions Finalized")).unwrap();
+        register_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
 }
 
 /// Background worker which listen's to new blocks
