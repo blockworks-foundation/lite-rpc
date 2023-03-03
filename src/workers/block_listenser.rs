@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    sync::{Arc, atomic::AtomicU64},
+    sync::{atomic::AtomicU64, Arc},
     time::{Duration, Instant},
 };
 
@@ -356,7 +356,8 @@ impl BlockListener {
                     match slot_retry_queue_rx.recv().await {
                         Some((slot, error_count, instant)) => {
                             let now = tokio::time::Instant::now();
-                            let recent_slot = recent_slot.load(std::sync::atomic::Ordering::Relaxed);
+                            let recent_slot =
+                                recent_slot.load(std::sync::atomic::Ordering::Relaxed);
                             // if slot is too old ignore
                             if recent_slot.saturating_sub(slot) > 256 {
                                 // slot too old to retry
@@ -387,7 +388,7 @@ impl BlockListener {
                 .slot;
             // -5 for warmup
             let mut last_latest_slot = last_latest_slot - 5;
-            recent_slot.store( last_latest_slot, std::sync::atomic::Ordering::Relaxed);
+            recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
 
             // storage for recent slots processed
             let rpc_client = rpc_client.clone();
@@ -413,7 +414,7 @@ impl BlockListener {
                 }
 
                 last_latest_slot = new_slot;
-                recent_slot.store( last_latest_slot, std::sync::atomic::Ordering::Relaxed);
+                recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
                 tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             }
         })
