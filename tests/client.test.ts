@@ -1,18 +1,15 @@
-import { Connection, Keypair, LAMPORTS_PER_SOL, SystemProgram, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction, Signer } from "@solana/web3.js";
+import { Connection, Keypair, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction, BlockheightBasedTransactionConfirmationStrategy } from "@solana/web3.js";
 import * as fs from "fs";
 import * as os from "os";
 
 jest.setTimeout(60000);
 
 const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+const connection = new Connection('http://0.0.0.0:8890', 'finalized');
+const keypair_file = fs.readFileSync(`${os.homedir}/.config/solana/id.json`, 'utf-8');
+const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(keypair_file)));
 
-test('send and confirm transaction', async () => {
-    const connection = new Connection('http://0.0.0.0:8890', 'confirmed');
-
-    const keypair_file = fs.readFileSync(`${os.homedir}/.config/solana/id.json`, 'utf-8');
-    const keypair_array = Uint8Array.from(JSON.parse(keypair_file));
-    const payer = Keypair.fromSecretKey(keypair_array);
-
+function createTransaction(): Transaction {
     const transaction = new Transaction();
 
     transaction.add(
@@ -23,9 +20,27 @@ test('send and confirm transaction', async () => {
         })
     );
 
-    const sig = connection.sendTransaction(transaction, [payer]);
+    return transaction;
+}
 
-    console.log(`https://explorer.solana.com/tx/${sig}`)
+test('send and confirm transaction BlockheightBasedTransactionConfirmationStrategy', async () => {
+    const tx = createTransaction();
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
-    await sendAndConfirmTransaction(connection, transaction, [payer]);
+    const signature = await connection.sendTransaction(tx, [payer]);
+    await connection.confirmTransaction({
+        blockhash,
+        lastValidBlockHeight,
+        signature,
+        abortSignal: undefined
+    });
+
+    console.log(`https://explorer.solana.com/tx/${signature}`)
 });
+
+test('send and confirm transaction', async () => {
+    const tx = createTransaction();
+
+    await sendAndConfirmTransaction(connection, tx, [payer]);
+});
+
