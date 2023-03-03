@@ -5,7 +5,7 @@ import * as os from "os";
 jest.setTimeout(60000);
 
 const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
-const connection = new Connection('http://0.0.0.0:8890', 'finalized');
+const connection = new Connection('http://0.0.0.0:8890', 'confirmed');
 const keypair_file = fs.readFileSync(`${os.homedir}/.config/solana/id.json`, 'utf-8');
 const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(keypair_file)));
 
