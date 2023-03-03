@@ -36,19 +36,19 @@ use tokio::{
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: Counter =
-        register_counter!(opts!("rpc_send_tx", "RPC call send transaction")).unwrap();
+        register_counter!(opts!("literpc_rpc_send_tx", "RPC call send transaction")).unwrap();
     static ref RPC_GET_LATEST_BLOCKHASH: Counter =
-        register_counter!(opts!("rpc_get_latest_blockhash", "RPC call to get latest block hash")).unwrap();
+        register_counter!(opts!("literpc_rpc_get_latest_blockhash", "RPC call to get latest block hash")).unwrap();
     static ref RPC_IS_BLOCKHASH_VALID: Counter =
-        register_counter!(opts!("rpc_is_blockhash_valid", "RPC call to check if blockhash is vali calld")).unwrap();
+        register_counter!(opts!("literpc_rpc_is_blockhash_valid", "RPC call to check if blockhash is vali calld")).unwrap();
     static ref RPC_GET_SIGNATURE_STATUSES: Counter =
-        register_counter!(opts!("rpc_get_signature_statuses", "RPC call to get signature statuses")).unwrap();
+        register_counter!(opts!("literpc_rpc_get_signature_statuses", "RPC call to get signature statuses")).unwrap();
     static ref RPC_GET_VERSION: Counter =
-        register_counter!(opts!("rpc_get_version", "RPC call to version")).unwrap();
+        register_counter!(opts!("literpc_rpc_get_version", "RPC call to version")).unwrap();
     static ref RPC_REQUEST_AIRDROP: Counter =
-        register_counter!(opts!("rpc_airdrop", "RPC call to request airdrop")).unwrap();
+        register_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
     static ref RPC_SIGNATURE_SUBSCRIBE: Counter =
-        register_counter!(opts!("rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
+        register_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
 
 }
 
