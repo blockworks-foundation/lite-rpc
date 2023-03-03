@@ -1,4 +1,4 @@
-aame: Cargo Build & Test
+name: Cargo Build & Test
 
 on:
   push:
@@ -11,14 +11,20 @@ jobs:
   build_and_test:
     name: Rust project - latest
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        toolchain:
-          - stable
-          - beta
-          - nightly
     steps:
       - uses: actions/checkout@v3
-      - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
-      - run: cargo build --verbose
-      - run: cargo test --verbose
+      - run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
+          export PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
+          solana --version
+      - name: Solana Cli Check
+        run: solana --version
+
+      - name: Early Build
+        run: cargo build --release --workspace --tests 
+
+      - name: Run and Test
+        run: |
+          solana-test-validator &
+          cargo run --release &
+          cargo test
