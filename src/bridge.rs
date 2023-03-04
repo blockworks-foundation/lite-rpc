@@ -138,8 +138,12 @@ impl LiteBridge {
             .clone()
             .listen(CommitmentConfig::confirmed(), None);
 
-        let cleaner =
-            Cleaner::new(self.tx_sender.clone(), self.block_listner.clone()).start(clean_interval);
+        let cleaner = Cleaner::new(
+            self.tx_sender.clone(),
+            self.block_listner.clone(),
+            self.block_store.clone(),
+        )
+        .start(clean_interval);
 
         let rpc = self.into_rpc();
 
@@ -247,8 +251,12 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (blockhash, BlockInformation { slot, block_height }) =
-            self.block_store.get_latest_block(commitment_config).await;
+        let (
+            blockhash,
+            BlockInformation {
+                slot, block_height, ..
+            },
+        ) = self.block_store.get_latest_block(commitment_config).await;
 
         info!("glb {blockhash} {slot} {block_height}");
 
