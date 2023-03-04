@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use dashmap::DashMap;
@@ -14,6 +15,7 @@ use tokio::time::Instant;
 pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
+    pub instant: Instant,
 }
 
 #[derive(Clone)]
@@ -76,7 +78,14 @@ impl BlockStore {
             .block_height
             .context("Couldn't get block height of latest block for block store")?;
 
-        Ok((latest_block_hash, BlockInformation { slot, block_height }))
+        Ok((
+            latest_block_hash,
+            BlockInformation {
+                slot,
+                block_height,
+                instant: Instant::now(),
+            },
+        ))
     }
 
     pub async fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
@@ -151,5 +160,30 @@ impl BlockStore {
         if slot > latest_block.read().await.1.slot {
             *latest_block.write().await = (blockhash, block_info);
         }
+    }
+
+    pub async fn clean(&self, cleanup_duration: Duration) {
+        let latest_confirmed = self
+            .get_latest_blockhash(CommitmentConfig {
+                commitment: solana_sdk::commitment_config::CommitmentLevel::Confirmed,
+            })
+            .await;
+        let latest_finalized = self
+            .get_latest_blockhash(CommitmentConfig {
+                commitment: solana_sdk::commitment_config::CommitmentLevel::Confirmed,
+            })
+            .await;
+
+        let before_length = self.blocks.len();
+        self.blocks.retain(|k, v| {
+            v.instant.elapsed() < cleanup_duration
+                || k.eq(&latest_confirmed)
+                || k.eq(&latest_finalized)
+        });
+
+        info!(
+            "Cleaned {} block info",
+            before_length.saturating_sub(self.blocks.len())
+        );
     }
 }

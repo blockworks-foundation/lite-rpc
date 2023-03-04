@@ -1,7 +1,7 @@
 use std::{
     collections::VecDeque,
     sync::{atomic::AtomicU64, Arc},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use dashmap::DashMap;
@@ -28,6 +28,7 @@ use solana_transaction_status::{
 use tokio::{
     sync::{mpsc::Sender, Mutex},
     task::JoinHandle,
+    time::Instant,
 };
 
 use crate::{
@@ -97,12 +98,23 @@ impl BlockListener {
         num_of_sigs_commited
     }
 
+    #[allow(deprecated)]
     pub fn signature_subscribe(
         &self,
         signature: String,
         commitment_config: CommitmentConfig,
         sink: SubscriptionSink,
     ) {
+        let commitment_config = match commitment_config.commitment {
+            CommitmentLevel::Finalized | CommitmentLevel::Root | CommitmentLevel::Max => {
+                CommitmentConfig {
+                    commitment: CommitmentLevel::Finalized,
+                }
+            }
+            _ => CommitmentConfig {
+                commitment: CommitmentLevel::Confirmed,
+            },
+        };
         self.signature_subscribers
             .insert((signature, commitment_config), sink);
     }
@@ -179,7 +191,11 @@ impl BlockListener {
         self.block_store
             .add_block(
                 blockhash.clone(),
-                BlockInformation { slot, block_height },
+                BlockInformation {
+                    slot,
+                    block_height,
+                    instant: Instant::now(),
+                },
                 commitment_config,
             )
             .await;

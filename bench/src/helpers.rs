@@ -70,7 +70,7 @@ impl BenchHelper {
     ) -> Vec<Transaction> {
         (0..num_of_txs)
             .into_iter()
-            .map(|_| Self::create_memo_tx( uuid::Uuid::new_v4().as_bytes(), funded_payer, blockhash))
+            .map(|_| Self::create_memo_tx(uuid::Uuid::new_v4().as_bytes(), funded_payer, blockhash))
             .collect()
     }
 
