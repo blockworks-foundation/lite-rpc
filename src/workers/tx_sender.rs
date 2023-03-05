@@ -12,8 +12,9 @@ use solana_transaction_status::TransactionStatus;
 use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
 
 use crate::{
+    bridge::TXS_IN_CHANNEL,
     tpu_manager::TpuManager,
-    workers::{PostgresMsg, PostgresTx},
+    workers::{PostgresMsg, PostgresTx, MESSAGES_IN_POSTGRES_CHANNEL},
 };
 
 use super::PostgresMpscSend;
@@ -29,7 +30,7 @@ pub type WireTransaction = Vec<u8>;
 #[derive(Clone)]
 pub struct TxSender {
     /// Tx(s) forwarded to tpu
-    pub txs_sent: Arc<DashMap<String, TxProps>>,
+    pub txs_sent_store: Arc<DashMap<String, TxProps>>,
     /// TpuClient to call the tpu port
     pub tpu_manager: Arc<TpuManager>,
 }
@@ -54,7 +55,7 @@ impl TxSender {
     pub fn new(tpu_manager: Arc<TpuManager>) -> Self {
         Self {
             tpu_manager,
-            txs_sent: Default::default(),
+            txs_sent_store: Default::default(),
         }
     }
 
@@ -72,7 +73,7 @@ impl TxSender {
         }
 
         let tpu_client = self.tpu_manager.clone();
-        let txs_sent = self.txs_sent.clone();
+        let txs_sent = self.txs_sent_store.clone();
 
         let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
             Ok(_) => {
@@ -94,6 +95,7 @@ impl TxSender {
             let forwarded_slot = tpu_client.get_tpu_client().await.estimated_current_slot();
 
             for (sig, recent_slot) in sigs_and_slots {
+                MESSAGES_IN_POSTGRES_CHANNEL.inc();
                 postgres
                     .send(PostgresMsg::PostgresTx(PostgresTx {
                         signature: sig.clone(),
@@ -146,6 +148,7 @@ impl TxSender {
                     match tokio::time::timeout(tx_send_interval, recv.recv()).await {
                         Ok(value) => match value {
                             Some((sig, tx, slot)) => {
+                                TXS_IN_CHANNEL.dec();
                                 sigs_and_slots.push((sig, slot));
                                 txs.push(tx);
                             }

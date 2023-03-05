@@ -64,7 +64,7 @@ async fn send_and_confirm_txs() {
             .unwrap();
 
         for _ in 0..2 {
-            let tx_status = tx_sender.txs_sent.get(&sig).unwrap();
+            let tx_status = tx_sender.txs_sent_store.get(&sig).unwrap();
 
             if let Some(tx_status) = &tx_status.value().status {
                 if tx_status.confirmation_status() == TransactionConfirmationStatus::Confirmed {

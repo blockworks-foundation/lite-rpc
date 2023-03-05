@@ -17,7 +17,7 @@ use log::info;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 
-use prometheus::{opts, register_counter, Counter};
+use prometheus::{core::GenericGauge, opts, register_counter, register_int_gauge, Counter};
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
@@ -49,7 +49,7 @@ lazy_static::lazy_static! {
         register_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
     static ref RPC_SIGNATURE_SUBSCRIBE: Counter =
         register_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
-
+    pub static ref TXS_IN_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_channel", "Transactions in channel")).unwrap();
 }
 
 /// A bridge between clients and tpu
@@ -57,7 +57,7 @@ pub struct LiteBridge {
     pub rpc_client: Arc<RpcClient>,
     pub tpu_manager: Arc<TpuManager>,
     // None if LiteBridge is not executed
-    pub tx_send: Option<UnboundedSender<(String, WireTransaction, u64)>>,
+    pub tx_send_channel: Option<UnboundedSender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
     pub block_listner: BlockListener,
     pub block_store: BlockStore,
@@ -85,7 +85,7 @@ impl LiteBridge {
         Ok(Self {
             rpc_client,
             tpu_manager,
-            tx_send: None,
+            tx_send_channel: None,
             tx_sender,
             block_listner,
             block_store,
@@ -116,7 +116,7 @@ impl LiteBridge {
         };
 
         let (tx_send, tx_recv) = mpsc::unbounded_channel();
-        self.tx_send = Some(tx_send);
+        self.tx_send_channel = Some(tx_send);
 
         let tx_sender = self.tx_sender.clone().execute(
             tx_recv,
@@ -232,11 +232,12 @@ impl LiteRpcServer for LiteBridge {
                 return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
-        self.tx_send
+        self.tx_send_channel
             .as_ref()
             .expect("Lite Bridge Not Executed")
             .send((sig.to_string(), raw_tx, slot))
             .unwrap();
+        TXS_IN_CHANNEL.inc();
 
         Ok(BinaryEncoding::Base58.encode(sig))
     }
@@ -326,7 +327,7 @@ impl LiteRpcServer for LiteBridge {
             .iter()
             .map(|sig| {
                 self.tx_sender
-                    .txs_sent
+                    .txs_sent_store
                     .get(sig)
                     .and_then(|v| v.status.clone())
             })
@@ -382,7 +383,7 @@ impl LiteRpcServer for LiteBridge {
         };
 
         self.tx_sender
-            .txs_sent
+            .txs_sent_store
             .insert(airdrop_sig.clone(), Default::default());
 
         Ok(airdrop_sig)

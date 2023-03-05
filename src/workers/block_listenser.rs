@@ -7,7 +7,10 @@ use std::{
 use dashmap::DashMap;
 use jsonrpsee::SubscriptionSink;
 use log::{info, warn};
-use prometheus::{histogram_opts, opts, register_counter, register_histogram, Counter, Histogram};
+use prometheus::{
+    core::GenericGauge, histogram_opts, opts, register_counter, register_histogram,
+    register_int_gauge, Counter, Histogram,
+};
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
@@ -33,7 +36,7 @@ use tokio::{
 
 use crate::{
     block_store::{BlockInformation, BlockStore},
-    workers::{PostgresBlock, PostgresMsg, PostgresUpdateTx},
+    workers::{PostgresBlock, PostgresMsg, PostgresUpdateTx, MESSAGES_IN_POSTGRES_CHANNEL},
 };
 
 use super::{PostgresMpscSend, TxProps, TxSender};
@@ -61,6 +64,9 @@ lazy_static::lazy_static! {
         register_counter!(opts!("literpc_txs_confirmed", "Number of Transactions Confirmed")).unwrap();
     static ref TXS_FINALIZED: Counter =
         register_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
+    static ref BLOCKS_IN_QUEUE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_queue", "Number of blocks waiting to deque")).unwrap();
+    static ref BLOCKS_IN_RETRY_QUEUE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_retry_queue", "Number of blocks waiting in retry")).unwrap();
+    static ref NUMBER_OF_SIGNATURE_SUBSCRIBERS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_number_of_signature_sub", "Number of signature subscriber")).unwrap();
 }
 
 /// Background worker which listen's to new blocks
@@ -70,8 +76,7 @@ pub struct BlockListener {
     tx_sender: TxSender,
     block_store: BlockStore,
     rpc_client: Arc<RpcClient>,
-    pub signature_subscribers:
-        Arc<DashMap<(String, CommitmentConfig), (SubscriptionSink, Instant)>>,
+    signature_subscribers: Arc<DashMap<(String, CommitmentConfig), (SubscriptionSink, Instant)>>,
 }
 
 pub struct BlockListnerNotificatons {
@@ -92,7 +97,7 @@ impl BlockListener {
     pub async fn num_of_sigs_commited(&self, sigs: &[String]) -> usize {
         let mut num_of_sigs_commited = 0;
         for sig in sigs {
-            if self.tx_sender.txs_sent.contains_key(sig) {
+            if self.tx_sender.txs_sent_store.contains_key(sig) {
                 num_of_sigs_commited += 1;
             }
         }
@@ -122,12 +127,14 @@ impl BlockListener {
         let commitment_config = Self::get_supported_commitment_config(commitment_config);
         self.signature_subscribers
             .insert((signature, commitment_config), (sink, Instant::now()));
+        NUMBER_OF_SIGNATURE_SUBSCRIBERS.inc();
     }
 
     pub fn signature_un_subscribe(&self, signature: String, commitment_config: CommitmentConfig) {
         let commitment_config = Self::get_supported_commitment_config(commitment_config);
         self.signature_subscribers
             .remove(&(signature, commitment_config));
+        NUMBER_OF_SIGNATURE_SUBSCRIBERS.dec();
     }
 
     fn increment_invalid_block_metric(commitment_config: CommitmentConfig) {
@@ -222,7 +229,7 @@ impl BlockListener {
             transactions_processed += 1;
             let sig = tx.signatures[0].to_string();
 
-            if let Some(mut tx_status) = self.tx_sender.txs_sent.get_mut(&sig) {
+            if let Some(mut tx_status) = self.tx_sender.txs_sent_store.get_mut(&sig) {
                 //
                 // Metrics
                 //
@@ -261,6 +268,7 @@ impl BlockListener {
                             sig.clone(),
                         ))
                         .unwrap();
+                    MESSAGES_IN_POSTGRES_CHANNEL.inc();
                 }
             };
 
@@ -276,6 +284,7 @@ impl BlockListener {
                     },
                     value: serde_json::json!({ "err": err }),
                 })?;
+                NUMBER_OF_SIGNATURE_SUBSCRIBERS.dec();
             }
         }
 
@@ -307,6 +316,7 @@ impl BlockListener {
                     parent_slot: parent_slot as i64,
                 }))
                 .expect("Error sending block to postgres service");
+            MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
 
         Ok(())
@@ -361,6 +371,7 @@ impl BlockListener {
                                 .checked_add(Duration::from_millis(100))
                                 .unwrap();
                             let _ = slot_retry_queue_sx.send((slot, error_count, retry_at));
+                            BLOCKS_IN_RETRY_QUEUE.inc();
                         }
                     };
                 }
@@ -376,6 +387,7 @@ impl BlockListener {
                 loop {
                     match slot_retry_queue_rx.recv().await {
                         Some((slot, error_count, instant)) => {
+                            BLOCKS_IN_RETRY_QUEUE.dec();
                             let recent_slot =
                                 recent_slot.load(std::sync::atomic::Ordering::Relaxed);
                             // if slot is too old ignore
@@ -433,6 +445,7 @@ impl BlockListener {
                     for slot in new_block_slots {
                         lock.push_back((slot, 0));
                     }
+                    BLOCKS_IN_QUEUE.set(lock.len() as i64);
                 }
 
                 last_latest_slot = new_slot;
@@ -440,5 +453,17 @@ impl BlockListener {
                 tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
             }
         })
+    }
+
+    pub fn clean(&self, ttl_duration: Duration) {
+        let length_before = self.signature_subscribers.len();
+        self.signature_subscribers
+            .retain(|_k, (sink, instant)| !sink.is_closed() && instant.elapsed() < ttl_duration);
+
+        NUMBER_OF_SIGNATURE_SUBSCRIBERS.set(self.signature_subscribers.len() as i64);
+        info!(
+            "Cleaned {} Signature Subscribers",
+            length_before - self.signature_subscribers.len()
+        );
     }
 }
