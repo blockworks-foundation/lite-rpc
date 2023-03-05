@@ -70,7 +70,8 @@ pub struct BlockListener {
     tx_sender: TxSender,
     block_store: BlockStore,
     rpc_client: Arc<RpcClient>,
-    pub signature_subscribers: Arc<DashMap<(String, CommitmentConfig), SubscriptionSink>>,
+    pub signature_subscribers:
+        Arc<DashMap<(String, CommitmentConfig), (SubscriptionSink, Instant)>>,
 }
 
 pub struct BlockListnerNotificatons {
@@ -120,7 +121,7 @@ impl BlockListener {
     ) {
         let commitment_config = Self::get_supported_commitment_config(commitment_config);
         self.signature_subscribers
-            .insert((signature, commitment_config), sink);
+            .insert((signature, commitment_config), (sink, Instant::now()));
     }
 
     pub fn signature_un_subscribe(&self, signature: String, commitment_config: CommitmentConfig) {
@@ -170,7 +171,6 @@ impl BlockListener {
                 },
             )
             .await?;
-
         timer.observe_duration();
 
         if commitment_config.is_finalized() {
@@ -265,7 +265,7 @@ impl BlockListener {
             };
 
             // subscribers
-            if let Some((_sig, mut sink)) =
+            if let Some((_sig, (mut sink, _))) =
                 self.signature_subscribers.remove(&(sig, commitment_config))
             {
                 // none if transaction succeeded
