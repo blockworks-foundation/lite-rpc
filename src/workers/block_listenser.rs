@@ -70,7 +70,8 @@ pub struct BlockListener {
     tx_sender: TxSender,
     block_store: BlockStore,
     rpc_client: Arc<RpcClient>,
-    pub signature_subscribers: Arc<DashMap<(String, CommitmentConfig), SubscriptionSink>>,
+    pub signature_subscribers:
+        Arc<DashMap<(String, CommitmentConfig), (SubscriptionSink, Instant)>>,
 }
 
 pub struct BlockListnerNotificatons {
@@ -99,13 +100,8 @@ impl BlockListener {
     }
 
     #[allow(deprecated)]
-    pub fn signature_subscribe(
-        &self,
-        signature: String,
-        commitment_config: CommitmentConfig,
-        sink: SubscriptionSink,
-    ) {
-        let commitment_config = match commitment_config.commitment {
+    fn get_supported_commitment_config(commitment_config: CommitmentConfig) -> CommitmentConfig {
+        match commitment_config.commitment {
             CommitmentLevel::Finalized | CommitmentLevel::Root | CommitmentLevel::Max => {
                 CommitmentConfig {
                     commitment: CommitmentLevel::Finalized,
@@ -114,12 +110,22 @@ impl BlockListener {
             _ => CommitmentConfig {
                 commitment: CommitmentLevel::Confirmed,
             },
-        };
+        }
+    }
+
+    pub fn signature_subscribe(
+        &self,
+        signature: String,
+        commitment_config: CommitmentConfig,
+        sink: SubscriptionSink,
+    ) {
+        let commitment_config = Self::get_supported_commitment_config(commitment_config);
         self.signature_subscribers
-            .insert((signature, commitment_config), sink);
+            .insert((signature, commitment_config), (sink, Instant::now()));
     }
 
     pub fn signature_un_subscribe(&self, signature: String, commitment_config: CommitmentConfig) {
+        let commitment_config = Self::get_supported_commitment_config(commitment_config);
         self.signature_subscribers
             .remove(&(signature, commitment_config));
     }
@@ -165,7 +171,6 @@ impl BlockListener {
                 },
             )
             .await?;
-
         timer.observe_duration();
 
         if commitment_config.is_finalized() {
@@ -260,7 +265,7 @@ impl BlockListener {
             };
 
             // subscribers
-            if let Some((_sig, mut sink)) =
+            if let Some((_sig, (mut sink, _))) =
                 self.signature_subscribers.remove(&(sig, commitment_config))
             {
                 // none if transaction succeeded
@@ -371,7 +376,6 @@ impl BlockListener {
                 loop {
                     match slot_retry_queue_rx.recv().await {
                         Some((slot, error_count, instant)) => {
-                            let now = tokio::time::Instant::now();
                             let recent_slot =
                                 recent_slot.load(std::sync::atomic::Ordering::Relaxed);
                             // if slot is too old ignore
@@ -380,6 +384,8 @@ impl BlockListener {
                                 // most probably its an empty slot
                                 continue;
                             }
+
+                            let now = tokio::time::Instant::now();
                             if now < instant {
                                 tokio::time::sleep_until(instant).await;
                             }

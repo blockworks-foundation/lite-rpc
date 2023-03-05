@@ -40,11 +40,11 @@ impl Cleaner {
     }
 
     /// Clean Signature Subscribers from Block Listeners
-    pub fn clean_block_listeners(&self) {
+    pub fn clean_block_listeners(&self, ttl_duration: Duration) {
         let length_before = self.block_listenser.signature_subscribers.len();
         self.block_listenser
             .signature_subscribers
-            .retain(|_k, v| !v.is_closed());
+            .retain(|_k, (sink, instant)| !sink.is_closed() && instant.elapsed() < ttl_duration);
 
         info!(
             "Cleaned {} Signature Subscribers",
@@ -66,7 +66,7 @@ impl Cleaner {
                 ttl.tick().await;
 
                 self.clean_tx_sender(ttl_duration);
-                self.clean_block_listeners();
+                self.clean_block_listeners(ttl_duration);
                 self.clean_block_store(ttl_duration).await;
             }
         })
