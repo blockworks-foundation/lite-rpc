@@ -29,27 +29,19 @@ impl Cleaner {
     }
 
     pub fn clean_tx_sender(&self, ttl_duration: Duration) {
-        let length_before = self.tx_sender.txs_sent.len();
+        let length_before = self.tx_sender.txs_sent_store.len();
         self.tx_sender
-            .txs_sent
+            .txs_sent_store
             .retain(|_k, v| v.sent_at.elapsed() < ttl_duration);
         info!(
             "Cleaned {} transactions",
-            length_before - self.tx_sender.txs_sent.len()
+            length_before - self.tx_sender.txs_sent_store.len()
         );
     }
 
     /// Clean Signature Subscribers from Block Listeners
     pub fn clean_block_listeners(&self, ttl_duration: Duration) {
-        let length_before = self.block_listenser.signature_subscribers.len();
-        self.block_listenser
-            .signature_subscribers
-            .retain(|_k, (sink, instant)| !sink.is_closed() && instant.elapsed() < ttl_duration);
-
-        info!(
-            "Cleaned {} Signature Subscribers",
-            length_before - self.block_listenser.signature_subscribers.len()
-        );
+        self.block_listenser.clean(ttl_duration);
     }
 
     pub async fn clean_block_store(&self, ttl_duration: Duration) {

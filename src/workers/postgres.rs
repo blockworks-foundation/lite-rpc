@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Ok};
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
 
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use tokio::{
     sync::{
         mpsc::{UnboundedReceiver, UnboundedSender},
@@ -16,6 +17,10 @@ use tokio_postgres::Client;
 use native_tls::{Certificate, Identity, TlsConnector};
 
 use crate::encoding::BinaryEncoding;
+
+lazy_static::lazy_static! {
+    pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();
+}
 
 pub struct Postgres {
     client: Arc<RwLock<Client>>,
@@ -198,6 +203,7 @@ impl Postgres {
             info!("Writing to postgres");
 
             while let Some(msg) = recv.recv().await {
+                MESSAGES_IN_POSTGRES_CHANNEL.dec();
                 let Err(err) = (
                     match msg {
                     PostgresMsg::PostgresTx(tx) => self.send_tx(tx).await,
