@@ -236,7 +236,7 @@ impl Postgres {
 
             while let Some(msg) = recv.recv().await {
                 MESSAGES_IN_POSTGRES_CHANNEL.inc();
-                let session = self.get_session().await;
+                let session = self.get_session().await?;
 
                 let Err(err) = (
                     match msg {
