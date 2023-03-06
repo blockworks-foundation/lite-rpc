@@ -106,11 +106,10 @@ impl LiteBridge {
     ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
         let (postgres, postgres_send) = if enable_postgres {
             let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
-            let (postgres_connection, postgres) = Postgres::new().await?;
-
+            let postgres = Postgres::new().await?;
             let postgres = postgres.start(postgres_recv);
 
-            (Some((postgres, postgres_connection)), Some(postgres_send))
+            (Some(postgres), Some(postgres_send))
         } else {
             (None, None)
         };
@@ -187,8 +186,7 @@ impl LiteBridge {
             cleaner,
         ];
 
-        if let Some((postgres, connection)) = postgres {
-            services.push(connection);
+        if let Some(postgres) = postgres {
             services.push(postgres);
         }
 
