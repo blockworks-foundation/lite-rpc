@@ -17,7 +17,7 @@ use log::info;
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 
-use prometheus::{core::GenericGauge, opts, register_counter, register_int_gauge, Counter};
+use prometheus::{core::GenericGauge, opts, register_int_counter, register_int_gauge, IntCounter};
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
@@ -35,20 +35,20 @@ use tokio::{
 };
 
 lazy_static::lazy_static! {
-    static ref RPC_SEND_TX: Counter =
-        register_counter!(opts!("literpc_rpc_send_tx", "RPC call send transaction")).unwrap();
-    static ref RPC_GET_LATEST_BLOCKHASH: Counter =
-        register_counter!(opts!("literpc_rpc_get_latest_blockhash", "RPC call to get latest block hash")).unwrap();
-    static ref RPC_IS_BLOCKHASH_VALID: Counter =
-        register_counter!(opts!("literpc_rpc_is_blockhash_valid", "RPC call to check if blockhash is vali calld")).unwrap();
-    static ref RPC_GET_SIGNATURE_STATUSES: Counter =
-        register_counter!(opts!("literpc_rpc_get_signature_statuses", "RPC call to get signature statuses")).unwrap();
-    static ref RPC_GET_VERSION: Counter =
-        register_counter!(opts!("literpc_rpc_get_version", "RPC call to version")).unwrap();
-    static ref RPC_REQUEST_AIRDROP: Counter =
-        register_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
-    static ref RPC_SIGNATURE_SUBSCRIBE: Counter =
-        register_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
+    static ref RPC_SEND_TX: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_send_tx", "RPC call send transaction")).unwrap();
+    static ref RPC_GET_LATEST_BLOCKHASH: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_get_latest_blockhash", "RPC call to get latest block hash")).unwrap();
+    static ref RPC_IS_BLOCKHASH_VALID: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_is_blockhash_valid", "RPC call to check if blockhash is vali calld")).unwrap();
+    static ref RPC_GET_SIGNATURE_STATUSES: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_get_signature_statuses", "RPC call to get signature statuses")).unwrap();
+    static ref RPC_GET_VERSION: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_get_version", "RPC call to version")).unwrap();
+    static ref RPC_REQUEST_AIRDROP: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
+    static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
     pub static ref TXS_IN_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_channel", "Transactions in channel")).unwrap();
 }
 
@@ -142,6 +142,7 @@ impl LiteBridge {
             self.tx_sender.clone(),
             self.block_listner.clone(),
             self.block_store.clone(),
+            self.tpu_manager.clone(),
         )
         .start(clean_interval);
 

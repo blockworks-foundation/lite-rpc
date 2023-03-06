@@ -7,6 +7,7 @@ use std::{
 };
 
 use log::info;
+use prometheus::{opts, register_int_counter, IntCounter};
 use solana_quic_client::{QuicConfig, QuicPool};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Keypair;
@@ -22,6 +23,11 @@ pub type QuicConnectionCache = TpuConnectionCache<QuicPool>;
 
 const TPU_CONNECTION_CACHE_SIZE: usize = 8;
 
+lazy_static::lazy_static! {
+static ref TPU_CONNECTION_RESET: IntCounter =
+    register_int_counter!(opts!("literpc_tpu_connection_reset", "Number of times tpu connection was reseted")).unwrap();
+}
+
 #[derive(Clone)]
 pub struct TpuManager {
     error_count: Arc<AtomicU32>,
@@ -30,7 +36,7 @@ pub struct TpuManager {
     tpu_client: Arc<RwLock<Arc<QuicTpuClient>>>,
     pub ws_addr: String,
     fanout_slots: u64,
-    connection_cache: Arc<QuicConnectionCache>,
+    identity: Arc<Keypair>,
 }
 
 impl TpuManager {
@@ -48,13 +54,9 @@ impl TpuManager {
         let connection_cache =
             QuicConnectionCache::new_with_config(TPU_CONNECTION_CACHE_SIZE, tpu_config);
         let connection_cache = Arc::new(connection_cache);
-        let tpu_client = Self::new_tpu_client(
-            rpc_client.clone(),
-            &ws_addr,
-            fanout_slots,
-            connection_cache.clone(),
-        )
-        .await?;
+        let tpu_client =
+            Self::new_tpu_client(rpc_client.clone(), &ws_addr, fanout_slots, connection_cache)
+                .await?;
         let tpu_client = Arc::new(RwLock::new(Arc::new(tpu_client)));
 
         Ok(Self {
@@ -63,7 +65,7 @@ impl TpuManager {
             ws_addr,
             fanout_slots,
             error_count: Default::default(),
-            connection_cache,
+            identity: Arc::new(identity),
         })
     }
 
@@ -82,26 +84,40 @@ impl TpuManager {
         .await?)
     }
 
+    pub async fn reset_tpu_client(&self) -> anyhow::Result<()> {
+        let mut tpu_config = QuicConfig::new().unwrap();
+        tpu_config
+            .update_client_certificate(&self.identity, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
+            .unwrap();
+        let connection_cache =
+            QuicConnectionCache::new_with_config(TPU_CONNECTION_CACHE_SIZE, tpu_config);
+        let connection_cache = Arc::new(connection_cache);
+
+        let tpu_client = Self::new_tpu_client(
+            self.rpc_client.clone(),
+            &self.ws_addr,
+            self.fanout_slots,
+            connection_cache,
+        )
+        .await?;
+        self.error_count.store(0, Ordering::Relaxed);
+        *self.tpu_client.write().await = Arc::new(tpu_client);
+        TPU_CONNECTION_RESET.inc();
+        Ok(())
+    }
+
     pub async fn reset(&self) -> anyhow::Result<()> {
         self.error_count.fetch_add(1, Ordering::Relaxed);
 
         if self.error_count.load(Ordering::Relaxed) > 5 {
-            let tpu_client = Self::new_tpu_client(
-                self.rpc_client.clone(),
-                &self.ws_addr,
-                self.fanout_slots,
-                self.connection_cache.clone(),
-            )
-            .await?;
-            self.error_count.store(0, Ordering::Relaxed);
-            *self.tpu_client.write().await = Arc::new(tpu_client);
+            self.reset_tpu_client().await?;
             info!("TPU Reset after 5 errors");
         }
 
         Ok(())
     }
 
-    pub async fn get_tpu_client(&self) -> Arc<QuicTpuClient> {
+    async fn get_tpu_client(&self) -> Arc<QuicTpuClient> {
         self.tpu_client.read().await.clone()
     }
 

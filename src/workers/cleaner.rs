@@ -1,9 +1,9 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use log::info;
 use tokio::task::JoinHandle;
 
-use crate::block_store::BlockStore;
+use crate::{block_store::BlockStore, tpu_manager::TpuManager};
 
 use super::{BlockListener, TxSender};
 
@@ -13,6 +13,7 @@ pub struct Cleaner {
     tx_sender: TxSender,
     block_listenser: BlockListener,
     block_store: BlockStore,
+    tpu_manager: Arc<TpuManager>,
 }
 
 impl Cleaner {
@@ -20,11 +21,13 @@ impl Cleaner {
         tx_sender: TxSender,
         block_listenser: BlockListener,
         block_store: BlockStore,
+        tpu_manager: Arc<TpuManager>,
     ) -> Self {
         Self {
             tx_sender,
             block_listenser,
-            block_store: block_store,
+            block_store,
+            tpu_manager,
         }
     }
 
@@ -60,6 +63,7 @@ impl Cleaner {
                 self.clean_tx_sender(ttl_duration);
                 self.clean_block_listeners(ttl_duration);
                 self.clean_block_store(ttl_duration).await;
+                let _ = self.tpu_manager.reset_tpu_client().await;
             }
         })
     }

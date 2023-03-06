@@ -8,8 +8,8 @@ use dashmap::DashMap;
 use jsonrpsee::SubscriptionSink;
 use log::{info, warn};
 use prometheus::{
-    core::GenericGauge, histogram_opts, opts, register_counter, register_histogram,
-    register_int_gauge, Counter, Histogram,
+    core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
+    register_int_gauge, Histogram, IntCounter,
 };
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -52,18 +52,18 @@ lazy_static::lazy_static! {
         "Time to receive finalized block from block subscribe",
     ))
     .unwrap();
-    static ref FIN_BLOCKS_RECV: Counter =
-        register_counter!(opts!("literpc_fin_blocks_recv", "Number of Finalized Blocks Received")).unwrap();
-    static ref CON_BLOCKS_RECV: Counter =
-        register_counter!(opts!("literpc_con_blocks_recv", "Number of Confirmed Blocks Received")).unwrap();
-    static ref INCOMPLETE_FIN_BLOCKS_RECV: Counter =
-        register_counter!(opts!("literpc_incomplete_fin_blocks_recv", "Number of Incomplete Finalized Blocks Received")).unwrap();
-    static ref INCOMPLETE_CON_BLOCKS_RECV: Counter =
-        register_counter!(opts!("literpc_incomplete_con_blocks_recv", "Number of Incomplete Confirmed Blocks Received")).unwrap();
-    static ref TXS_CONFIRMED: Counter =
-        register_counter!(opts!("literpc_txs_confirmed", "Number of Transactions Confirmed")).unwrap();
-    static ref TXS_FINALIZED: Counter =
-        register_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
+    static ref FIN_BLOCKS_RECV: IntCounter =
+    register_int_counter!(opts!("literpc_fin_blocks_recv", "Number of Finalized Blocks Received")).unwrap();
+    static ref CON_BLOCKS_RECV: IntCounter =
+    register_int_counter!(opts!("literpc_con_blocks_recv", "Number of Confirmed Blocks Received")).unwrap();
+    static ref INCOMPLETE_FIN_BLOCKS_RECV: IntCounter =
+    register_int_counter!(opts!("literpc_incomplete_fin_blocks_recv", "Number of Incomplete Finalized Blocks Received")).unwrap();
+    static ref INCOMPLETE_CON_BLOCKS_RECV: IntCounter =
+    register_int_counter!(opts!("literpc_incomplete_con_blocks_recv", "Number of Incomplete Confirmed Blocks Received")).unwrap();
+    static ref TXS_CONFIRMED: IntCounter =
+    register_int_counter!(opts!("literpc_txs_confirmed", "Number of Transactions Confirmed")).unwrap();
+    static ref TXS_FINALIZED: IntCounter =
+    register_int_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
     static ref BLOCKS_IN_QUEUE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_queue", "Number of blocks waiting to deque")).unwrap();
     static ref BLOCKS_IN_RETRY_QUEUE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_retry_queue", "Number of blocks waiting in retry")).unwrap();
     static ref NUMBER_OF_SIGNATURE_SUBSCRIBERS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_number_of_signature_sub", "Number of signature subscriber")).unwrap();
