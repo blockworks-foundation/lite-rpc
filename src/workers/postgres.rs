@@ -230,7 +230,7 @@ impl Postgres {
         Ok(self.session.read().await)
     }
 
-    pub fn start(self, mut recv: PostgresMpscRecv) -> JoinHandle<anyhow::Result<()>> {
+    pub fn start(mut self, mut recv: PostgresMpscRecv) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             info!("Writing to postgres");
 
