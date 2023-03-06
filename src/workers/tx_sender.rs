@@ -7,7 +7,7 @@ use anyhow::bail;
 use dashmap::DashMap;
 use log::{info, warn};
 
-use prometheus::{register_counter, Counter};
+use prometheus::{core::GenericGauge, opts, register_int_counter, register_int_gauge, IntCounter};
 use solana_transaction_status::TransactionStatus;
 use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
 
@@ -20,8 +20,11 @@ use crate::{
 use super::PostgresMpscSend;
 
 lazy_static::lazy_static! {
-    static ref TXS_SENT: Counter =
-        register_counter!("literpc_txs_sent", "Number of transactions forwarded to tpu").unwrap();
+    static ref TXS_SENT: IntCounter =
+        register_int_counter!("literpc_txs_sent", "Number of transactions forwarded to tpu").unwrap();
+    static ref TXS_SENT_ERRORS: IntCounter =
+    register_int_counter!("literpc_txs_sent_errors", "Number of errors while transactions forwarded to tpu").unwrap();
+    static ref TX_BATCH_SIZES: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tx_batch_size", "batchsize of tx sent by literpc")).unwrap();
 }
 
 pub type WireTransaction = Vec<u8>;
@@ -81,18 +84,19 @@ impl TxSender {
                     txs_sent.insert(sig.to_owned(), TxProps::default());
                 }
                 // metrics
-                TXS_SENT.inc_by(sigs_and_slots.len() as f64);
+                TXS_SENT.inc_by(sigs_and_slots.len() as u64);
 
                 1
             }
             Err(err) => {
+                TXS_SENT_ERRORS.inc_by(sigs_and_slots.len() as u64);
                 warn!("{err}");
                 0
             }
         };
 
         if let Some(postgres) = postgres {
-            let forwarded_slot = tpu_client.get_tpu_client().await.estimated_current_slot();
+            let forwarded_slot = tpu_client.estimated_current_slot().await;
 
             for (sig, recent_slot) in sigs_and_slots {
                 MESSAGES_IN_POSTGRES_CHANNEL.inc();
@@ -161,7 +165,7 @@ impl TxSender {
                         }
                     }
                 }
-
+                TX_BATCH_SIZES.set(txs.len() as i64);
                 batch_send.send((sigs_and_slots, txs)).await?;
             }
         })
