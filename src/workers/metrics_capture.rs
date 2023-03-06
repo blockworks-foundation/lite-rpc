@@ -10,6 +10,13 @@ use serde::{Deserialize, Serialize};
 
 lazy_static::lazy_static! {
     static ref TXS_IN_STORE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_store", "Transactions in store")).unwrap();
+    static ref TOKIO_TASKS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tokio_tasks", "Tokio tasks in lite rpc")).unwrap();
+    static ref TOKIO_QUEUEDEPTH: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tokio_blocking_queue_depth", "Tokio tasks in blocking queue in lite rpc")).unwrap();
+    static ref TOKIO_INJQUEUEDEPTH: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tokio_injection_queue_depth", "Tokio tasks in injection queue in lite rpc")).unwrap();
+    static ref TOKIO_NB_BLOCKING_THREADS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tokio_blocking_threads", "Tokio blocking threads in lite rpc")).unwrap();
+    static ref TOKIO_NB_IDLE_THREADS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tokio_idle_threads", "Tokio idle threads in lite rpc")).unwrap();
+
+    static ref STD_THREADS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_threads", "Nb of threads used by literpc")).unwrap();
 }
 
 /// Background worker which captures metrics
@@ -81,6 +88,13 @@ impl MetricsCapture {
                 metrics.txs_confirmed = txs_confirmed;
                 metrics.txs_finalized = txs_finalized;
                 TXS_IN_STORE.set(txs_sent as i64);
+                
+                let metrics = tokio::runtime::Handle::current().metrics();
+                TOKIO_TASKS.set(metrics.num_workers() as i64);
+                TOKIO_QUEUEDEPTH.set(metrics.blocking_queue_depth() as i64);
+                TOKIO_NB_BLOCKING_THREADS.set(metrics.num_blocking_threads() as i64);
+                TOKIO_NB_IDLE_THREADS.set(metrics.num_idle_blocking_threads() as i64);
+                TOKIO_INJQUEUEDEPTH.set( metrics.injection_queue_depth() as i64 );
             }
         })
     }
