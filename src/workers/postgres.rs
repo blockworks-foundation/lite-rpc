@@ -235,7 +235,7 @@ impl Postgres {
             info!("Writing to postgres");
 
             while let Some(msg) = recv.recv().await {
-                MESSAGES_IN_POSTGRES_CHANNEL.inc();
+                MESSAGES_IN_POSTGRES_CHANNEL.dec();
                 let session = self.get_session().await?;
 
                 let Err(err) = (
