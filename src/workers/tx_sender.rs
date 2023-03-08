@@ -165,8 +165,10 @@ impl TxSender {
                         }
                     }
                 }
-                TX_BATCH_SIZES.set(txs.len() as i64);
-                batch_send.send((sigs_and_slots, txs)).await?;
+                if txs.len() > 0 {
+                    TX_BATCH_SIZES.set(txs.len() as i64);
+                    batch_send.send((sigs_and_slots, txs)).await?;
+                }
             }
         })
     }
