@@ -22,7 +22,7 @@ pub const DEFAULT_TX_MAX_RETRIES: u16 = 1;
 #[from_env]
 pub const DEFAULT_TX_BATCH_SIZE: usize = 128;
 #[from_env]
-pub const DEFAULT_FANOUT_SIZE: u64 = 32;
+pub const DEFAULT_FANOUT_SIZE: u64 = 12;
 #[from_env]
 pub const DEFAULT_TX_BATCH_INTERVAL_MS: u64 = 1;
 #[from_env]

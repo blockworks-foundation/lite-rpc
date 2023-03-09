@@ -7,7 +7,10 @@ use anyhow::bail;
 use dashmap::DashMap;
 use log::{info, warn};
 
-use prometheus::{core::GenericGauge, opts, register_int_counter, register_int_gauge, IntCounter};
+use prometheus::{
+    core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
+    register_int_gauge, Histogram, IntCounter,
+};
 use solana_transaction_status::TransactionStatus;
 use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
 
@@ -25,6 +28,11 @@ lazy_static::lazy_static! {
     static ref TXS_SENT_ERRORS: IntCounter =
     register_int_counter!("literpc_txs_sent_errors", "Number of errors while transactions forwarded to tpu").unwrap();
     static ref TX_BATCH_SIZES: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tx_batch_size", "batchsize of tx sent by literpc")).unwrap();
+    static ref TT_SENT_TIMER: Histogram = register_histogram!(histogram_opts!(
+        "literpc_txs_send_timer",
+        "Time to send transaction batch",
+    ))
+    .unwrap();
 }
 
 pub type WireTransaction = Vec<u8>;
@@ -75,14 +83,17 @@ impl TxSender {
             return;
         }
 
+        let timer = TT_SENT_TIMER.start_timer();
+
         let tpu_client = self.tpu_manager.clone();
         let txs_sent = self.txs_sent_store.clone();
 
+        for (sig, _) in &sigs_and_slots {
+            txs_sent.insert(sig.to_owned(), TxProps::default());
+        }
+
         let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
             Ok(_) => {
-                for (sig, _) in &sigs_and_slots {
-                    txs_sent.insert(sig.to_owned(), TxProps::default());
-                }
                 // metrics
                 TXS_SENT.inc_by(sigs_and_slots.len() as u64);
 
@@ -113,6 +124,8 @@ impl TxSender {
                     .expect("Error writing to postgres service");
             }
         }
+
+        timer.observe_duration();
     }
 
     /// retry and confirm transactions every 2ms (avg time to confirm tx)
