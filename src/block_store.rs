@@ -146,12 +146,6 @@ impl BlockStore {
         // create context for add block metric
         {
             let mut last_add_block_metric = self.last_add_block_metric.write().await;
-
-            info!(
-                "{:?} {blockhash} with info {block_info:?}",
-                last_add_block_metric.elapsed()
-            );
-
             *last_add_block_metric = Instant::now();
         }
 

@@ -183,7 +183,6 @@ impl BlockListener {
         timer.observe_duration();
 
         if commitment_config.is_finalized() {
-            info!("finalized slot {}", slot);
             FIN_BLOCKS_RECV.inc();
         } else {
             CON_BLOCKS_RECV.inc();

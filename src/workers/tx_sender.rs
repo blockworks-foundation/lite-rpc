@@ -83,7 +83,8 @@ impl TxSender {
             return;
         }
 
-        let timer = TT_SENT_TIMER.start_timer();
+        let histo_timer = TT_SENT_TIMER.start_timer();
+        let start = Instant::now();
 
         let tpu_client = self.tpu_manager.clone();
         let txs_sent = self.txs_sent_store.clone();
@@ -109,12 +110,12 @@ impl TxSender {
         if let Some(postgres) = postgres {
             let forwarded_slot = tpu_client.estimated_current_slot().await;
 
-            for (sig, recent_slot) in sigs_and_slots {
+            for (sig, recent_slot) in &sigs_and_slots {
                 MESSAGES_IN_POSTGRES_CHANNEL.inc();
                 postgres
                     .send(PostgresMsg::PostgresTx(PostgresTx {
                         signature: sig.clone(),
-                        recent_slot: recent_slot as i64,
+                        recent_slot: *recent_slot as i64,
                         forwarded_slot: forwarded_slot as i64,
                         processed_slot: None,
                         cu_consumed: None,
@@ -125,7 +126,12 @@ impl TxSender {
             }
         }
 
-        timer.observe_duration();
+        histo_timer.observe_duration();
+        info!(
+            "It took {} ms to send a batch of {} transaction(s)",
+            start.elapsed().as_millis(),
+            sigs_and_slots.len()
+        );
     }
 
     /// retry and confirm transactions every 2ms (avg time to confirm tx)
@@ -138,7 +144,7 @@ impl TxSender {
     ) -> JoinHandle<anyhow::Result<()>> {
         let (batch_send, batch_recv) = async_channel::unbounded();
 
-        for _i in 0..5 {
+        for _i in 0..1 {
             let this = self.clone();
             let batch_recv = batch_recv.clone();
             let postgres_send = postgres_send.clone();
