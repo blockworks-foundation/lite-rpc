@@ -64,6 +64,8 @@ lazy_static::lazy_static! {
     register_int_counter!(opts!("literpc_txs_confirmed", "Number of Transactions Confirmed")).unwrap();
     static ref TXS_FINALIZED: IntCounter =
     register_int_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
+    static ref ERRORS_WHILE_FETCHING_SLOTS: IntCounter =
+    register_int_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
     static ref BLOCKS_IN_QUEUE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_queue", "Number of blocks waiting to deque")).unwrap();
     static ref BLOCKS_IN_RETRY_QUEUE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_retry_queue", "Number of blocks waiting in retry")).unwrap();
     static ref NUMBER_OF_SIGNATURE_SUBSCRIBERS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_number_of_signature_sub", "Number of signature subscriber")).unwrap();
@@ -427,13 +429,19 @@ impl BlockListener {
             // storage for recent slots processed
             let rpc_client = rpc_client.clone();
             loop {
-                let new_slot = rpc_client
-                    .get_slot_with_commitment(commitment_config)
-                    .await?;
+                let new_slot = match rpc_client.get_slot_with_commitment(commitment_config).await {
+                    Ok(new_slot) => new_slot,
+                    Err(err) => {
+                        warn!("Error while fetching slot {err:?}");
+                        ERRORS_WHILE_FETCHING_SLOTS.inc();
+                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                        continue;
+                    }
+                };
 
                 if last_latest_slot == new_slot {
+                    warn!("No new slots");
                     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                    println!("no slots");
                     continue;
                 }
 
