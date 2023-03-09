@@ -12,7 +12,11 @@ use prometheus::{
     register_int_gauge, Histogram, IntCounter,
 };
 use solana_transaction_status::TransactionStatus;
-use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
+use tokio::{
+    sync::Semaphore,
+    sync::{mpsc::UnboundedReceiver, OwnedSemaphorePermit},
+    task::JoinHandle,
+};
 
 use crate::{
     bridge::TXS_IN_CHANNEL,
@@ -36,6 +40,7 @@ lazy_static::lazy_static! {
 }
 
 pub type WireTransaction = Vec<u8>;
+const NUMBER_OF_TX_SENDERS: usize = 5;
 
 /// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
 #[derive(Clone)]
@@ -76,6 +81,7 @@ impl TxSender {
         sigs_and_slots: Vec<(String, u64)>,
         txs: Vec<WireTransaction>,
         postgres: Option<PostgresMpscSend>,
+        permit: OwnedSemaphorePermit,
     ) {
         assert_eq!(sigs_and_slots.len(), txs.len());
 
@@ -97,7 +103,6 @@ impl TxSender {
             Ok(_) => {
                 // metrics
                 TXS_SENT.inc_by(sigs_and_slots.len() as u64);
-
                 1
             }
             Err(err) => {
@@ -106,6 +111,7 @@ impl TxSender {
                 0
             }
         };
+        drop(permit);
 
         if let Some(postgres) = postgres {
             let forwarded_slot = tpu_client.estimated_current_slot().await;
@@ -142,30 +148,16 @@ impl TxSender {
         tx_send_interval: Duration,
         postgres_send: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
-        let (batch_send, batch_recv) = async_channel::unbounded();
-
-        for _i in 0..1 {
-            let this = self.clone();
-            let batch_recv = batch_recv.clone();
-            let postgres_send = postgres_send.clone();
-
-            tokio::spawn(async move {
-                while let Ok((sigs_and_slots, txs)) = batch_recv.recv().await {
-                    this.forward_txs(sigs_and_slots, txs, postgres_send.clone())
-                        .await;
-                }
-            });
-        }
-
         tokio::spawn(async move {
             info!(
                 "Batching tx(s) with batch size of {tx_batch_size} every {}ms",
                 tx_send_interval.as_millis()
             );
-
+            let semaphore = Arc::new(Semaphore::new(NUMBER_OF_TX_SENDERS));
             loop {
                 let mut sigs_and_slots = Vec::with_capacity(tx_batch_size);
                 let mut txs = Vec::with_capacity(tx_batch_size);
+                let mut permit = None;
 
                 while txs.len() <= tx_batch_size {
                     match tokio::time::timeout(tx_send_interval, recv.recv()).await {
@@ -180,13 +172,37 @@ impl TxSender {
                             }
                         },
                         Err(_) => {
-                            break;
+                            permit = semaphore.clone().try_acquire_owned().ok();
+                            if permit.is_some() {
+                                // we have a permit we can send collected transaction batch
+                                break;
+                            }
                         }
                     }
                 }
+                assert_eq!(sigs_and_slots.len(), txs.len());
+
+                if sigs_and_slots.is_empty() {
+                    continue;
+                }
+
+                let permit = match permit {
+                    Some(permit) => permit,
+                    None => {
+                        // get the permit
+                        semaphore.clone().acquire_owned().await.unwrap()
+                    }
+                };
+
                 if txs.len() > 0 {
                     TX_BATCH_SIZES.set(txs.len() as i64);
-                    batch_send.send((sigs_and_slots, txs)).await?;
+                    let postgres = postgres_send.clone();
+                    let tx_sender = self.clone();
+                    tokio::spawn(async move {
+                        tx_sender
+                            .forward_txs(sigs_and_slots, txs, postgres, permit)
+                            .await;
+                    });
                 }
             }
         })
