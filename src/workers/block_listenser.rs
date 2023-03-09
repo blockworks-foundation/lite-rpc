@@ -429,12 +429,10 @@ impl BlockListener {
             // storage for recent slots processed
             let rpc_client = rpc_client.clone();
             loop {
-                let new_slot = rpc_client.get_slot_with_commitment(commitment_config).await;
-
-                let new_slot = match new_slot {
-                    Ok(slot) => slot,
-                    Err(e) => {
-                        println!("error while fetching the slot {}", e.to_string());
+                let new_slot = match rpc_client.get_slot_with_commitment(commitment_config).await {
+                    Ok(new_slot) => new_slot,
+                    Err(err) => {
+                        warn!("Error while fetching slot {err:?}");
                         ERRORS_WHILE_FETCHING_SLOTS.inc();
                         tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
                         continue;
@@ -442,8 +440,8 @@ impl BlockListener {
                 };
 
                 if last_latest_slot == new_slot {
+                    warn!("No new slots");
                     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                    println!("no slots");
                     continue;
                 }
 
