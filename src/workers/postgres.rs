@@ -98,6 +98,12 @@ impl PostgresSession {
         let connector = MakeTlsConnector::new(connector);
         let (client, connection) = tokio_postgres::connect(&pg_config, connector.clone()).await?;
 
+        tokio::spawn(async move {
+            if let Err(err) = connection.await {
+                log::error!("Connection to Postgres broke {err:?}");
+            };
+        });
+
         let insert_block_statement = client
             .prepare(
                 r#"
@@ -127,12 +133,6 @@ impl PostgresSession {
             "#,
             )
             .await?;
-
-        tokio::spawn(async move {
-            if let Err(err) = connection.await {
-                log::error!("Connection to Postgres broke {err:?}");
-            };
-        });
 
         Ok(Self {
             client,
