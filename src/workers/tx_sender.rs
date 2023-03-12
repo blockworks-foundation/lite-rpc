@@ -99,6 +99,7 @@ impl TxSender {
             txs_sent.insert(sig.to_owned(), TxProps::default());
         }
 
+        let forwarded_slot = tpu_client.estimated_current_slot().await;
         let quic_response = match tpu_client.try_send_wire_transaction_batch(txs).await {
             Ok(_) => {
                 // metrics
@@ -114,8 +115,6 @@ impl TxSender {
         drop(permit);
 
         if let Some(postgres) = postgres {
-            let forwarded_slot = tpu_client.estimated_current_slot().await;
-
             for (sig, recent_slot) in &sigs_and_slots {
                 MESSAGES_IN_POSTGRES_CHANNEL.inc();
                 postgres
