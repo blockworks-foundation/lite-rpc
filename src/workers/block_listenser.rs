@@ -65,7 +65,7 @@ lazy_static::lazy_static! {
     static ref TXS_FINALIZED: IntCounter =
     register_int_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
     static ref ERRORS_WHILE_FETCHING_SLOTS: IntCounter =
-    register_int_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
+    register_int_counter!(opts!("literpc_error_while_fetching_slots", "Number of errors while fetching slots")).unwrap();
     static ref BLOCKS_IN_QUEUE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_queue", "Number of blocks waiting to deque")).unwrap();
     static ref BLOCKS_IN_RETRY_QUEUE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_retry_queue", "Number of blocks waiting in retry")).unwrap();
     static ref NUMBER_OF_SIGNATURE_SUBSCRIBERS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_number_of_signature_sub", "Number of signature subscriber")).unwrap();
