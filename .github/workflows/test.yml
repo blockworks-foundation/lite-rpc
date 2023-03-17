@@ -13,18 +13,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - run: |
-          sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
-          export PATH="/root/.local/share/solana/install/active_release/bin:$PATH"
-          solana --version
-      - name: Solana Cli Check
-        run: solana --version
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt upgrade
+          sudo apt install libssl-dev openssl
 
       - name: Early Build
-        run: cargo build --release --workspace --tests 
+        run: cargo build --workspace --tests 
+          
+      - name: Setup validator
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          ls "$HOME/.local/share/solana/install/active_release/bin"
+          echo "Solana Cli installed"
+          solana --version
+          echo "Generating keypair..."
+          solana-keygen new -o "$HOME/.config/solana/id.json" --no-passphrase --silent
+          solana config set --url "http://0.0.0.0:8899"
 
       - name: Run and Test
         run: |
-          solana-test-validator &
+          sh -c "solana-test-validator" &
+          sleep 20 && solana airdrop 10000
           cargo run --release &
-          cargo test
+          sleep 20 && cargo test
+          yarn test
+          pkill lite-rpc
+          kill $(jobs -p)
