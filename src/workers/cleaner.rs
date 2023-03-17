@@ -32,14 +32,7 @@ impl Cleaner {
     }
 
     pub fn clean_tx_sender(&self, ttl_duration: Duration) {
-        let length_before = self.tx_sender.txs_sent_store.len();
-        self.tx_sender
-            .txs_sent_store
-            .retain(|_k, v| v.sent_at.elapsed() < ttl_duration);
-        info!(
-            "Cleaned {} transactions",
-            length_before - self.tx_sender.txs_sent_store.len()
-        );
+        self.tx_sender.cleanup(ttl_duration);
     }
 
     /// Clean Signature Subscribers from Block Listeners
