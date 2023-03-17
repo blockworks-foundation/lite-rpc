@@ -37,6 +37,7 @@ lazy_static::lazy_static! {
         "Time to send transaction batch",
     ))
     .unwrap();
+    static ref TX_TIMED_OUT: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tx_timeout", "Number of transactions that timeout")).unwrap();
 }
 
 pub type WireTransaction = Vec<u8>;
@@ -205,5 +206,22 @@ impl TxSender {
                 }
             }
         })
+    }
+
+    pub fn cleanup(&self, ttl_duration: Duration) {
+        let length_before = self.txs_sent_store.len();
+        self.txs_sent_store.retain(|_k, v| {
+            let retain = v.sent_at.elapsed() < ttl_duration;
+            if !retain {
+                if v.status.is_none() {
+                    TX_TIMED_OUT.inc();
+                }
+            }
+            retain
+        });
+        info!(
+            "Cleaned {} transactions",
+            length_before - self.txs_sent_store.len()
+        );
     }
 }
