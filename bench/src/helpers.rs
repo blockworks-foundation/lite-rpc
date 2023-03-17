@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use rand::{distributions::Alphanumeric, prelude::Distribution};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -68,9 +69,13 @@ impl BenchHelper {
         funded_payer: &Keypair,
         blockhash: Hash,
     ) -> Vec<Transaction> {
+        let random_bytes: Vec<u8> = Alphanumeric
+            .sample_iter(rand::thread_rng())
+            .take(10)
+            .collect();
+
         (0..num_of_txs)
-            .into_iter()
-            .map(|_| Self::create_memo_tx(uuid::Uuid::new_v4().as_bytes(), funded_payer, blockhash))
+            .map(|_| Self::create_memo_tx(&random_bytes, funded_payer, blockhash))
             .collect()
     }
 
