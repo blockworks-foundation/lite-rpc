@@ -42,7 +42,7 @@ jobs:
         run: |
           sh -c "solana-test-validator" &
           sleep 20 && solana airdrop 10000
-          cargo run --release &
+          cargo run &
           sleep 20 && cargo test
           yarn test
           pkill lite-rpc
