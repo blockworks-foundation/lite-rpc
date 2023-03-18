@@ -21,7 +21,7 @@ use tokio::sync::RwLock;
 pub type QuicTpuClient = TpuClient<QuicPool>;
 pub type QuicConnectionCache = TpuConnectionCache<QuicPool>;
 
-const TPU_CONNECTION_CACHE_SIZE: usize = 8;
+const TPU_CONNECTION_CACHE_SIZE: usize = 4;
 
 lazy_static::lazy_static! {
 static ref TPU_CONNECTION_RESET: IntCounter =
