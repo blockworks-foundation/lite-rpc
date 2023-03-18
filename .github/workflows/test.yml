@@ -19,9 +19,9 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt update
-          sudo apt upgrade
-          sudo apt install libssl-dev openssl
+          sudo apt-get update -y
+          sudo apt-get upgrade -y
+          sudo apt-get install libssl-dev openssl -y
 
       - name: Early Build
         run: cargo build --workspace --tests 
