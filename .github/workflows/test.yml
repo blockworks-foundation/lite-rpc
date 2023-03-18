@@ -25,6 +25,9 @@ jobs:
 
       - name: Early Build
         run: cargo build --workspace --tests 
+
+      - name: Install node deps
+        run: yarn
           
       - name: Setup validator
         run: |
