@@ -4,3 +4,4 @@ bench/metrics.csv
 *.pem*
 *.pks*
 .env
+test-ledger
