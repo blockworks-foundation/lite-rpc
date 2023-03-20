@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
-use anyhow::{bail, Context, Ok};
+use anyhow::{bail, Context};
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
 
@@ -55,7 +55,7 @@ pub struct PostgreAccountAddr {
 
 #[derive(Debug)]
 pub enum PostgresMsg {
-    PostgresTx(PostgresTx),
+    PostgresTx(Vec<PostgresTx>),
     PostgresBlock(PostgresBlock),
     PostgreAccountAddr(PostgreAccountAddr),
     PostgresUpdateTx(PostgresUpdateTx, String),
@@ -67,8 +67,10 @@ pub type PostgresMpscSend = UnboundedSender<PostgresMsg>;
 pub struct PostgresSession {
     client: Client,
     insert_tx_statement: Statement,
-    update_tx_statement: Statement,
+    insert_5_batch_tx_statement: Statement,
     insert_block_statement: Statement,
+    insert_5_batch_block_statement: Statement,
+    update_tx_statement: Statement,
 }
 
 impl PostgresSession {
@@ -115,12 +117,40 @@ impl PostgresSession {
             )
             .await?;
 
+        let insert_5_batch_block_statement = client
+            .prepare(
+                r#"
+                INSERT INTO lite_rpc.Blocks 
+                (slot, leader_id, parent_slot)
+                VALUES
+                ($1, $2, $3),
+                ($4, $5, $6),
+                ($7, $8, $9),
+                ($10, $11, $12),
+                ($13, $14, $15)
+            "#,
+            )
+            .await?;
+
         let insert_tx_statement = client.prepare(
             r#"
                 INSERT INTO lite_rpc.Txs 
                 (signature, recent_slot, forwarded_slot, processed_slot, cu_consumed, cu_requested, quic_response)
                 VALUES
                 ($1, $2, $3, $4, $5, $6, $7)
+            "#,
+        ).await?;
+
+        let insert_5_batch_tx_statement = client.prepare(
+            r#"
+                INSERT INTO lite_rpc.Txs 
+                (signature, recent_slot, forwarded_slot, processed_slot, cu_consumed, cu_requested, quic_response)
+                VALUES
+                ($1, $2, $3, $4, $5, $6, $7),
+                ($8, $10, $11, $12, $13, $14, $15),
+                ($16, $17, $18, $19, $20, $21, $22),
+                ($23, $24, $25, $26, $27, $28, $29),
+                ($30, $31, $32, $33, $34, $36, $36)
             "#,
         ).await?;
 
@@ -137,7 +167,9 @@ impl PostgresSession {
         Ok(Self {
             client,
             insert_tx_statement,
+            insert_5_batch_tx_statement,
             insert_block_statement,
+            insert_5_batch_block_statement,
             update_tx_statement,
         })
     }
@@ -234,24 +266,38 @@ impl Postgres {
         tokio::spawn(async move {
             info!("Writing to postgres");
 
-            while let Some(msg) = recv.recv().await {
-                MESSAGES_IN_POSTGRES_CHANNEL.dec();
-                let session = self.get_session().await?;
+            let mut tx_que = VecDeque::<PostgresTx>::new();
+            let mut block_que = VecDeque::new();
 
-                let Err(err) = (
-                    match msg {
-                    PostgresMsg::PostgresTx(tx) => session.send_tx(tx).await,
-                    PostgresMsg::PostgresUpdateTx(tx, sig) => session.update_tx(tx, &sig).await,
-                    PostgresMsg::PostgresBlock(block) => session.send_block(block).await,
-                    PostgresMsg::PostgreAccountAddr(_) => todo!(),
-                } ) else {
-                    continue;
-                };
+            loop {
+                let msg = recv.try_recv();
 
-                warn!("Error writing to postgres {err}");
+                match msg {
+                    Ok(msg) => {
+                        MESSAGES_IN_POSTGRES_CHANNEL.dec();
+                        let session = self.get_session().await?;
+
+                        match msg {
+                            PostgresMsg::PostgresTx(mut tx) => tx_que.append(&mut tx),
+                            PostgresMsg::PostgresBlock(block) => block_que.push_back(block),
+                            PostgresMsg::PostgresUpdateTx(tx, sig) => {
+                                if let Err(err) = session.update_tx(tx, &sig).await {
+                                    warn!("Error updating tx in postgres {err:?}");
+                                }
+                            }
+                            PostgresMsg::PostgreAccountAddr(_) => todo!(),
+                        }
+                    }
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty) => (),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                        bail!("Postgres channel broke")
+                    }
+                }
+
+                while tx_que.len() % 5 != 0 {
+                    let txs = tx_que.drain(0..5).collect();
+                }
             }
-
-            bail!("Postgres channel closed")
         })
     }
 }

@@ -21,7 +21,7 @@ use tokio::{
 use crate::{
     bridge::TXS_IN_CHANNEL,
     tpu_manager::TpuManager,
-    workers::{PostgresMsg, PostgresTx, MESSAGES_IN_POSTGRES_CHANNEL},
+    workers::{PostgresMsg, PostgresTx},
 };
 
 use super::PostgresMpscSend;
@@ -113,31 +113,35 @@ impl TxSender {
                 0
             }
         };
+
         drop(permit);
 
-        if let Some(postgres) = postgres {
-            for (sig, recent_slot) in &sigs_and_slots {
-                MESSAGES_IN_POSTGRES_CHANNEL.inc();
-                postgres
-                    .send(PostgresMsg::PostgresTx(PostgresTx {
-                        signature: sig.clone(),
-                        recent_slot: *recent_slot as i64,
-                        forwarded_slot: forwarded_slot as i64,
-                        processed_slot: None,
-                        cu_consumed: None,
-                        cu_requested: None,
-                        quic_response,
-                    }))
-                    .expect("Error writing to postgres service");
-            }
-        }
-
         histo_timer.observe_duration();
+
         info!(
             "It took {} ms to send a batch of {} transaction(s)",
             start.elapsed().as_millis(),
             sigs_and_slots.len()
         );
+
+        if let Some(postgres) = postgres {
+            let txs = sigs_and_slots
+                .into_iter()
+                .map(|(signature, recent_slot)| PostgresTx {
+                    signature,
+                    recent_slot: recent_slot as i64,
+                    forwarded_slot: forwarded_slot as i64,
+                    processed_slot: None,
+                    cu_consumed: None,
+                    cu_requested: None,
+                    quic_response,
+                })
+                .collect();
+
+            postgres
+                .send(PostgresMsg::PostgresTx(txs))
+                .expect("Error writing to postgres service");
+        }
     }
 
     /// retry and confirm transactions every 2ms (avg time to confirm tx)
@@ -153,7 +157,9 @@ impl TxSender {
                 "Batching tx(s) with batch size of {tx_batch_size} every {}ms",
                 tx_send_interval.as_millis()
             );
+
             let semaphore = Arc::new(Semaphore::new(NUMBER_OF_TX_SENDERS));
+
             loop {
                 let mut sigs_and_slots = Vec::with_capacity(tx_batch_size);
                 let mut txs = Vec::with_capacity(tx_batch_size);
@@ -180,6 +186,7 @@ impl TxSender {
                         }
                     }
                 }
+
                 assert_eq!(sigs_and_slots.len(), txs.len());
 
                 if sigs_and_slots.is_empty() {
@@ -194,7 +201,7 @@ impl TxSender {
                     }
                 };
 
-                if txs.len() > 0 {
+                if !txs.is_empty() {
                     TX_BATCH_SIZES.set(txs.len() as i64);
                     let postgres = postgres_send.clone();
                     let tx_sender = self.clone();
@@ -212,10 +219,8 @@ impl TxSender {
         let length_before = self.txs_sent_store.len();
         self.txs_sent_store.retain(|_k, v| {
             let retain = v.sent_at.elapsed() < ttl_duration;
-            if !retain {
-                if v.status.is_none() {
-                    TX_TIMED_OUT.inc();
-                }
+            if !retain && v.status.is_none() {
+                TX_TIMED_OUT.inc();
             }
             retain
         });
