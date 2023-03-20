@@ -20,5 +20,5 @@ FROM debian:bullseye-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6
 COPY --from=build /app/target/release/lite-rpc /usr/local/bin/
 
-CMD ethtool -k DEVICE | grep generic-segmentation-offload 
+CMD ethtool -k DEVICE | grep generic-segmentation-offload
 CMD lite-rpc --rpc-addr "$RPC_URL" --ws-addr "$WS_URL" -p
