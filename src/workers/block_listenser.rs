@@ -234,12 +234,10 @@ impl BlockListener {
                 //
                 // Metrics
                 //
-                if status.is_ok() {
-                    if commitment_config.is_finalized() {
-                        TXS_FINALIZED.inc();
-                    } else {
-                        TXS_CONFIRMED.inc();
-                    }
+                if commitment_config.is_finalized() {
+                    TXS_FINALIZED.inc();
+                } else {
+                    TXS_CONFIRMED.inc();
                 }
 
                 tx_status.value_mut().status = Some(TransactionStatus {
