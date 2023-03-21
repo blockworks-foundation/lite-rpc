@@ -219,7 +219,7 @@ impl PostgresSession {
         }
 
         self.client
-            .execute(&self.insert_5_batch_block_statement, &args)
+            .execute(&self.insert_5_batch_tx_statement, &args)
             .await?;
 
         Ok(())
