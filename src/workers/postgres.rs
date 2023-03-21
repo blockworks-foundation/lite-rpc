@@ -236,8 +236,9 @@ impl Postgres {
 
             while let Some(msg) = recv.recv().await {
                 let Ok(session) = self.get_session().await else {
-                    warn!("Unable to get postgres session. Retrying in 1000ms");
-                    tokio::time::sleep(Duration::from_millis(1000));
+                    const TIME_OUT:Duration = Duration::from_millis(1000);
+                    warn!("Unable to get postgres session. Retrying in {TIME_OUT:?}");
+                    tokio::time::sleep(TIME_OUT).await;
                     continue;
                 };
 
