@@ -10,6 +10,7 @@ pub mod errors;
 pub mod rpc;
 pub mod tpu_manager;
 pub mod workers;
+pub mod batcher;
 
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";
