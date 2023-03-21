@@ -21,7 +21,7 @@ use tokio::{
 use crate::{
     bridge::TXS_IN_CHANNEL,
     tpu_manager::TpuManager,
-    workers::{PostgresMsg, PostgresTx},
+    workers::{PostgresMsg, PostgresTx, MESSAGES_IN_POSTGRES_CHANNEL},
 };
 
 use super::PostgresMpscSend;
@@ -141,6 +141,8 @@ impl TxSender {
             postgres
                 .send(PostgresMsg::PostgresTx(txs))
                 .expect("Error writing to postgres service");
+
+            MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
     }
 

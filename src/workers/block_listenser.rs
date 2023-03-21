@@ -315,6 +315,7 @@ impl BlockListener {
                     parent_slot: parent_slot as i64,
                 }))
                 .expect("Error sending block to postgres service");
+
             MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
 
