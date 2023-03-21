@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{bail, Context};
 
@@ -327,7 +327,12 @@ impl Postgres {
 
             loop {
                 let msg = recv.try_recv();
-                let session = self.get_session().await?;
+                let Ok(session) = self.get_session().await else {
+                    const TIME_OUT:Duration = Duration::from_millis(1000);
+                    warn!("Unable to get postgres session. Retrying in {TIME_OUT:?}");
+                    tokio::time::sleep(TIME_OUT).await;
+                    continue;
+                };
 
                 match msg {
                     Ok(msg) => {
