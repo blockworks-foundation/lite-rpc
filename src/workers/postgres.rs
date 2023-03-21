@@ -1,6 +1,7 @@
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use anyhow::{bail, Context};
+
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
 
@@ -12,11 +13,14 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tokio_postgres::{Client, Statement};
+use tokio_postgres::{types::ToSql, Client, Statement};
 
 use native_tls::{Certificate, Identity, TlsConnector};
 
-use crate::encoding::BinaryEncoding;
+use crate::{
+    batcher::{Batcher, BatcherStrategy},
+    encoding::BinaryEncoding,
+};
 
 lazy_static::lazy_static! {
     pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();
@@ -191,6 +195,58 @@ impl PostgresSession {
         Ok(())
     }
 
+    pub async fn send_tx_5_batch(&self, txs: &[PostgresTx]) -> anyhow::Result<()> {
+        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(7 * 5);
+
+        for tx in txs.iter() {
+            let PostgresTx {
+                signature,
+                recent_slot,
+                forwarded_slot,
+                processed_slot,
+                cu_consumed,
+                cu_requested,
+                quic_response,
+            } = tx;
+
+            args.push(signature);
+            args.push(recent_slot);
+            args.push(forwarded_slot);
+            args.push(processed_slot);
+            args.push(cu_consumed);
+            args.push(cu_requested);
+            args.push(quic_response);
+        }
+
+        self.client
+            .execute(&self.insert_5_batch_block_statement, &args)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn send_block_5_batch(&self, blocks: &[PostgresBlock]) -> anyhow::Result<()> {
+        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(7 * 5);
+
+        for block in blocks.iter() {
+            let PostgresBlock {
+                slot,
+                leader_id,
+                parent_slot,
+            } = block;
+
+            args.push(slot);
+            args.push(leader_id);
+            args.push(parent_slot);
+        }
+
+        self.client
+            .execute(&self.insert_5_batch_block_statement, &args)
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn send_tx(&self, tx: PostgresTx) -> anyhow::Result<()> {
         let PostgresTx {
             signature,
@@ -266,20 +322,20 @@ impl Postgres {
         tokio::spawn(async move {
             info!("Writing to postgres");
 
-            let mut tx_que = VecDeque::<PostgresTx>::new();
-            let mut block_que = VecDeque::new();
+            let mut tx_que = Vec::<PostgresTx>::new();
+            let mut block_que = Vec::new();
 
             loop {
                 let msg = recv.try_recv();
+                let session = self.get_session().await?;
 
                 match msg {
                     Ok(msg) => {
                         MESSAGES_IN_POSTGRES_CHANNEL.dec();
-                        let session = self.get_session().await?;
 
                         match msg {
                             PostgresMsg::PostgresTx(mut tx) => tx_que.append(&mut tx),
-                            PostgresMsg::PostgresBlock(block) => block_que.push_back(block),
+                            PostgresMsg::PostgresBlock(block) => block_que.push(block),
                             PostgresMsg::PostgresUpdateTx(tx, sig) => {
                                 if let Err(err) = session.update_tx(tx, &sig).await {
                                     warn!("Error updating tx in postgres {err:?}");
@@ -294,8 +350,24 @@ impl Postgres {
                     }
                 }
 
-                while tx_que.len() % 5 != 0 {
-                    let txs = tx_que.drain(0..5).collect();
+                {
+                    let mut batcher = Batcher::new(&mut tx_que, 5, BatcherStrategy::Start);
+
+                    while let Some(txs) = batcher.next_batch() {
+                        if let Err(err) = session.send_tx_5_batch(txs).await {
+                            warn!("Error sending tx batch to postgres {err:?}");
+                        }
+                    }
+                }
+
+                {
+                    let mut batcher = Batcher::new(&mut block_que, 5, BatcherStrategy::Start);
+
+                    while let Some(txs) = batcher.next_batch() {
+                        if let Err(err) = session.send_block_5_batch(txs).await {
+                            warn!("Error sending block batch to postgres {err:?}");
+                        }
+                    }
                 }
             }
         })
