@@ -1,6 +1,6 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
-use anyhow::{bail, Context, Ok};
+use anyhow::{bail, Context};
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
 
@@ -235,8 +235,13 @@ impl Postgres {
             info!("Writing to postgres");
 
             while let Some(msg) = recv.recv().await {
+                let Ok(session) = self.get_session().await else {
+                    warn!("Unable to get postgres session. Retrying in 1000ms");
+                    tokio::time::sleep(Duration::from_millis(1000));
+                    continue;
+                };
+
                 MESSAGES_IN_POSTGRES_CHANNEL.dec();
-                let session = self.get_session().await?;
 
                 let Err(err) = (
                     match msg {
