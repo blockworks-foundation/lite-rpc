@@ -130,22 +130,28 @@ impl TxSender {
             tasks_counter.fetch_sub(1, Ordering::Relaxed);
 
             if let Some(postgres) = postgres {
-                for (sig, recent_slot) in &sigs_and_slots {
-                    MESSAGES_IN_POSTGRES_CHANNEL.inc();
-                    postgres
-                        .send(PostgresMsg::PostgresTx(PostgresTx {
-                            signature: sig.clone(),
-                            recent_slot: *recent_slot as i64,
-                            forwarded_slot: forwarded_slot as i64,
-                            processed_slot: None,
-                            cu_consumed: None,
-                            cu_requested: None,
-                            quic_response,
-                        }))
-                        .expect("Error writing to postgres service");
-                }
+                let postgres_msgs = sigs_and_slots
+                    .iter()
+                    .map(|(sig, recent_slot)| PostgresTx {
+                        signature: sig.clone(),
+                        recent_slot: *recent_slot as i64,
+                        forwarded_slot: forwarded_slot as i64,
+                        processed_slot: None,
+                        cu_consumed: None,
+                        cu_requested: None,
+                        quic_response,
+                    })
+                    .collect();
+
+                postgres
+                    .send(PostgresMsg::PostgresTx(postgres_msgs))
+                    .expect("Error writing to postgres service");
+
+                MESSAGES_IN_POSTGRES_CHANNEL.inc();
             }
+
             histo_timer.observe_duration();
+
             info!(
                 "It took {} ms to send a batch of {} transaction(s)",
                 start.elapsed().as_millis(),
