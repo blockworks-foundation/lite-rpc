@@ -1,9 +1,7 @@
-use std::{sync::Arc, time::Duration};
-
 use anyhow::{bail, Context};
-
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
+use std::{sync::Arc, time::Duration};
 
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use tokio::{
