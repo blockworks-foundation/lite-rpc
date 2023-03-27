@@ -1,6 +1,7 @@
 import { Connection, Keypair, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction, BlockheightBasedTransactionConfirmationStrategy } from "@solana/web3.js";
 import * as fs from "fs";
 import * as os from "os";
+import * as crypto from "crypto";
 
 jest.setTimeout(60000);
 
@@ -16,7 +17,7 @@ function createTransaction(): Transaction {
         new TransactionInstruction({
             programId: MEMO_PROGRAM_ID,
             keys: [],
-            data: Buffer.from("Hello")
+            data: Buffer.from(crypto.randomBytes(20).toString('hex'))
         })
     );
 
