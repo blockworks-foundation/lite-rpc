@@ -1,4 +1,5 @@
 use anyhow::{bail, Context};
+use futures::join;
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
 use std::{sync::Arc, time::Duration};
@@ -15,16 +16,11 @@ use tokio_postgres::{types::ToSql, Client, Statement};
 
 use native_tls::{Certificate, Identity, TlsConnector};
 
-use crate::{
-    batcher::{Batcher, BatcherStrategy},
-    encoding::BinaryEncoding,
-};
+use crate::encoding::BinaryEncoding;
 
 lazy_static::lazy_static! {
     pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();
 }
-
-const MAX_BATCH_SIZE: usize = 15;
 
 #[derive(Debug)]
 pub struct PostgresTx {
@@ -290,27 +286,42 @@ impl Postgres {
                     }
                 }
 
-                {
-                    let mut batcher =
-                        Batcher::new(&mut tx_que, MAX_BATCH_SIZE, BatcherStrategy::Start);
+                let (res_txs, res_block) =
+                    join!(session.send_txs(&tx_que), session.send_blocks(&block_que));
 
-                    while let Some(txs) = batcher.next_batch() {
-                        if let Err(err) = session.send_txs(txs).await {
-                            warn!("Error sending tx batch to postgres {err:?}");
-                        }
-                    }
+                if let Err(err) = res_txs {
+                    warn!("Error sending tx batch to postgres {err:?}");
+                } else {
+                    tx_que.clear();
                 }
 
-                {
-                    let mut batcher =
-                        Batcher::new(&mut block_que, MAX_BATCH_SIZE, BatcherStrategy::Start);
-
-                    while let Some(txs) = batcher.next_batch() {
-                        if let Err(err) = session.send_blocks(txs).await {
-                            warn!("Error sending block batch to postgres {err:?}");
-                        }
-                    }
+                if let Err(err) = res_block {
+                    warn!("Error sending block batch to postgres {err:?}");
+                } else {
+                    tx_que.clear();
                 }
+
+                //{
+                //    let mut batcher =
+                //        Batcher::new(&mut tx_que, MAX_BATCH_SIZE, BatcherStrategy::Start);
+
+                //    while let Some(txs) = batcher.next_batch() {
+                //        if let Err(err) = session.send_txs(txs).await {
+                //            warn!("Error sending tx batch to postgres {err:?}");
+                //        }
+                //    }
+                //}
+
+                //{
+                //    let mut batcher =
+                //        Batcher::new(&mut block_que, MAX_BATCH_SIZE, BatcherStrategy::Start);
+
+                //    while let Some(txs) = batcher.next_batch() {
+                //        if let Err(err) = session.send_blocks(txs).await {
+                //            warn!("Error sending block batch to postgres {err:?}");
+                //        }
+                //    }
+                //}
             }
         })
     }
