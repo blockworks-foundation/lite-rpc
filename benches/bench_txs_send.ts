@@ -9,19 +9,21 @@ const forSeconds: number = +process.argv[3];
 // url
 const url = process.argv.length > 4 ? process.argv[4] : "http://localhost:8899";
 const skip_confirmations = process.argv.length > 5 ? process.argv[5] === "true" : false;
-import * as InFile from "./out.json";
 
-function sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+(async function main() {
+    //@ts-ignore
+    const InFile: {
+        fee_payers: [Keypair],
+        users: [{
+            publicKey: string;
+            secretKey: Uint8Array;
+        }];
+        tokenAccounts: [PublicKey];
+        mint: PublicKey;
+        minted_amount: number;
+    } = fs.readFileSync('out.json').toJSON();
 
-console.log("benching " + tps + " transactions per second on " + url + " for " + forSeconds + " seconds");
-
-function delay(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-export async function main() {
+    console.log("benching " + tps + " transactions per second on " + url + " for " + forSeconds + " seconds");
 
     const connection = new Connection(url, 'finalized');
     console.log('get latest blockhash')
@@ -49,7 +51,7 @@ export async function main() {
         signatures_to_unpack[i] = new Array<TransactionSignature>(tps);
         let blockhash = (await connection.getLatestBlockhash()).blockhash;
         for (let j = 0; j < tps; ++j) {
-            if (j%100 == 0) {
+            if (j % 100 == 0) {
                 blockhash = (await connection.getLatestBlockhash()).blockhash;
             }
             const toIndex = Math.floor(Math.random() * users.length);
@@ -61,12 +63,12 @@ export async function main() {
             const userTo = userAccounts[toIndex];
 
             const transaction = new Transaction().add(
-                splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, Math.ceil((Math.random()+1) * 100))
+                splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, Math.ceil((Math.random() + 1) * 100))
             );
             transaction.recentBlockhash = blockhash;
             transaction.feePayer = authority.publicKey;
 
-            connection.sendTransaction(transaction, [authority, users[fromIndex]], { skipPreflight: true }).then(p => {signatures_to_unpack[i][j] = p});
+            connection.sendTransaction(transaction, [authority, users[fromIndex]], { skipPreflight: true }).then(p => { signatures_to_unpack[i][j] = p });
         }
         const end = performance.now();
         const diff = (end - start);
@@ -99,10 +101,4 @@ export async function main() {
         console.log("failures : " + failures)
         //console.log("time taken to send : " + time_taken_to_send)
     }
-}
-
-main().then(x => {
-    console.log('finished sucessfully')
-}).catch(e => {
-    console.log('caught an error : ' + e)
-})
+})()
