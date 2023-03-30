@@ -2,19 +2,18 @@ import { Connection, Keypair, LAMPORTS_PER_SOL, sendAndConfirmTransaction, Syste
 import * as splToken from "@solana/spl-token";
 import * as fs from 'fs';
 import * as os from 'os';
-import { serialized_keypair } from './util';
+import { get_postional_arg, serialized_keypair } from './util';
 
 // number of users
-const nbUsers = process.argv.length > 2 ? +process.argv[2] : 10;
+const nbUsers = +get_postional_arg(2, 10);
 // url
-const url = process.argv.length > 3 ? process.argv[3] : "http://0.0.0.0:8899";
+const url = get_postional_arg(3, "http://0.0.0.0:8899");
 // tokens to transfer to new  accounts 0.5 sol
-const fee_payer_balance = process.argv.length > 4 ? +process.argv[4] : (LAMPORTS_PER_SOL / 2);
+const fee_payer_balance = +get_postional_arg(4, (LAMPORTS_PER_SOL / 2));
 // tokens to transfer to new  accounts 0.5 sol
-const number_of_fee_payers = process.argv.length > 4 ? +process.argv[4] : 10;
+const number_of_fee_payers = +get_postional_arg(5, 10);
 // outfile
-const outFile = process.argv.length > 4 ? process.argv[4] : "out.json";
-
+const outFile = get_postional_arg(6, "out.json");
 
 function check_if_out_file_exists() {
     if (!fs.existsSync(outFile))
