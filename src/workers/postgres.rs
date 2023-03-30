@@ -12,7 +12,10 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tokio_postgres::{types::ToSql, Client, Statement};
+use tokio_postgres::{
+    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket,
+    Statement,
+};
 
 use native_tls::{Certificate, Identity, TlsConnector};
 
@@ -71,36 +74,37 @@ pub struct PostgresSession {
 
 impl PostgresSession {
     pub async fn new() -> anyhow::Result<Self> {
-        let ca_pem_b64 = std::env::var("CA_PEM_B64").context("env CA_PEM_B64 not found")?;
-        let client_pks_b64 =
-            std::env::var("CLIENT_PKS_B64").context("env CLIENT_PKS_B64 not found")?;
-        let client_pks_password =
-            std::env::var("CLIENT_PKS_PASS").context("env CLIENT_PKS_PASS not found")?;
         let pg_config = std::env::var("PG_CONFIG").context("env PG_CONFIG not found")?;
+        let pg_config = pg_config.parse::<tokio_postgres::Config>()?;
 
-        let ca_pem = BinaryEncoding::Base64
-            .decode(ca_pem_b64)
-            .context("ca pem decode")?;
+        let client = if let SslMode::Disable = pg_config.get_ssl_mode() {
+            Self::spawn_connection(pg_config, NoTls).await?
+        } else {
+            let ca_pem_b64 = std::env::var("CA_PEM_B64").context("env CA_PEM_B64 not found")?;
+            let client_pks_b64 =
+                std::env::var("CLIENT_PKS_B64").context("env CLIENT_PKS_B64 not found")?;
+            let client_pks_password =
+                std::env::var("CLIENT_PKS_PASS").context("env CLIENT_PKS_PASS not found")?;
 
-        let client_pks = BinaryEncoding::Base64
-            .decode(client_pks_b64)
-            .context("client pks decode")?;
+            let ca_pem = BinaryEncoding::Base64
+                .decode(ca_pem_b64)
+                .context("ca pem decode")?;
 
-        let connector = TlsConnector::builder()
-            .add_root_certificate(Certificate::from_pem(&ca_pem)?)
-            .identity(Identity::from_pkcs12(&client_pks, &client_pks_password).context("Identity")?)
-            .danger_accept_invalid_hostnames(true)
-            .danger_accept_invalid_certs(true)
-            .build()?;
+            let client_pks = BinaryEncoding::Base64
+                .decode(client_pks_b64)
+                .context("client pks decode")?;
 
-        let connector = MakeTlsConnector::new(connector);
-        let (client, connection) = tokio_postgres::connect(&pg_config, connector.clone()).await?;
+            let connector = TlsConnector::builder()
+                .add_root_certificate(Certificate::from_pem(&ca_pem)?)
+                .identity(
+                    Identity::from_pkcs12(&client_pks, &client_pks_password).context("Identity")?,
+                )
+                .danger_accept_invalid_hostnames(true)
+                .danger_accept_invalid_certs(true)
+                .build()?;
 
-        tokio::spawn(async move {
-            if let Err(err) = connection.await {
-                log::error!("Connection to Postgres broke {err:?}");
-            };
-        });
+            Self::spawn_connection(pg_config, MakeTlsConnector::new(connector)).await?
+        };
 
         let update_tx_statement = client
             .prepare(
@@ -116,6 +120,25 @@ impl PostgresSession {
             client,
             update_tx_statement,
         })
+    }
+
+    async fn spawn_connection<T>(
+        pg_config: tokio_postgres::Config,
+        connector: T,
+    ) -> anyhow::Result<Client>
+    where
+        T: MakeTlsConnect<Socket> + Send + 'static,
+        <T as MakeTlsConnect<Socket>>::Stream: Send,
+    {
+        let (client, connection) = pg_config.connect(connector).await.context("a")?;
+
+        tokio::spawn(async move {
+            if let Err(err) = connection.await {
+                log::error!("Connection to Postgres broke {err:?}");
+            };
+        });
+
+        Ok(client)
     }
 
     pub fn multiline_query(query: &mut String, args: usize, rows: usize) {
