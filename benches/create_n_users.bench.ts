@@ -2,6 +2,7 @@ import { Connection, Keypair, LAMPORTS_PER_SOL, sendAndConfirmTransaction, Syste
 import * as splToken from "@solana/spl-token";
 import * as fs from 'fs';
 import * as os from 'os';
+import { serialized_keypair } from './util';
 
 // number of users
 const nbUsers = process.argv.length > 2 ? +process.argv[2] : 10;
@@ -13,6 +14,7 @@ const fee_payer_balance = process.argv.length > 4 ? +process.argv[4] : (LAMPORTS
 const number_of_fee_payers = process.argv.length > 4 ? +process.argv[4] : 10;
 // outfile
 const outFile = process.argv.length > 4 ? process.argv[4] : "out.json";
+
 
 function check_if_out_file_exists() {
     if (!fs.existsSync(outFile))
@@ -101,13 +103,11 @@ function check_if_out_file_exists() {
 
     console.timeLog('Time taken');
 
-    const users = userKps.map(x => ({
-        'publicKey': x.publicKey.toBase58(),
-        'secretKey': Array.from(x.secretKey)
-    }));
+    const users = userKps.map(serialized_keypair);
+    const fee_payers_serialized = fee_payers.map(serialized_keypair);
 
     const data = {
-        'fee_payers': fee_payers,
+        'fee_payers': fee_payers_serialized,
         'users': users,
         'tokenAccounts': accounts,
         'mint': mint,

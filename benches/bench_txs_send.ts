@@ -1,49 +1,34 @@
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, TransactionSignature, Transaction } from '@solana/web3.js';
 import * as fs from 'fs';
 import * as splToken from "@solana/spl-token";
-import * as os from 'os';
+import { deserialize_keypair, get_postional_arg, OutputFile, sleep } from './util';
 
 // number of users
-const tps: number = +process.argv[2];
-const forSeconds: number = +process.argv[3];
+const tps: number = +get_postional_arg(2, 10);
+const forSeconds: number = +get_postional_arg(3, 10);
 // url
-const url = process.argv.length > 4 ? process.argv[4] : "http://localhost:8899";
-const skip_confirmations = process.argv.length > 5 ? process.argv[5] === "true" : false;
+const url = get_postional_arg(4, "http://0.0.0.0:8899");
+//@ts-ignore
+const skip_confirmations = get_postional_arg(5, false) === "true";
 
 (async function main() {
-    //@ts-ignore
-    const InFile: {
-        fee_payers: [Keypair],
-        users: [{
-            publicKey: string;
-            secretKey: Uint8Array;
-        }];
-        tokenAccounts: [PublicKey];
-        mint: PublicKey;
-        minted_amount: number;
-    } = fs.readFileSync('out.json').toJSON();
+    const InFile: OutputFile = JSON.parse(fs.readFileSync('out.json').toString());
 
     console.log("benching " + tps + " transactions per second on " + url + " for " + forSeconds + " seconds");
 
     const connection = new Connection(url, 'finalized');
-    console.log('get latest blockhash')
-    const blockhash = await connection.getLatestBlockhash({
-        commitment: 'finalized'
-    });
-    console.log('blockhash : ' + blockhash.blockhash);
-    const authority = Keypair.fromSecretKey(
-        Uint8Array.from(
-            JSON.parse(
-                process.env.KEYPAIR ||
-                fs.readFileSync(os.homedir() + '/.config/solana/id.json', 'utf-8'),
-            ),
-        ),
-    );
 
-    const users = InFile.users.map(x => Keypair.fromSecretKey(Uint8Array.from(x.secretKey)));
+    const blockhash = await connection.getLatestBlockhash();
+    console.log('blockhash : ' + blockhash.blockhash);
+
+    const payers = InFile.fee_payers.map(deserialize_keypair);
+    const users = InFile.users.map(deserialize_keypair);
     const userAccounts = InFile.tokenAccounts.map(x => new PublicKey(x));
+
     let signatures_to_unpack: TransactionSignature[][] = new Array<TransactionSignature[]>(forSeconds);
     let time_taken_to_send = [];
+
+    let payer_index = 0;
 
     for (let i = 0; i < forSeconds; ++i) {
         console.log('Sending transaction ' + i);
@@ -66,9 +51,16 @@ const skip_confirmations = process.argv.length > 5 ? process.argv[5] === "true" 
                 splToken.createTransferInstruction(userFrom, userTo, users[fromIndex].publicKey, Math.ceil((Math.random() + 1) * 100))
             );
             transaction.recentBlockhash = blockhash;
-            transaction.feePayer = authority.publicKey;
+            transaction.feePayer = payers[payer_index].publicKey;
 
-            connection.sendTransaction(transaction, [authority, users[fromIndex]], { skipPreflight: true }).then(p => { signatures_to_unpack[i][j] = p });
+            connection
+                .sendTransaction(transaction, [payers[payer_index], users[fromIndex]], { skipPreflight: true })
+                .then(p => { signatures_to_unpack[i][j] = p });
+
+            payer_index++;
+            if (payer_index == payers.length) {
+                payer_index = 0;
+            }
         }
         const end = performance.now();
         const diff = (end - start);
@@ -79,7 +71,7 @@ const skip_confirmations = process.argv.length > 5 ? process.argv[5] === "true" 
     }
 
     console.log('finish sending transactions');
-    await delay(10000)
+    await sleep(10000)
     console.log('checking for confirmations');
     if (skip_confirmations === false) {
         const size = signatures_to_unpack.length
