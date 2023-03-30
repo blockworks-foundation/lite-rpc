@@ -13,8 +13,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_postgres::{
-    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket,
-    Statement,
+    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket, Statement,
 };
 
 use native_tls::{Certificate, Identity, TlsConnector};
@@ -130,12 +129,15 @@ impl PostgresSession {
         T: MakeTlsConnect<Socket> + Send + 'static,
         <T as MakeTlsConnect<Socket>>::Stream: Send,
     {
-        let (client, connection) = pg_config.connect(connector).await.context("a")?;
+        let (client, connection) = pg_config
+            .connect(connector)
+            .await
+            .context("Connecting to Postgres failed")?;
 
         tokio::spawn(async move {
             if let Err(err) = connection.await {
                 log::error!("Connection to Postgres broke {err:?}");
-            };
+            }
         });
 
         Ok(client)
