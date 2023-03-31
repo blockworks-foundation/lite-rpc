@@ -130,22 +130,28 @@ impl TxSender {
             tasks_counter.fetch_sub(1, Ordering::Relaxed);
 
             if let Some(postgres) = postgres {
-                for (sig, recent_slot) in &sigs_and_slots {
-                    MESSAGES_IN_POSTGRES_CHANNEL.inc();
-                    postgres
-                        .send(PostgresMsg::PostgresTx(PostgresTx {
-                            signature: sig.clone(),
-                            recent_slot: *recent_slot as i64,
-                            forwarded_slot: forwarded_slot as i64,
-                            processed_slot: None,
-                            cu_consumed: None,
-                            cu_requested: None,
-                            quic_response,
-                        }))
-                        .expect("Error writing to postgres service");
-                }
+                let postgres_msgs = sigs_and_slots
+                    .iter()
+                    .map(|(sig, recent_slot)| PostgresTx {
+                        signature: sig.clone(),
+                        recent_slot: *recent_slot as i64,
+                        forwarded_slot: forwarded_slot as i64,
+                        processed_slot: None,
+                        cu_consumed: None,
+                        cu_requested: None,
+                        quic_response,
+                    })
+                    .collect();
+
+                postgres
+                    .send(PostgresMsg::PostgresTx(postgres_msgs))
+                    .expect("Error writing to postgres service");
+
+                MESSAGES_IN_POSTGRES_CHANNEL.inc();
             }
+
             histo_timer.observe_duration();
+
             info!(
                 "It took {} ms to send a batch of {} transaction(s)",
                 start.elapsed().as_millis(),
@@ -177,6 +183,7 @@ impl TxSender {
                 "Batching tx(s) with batch size of {tx_batch_size} every {}ms",
                 tx_send_interval.as_millis()
             );
+
             let semaphore = Arc::new(Semaphore::new(NUMBER_OF_TX_SENDERS));
 
             // To limit the maximum number of background tasks sending transactions to MAX_NUMBER_OF_TOKIO_TASKS_SENDING_TXS
@@ -217,6 +224,7 @@ impl TxSender {
                         }
                     }
                 }
+
                 assert_eq!(sigs_and_slots.len(), txs.len());
 
                 if sigs_and_slots.is_empty() {
@@ -231,7 +239,7 @@ impl TxSender {
                     }
                 };
 
-                if txs.len() > 0 {
+                if !txs.is_empty() {
                     TX_BATCH_SIZES.set(txs.len() as i64);
                     let postgres = postgres_send.clone();
                     let tx_sender = self.clone();
@@ -255,10 +263,8 @@ impl TxSender {
         let length_before = self.txs_sent_store.len();
         self.txs_sent_store.retain(|_k, v| {
             let retain = v.sent_at.elapsed() < ttl_duration;
-            if !retain {
-                if v.status.is_none() {
-                    TX_TIMED_OUT.inc();
-                }
+            if !retain && v.status.is_none() {
+                TX_TIMED_OUT.inc();
             }
             retain
         });

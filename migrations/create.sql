@@ -1,3 +1,5 @@
+CREATE SCHEMA lite_rpc;
+
 CREATE TABLE lite_rpc.Txs (
   id SERIAL NOT NULL PRIMARY KEY,
   signature CHAR(88) NOT NULL,

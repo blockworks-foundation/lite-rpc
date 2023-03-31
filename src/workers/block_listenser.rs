@@ -318,11 +318,13 @@ impl BlockListener {
                     parent_slot: parent_slot as i64,
                 }))
                 .expect("Error sending block to postgres service");
+
             MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
 
         Ok(())
     }
+
     pub fn listen(
         self,
         commitment_config: CommitmentConfig,
@@ -353,9 +355,10 @@ impl BlockListener {
                         }
                     };
 
-                    if let Err(_) = this
+                    if this
                         .index_slot(slot, commitment_config, postgres.clone())
                         .await
+                        .is_err()
                     {
                         // usually as we index all the slots even if they are not been processed we get some errors for slot
                         // as they are not in long term storage of the rpc // we check 5 times before ignoring the slot
