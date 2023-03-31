@@ -45,7 +45,7 @@ lazy_static::lazy_static! {
 }
 
 pub type WireTransaction = Vec<u8>;
-const NUMBER_OF_TX_SENDERS: usize = 5;
+const NUMBER_OF_TX_SENDERS: usize = 7;
 // making 250 as sleep time will effectively make lite rpc send
 // (1000/250) * 5 * 512 = 10240 tps
 const SLEEP_TIME_FOR_SENDING_TASK_MS: u64 = 250;
@@ -193,14 +193,21 @@ impl TxSender {
                 let mut txs = Vec::with_capacity(tx_batch_size);
                 let mut permit = None;
                 let tasks_counter = tasks_counter.clone();
+                let mut timeout_interval = tx_send_interval.as_millis() as u64;
 
                 while txs.len() <= tx_batch_size {
-                    match tokio::time::timeout(tx_send_interval, recv.recv()).await {
+                    let instance = tokio::time::Instant::now();
+                    match tokio::time::timeout(Duration::from_millis(timeout_interval), recv.recv())
+                        .await
+                    {
                         Ok(value) => match value {
                             Some((sig, tx, slot)) => {
                                 TXS_IN_CHANNEL.dec();
                                 sigs_and_slots.push((sig, slot));
                                 txs.push(tx);
+                                // update the timeout inteval
+                                timeout_interval = timeout_interval
+                                    .saturating_sub(instance.elapsed().as_millis() as u64).max(1);
                             }
                             None => {
                                 bail!("Channel Disconnected");
@@ -209,8 +216,10 @@ impl TxSender {
                         Err(_) => {
                             permit = semaphore.clone().try_acquire_owned().ok();
                             if permit.is_some() {
-                                // we have a permit we can send collected transaction batch
                                 break;
+                            } else {
+                                // already timed out, but could not get a permit
+                                timeout_interval = 1;
                             }
                         }
                     }

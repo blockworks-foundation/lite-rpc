@@ -3,5 +3,6 @@ node_modules
 bench/metrics.csv
 *.pem*
 *.pks*
+*out.json*
 .env
 test-ledger

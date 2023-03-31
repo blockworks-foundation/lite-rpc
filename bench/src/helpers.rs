@@ -69,13 +69,15 @@ impl BenchHelper {
         funded_payer: &Keypair,
         blockhash: Hash,
     ) -> Vec<Transaction> {
-        let random_bytes: Vec<u8> = Alphanumeric
-            .sample_iter(rand::thread_rng())
-            .take(10)
-            .collect();
-
         (0..num_of_txs)
-            .map(|_| Self::create_memo_tx(&random_bytes, funded_payer, blockhash))
+            .map(|_| {
+                let random_bytes: Vec<u8> = Alphanumeric
+                    .sample_iter(rand::thread_rng())
+                    .take(10)
+                    .collect();
+
+                Self::create_memo_tx(&random_bytes, funded_payer, blockhash)
+            })
             .collect()
     }
 
