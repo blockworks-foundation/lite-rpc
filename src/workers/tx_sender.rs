@@ -101,7 +101,6 @@ impl TxSender {
         let forwarded_slot = tpu_client.estimated_current_slot();
         let transaction_batch_size = txs.len() as u64;
 
-        let mut index: usize = 0;
         let mut quic_responses = vec![];
         for tx in txs {
             let quic_response = match tpu_client.send_transaction(tx) {
