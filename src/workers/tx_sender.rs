@@ -139,8 +139,6 @@ impl TxSender {
                         forwarded_slot,
                         forwarded_local_time,
                         processed_slot: None,
-                        processed_cluster_time: None,
-                        processed_local_time: None,
                         cu_consumed: None,
                         cu_requested: None,
                         quic_response,

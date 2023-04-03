@@ -32,8 +32,6 @@ pub struct PostgresTx {
     pub forwarded_slot: i64,
     pub forwarded_local_time: DateTime<Utc>,
     pub processed_slot: Option<i64>,
-    pub processed_cluster_time: Option<DateTime<Utc>>,
-    pub processed_local_time: Option<DateTime<Utc>>,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
     pub quic_response: i16,
@@ -42,8 +40,6 @@ pub struct PostgresTx {
 #[derive(Debug)]
 pub struct PostgresUpdateTx {
     pub processed_slot: i64,
-    pub processed_cluster_time: DateTime<Utc>,
-    pub processed_local_time: DateTime<Utc>,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
 }
@@ -53,6 +49,8 @@ pub struct PostgresBlock {
     pub slot: i64,
     pub leader_id: i64,
     pub parent_slot: i64,
+    pub cluster_time: DateTime<Utc>,
+    pub local_time: DateTime<Utc>,
 }
 
 #[derive(Debug)]
@@ -186,8 +184,6 @@ impl PostgresSession {
                 forwarded_slot,
                 forwarded_local_time,
                 processed_slot,
-                processed_cluster_time,
-                processed_local_time,
                 cu_consumed,
                 cu_requested,
                 quic_response,
@@ -198,8 +194,6 @@ impl PostgresSession {
             args.push(forwarded_slot);
             args.push(forwarded_local_time);
             args.push(processed_slot);
-            args.push(processed_cluster_time);
-            args.push(processed_local_time);
             args.push(cu_consumed);
             args.push(cu_requested);
             args.push(quic_response);
@@ -208,7 +202,7 @@ impl PostgresSession {
         let mut query = String::from(
             r#"
                 INSERT INTO lite_rpc.Txs 
-                (signature, recent_slot, forwarded_slot, forwarded_local_time, processed_slot, processed_cluster_time, processed_local_time, cu_consumed, cu_requested, quic_response)
+                (signature, recent_slot, forwarded_slot, forwarded_local_time, processed_slot, cu_consumed, cu_requested, quic_response)
                 VALUES
             "#,
         );
@@ -234,17 +228,21 @@ impl PostgresSession {
                 slot,
                 leader_id,
                 parent_slot,
+                cluster_time,
+                local_time,
             } = block;
 
             args.push(slot);
             args.push(leader_id);
             args.push(parent_slot);
+            args.push(cluster_time);
+            args.push(local_time);
         }
 
         let mut query = String::from(
             r#"
                 INSERT INTO lite_rpc.Blocks 
-                (slot, leader_id, parent_slot)
+                (slot, leader_id, parent_slot, cluster_time, local_time)
                 VALUES
             "#,
         );
@@ -259,8 +257,6 @@ impl PostgresSession {
     pub async fn update_tx(&self, tx: &PostgresUpdateTx, signature: &str) -> anyhow::Result<()> {
         let PostgresUpdateTx {
             processed_slot,
-            processed_cluster_time,
-            processed_local_time,
             cu_consumed,
             cu_requested,
         } = tx;
@@ -268,7 +264,7 @@ impl PostgresSession {
         self.client
             .execute(
                 &self.update_tx_statement,
-                &[processed_slot, processed_cluster_time, processed_local_time, cu_consumed, cu_requested, &signature],
+                &[processed_slot, cu_consumed, cu_requested, &signature],
             )
             .await?;
 

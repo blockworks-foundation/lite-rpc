@@ -186,8 +186,6 @@ impl BlockListener {
             )
             .await?;
 
-        let block_time = self.rpc_client.get_block_time(slot).await?;
-
         timer.observe_duration();
 
         if commitment_config.is_finalized() {
@@ -269,8 +267,6 @@ impl BlockListener {
                         .send(PostgresMsg::PostgresUpdateTx(
                             PostgresUpdateTx {
                                 processed_slot: slot as i64,
-                                processed_cluster_time: Utc.timestamp_millis_opt(block_time).unwrap(),
-                                processed_local_time: chrono::offset::Utc::now(), // TODO: need to track actual processed slot update
                                 cu_consumed,
                                 cu_requested: None, //TODO: cu requested
                             },
@@ -318,11 +314,17 @@ impl BlockListener {
 
             let _leader_id = &leader_reward.pubkey;
 
+            // TODO insert if not exists leader_id into accountaddrs
+
+            let block_time = self.rpc_client.get_block_time(slot).await?;
+
             postgres
                 .send(PostgresMsg::PostgresBlock(PostgresBlock {
                     slot: slot as i64,
-                    leader_id: 0, //FIX:
+                    leader_id: 0, // TODO: lookup leader
                     parent_slot: parent_slot as i64,
+                    cluster_time: Utc.timestamp_millis_opt(block_time).unwrap(),
+                    local_time: chrono::offset::Utc::now(), // TODO: need to track actual processed slot update
                 }))
                 .expect("Error sending block to postgres service");
 

@@ -7,8 +7,6 @@ CREATE TABLE lite_rpc.Txs (
   forwarded_slot BIGINT NOT NULL,
   forwarded_local_time TIMESTAMP WITH TIME ZONE NOT NULL,
   processed_slot BIGINT,
-  processed_cluster_time TIMESTAMP WITH TIME ZONE,
-  processed_local_time TIMESTAMP WITH TIME ZONE,
   cu_consumed BIGINT,
   cu_requested BIGINT,
   quic_response SMALLINT
@@ -19,6 +17,8 @@ CREATE TABLE lite_rpc.Blocks (
   slot BIGINT NOT NULL PRIMARY KEY,
   leader_id BIGINT NOT NULL,
   parent_slot BIGINT NOT NULL
+  cluster_time TIMESTAMP WITH TIME ZONE NOT NULL,
+  local_time TIMESTAMP WITH TIME ZONE NOT NULL,
 );
 
 CREATE TABLE lite_rpc.AccountAddrs (
