@@ -1,4 +1,5 @@
 use anyhow::{bail, Context};
+use chrono::{DateTime, Utc};
 use futures::{future::join_all, join};
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
@@ -29,7 +30,10 @@ pub struct PostgresTx {
     pub signature: String,
     pub recent_slot: i64,
     pub forwarded_slot: i64,
+    pub forwarded_local_time: DateTime<Utc>,
     pub processed_slot: Option<i64>,
+    pub processed_cluster_time: Option<DateTime<Utc>>,
+    pub processed_local_time: Option<DateTime<Utc>>,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
     pub quic_response: i16,
@@ -38,6 +42,8 @@ pub struct PostgresTx {
 #[derive(Debug)]
 pub struct PostgresUpdateTx {
     pub processed_slot: i64,
+    pub processed_cluster_time: DateTime<Utc>,
+    pub processed_local_time: DateTime<Utc>,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
 }
@@ -109,8 +115,8 @@ impl PostgresSession {
             .prepare(
                 r#"
                 UPDATE lite_rpc.txs 
-                SET processed_slot = $1, cu_consumed = $2, cu_requested = $3
-                WHERE signature = $4
+                SET processed_slot = $1, processed_cluster_time = $2, processed_local_time = $3, cu_consumed = $4, cu_requested = $5,
+                WHERE signature = $6
             "#,
             )
             .await?;
@@ -178,7 +184,10 @@ impl PostgresSession {
                 signature,
                 recent_slot,
                 forwarded_slot,
+                forwarded_local_time,
                 processed_slot,
+                processed_cluster_time,
+                processed_local_time,
                 cu_consumed,
                 cu_requested,
                 quic_response,
@@ -187,7 +196,10 @@ impl PostgresSession {
             args.push(signature);
             args.push(recent_slot);
             args.push(forwarded_slot);
+            args.push(forwarded_local_time);
             args.push(processed_slot);
+            args.push(processed_cluster_time);
+            args.push(processed_local_time);
             args.push(cu_consumed);
             args.push(cu_requested);
             args.push(quic_response);
@@ -196,7 +208,7 @@ impl PostgresSession {
         let mut query = String::from(
             r#"
                 INSERT INTO lite_rpc.Txs 
-                (signature, recent_slot, forwarded_slot, processed_slot, cu_consumed, cu_requested, quic_response)
+                (signature, recent_slot, forwarded_slot, forwarded_local_time, processed_slot, processed_cluster_time, processed_local_time, cu_consumed, cu_requested, quic_response)
                 VALUES
             "#,
         );
@@ -247,6 +259,8 @@ impl PostgresSession {
     pub async fn update_tx(&self, tx: &PostgresUpdateTx, signature: &str) -> anyhow::Result<()> {
         let PostgresUpdateTx {
             processed_slot,
+            processed_cluster_time,
+            processed_local_time,
             cu_consumed,
             cu_requested,
         } = tx;
@@ -254,7 +268,7 @@ impl PostgresSession {
         self.client
             .execute(
                 &self.update_tx_statement,
-                &[processed_slot, cu_consumed, cu_requested, &signature],
+                &[processed_slot, processed_cluster_time, processed_local_time, cu_consumed, cu_requested, &signature],
             )
             .await?;
 

@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use chrono::{TimeZone, Utc};
 use dashmap::DashMap;
 use jsonrpsee::SubscriptionSink;
 use log::{info, warn};
@@ -161,6 +162,7 @@ impl BlockListener {
             CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
             _ => TransactionConfirmationStatus::Confirmed,
         };
+        
 
         let timer = if commitment_config.is_finalized() {
             TT_RECV_FIN_BLOCK.start_timer()
@@ -183,6 +185,9 @@ impl BlockListener {
                 },
             )
             .await?;
+
+        let block_time = self.rpc_client.get_block_time(slot).await?;
+
         timer.observe_duration();
 
         if commitment_config.is_finalized() {
@@ -264,6 +269,8 @@ impl BlockListener {
                         .send(PostgresMsg::PostgresUpdateTx(
                             PostgresUpdateTx {
                                 processed_slot: slot as i64,
+                                processed_cluster_time: Utc.timestamp_millis_opt(block_time).unwrap(),
+                                processed_local_time: chrono::offset::Utc::now(), // TODO: need to track actual processed slot update
                                 cu_consumed,
                                 cu_requested: None, //TODO: cu requested
                             },

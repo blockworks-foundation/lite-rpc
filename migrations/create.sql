@@ -5,7 +5,10 @@ CREATE TABLE lite_rpc.Txs (
   signature CHAR(88) NOT NULL,
   recent_slot BIGINT NOT NULL,
   forwarded_slot BIGINT NOT NULL,
+  forwarded_local_time TIMESTAMP WITH TIME ZONE NOT NULL,
   processed_slot BIGINT,
+  processed_cluster_time TIMESTAMP WITH TIME ZONE,
+  processed_local_time TIMESTAMP WITH TIME ZONE,
   cu_consumed BIGINT,
   cu_requested BIGINT,
   quic_response SMALLINT

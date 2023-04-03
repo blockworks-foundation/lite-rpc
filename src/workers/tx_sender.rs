@@ -109,7 +109,8 @@ impl TxSender {
             txs_sent.insert(sig.to_owned(), TxProps::default());
         }
 
-        let forwarded_slot = tpu_client.estimated_current_slot().await;
+        let forwarded_slot = tpu_client.estimated_current_slot().await as i64;
+        let forwarded_local_time = chrono::offset::Utc::now();
         let transaction_batch_size = txs.len() as u64;
         let current_nb_tasks = tasks_counter.fetch_add(1, Ordering::Relaxed);
         TOKIO_SEND_TASKS.set((current_nb_tasks + 1) as i64);
@@ -135,8 +136,11 @@ impl TxSender {
                     .map(|(sig, recent_slot)| PostgresTx {
                         signature: sig.clone(),
                         recent_slot: *recent_slot as i64,
-                        forwarded_slot: forwarded_slot as i64,
+                        forwarded_slot,
+                        forwarded_local_time,
                         processed_slot: None,
+                        processed_cluster_time: None,
+                        processed_local_time: None,
                         cu_consumed: None,
                         cu_requested: None,
                         quic_response,
@@ -207,7 +211,8 @@ impl TxSender {
                                 txs.push(tx);
                                 // update the timeout inteval
                                 timeout_interval = timeout_interval
-                                    .saturating_sub(instance.elapsed().as_millis() as u64).max(1);
+                                    .saturating_sub(instance.elapsed().as_millis() as u64)
+                                    .max(1);
                             }
                             None => {
                                 bail!("Channel Disconnected");
