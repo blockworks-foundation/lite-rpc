@@ -3,6 +3,7 @@ mod cleaner;
 mod metrics_capture;
 mod postgres;
 mod prometheus_sync;
+pub mod tpu_utils;
 mod tx_sender;
 
 pub use block_listenser::*;

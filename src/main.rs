@@ -38,10 +38,8 @@ pub async fn main() -> anyhow::Result<()> {
     let Args {
         rpc_addr,
         ws_addr,
-        tx_batch_size,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
-        tx_batch_interval_ms,
         clean_interval_ms,
         fanout_size,
         enable_postgres,
@@ -53,7 +51,6 @@ pub async fn main() -> anyhow::Result<()> {
 
     let identity = get_identity_keypair(&identity_keypair).await;
 
-    let tx_batch_interval_ms = Duration::from_millis(tx_batch_interval_ms);
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
 
     let light_bridge = LiteBridge::new(rpc_addr, ws_addr, fanout_size, identity).await?;
@@ -62,8 +59,6 @@ pub async fn main() -> anyhow::Result<()> {
         .start_services(
             lite_rpc_http_addr,
             lite_rpc_ws_addr,
-            tx_batch_size,
-            tx_batch_interval_ms,
             clean_interval_ms,
             enable_postgres,
             prometheus_addr,

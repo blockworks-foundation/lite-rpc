@@ -15,13 +15,13 @@ bench = { path = "./bench" }
 [dependencies]
 solana-sdk = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
 solana-rpc-client = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
-solana-rpc-client-api= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
-solana-tpu-client= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
-solana-quic-client= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
-solana-pubsub-client= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-rpc-client-api = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
 solana-transaction-status = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
-solana-version= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
-solana-client= { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-version = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-client = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-net-utils = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-pubsub-client = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
+solana-streamer = { git = "https://github.com/blockworks-foundation/solana", branch="lite_rpc" }
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
 tokio = { version = "1.25.0", features = ["full"]}
@@ -45,3 +45,5 @@ prometheus = "0.13.3"
 lazy_static = "1.4.0"
 dotenv = "0.15.0"
 async-channel = "1.8.0"
+quinn = "0.9.3"
+rustls = { version = "0.20.6", default-features = false }
