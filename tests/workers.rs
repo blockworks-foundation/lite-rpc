@@ -40,7 +40,7 @@ async fn send_and_confirm_txs() {
 
     let block_listener = BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store);
 
-    let (tx_send, tx_recv) = mpsc::unbounded_channel();
+    let (tx_send, tx_recv) = mpsc::channel(1024);
 
     let services = try_join_all(vec![
         block_listener
@@ -59,9 +59,8 @@ async fn send_and_confirm_txs() {
         let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
         let sig = sig.to_string();
 
-        tx_send
-            .send((sig.clone(), tx.as_bytes().to_vec(), 0))
-            .unwrap();
+        let _ = tx_send
+            .send((sig.clone(), tx.as_bytes().to_vec(), 0)).await;
 
         for _ in 0..2 {
             let tx_status = tx_sender.txs_sent_store.get(&sig).unwrap();

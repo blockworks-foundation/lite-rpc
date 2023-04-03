@@ -7,14 +7,14 @@ use crate::{
     workers::{
         tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
         PrometheusSync, TxSender, WireTransaction,
-    },
+    }, DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::bail;
 
-use log::info;
+use log::{info, error};
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 
@@ -31,7 +31,7 @@ use solana_sdk::{
 use solana_transaction_status::TransactionStatus;
 use tokio::{
     net::ToSocketAddrs,
-    sync::mpsc::{self, UnboundedSender},
+    sync::mpsc::{self, Sender},
     task::JoinHandle,
 };
 
@@ -58,7 +58,7 @@ pub struct LiteBridge {
     pub rpc_client: Arc<RpcClient>,
     pub tpu_manager: Arc<TpuManager>,
     // None if LiteBridge is not executed
-    pub tx_send_channel: Option<UnboundedSender<(String, WireTransaction, u64)>>,
+    pub tx_send_channel: Option<Sender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
     pub block_listner: BlockListener,
     pub block_store: BlockStore,
@@ -125,7 +125,7 @@ impl LiteBridge {
 
         let mut tpu_services = self.tpu_manager.tpu_service.start().await?;
 
-        let (tx_send, tx_recv) = mpsc::unbounded_channel();
+        let (tx_send, tx_recv) = mpsc::channel(DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE);
         self.tx_send_channel = Some(tx_send);
 
         let tx_sender = self
@@ -241,11 +241,12 @@ impl LiteRpcServer for LiteBridge {
                 return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
-        self.tx_send_channel
+        if let Err(e) = self.tx_send_channel
             .as_ref()
             .expect("Lite Bridge Not Executed")
-            .send((sig.to_string(), raw_tx, slot))
-            .unwrap();
+            .send((sig.to_string(), raw_tx, slot)).await {
+                error!("Internal error sending transaction on send channel error {}", e);
+            }
         TXS_IN_CHANNEL.inc();
 
         Ok(BinaryEncoding::Base58.encode(sig))

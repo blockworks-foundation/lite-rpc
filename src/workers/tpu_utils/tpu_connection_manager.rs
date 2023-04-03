@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -12,7 +12,7 @@ use dashmap::DashMap;
 use log::{error, info};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime,
-    TransportConfig, VarInt,
+    TransportConfig,
 };
 use solana_sdk::pubkey::Pubkey;
 use tokio::{
@@ -47,12 +47,13 @@ impl ActiveConnection {
     async fn make_connection(endpoint: Endpoint, addr: SocketAddr) -> anyhow::Result<Connection> {
         let connecting = endpoint.connect(addr, "connect")?;
 
-        let res = timeout(
-            Duration::from_secs(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC),
-            connecting,
-        )
-        .await?;
-        Ok(res?)
+        // let res = timeout(
+        //     Duration::from_secs(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC),
+        //     connecting,
+        // )
+        // .await?;
+        let res = connecting.await;
+        Ok(res.unwrap())
     }
 
     async fn make_connection_0rtt(
@@ -70,6 +71,7 @@ impl ActiveConnection {
                 {
                     connection
                 } else {
+                    error!("timeout while connecting");
                     return Err(ConnectionError::TimedOut.into());
                 }
             }
@@ -82,6 +84,7 @@ impl ActiveConnection {
                 {
                     connecting_result?
                 } else {
+                    error!("timeout while connecting");
                     return Err(ConnectionError::TimedOut.into());
                 }
             }
@@ -130,8 +133,10 @@ impl ActiveConnection {
                                 Some(conn) => conn,
                                 None => {
                                     let conn = if already_connected {
+                                        info!("making make_connection_0rtt");
                                         Self::make_connection_0rtt(endpoint.clone(), addr.clone()).await
                                     } else {
+                                        info!("making make_connection");
                                         Self::make_connection(endpoint.clone(), addr.clone()).await
                                     };
                                     match conn {
@@ -237,7 +242,7 @@ pub struct TpuConnectionManager {
 impl TpuConnectionManager {
     pub fn new(certificate: rustls::Certificate, key: rustls::PrivateKey, fanout: usize) -> Self {
         Self {
-            endpoints: RotatingQueue::new(fanout / 2, || {
+            endpoints: RotatingQueue::new(fanout/2, || {
                 Self::create_endpoint(certificate.clone(), key.clone())
             }),
             identity_to_active_connection: Arc::new(DashMap::new()),
@@ -247,12 +252,12 @@ impl TpuConnectionManager {
     fn create_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
         let mut endpoint = {
             let client_socket =
-                solana_net_utils::bind_in_range(IpAddr::V4(Ipv4Addr::UNSPECIFIED), (8000, 60000))
-                    .expect("QuicLazyInitializedEndpoint::create_endpoint bind_in_range")
+                solana_net_utils::bind_in_range(IpAddr::V4(Ipv4Addr::UNSPECIFIED), (8000, 10000))
+                    .expect("create_endpoint bind_in_range")
                     .1;
             let config = EndpointConfig::default();
             quinn::Endpoint::new(config, None, client_socket, TokioRuntime)
-                .expect("QuicNewConnection::create_endpoint quinn::Endpoint::new")
+                .expect("create_endpoint quinn::Endpoint::new")
         };
 
         let mut crypto = rustls::ClientConfig::builder()
@@ -267,9 +272,9 @@ impl TpuConnectionManager {
         let mut config = ClientConfig::new(Arc::new(crypto));
         let mut transport_config = TransportConfig::default();
 
-        let timeout = IdleTimeout::from(VarInt::from_u32(10000));
+        let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
-        transport_config.keep_alive_interval(Some(Duration::from_millis(1000)));
+        transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
         config.transport_config(Arc::new(transport_config));
 
         endpoint.set_default_client_config(config);
@@ -280,23 +285,20 @@ impl TpuConnectionManager {
     pub async fn update_connections(
         &self,
         transaction_sender: Arc<Sender<Vec<u8>>>,
-        connections_to_keep: Vec<(Pubkey, SocketAddr)>,
+        connections_to_keep: HashMap<Pubkey, SocketAddr>,
     ) {
-        let mut set_of_identities: HashSet<Pubkey> = HashSet::new();
-
-        for (identity, socket_addr) in connections_to_keep {
-            set_of_identities.insert(identity);
+        for (identity, socket_addr) in &connections_to_keep {
             if self.identity_to_active_connection.get(&identity).is_none() {
                 info!("added a connection for {}, {}", identity, socket_addr);
                 let endpoint = self.endpoints.get();
-                let active_connection = ActiveConnection::new(endpoint, socket_addr, identity);
+                let active_connection = ActiveConnection::new(endpoint, socket_addr.clone(), identity.clone());
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
                 let (sx, rx) = tokio::sync::mpsc::channel(1);
 
                 let transaction_reciever = transaction_sender.subscribe();
                 active_connection.start_listening(transaction_reciever, rx);
                 self.identity_to_active_connection.insert(
-                    identity,
+                    identity.clone(),
                     Arc::new(ActiveConnectionWithExitChannel {
                         active_connection,
                         exit_channel: sx,
@@ -312,7 +314,7 @@ impl TpuConnectionManager {
             .map(|x| (x.key().clone(), x.value().clone()))
             .collect::<Vec<_>>();
         for (identity, value) in collect_current_active_connections.iter() {
-            if !set_of_identities.contains(identity) {
+            if !connections_to_keep.contains_key(identity) {
                 info!("removing a connection for {}", identity);
                 // ignore error for exit channel
                 value

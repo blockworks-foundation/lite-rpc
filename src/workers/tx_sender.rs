@@ -12,7 +12,7 @@ use prometheus::{
     register_int_gauge, Histogram, IntCounter,
 };
 use solana_transaction_status::TransactionStatus;
-use tokio::{sync::mpsc::UnboundedReceiver, task::JoinHandle};
+use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 use crate::{
     bridge::TXS_IN_CHANNEL,
@@ -148,7 +148,7 @@ impl TxSender {
     /// retry and confirm transactions every 2ms (avg time to confirm tx)
     pub fn execute(
         self,
-        mut recv: UnboundedReceiver<(String, WireTransaction, u64)>,
+        mut recv: Receiver<(String, WireTransaction, u64)>,
         postgres_send: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {

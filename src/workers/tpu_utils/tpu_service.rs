@@ -7,7 +7,7 @@ use solana_client::{
     rpc_response::RpcContactInfo,
 };
 
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, slot_history::Slot};
+use solana_sdk::{pubkey::Pubkey, signature::Keypair, slot_history::Slot, quic::QUIC_PORT_OFFSET};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::{
     collections::VecDeque,
@@ -26,7 +26,7 @@ use tokio::{
 
 use super::tpu_connection_manager::TpuConnectionManager;
 
-const CACHE_NEXT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
+const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
 const CLUSTERINFO_REFRESH_TIME: u64 = 60; // refresh cluster every minute
 const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
@@ -62,7 +62,7 @@ impl TpuService {
         let pubsub_client = PubsubClient::new(&rpc_ws_address).await?;
         let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let (certificate, key) =
-            new_self_signed_tls_certificate(identity.as_ref(), IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+            new_self_signed_tls_certificate(identity.as_ref(), IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
                 .expect("Failed to initialize QUIC client certificates");
 
         let tpu_connection_manager =
@@ -110,7 +110,7 @@ impl TpuService {
             (current_slot, last_element)
         };
 
-        let last_slot_needed = queue_begin_slot + CACHE_NEXT_LEADERS_PUBKEY_SIZE as u64;
+        let last_slot_needed = queue_begin_slot + CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE as u64;
 
         if last_slot_needed > queue_end_slot + 1 {
             let first_slot_to_fetch = queue_end_slot + 1;
@@ -170,9 +170,12 @@ impl TpuService {
             .iter()
             .filter(|x| x.tpu.is_some())
             .map(|x| {
+                let mut addr = x.tpu.unwrap().clone();
+                // add quic port offset
+                addr.set_port(addr.port() + QUIC_PORT_OFFSET);
                 (
                     Pubkey::from_str(x.pubkey.as_str()).unwrap(),
-                    x.tpu.unwrap().clone(),
+                    addr,
                 )
             })
             .collect();

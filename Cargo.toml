@@ -3,6 +3,7 @@ name = "lite-rpc"
 version = "0.1.0"
 edition = "2021"
 description = "A lite version of solana rpc to send and confirm transactions"
+rust-version = "1.67.1"
 
 [workspace]
 members = [
