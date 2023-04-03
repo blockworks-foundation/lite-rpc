@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap},
+    collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -241,8 +241,9 @@ pub struct TpuConnectionManager {
 
 impl TpuConnectionManager {
     pub fn new(certificate: rustls::Certificate, key: rustls::PrivateKey, fanout: usize) -> Self {
+        let number_of_clients = if fanout > 5 { fanout / 4 } else { 1 };
         Self {
-            endpoints: RotatingQueue::new(fanout/2, || {
+            endpoints: RotatingQueue::new(number_of_clients, || {
                 Self::create_endpoint(certificate.clone(), key.clone())
             }),
             identity_to_active_connection: Arc::new(DashMap::new()),
@@ -291,7 +292,8 @@ impl TpuConnectionManager {
             if self.identity_to_active_connection.get(&identity).is_none() {
                 info!("added a connection for {}, {}", identity, socket_addr);
                 let endpoint = self.endpoints.get();
-                let active_connection = ActiveConnection::new(endpoint, socket_addr.clone(), identity.clone());
+                let active_connection =
+                    ActiveConnection::new(endpoint, socket_addr.clone(), identity.clone());
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
                 let (sx, rx) = tokio::sync::mpsc::channel(1);
 

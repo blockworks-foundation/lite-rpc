@@ -1,13 +1,13 @@
 use anyhow::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
-use log::{error, warn, info};
+use log::{error, info, warn};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_response::RpcContactInfo,
 };
 
-use solana_sdk::{pubkey::Pubkey, signature::Keypair, slot_history::Slot, quic::QUIC_PORT_OFFSET};
+use solana_sdk::{pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::{
     collections::VecDeque,
@@ -61,9 +61,11 @@ impl TpuService {
         let slot = current_slot.load(Ordering::Relaxed);
         let pubsub_client = PubsubClient::new(&rpc_ws_address).await?;
         let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
-        let (certificate, key) =
-            new_self_signed_tls_certificate(identity.as_ref(), IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
-                .expect("Failed to initialize QUIC client certificates");
+        let (certificate, key) = new_self_signed_tls_certificate(
+            identity.as_ref(),
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        )
+        .expect("Failed to initialize QUIC client certificates");
 
         let tpu_connection_manager =
             TpuConnectionManager::new(certificate, key, fanout_slots as usize);
@@ -173,10 +175,7 @@ impl TpuService {
                 let mut addr = x.tpu.unwrap().clone();
                 // add quic port offset
                 addr.set_port(addr.port() + QUIC_PORT_OFFSET);
-                (
-                    Pubkey::from_str(x.pubkey.as_str()).unwrap(),
-                    addr,
-                )
+                (Pubkey::from_str(x.pubkey.as_str()).unwrap(), addr)
             })
             .collect();
         self.tpu_connection_manager

@@ -59,8 +59,7 @@ async fn send_and_confirm_txs() {
         let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
         let sig = sig.to_string();
 
-        let _ = tx_send
-            .send((sig.clone(), tx.as_bytes().to_vec(), 0)).await;
+        let _ = tx_send.send((sig.clone(), tx.as_bytes().to_vec(), 0)).await;
 
         for _ in 0..2 {
             let tx_status = tx_sender.txs_sent_store.get(&sig).unwrap();

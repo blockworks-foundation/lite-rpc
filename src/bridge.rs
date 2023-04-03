@@ -7,14 +7,15 @@ use crate::{
     workers::{
         tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
         PrometheusSync, TxSender, WireTransaction,
-    }, DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
+    },
+    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::bail;
 
-use log::{info, error};
+use log::{error, info};
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 
@@ -241,12 +242,18 @@ impl LiteRpcServer for LiteBridge {
                 return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
-        if let Err(e) = self.tx_send_channel
+        if let Err(e) = self
+            .tx_send_channel
             .as_ref()
             .expect("Lite Bridge Not Executed")
-            .send((sig.to_string(), raw_tx, slot)).await {
-                error!("Internal error sending transaction on send channel error {}", e);
-            }
+            .send((sig.to_string(), raw_tx, slot))
+            .await
+        {
+            error!(
+                "Internal error sending transaction on send channel error {}",
+                e
+            );
+        }
         TXS_IN_CHANNEL.inc();
 
         Ok(BinaryEncoding::Base58.encode(sig))
