@@ -8,18 +8,17 @@ use std::{
 
 use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
-use solana_quic_client::{QuicConfig, QuicPool};
+use solana_connection_cache::connection_cache::{ConnectionCache, NewConnectionConfig};
+use solana_quic_client::{QuicConfig, QuicConnectionManager, QuicPool};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Keypair;
-use solana_tpu_client::{
-    nonblocking::tpu_client::TpuClient,
-    tpu_client::TpuClientConfig,
-    tpu_connection_cache::{NewTpuConfig, TpuConnectionCache},
-};
+use solana_tpu_client::{nonblocking::tpu_client::TpuClient, tpu_client::TpuClientConfig};
+
+use anyhow::bail;
 use tokio::sync::RwLock;
 
-pub type QuicTpuClient = TpuClient<QuicPool>;
-pub type QuicConnectionCache = TpuConnectionCache<QuicPool>;
+pub type QuicTpuClient = TpuClient<QuicPool, QuicConnectionManager, QuicConfig>;
+pub type QuicConnectionCache = ConnectionCache<QuicPool, QuicConnectionManager, QuicConfig>;
 
 const TPU_CONNECTION_CACHE_SIZE: usize = 4;
 
@@ -46,18 +45,12 @@ impl TpuManager {
         fanout_slots: u64,
         identity: Keypair,
     ) -> anyhow::Result<Self> {
-        let mut tpu_config = QuicConfig::new().unwrap();
-        tpu_config
-            .update_client_certificate(&identity, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
-            .unwrap();
+        let connection_cache = Arc::new(Self::create_quic_connection_cache(&identity)?);
 
-        let connection_cache =
-            QuicConnectionCache::new_with_config(TPU_CONNECTION_CACHE_SIZE, tpu_config);
-        let connection_cache = Arc::new(connection_cache);
-        let tpu_client =
+        let tpu_client = Arc::new(RwLock::new(Arc::new(
             Self::new_tpu_client(rpc_client.clone(), &ws_addr, fanout_slots, connection_cache)
-                .await?;
-        let tpu_client = Arc::new(RwLock::new(Arc::new(tpu_client)));
+                .await?,
+        )));
 
         Ok(Self {
             rpc_client,
@@ -67,6 +60,28 @@ impl TpuManager {
             error_count: Default::default(),
             identity: Arc::new(identity),
         })
+    }
+
+    pub fn create_quic_connection_cache(identity: &Keypair) -> anyhow::Result<QuicConnectionCache> {
+        let manager =
+            QuicConnectionManager::new_with_connection_config(Self::create_quic_config(identity)?);
+
+        Ok(QuicConnectionCache::new_with_config(
+            TPU_CONNECTION_CACHE_SIZE,
+            Self::create_quic_config(identity)?,
+            manager,
+        ))
+    }
+
+    pub fn create_quic_config(identity: &Keypair) -> anyhow::Result<QuicConfig> {
+        let mut config = QuicConfig::new()?;
+        if let Err(err) =
+            config.update_client_certificate(identity, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
+        {
+            bail!("Error adding client certificate to quic config ${err}")
+        }
+
+        Ok(config)
     }
 
     pub async fn new_tpu_client(
@@ -85,23 +100,20 @@ impl TpuManager {
     }
 
     pub async fn reset_tpu_client(&self) -> anyhow::Result<()> {
-        let mut tpu_config = QuicConfig::new().unwrap();
-        tpu_config
-            .update_client_certificate(&self.identity, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
-            .unwrap();
-        let connection_cache =
-            QuicConnectionCache::new_with_config(TPU_CONNECTION_CACHE_SIZE, tpu_config);
-        let connection_cache = Arc::new(connection_cache);
+        let connection_cache = Arc::new(Self::create_quic_connection_cache(&self.identity)?);
 
-        let tpu_client = Self::new_tpu_client(
-            self.rpc_client.clone(),
-            &self.ws_addr,
-            self.fanout_slots,
-            connection_cache,
-        )
-        .await?;
+        let tpu_client = Arc::new(
+            Self::new_tpu_client(
+                self.rpc_client.clone(),
+                &self.ws_addr,
+                self.fanout_slots,
+                connection_cache,
+            )
+            .await?,
+        );
+
         self.error_count.store(0, Ordering::Relaxed);
-        *self.tpu_client.write().await = Arc::new(tpu_client);
+        *self.tpu_client.write().await = tpu_client;
         TPU_CONNECTION_RESET.inc();
         Ok(())
     }
