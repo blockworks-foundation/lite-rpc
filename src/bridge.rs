@@ -226,9 +226,9 @@ impl LiteRpcServer for LiteBridge {
         let Some(BlockInformation { slot, .. }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
-            .await else {
-                log::warn!("block");
-                return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
+        else {
+            log::warn!("block");
+            return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
         self.tx_send_channel

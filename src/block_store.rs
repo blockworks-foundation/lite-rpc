@@ -2,11 +2,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 
 use log::info;
 use prometheus::core::GenericGauge;
 use prometheus::{opts, register_int_gauge};
+use serde_json::json;
+use solana_client::rpc_request::RpcRequest;
+use solana_client::rpc_response::{RpcBlockhash, Response};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcBlockConfig};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionDetails;
@@ -21,11 +25,13 @@ pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
     pub instant: Instant,
+    pub processed_local_time: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone)]
 pub struct BlockStore {
     blocks: Arc<DashMap<String, BlockInformation>>,
+    latest_processed_block: Arc<RwLock<(String, BlockInformation)>>,
     latest_confirmed_block: Arc<RwLock<(String, BlockInformation)>>,
     latest_finalized_block: Arc<RwLock<(String, BlockInformation)>>,
     last_add_block_metric: Arc<RwLock<Instant>>,
@@ -33,12 +39,26 @@ pub struct BlockStore {
 
 impl BlockStore {
     pub async fn new(rpc_client: &RpcClient) -> anyhow::Result<Self> {
-        let (confirmed_blockhash, confirmed_block) =
-            Self::fetch_latest(rpc_client, CommitmentConfig::confirmed()).await?;
+
+        let blocks = Arc::new(DashMap::new());
+
+        // fetch in order of least recency so the blockstore is as up to date as it can be on boot
         let (finalized_blockhash, finalized_block) =
             Self::fetch_latest(rpc_client, CommitmentConfig::finalized()).await?;
+        let (confirmed_blockhash, confirmed_block) =
+            Self::fetch_latest(rpc_client, CommitmentConfig::confirmed()).await?;
+        let (processed_blockhash, processed_block) =
+            Self::fetch_latest_processed(rpc_client).await?;
+
+        blocks.insert(processed_blockhash.clone(),processed_block);
+        blocks.insert(confirmed_blockhash.clone(), confirmed_block);
+        blocks.insert(finalized_blockhash.clone(), finalized_block);
 
         Ok(Self {
+            latest_processed_block: Arc::new(RwLock::new((
+                processed_blockhash.clone(),
+                processed_block
+            ))),
             latest_confirmed_block: Arc::new(RwLock::new((
                 confirmed_blockhash.clone(),
                 confirmed_block,
@@ -47,14 +67,29 @@ impl BlockStore {
                 finalized_blockhash.clone(),
                 finalized_block,
             ))),
-            blocks: Arc::new({
-                let map = DashMap::new();
-                map.insert(confirmed_blockhash, confirmed_block);
-                map.insert(finalized_blockhash, finalized_block);
-                map
-            }),
+            blocks,
             last_add_block_metric: Arc::new(RwLock::new(Instant::now())),
         })
+    }
+
+    pub async fn fetch_latest_processed(
+        rpc_client: &RpcClient,
+    ) -> anyhow::Result<(String, BlockInformation)> {
+        let response = rpc_client.send::<Response<RpcBlockhash>>(
+            RpcRequest::GetLatestBlockhash,
+            json!([CommitmentConfig::processed()]),
+        )
+        .await?;
+
+        let processed_blockhash = response.value.blockhash;
+        let processed_block = BlockInformation {
+            slot: response.context.slot,
+            block_height: response.value.last_valid_block_height,
+            processed_local_time: Some(Utc::now()),
+            instant: Instant::now(),
+        };
+
+        Ok((processed_blockhash, processed_block))
     }
 
     pub async fn fetch_latest(
@@ -89,11 +124,12 @@ impl BlockStore {
                 slot,
                 block_height,
                 instant: Instant::now(),
+                processed_local_time: None,
             },
         ))
     }
 
-    pub async fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
+    pub fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
         let Some(info) = self.blocks.get(blockhash) else {
             return None;
         };
@@ -107,8 +143,10 @@ impl BlockStore {
     ) -> Arc<RwLock<(String, BlockInformation)>> {
         if commitment_config.is_finalized() {
             self.latest_finalized_block.clone()
-        } else {
+        } else if commitment_config.is_confirmed() {
             self.latest_confirmed_block.clone()
+        } else {
+            self.latest_processed_block.clone()
         }
     }
 
@@ -140,7 +178,7 @@ impl BlockStore {
     pub async fn add_block(
         &self,
         blockhash: String,
-        block_info: BlockInformation,
+        mut block_info: BlockInformation,
         commitment_config: CommitmentConfig,
     ) {
         // create context for add block metric
@@ -149,13 +187,22 @@ impl BlockStore {
             *last_add_block_metric = Instant::now();
         }
 
+        // override timestamp from previous value, so we always keep the earliest (processed) timestamp around
+        if let Some(processed_block) = self.get_block_info(&blockhash.clone()) {
+            block_info.processed_local_time = processed_block.processed_local_time;
+        }
+
+        // save slot copy to avoid borrow issues
+        let slot = block_info.slot;
+
+
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
-        let slot = block_info.slot;
         self.blocks.insert(blockhash.clone(), block_info);
         BLOCKS_IN_BLOCKSTORE.inc();
 
+        // update latest block
         let latest_block = self.get_latest_block_arc(commitment_config);
         if slot > latest_block.read().await.1.slot {
             *latest_block.write().await = (blockhash, block_info);
@@ -163,20 +210,18 @@ impl BlockStore {
     }
 
     pub async fn clean(&self, cleanup_duration: Duration) {
+        let latest_processed = self.get_latest_blockhash(CommitmentConfig::processed()).await;
         let latest_confirmed = self
-            .get_latest_blockhash(CommitmentConfig {
-                commitment: solana_sdk::commitment_config::CommitmentLevel::Confirmed,
-            })
+            .get_latest_blockhash(CommitmentConfig::confirmed())
             .await;
         let latest_finalized = self
-            .get_latest_blockhash(CommitmentConfig {
-                commitment: solana_sdk::commitment_config::CommitmentLevel::Confirmed,
-            })
+            .get_latest_blockhash(CommitmentConfig::finalized())
             .await;
 
         let before_length = self.blocks.len();
         self.blocks.retain(|k, v| {
             v.instant.elapsed() < cleanup_duration
+                || k.eq(&latest_processed)
                 || k.eq(&latest_confirmed)
                 || k.eq(&latest_finalized)
         });

@@ -214,6 +214,7 @@ impl BlockListener {
                     slot,
                     block_height,
                     instant: Instant::now(),
+                    processed_local_time: None,
                 },
                 commitment_config,
             )
