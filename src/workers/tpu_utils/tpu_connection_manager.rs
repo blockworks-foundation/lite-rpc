@@ -9,7 +9,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use log::error;
+use log::{error, info};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime,
     TransportConfig, VarInt,
@@ -130,9 +130,9 @@ impl ActiveConnection {
                                 Some(conn) => conn,
                                 None => {
                                     let conn = if already_connected {
-                                        Self::make_connection(endpoint.clone(), addr.clone()).await
-                                    } else {
                                         Self::make_connection_0rtt(endpoint.clone(), addr.clone()).await
+                                    } else {
+                                        Self::make_connection(endpoint.clone(), addr.clone()).await
                                     };
                                     match conn {
                                         Ok(conn) => {
@@ -166,6 +166,7 @@ impl ActiveConnection {
                                 }
                             }
 
+                            info!("Sending {} {} transactions", identity, length);
                             if let Err(e) = send_stream.write_all(tx_batch.as_slice()).await {
                                 error!(
                                     "Error while writing transaction for {} error {}",
@@ -177,6 +178,7 @@ impl ActiveConnection {
                         Err(_) => {
                             // timed out
                             if let Some((_,stream)) = &mut connection {
+                                info!("finishing {}", identity);
                                 let _ = stream.finish().await;
                                 connection = None;
                             }
@@ -285,6 +287,7 @@ impl TpuConnectionManager {
         for (identity, socket_addr) in connections_to_keep {
             set_of_identities.insert(identity);
             if self.identity_to_active_connection.get(&identity).is_none() {
+                info!("added a connection for {}, {}", identity, socket_addr);
                 let endpoint = self.endpoints.get();
                 let active_connection = ActiveConnection::new(endpoint, socket_addr, identity);
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
@@ -310,6 +313,7 @@ impl TpuConnectionManager {
             .collect::<Vec<_>>();
         for (identity, value) in collect_current_active_connections.iter() {
             if !set_of_identities.contains(identity) {
+                info!("removing a connection for {}", identity);
                 // ignore error for exit channel
                 value
                     .active_connection

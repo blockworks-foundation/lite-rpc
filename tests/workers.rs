@@ -10,7 +10,7 @@ use lite_rpc::{
     encoding::BinaryEncoding,
     tpu_manager::TpuManager,
     workers::{tpu_utils::tpu_service::TpuService, BlockListener, TxSender},
-    DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_SIZE, DEFAULT_WS_ADDR,
+    DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 

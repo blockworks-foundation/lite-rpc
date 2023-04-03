@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
-use log::{error, warn};
+use log::{error, warn, info};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_response::RpcContactInfo,
@@ -112,11 +112,11 @@ impl TpuService {
 
         let last_slot_needed = queue_begin_slot + CACHE_NEXT_LEADERS_PUBKEY_SIZE as u64;
 
-        if last_slot_needed != queue_end_slot {
+        if last_slot_needed > queue_end_slot + 1 {
             let first_slot_to_fetch = queue_end_slot + 1;
             let leaders = self
                 .rpc_client
-                .get_slot_leaders(first_slot_to_fetch, last_slot_needed)
+                .get_slot_leaders(first_slot_to_fetch, last_slot_needed - first_slot_to_fetch)
                 .await?;
 
             let mut leader_queue = self.leader_schedule.write().await;
@@ -194,6 +194,7 @@ impl TpuService {
             let cluster_info_update_interval = Duration::from_secs(CLUSTERINFO_REFRESH_TIME);
             loop {
                 tokio::time::sleep(leader_schedule_update_interval).await;
+                info!("update leader schedule and cluster nodes");
                 if this.update_leader_schedule().await.is_err() {
                     error!("unable to update leader shedule");
                 }
