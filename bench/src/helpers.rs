@@ -16,6 +16,7 @@ use solana_sdk::{
 };
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+const SIGNATURE_STATUS_RETRIES: usize = 10;
 
 pub struct BenchHelper;
 
@@ -40,7 +41,8 @@ impl BenchHelper {
         sig: &Signature,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
-        loop {
+        let retries = 0; 
+        for _ in 0..SIGNATURE_STATUS_RETRIES {
             if let Some(err) = rpc_client
                 .get_signature_status_with_commitment(sig, commitment_config)
                 .await?
