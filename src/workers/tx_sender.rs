@@ -151,6 +151,7 @@ impl TxSender {
         postgres_send: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
+            let tx_sender = self.clone();
             loop {
                 let mut sigs_and_slots = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
                 let mut txs = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
@@ -190,11 +191,7 @@ impl TxSender {
                 }
 
                 TX_BATCH_SIZES.set(txs.len() as i64);
-                let postgres = postgres_send.clone();
-                let tx_sender = self.clone();
-                tokio::spawn(async move {
-                    tx_sender.forward_txs(sigs_and_slots, txs, postgres).await;
-                });
+                tx_sender.forward_txs(sigs_and_slots, txs, postgres_send.clone()).await;
             }
         })
     }
