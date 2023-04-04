@@ -477,6 +477,22 @@ impl BlockListener {
         })
     }
 
+    // continuosly poll processed blocks and feed into blockstore
+    pub fn listen_processed(self) -> JoinHandle<anyhow::Result<()>> {
+        let rpc_client = self.rpc_client.clone();
+        let block_store = self.block_store.clone();
+
+        tokio::spawn(async move {
+            info!("processed block listner started");
+
+            loop {
+                let (processed_blockhash, processed_block) = BlockStore::fetch_latest_processed(rpc_client.as_ref()).await?;
+                block_store.add_block(processed_blockhash, processed_block, CommitmentConfig::processed()).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            }
+        })
+    }
+
     pub fn clean(&self, ttl_duration: Duration) {
         let length_before = self.signature_subscribers.len();
         self.signature_subscribers

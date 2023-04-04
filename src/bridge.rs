@@ -137,6 +137,8 @@ impl LiteBridge {
             .clone()
             .listen(CommitmentConfig::confirmed(), None);
 
+        let processed_block_listener = self.block_listner.clone().listen_processed();
+
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
             self.block_listner.clone(),
@@ -181,6 +183,7 @@ impl LiteBridge {
             tx_sender,
             finalized_block_listener,
             confirmed_block_listener,
+            processed_block_listener,
             metrics_capture,
             prometheus_sync,
             cleaner,
