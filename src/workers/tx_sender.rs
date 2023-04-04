@@ -96,21 +96,21 @@ impl TxSender {
         let txs_sent = self.txs_sent_store.clone();
 
         for (sig, _) in &sigs_and_slots {
+            info!("sending transaction {}", sig);
             txs_sent.insert(sig.to_owned(), TxProps::default());
         }
 
         let forwarded_slot = tpu_client.get_estimated_slot();
-        let transaction_batch_size = txs.len() as u64;
 
         let mut quic_responses = vec![];
         for tx in txs {
             let quic_response = match tpu_client.send_transaction(tx) {
                 Ok(_) => {
-                    TXS_SENT.inc_by(transaction_batch_size);
+                    TXS_SENT.inc_by(1);
                     1
                 }
                 Err(err) => {
-                    TXS_SENT_ERRORS.inc_by(transaction_batch_size);
+                    TXS_SENT_ERRORS.inc_by(1);
                     warn!("{err}");
                     0
                 }
@@ -167,6 +167,10 @@ impl TxSender {
                     {
                         Ok(value) => match value {
                             Some((sig, tx, slot)) => {
+                                if self.txs_sent_store.contains_key(&sig) {
+                                    // duplicate transaction
+                                    continue;
+                                }
                                 TXS_IN_CHANNEL.dec();
                                 sigs_and_slots.push((sig, slot));
                                 txs.push(tx);

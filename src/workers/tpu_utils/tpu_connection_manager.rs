@@ -9,8 +9,8 @@ use std::{
 };
 
 use dashmap::DashMap;
-use log::{error, info};
-use prometheus::{core::GenericGauge, register_int_gauge, opts};
+use log::{error, info, trace};
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime,
     TransportConfig,
@@ -20,8 +20,6 @@ use tokio::{
     sync::{broadcast::Receiver, broadcast::Sender},
     time::timeout,
 };
-
-use crate::DEFAULT_TX_BATCH_SIZE;
 
 use super::rotating_queue::RotatingQueue;
 
@@ -110,7 +108,7 @@ impl ActiveConnection {
     ) {
         NB_QUIC_TASKS.inc();
         let mut already_connected = false;
-        let mut connection: Option<(Connection, quinn::SendStream)> = None;
+        let mut connection: Option<Connection> = None;
         let mut transaction_reciever = transaction_reciever;
         let mut exit_oneshot_channel = exit_oneshot_channel;
         loop {
@@ -138,8 +136,15 @@ impl ActiveConnection {
                                     continue;
                                 }
                             };
-                            let (conn, mut send_stream) = match connection {
-                                Some(conn) => conn,
+                            let mut send_stream = match &connection {
+                                Some(conn) => {
+                                    let unistream = conn.open_uni().await;
+                                    if let Err(e) = unistream {
+                                        error!("error opening a unistream for {} error {}", identity, e);
+                                        continue;
+                                    }
+                                    unistream.unwrap()
+                                },
                                 None => {
                                     let conn = if already_connected {
                                         info!("making make_connection_0rtt");
@@ -157,7 +162,9 @@ impl ActiveConnection {
                                                 error!("error opening a unistream for {} error {}", identity, e);
                                                 continue;
                                             }
-                                            (conn, unistream.unwrap())
+
+                                            connection = Some(conn);
+                                            unistream.unwrap()
                                         },
                                         Err(e) => {
                                             error!("Could not connect to {} because of error {}", identity, e);
@@ -167,44 +174,33 @@ impl ActiveConnection {
 
                                 }
                             };
-                            let mut length = 1;
-                            let mut tx_batch = tx;
-                            while length < DEFAULT_TX_BATCH_SIZE {
-                                match transaction_reciever.try_recv() {
-                                    Ok(mut tx) => {
-                                        length += 1;
-                                        tx_batch.append(&mut tx);
-                                    },
-                                    _ => {
-                                        break;
-                                    }
-                                }
-                            }
 
-                            info!("Sending {} {} transactions", identity, length);
-                            if let Err(e) = send_stream.write_all(tx_batch.as_slice()).await {
+                            trace!("Sending {} transaction", identity);
+                            if let Err(e) = send_stream.write_all(tx.as_slice()).await {
                                 error!(
                                     "Error while writing transaction for {} error {}",
                                     identity, e
                                 );
                             }
-                            connection = Some((conn, send_stream));
+                            if let Err(e) =  send_stream.finish().await {
+                                error!(
+                                    "Error finishing for {}, error {}",
+                                    identity, e,
+                                )
+                            }
                         },
                         Err(_) => {
                             // timed out
-                            if let Some((_,stream)) = &mut connection {
-                                info!("finishing {}", identity);
+                            if let Some(_) = &mut connection {
                                 NB_QUIC_CONNECTIONS.dec();
-                                let _ = stream.finish().await;
                                 connection = None;
                             }
                         }
                     }
                 },
                 _ = exit_oneshot_channel.recv() => {
-                    if let Some((_,stream)) = &mut connection {
+                    if let Some(_) = &mut connection {
                         NB_QUIC_CONNECTIONS.dec();
-                        let _ = stream.finish().await;
                         connection = None;
                     }
 
@@ -213,9 +209,8 @@ impl ActiveConnection {
             };
         }
 
-        if let Some((_, stream)) = &mut connection {
+        if let Some(_) = &mut connection {
             NB_QUIC_CONNECTIONS.dec();
-            let _ = stream.finish().await;
         }
         NB_QUIC_TASKS.dec();
     }

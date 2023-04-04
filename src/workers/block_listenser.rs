@@ -243,6 +243,11 @@ impl BlockListener {
                     TXS_CONFIRMED.inc();
                 }
 
+                info!(
+                    "got transaction {} confrimation level {}",
+                    sig, commitment_config.commitment
+                );
+
                 tx_status.value_mut().status = Some(TransactionStatus {
                     slot,
                     confirmations: None,
