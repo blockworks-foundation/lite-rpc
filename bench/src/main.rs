@@ -62,7 +62,7 @@ async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize) -> Metric {
     let funded_payer = BenchHelper::get_payer().await.unwrap();
     let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
-    let txs = BenchHelper::generate_txs(tx_count, &funded_payer, blockhash);
+    let txs = BenchHelper::generate_txs(tx_count, &funded_payer, blockhash, None);
 
     let mut un_confirmed_txs: HashMap<Signature, Option<Instant>> =
         HashMap::with_capacity(txs.len());

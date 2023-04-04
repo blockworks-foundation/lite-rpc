@@ -1,13 +1,15 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::AtomicU64, Arc},
+    time::Duration,
+};
 
 use bench::helpers::BenchHelper;
 use futures::future::try_join_all;
 use lite_rpc::{
     block_store::BlockStore,
     encoding::BinaryEncoding,
-    tpu_manager::TpuManager,
-    workers::{BlockListener, TxSender},
-    DEFAULT_RPC_ADDR, DEFAULT_TX_BATCH_INTERVAL_MS, DEFAULT_TX_BATCH_SIZE, DEFAULT_WS_ADDR,
+    workers::{tpu_utils::tpu_service::TpuService, BlockListener, TxSender},
+    DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
@@ -18,35 +20,32 @@ use tokio::sync::mpsc;
 #[tokio::test]
 async fn send_and_confirm_txs() {
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_RPC_ADDR.to_string()));
+    let current_slot = rpc_client.get_slot().await.unwrap();
 
-    let tpu_client = Arc::new(
-        TpuManager::new(
-            rpc_client.clone(),
-            DEFAULT_WS_ADDR.into(),
-            Default::default(),
-            Keypair::new(),
-        )
-        .await
-        .unwrap(),
-    );
+    let tpu_service = TpuService::new(
+        Arc::new(AtomicU64::new(current_slot)),
+        32,
+        Arc::new(Keypair::new()),
+        rpc_client.clone(),
+        DEFAULT_WS_ADDR.into(),
+    )
+    .await
+    .unwrap();
+
+    let tpu_client = Arc::new(tpu_service);
 
     let tx_sender = TxSender::new(tpu_client);
     let block_store = BlockStore::new(&rpc_client).await.unwrap();
 
     let block_listener = BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store);
 
-    let (tx_send, tx_recv) = mpsc::unbounded_channel();
+    let (tx_send, tx_recv) = mpsc::channel(1024);
 
     let services = try_join_all(vec![
         block_listener
             .clone()
             .listen(CommitmentConfig::confirmed(), None),
-        tx_sender.clone().execute(
-            tx_recv,
-            DEFAULT_TX_BATCH_SIZE,
-            Duration::from_millis(DEFAULT_TX_BATCH_INTERVAL_MS),
-            None,
-        ),
+        tx_sender.clone().execute(tx_recv, None),
     ]);
 
     let confirm = tokio::spawn(async move {
@@ -59,9 +58,7 @@ async fn send_and_confirm_txs() {
         let tx = BinaryEncoding::Base58.encode(bincode::serialize(&tx).unwrap());
         let sig = sig.to_string();
 
-        tx_send
-            .send((sig.clone(), tx.as_bytes().to_vec(), 0))
-            .unwrap();
+        let _ = tx_send.send((sig.clone(), tx.as_bytes().to_vec(), 0)).await;
 
         for _ in 0..2 {
             let tx_status = tx_sender.txs_sent_store.get(&sig).unwrap();

@@ -3,17 +3,18 @@ use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
-    tpu_manager::TpuManager,
     workers::{
-        BlockListener, Cleaner, MetricsCapture, Postgres, PrometheusSync, TxSender, WireTransaction,
+        tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
+        PrometheusSync, TxSender, WireTransaction,
     },
+    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::bail;
 
-use log::info;
+use log::{error, info};
 
 use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
 
@@ -30,7 +31,7 @@ use solana_sdk::{
 use solana_transaction_status::TransactionStatus;
 use tokio::{
     net::ToSocketAddrs,
-    sync::mpsc::{self, UnboundedSender},
+    sync::mpsc::{self, Sender},
     task::JoinHandle,
 };
 
@@ -55,9 +56,9 @@ lazy_static::lazy_static! {
 /// A bridge between clients and tpu
 pub struct LiteBridge {
     pub rpc_client: Arc<RpcClient>,
-    pub tpu_manager: Arc<TpuManager>,
+    pub tpu_service: Arc<TpuService>,
     // None if LiteBridge is not executed
-    pub tx_send_channel: Option<UnboundedSender<(String, WireTransaction, u64)>>,
+    pub tx_send_channel: Option<Sender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
     pub block_listner: BlockListener,
     pub block_store: BlockStore,
@@ -71,11 +72,19 @@ impl LiteBridge {
         identity: Keypair,
     ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
+        let current_slot = rpc_client.get_slot().await?;
 
-        let tpu_manager =
-            Arc::new(TpuManager::new(rpc_client.clone(), ws_addr, fanout_slots, identity).await?);
+        let tpu_service = TpuService::new(
+            Arc::new(std::sync::atomic::AtomicU64::new(current_slot)),
+            fanout_slots,
+            Arc::new(identity),
+            rpc_client.clone(),
+            ws_addr,
+        )
+        .await?;
+        let tpu_service = Arc::new(tpu_service);
 
-        let tx_sender = TxSender::new(tpu_manager.clone());
+        let tx_sender = TxSender::new(tpu_service.clone());
 
         let block_store = BlockStore::new(&rpc_client).await?;
 
@@ -84,7 +93,7 @@ impl LiteBridge {
 
         Ok(Self {
             rpc_client,
-            tpu_manager,
+            tpu_service,
             tx_send_channel: None,
             tx_sender,
             block_listner,
@@ -98,8 +107,6 @@ impl LiteBridge {
         mut self,
         http_addr: T,
         ws_addr: T,
-        tx_batch_size: usize,
-        tx_send_interval: Duration,
         clean_interval: Duration,
         enable_postgres: bool,
         prometheus_addr: T,
@@ -114,15 +121,15 @@ impl LiteBridge {
             (None, None)
         };
 
-        let (tx_send, tx_recv) = mpsc::unbounded_channel();
+        let mut tpu_services = self.tpu_service.start().await?;
+
+        let (tx_send, tx_recv) = mpsc::channel(DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE);
         self.tx_send_channel = Some(tx_send);
 
-        let tx_sender = self.tx_sender.clone().execute(
-            tx_recv,
-            tx_batch_size,
-            tx_send_interval,
-            postgres_send.clone(),
-        );
+        let tx_sender = self
+            .tx_sender
+            .clone()
+            .execute(tx_recv, postgres_send.clone());
 
         let metrics_capture = MetricsCapture::new(self.tx_sender.clone()).capture();
         let prometheus_sync = PrometheusSync.sync(prometheus_addr);
@@ -141,7 +148,6 @@ impl LiteBridge {
             self.tx_sender.clone(),
             self.block_listner.clone(),
             self.block_store.clone(),
-            self.tpu_manager.clone(),
         )
         .start(clean_interval);
 
@@ -185,6 +191,8 @@ impl LiteBridge {
             prometheus_sync,
             cleaner,
         ];
+
+        services.append(&mut tpu_services);
 
         if let Some(postgres) = postgres {
             services.push(postgres);
@@ -231,11 +239,18 @@ impl LiteRpcServer for LiteBridge {
                 return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
-        self.tx_send_channel
+        if let Err(e) = self
+            .tx_send_channel
             .as_ref()
             .expect("Lite Bridge Not Executed")
             .send((sig.to_string(), raw_tx, slot))
-            .unwrap();
+            .await
+        {
+            error!(
+                "Internal error sending transaction on send channel error {}",
+                e
+            );
+        }
         TXS_IN_CHANNEL.inc();
 
         Ok(BinaryEncoding::Base58.encode(sig))

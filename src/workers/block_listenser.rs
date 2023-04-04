@@ -6,7 +6,7 @@ use std::{
 
 use dashmap::DashMap;
 use jsonrpsee::SubscriptionSink;
-use log::{info, warn};
+use log::{info, trace, warn};
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
     register_int_gauge, Histogram, IntCounter,
@@ -243,6 +243,11 @@ impl BlockListener {
                     TXS_CONFIRMED.inc();
                 }
 
+                info!(
+                    "got transaction {} confrimation level {}",
+                    sig, commitment_config.commitment
+                );
+
                 tx_status.value_mut().status = Some(TransactionStatus {
                     slot,
                     confirmations: None,
@@ -290,7 +295,7 @@ impl BlockListener {
             }
         }
 
-        info!(
+        trace!(
             "Number of transactions processed {} for slot {} for commitment {} time taken {} ms",
             transactions_processed,
             slot,
