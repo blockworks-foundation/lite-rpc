@@ -317,7 +317,11 @@ impl BlockListener {
 
             // TODO insert if not exists leader_id into accountaddrs
 
+            // fetch cluster time from rpc
             let block_time = self.rpc_client.get_block_time(slot).await?;
+
+            // fetch local time from blockstore
+            let block_info = self.block_store.get_block_info(&blockhash);
 
             postgres
                 .send(PostgresMsg::PostgresBlock(PostgresBlock {
@@ -325,7 +329,7 @@ impl BlockListener {
                     leader_id: 0, // TODO: lookup leader
                     parent_slot: parent_slot as i64,
                     cluster_time: Utc.timestamp_millis_opt(block_time).unwrap(),
-                    local_time: chrono::offset::Utc::now(), // TODO: need to track actual processed slot update
+                    local_time: block_info.map(|b| b.processed_local_time).flatten(),
                 }))
                 .expect("Error sending block to postgres service");
 

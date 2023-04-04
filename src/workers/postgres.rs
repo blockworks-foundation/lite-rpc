@@ -50,7 +50,7 @@ pub struct PostgresBlock {
     pub leader_id: i64,
     pub parent_slot: i64,
     pub cluster_time: DateTime<Utc>,
-    pub local_time: DateTime<Utc>,
+    pub local_time: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug)]
