@@ -10,6 +10,7 @@ use std::{
 
 use dashmap::DashMap;
 use log::{error, info};
+use prometheus::{core::GenericGauge, register_int_gauge, opts};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime,
     TransportConfig,
@@ -26,6 +27,13 @@ use super::rotating_queue::RotatingQueue;
 
 pub const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 const QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC: u64 = 5;
+
+lazy_static::lazy_static! {
+    static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
+    static ref NB_QUIC_TASKS: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_nb_quic_tasks", "Number quic tasks that are running")).unwrap();
+}
 
 struct ActiveConnection {
     pub endpoint: Endpoint,
@@ -100,6 +108,7 @@ impl ActiveConnection {
         exit_signal: Arc<AtomicBool>,
         identity: Pubkey,
     ) {
+        NB_QUIC_TASKS.inc();
         let mut already_connected = false;
         let mut connection: Option<(Connection, quinn::SendStream)> = None;
         let mut transaction_reciever = transaction_reciever;
@@ -141,6 +150,7 @@ impl ActiveConnection {
                                     };
                                     match conn {
                                         Ok(conn) => {
+                                            NB_QUIC_CONNECTIONS.inc();
                                             already_connected = true;
                                             let unistream = conn.open_uni().await;
                                             if let Err(e) = unistream {
@@ -184,6 +194,7 @@ impl ActiveConnection {
                             // timed out
                             if let Some((_,stream)) = &mut connection {
                                 info!("finishing {}", identity);
+                                NB_QUIC_CONNECTIONS.dec();
                                 let _ = stream.finish().await;
                                 connection = None;
                             }
@@ -192,6 +203,7 @@ impl ActiveConnection {
                 },
                 _ = exit_oneshot_channel.recv() => {
                     if let Some((_,stream)) = &mut connection {
+                        NB_QUIC_CONNECTIONS.dec();
                         let _ = stream.finish().await;
                         connection = None;
                     }
@@ -202,8 +214,10 @@ impl ActiveConnection {
         }
 
         if let Some((_, stream)) = &mut connection {
+            NB_QUIC_CONNECTIONS.dec();
             let _ = stream.finish().await;
         }
+        NB_QUIC_TASKS.dec();
     }
 
     pub fn start_listening(

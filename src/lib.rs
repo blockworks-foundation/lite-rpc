@@ -8,7 +8,6 @@ pub mod configs;
 pub mod encoding;
 pub mod errors;
 pub mod rpc;
-pub mod tpu_manager;
 pub mod workers;
 
 #[from_env]

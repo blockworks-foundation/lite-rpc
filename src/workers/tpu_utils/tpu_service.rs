@@ -2,6 +2,7 @@ use anyhow::Result;
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::{error, info, warn};
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     rpc_response::RpcContactInfo,
@@ -31,6 +32,20 @@ const CLUSTERINFO_REFRESH_TIME: u64 = 60; // refresh cluster every minute
 const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 1024;
+
+lazy_static::lazy_static! {
+    static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_nb_cluster_nodes", "Number of cluster nodes in saved")).unwrap();
+
+    static ref NB_OF_LEADERS_IN_SCHEDULE: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_cached_leader", "Number of leaders in schedule cache")).unwrap();
+
+    static ref CURRENT_SLOT: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_current_slot", "Current slot seen by last rpc")).unwrap();
+
+    static ref ESTIMATED_SLOT: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
+}
 
 pub struct LeaderData {
     contact_info: Arc<RpcContactInfo>,
@@ -90,6 +105,7 @@ impl TpuService {
                 self.cluster_nodes.insert(pubkey, Arc::new(x.clone()));
             }
         });
+        NB_CLUSTER_NODES.set(self.cluster_nodes.len() as i64);
         Ok(())
     }
 
@@ -138,6 +154,7 @@ impl TpuService {
                     }
                 }
             }
+            NB_OF_LEADERS_IN_SCHEDULE.set(leader_queue.len() as i64);
         }
         Ok(())
     }
@@ -228,6 +245,7 @@ impl TpuService {
                                 if let Some(slot_info) = slot_info {
                                     if slot_info.slot > current_slot.load(Ordering::Relaxed) {
                                         current_slot.store(slot_info.slot, Ordering::Relaxed);
+                                        CURRENT_SLOT.set(slot_info.slot as i64);
                                         let _ = slot_sender.send(slot_info.slot);
                                     }
                                 }
@@ -265,6 +283,7 @@ impl TpuService {
                                 // incase of multilple slot update events / take the current slot
                                 let current_slot = current_slot.load(Ordering::Relaxed);
                                 estimated_slot.store(current_slot, Ordering::Relaxed);
+                                ESTIMATED_SLOT.set(current_slot as i64);
                                 true
                             } else {
                                 // queue is late estimate slot is already ahead
@@ -275,7 +294,8 @@ impl TpuService {
                         }
                     }
                     Err(_) => {
-                        estimated_slot.fetch_add(1, Ordering::Relaxed);
+                        let slot = estimated_slot.fetch_add(1, Ordering::Relaxed);
+                        ESTIMATED_SLOT.set((slot + 1) as i64);
                         true
                     }
                 };

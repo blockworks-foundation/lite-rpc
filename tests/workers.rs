@@ -8,7 +8,6 @@ use futures::future::try_join_all;
 use lite_rpc::{
     block_store::BlockStore,
     encoding::BinaryEncoding,
-    tpu_manager::TpuManager,
     workers::{tpu_utils::tpu_service::TpuService, BlockListener, TxSender},
     DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR,
 };
@@ -33,7 +32,7 @@ async fn send_and_confirm_txs() {
     .await
     .unwrap();
 
-    let tpu_client = Arc::new(TpuManager::new(Arc::new(tpu_service)));
+    let tpu_client = Arc::new(tpu_service);
 
     let tx_sender = TxSender::new(tpu_client);
     let block_store = BlockStore::new(&rpc_client).await.unwrap();

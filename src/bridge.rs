@@ -3,7 +3,6 @@ use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
     rpc::LiteRpcServer,
-    tpu_manager::TpuManager,
     workers::{
         tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
         PrometheusSync, TxSender, WireTransaction,
@@ -57,7 +56,7 @@ lazy_static::lazy_static! {
 /// A bridge between clients and tpu
 pub struct LiteBridge {
     pub rpc_client: Arc<RpcClient>,
-    pub tpu_manager: Arc<TpuManager>,
+    pub tpu_service: Arc<TpuService>,
     // None if LiteBridge is not executed
     pub tx_send_channel: Option<Sender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
@@ -85,9 +84,7 @@ impl LiteBridge {
         .await?;
         let tpu_service = Arc::new(tpu_service);
 
-        let tpu_manager = Arc::new(TpuManager::new(tpu_service));
-
-        let tx_sender = TxSender::new(tpu_manager.clone());
+        let tx_sender = TxSender::new(tpu_service.clone());
 
         let block_store = BlockStore::new(&rpc_client).await?;
 
@@ -96,7 +93,7 @@ impl LiteBridge {
 
         Ok(Self {
             rpc_client,
-            tpu_manager,
+            tpu_service,
             tx_send_channel: None,
             tx_sender,
             block_listner,
@@ -124,7 +121,7 @@ impl LiteBridge {
             (None, None)
         };
 
-        let mut tpu_services = self.tpu_manager.tpu_service.start().await?;
+        let mut tpu_services = self.tpu_service.start().await?;
 
         let (tx_send, tx_recv) = mpsc::channel(DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE);
         self.tx_send_channel = Some(tx_send);

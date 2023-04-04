@@ -16,8 +16,9 @@ use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 use crate::{
     bridge::TXS_IN_CHANNEL,
-    tpu_manager::TpuManager,
-    workers::{PostgresMsg, PostgresTx, MESSAGES_IN_POSTGRES_CHANNEL},
+    workers::{
+        tpu_utils::tpu_service::TpuService, PostgresMsg, PostgresTx, MESSAGES_IN_POSTGRES_CHANNEL,
+    },
 };
 
 use super::PostgresMpscSend;
@@ -48,7 +49,7 @@ pub struct TxSender {
     /// Tx(s) forwarded to tpu
     pub txs_sent_store: Arc<DashMap<String, TxProps>>,
     /// TpuClient to call the tpu port
-    pub tpu_manager: Arc<TpuManager>,
+    pub tpu_service: Arc<TpuService>,
 }
 
 /// Transaction Properties
@@ -68,9 +69,9 @@ impl Default for TxProps {
 }
 
 impl TxSender {
-    pub fn new(tpu_manager: Arc<TpuManager>) -> Self {
+    pub fn new(tpu_service: Arc<TpuService>) -> Self {
         Self {
-            tpu_manager,
+            tpu_service,
             txs_sent_store: Default::default(),
         }
     }
@@ -91,14 +92,14 @@ impl TxSender {
         let histo_timer = TT_SENT_TIMER.start_timer();
         let start = Instant::now();
 
-        let tpu_client = self.tpu_manager.clone();
+        let tpu_client = self.tpu_service.clone();
         let txs_sent = self.txs_sent_store.clone();
 
         for (sig, _) in &sigs_and_slots {
             txs_sent.insert(sig.to_owned(), TxProps::default());
         }
 
-        let forwarded_slot = tpu_client.estimated_current_slot();
+        let forwarded_slot = tpu_client.get_estimated_slot();
         let transaction_batch_size = txs.len() as u64;
 
         let mut quic_responses = vec![];
@@ -191,7 +192,9 @@ impl TxSender {
                 }
 
                 TX_BATCH_SIZES.set(txs.len() as i64);
-                tx_sender.forward_txs(sigs_and_slots, txs, postgres_send.clone()).await;
+                tx_sender
+                    .forward_txs(sigs_and_slots, txs, postgres_send.clone())
+                    .await;
             }
         })
     }
