@@ -5,6 +5,7 @@ trap 'kill $(jobs -pr)' SIGINT SIGTERM EXIT
 
 echo "Doing an early build"
 cargo build --workspace --tests 
+yarn
 
 echo "Switching to local lite-rpc rpc config"
 solana config set --url "http://0.0.0.0:8899"
