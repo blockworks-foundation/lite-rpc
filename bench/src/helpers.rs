@@ -1,7 +1,7 @@
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 
 use anyhow::Context;
-use rand::{distributions::Alphanumeric, prelude::Distribution};
+use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -14,8 +14,10 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
+use tokio::time::Instant;
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+const WAIT_LIMIT_IN_SECONDS: u64 = 60;
 
 pub struct BenchHelper;
 
@@ -40,7 +42,11 @@ impl BenchHelper {
         sig: &Signature,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
+        let instant = Instant::now();
         loop {
+            if instant.elapsed() > Duration::from_secs(WAIT_LIMIT_IN_SECONDS) {
+                return Err(anyhow::Error::msg("Timedout waiting"));
+            }
             if let Some(err) = rpc_client
                 .get_signature_status_with_commitment(sig, commitment_config)
                 .await?
@@ -68,13 +74,13 @@ impl BenchHelper {
         num_of_txs: usize,
         funded_payer: &Keypair,
         blockhash: Hash,
+        random_seed: Option<u64>,
     ) -> Vec<Transaction> {
+        let seed = random_seed.map_or(0, |x| x);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
         (0..num_of_txs)
             .map(|_| {
-                let random_bytes: Vec<u8> = Alphanumeric
-                    .sample_iter(rand::thread_rng())
-                    .take(10)
-                    .collect();
+                let random_bytes: Vec<u8> = Alphanumeric.sample_iter(&mut rng).take(10).collect();
 
                 Self::create_memo_tx(&random_bytes, funded_payer, blockhash)
             })

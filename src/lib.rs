@@ -8,7 +8,6 @@ pub mod configs;
 pub mod encoding;
 pub mod errors;
 pub mod rpc;
-pub mod tpu_manager;
 pub mod workers;
 
 #[from_env]
@@ -20,13 +19,14 @@ pub const DEFAULT_WS_ADDR: &str = "ws://0.0.0.0:8900";
 #[from_env]
 pub const DEFAULT_TX_MAX_RETRIES: u16 = 1;
 #[from_env]
-pub const DEFAULT_TX_BATCH_SIZE: usize = 512;
+pub const DEFAULT_TX_BATCH_SIZE: usize = 32;
+
+#[from_env]
+pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 40_000;
 
 /// 25 slots in 10s send to little more leaders
 #[from_env]
-pub const DEFAULT_FANOUT_SIZE: u64 = 30;
-#[from_env]
-pub const DEFAULT_TX_BATCH_INTERVAL_MS: u64 = 100;
+pub const DEFAULT_FANOUT_SIZE: u64 = 100;
 #[from_env]
 pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 5 * 60 * 1000; // five minute
 pub const DEFAULT_TRANSACTION_CONFIRMATION_STATUS: TransactionConfirmationStatus =
