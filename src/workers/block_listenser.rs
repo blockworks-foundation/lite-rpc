@@ -243,9 +243,10 @@ impl BlockListener {
                     TXS_CONFIRMED.inc();
                 }
 
-                info!(
+                trace!(
                     "got transaction {} confrimation level {}",
-                    sig, commitment_config.commitment
+                    sig,
+                    commitment_config.commitment
                 );
 
                 tx_status.value_mut().status = Some(TransactionStatus {
