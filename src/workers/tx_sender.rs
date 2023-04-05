@@ -138,7 +138,7 @@ impl TxSender {
             MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
         histo_timer.observe_duration();
-        info!(
+        trace!(
             "It took {} ms to send a batch of {} transaction(s)",
             start.elapsed().as_millis(),
             sigs_and_slots.len()
