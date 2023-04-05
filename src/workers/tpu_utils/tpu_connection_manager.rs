@@ -150,14 +150,14 @@ impl ActiveConnection {
                                                     Ok(stream) => stream,
                                                     Err(e) => {
                                                         warn!("error opening a unistream for {} error {}", identity, e);
-                                                        continue;
+                                                        break;
                                                     }
                                                 }
                                             },
                                             Err(e) => {
                                                 // validator no longer accepting connection
                                                 trace!("Could not reconnect to {} because of error {}", identity, e);
-                                                continue;
+                                                break;
                                             }
                                         }
                                     } else {
@@ -187,7 +187,7 @@ impl ActiveConnection {
                                         },
                                         Err(e) => {
                                             warn!("Could not connect to {} because of error {}", identity, e);
-                                            continue;
+                                            break;
                                         }
                                     }
 
