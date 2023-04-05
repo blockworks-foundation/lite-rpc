@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::bail;
 use dashmap::DashMap;
-use log::{info, warn};
+use log::{info, trace, warn};
 
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
@@ -96,7 +96,7 @@ impl TxSender {
         let txs_sent = self.txs_sent_store.clone();
 
         for (sig, _) in &sigs_and_slots {
-            info!("sending transaction {}", sig);
+            trace!("sending transaction {}", sig);
             txs_sent.insert(sig.to_owned(), TxProps::default());
         }
 

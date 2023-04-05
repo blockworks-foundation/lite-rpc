@@ -9,7 +9,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use log::{error, info, trace};
+use log::{error, info, trace, warn};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime,
@@ -139,11 +139,29 @@ impl ActiveConnection {
                             let mut send_stream = match &connection {
                                 Some(conn) => {
                                     let unistream = conn.open_uni().await;
-                                    if let Err(e) = unistream {
-                                        error!("error opening a unistream for {} error {}", identity, e);
-                                        continue;
+                                    if let Err(_) = unistream {
+                                        // reconnect as connection is closed by the server and then retry
+                                        let conn = Self::make_connection_0rtt(endpoint.clone(), addr.clone()).await;
+                                        match conn {
+                                            Ok(conn) => {
+                                                let unistream = conn.open_uni().await;
+                                                connection = Some(conn);
+                                                match unistream{
+                                                    Ok(stream) => stream,
+                                                    Err(e) => {
+                                                        warn!("error opening a unistream for {} error {}", identity, e);
+                                                        continue;
+                                                    }
+                                                }
+                                            },
+                                            Err(e) => {
+                                                warn!("Could not reconnect to {} because of error {}", identity, e);
+                                                continue;
+                                            }
+                                        }
+                                    } else {
+                                        unistream.unwrap()
                                     }
-                                    unistream.unwrap()
                                 },
                                 None => {
                                     let conn = if already_connected {
@@ -159,7 +177,7 @@ impl ActiveConnection {
                                             already_connected = true;
                                             let unistream = conn.open_uni().await;
                                             if let Err(e) = unistream {
-                                                error!("error opening a unistream for {} error {}", identity, e);
+                                                warn!("error opening a unistream for {} error {}", identity, e);
                                                 continue;
                                             }
 
@@ -167,7 +185,7 @@ impl ActiveConnection {
                                             unistream.unwrap()
                                         },
                                         Err(e) => {
-                                            error!("Could not connect to {} because of error {}", identity, e);
+                                            warn!("Could not connect to {} because of error {}", identity, e);
                                             continue;
                                         }
                                     }
