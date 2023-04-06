@@ -114,7 +114,7 @@ impl PostgresSession {
                 r#"
                 UPDATE lite_rpc.txs 
                 SET processed_slot = $1, cu_consumed = $2, cu_requested = $3
-                WHERE signature = $6
+                WHERE signature = $4
             "#,
             )
             .await?;
