@@ -113,7 +113,7 @@ impl PostgresSession {
             .prepare(
                 r#"
                 UPDATE lite_rpc.txs 
-                SET processed_slot = $1, processed_cluster_time = $2, processed_local_time = $3, cu_consumed = $4, cu_requested = $5,
+                SET processed_slot = $1, processed_cluster_time = $2, processed_local_time = $3, cu_consumed = $4, cu_requested = $5
                 WHERE signature = $6
             "#,
             )
