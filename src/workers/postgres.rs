@@ -169,7 +169,7 @@ impl PostgresSession {
     }
 
     pub async fn send_txs(&self, txs: &[PostgresTx]) -> anyhow::Result<()> {
-        const NUMBER_OF_ARGS: usize = 7;
+        const NUMBER_OF_ARGS: usize = 8;
 
         if txs.is_empty() {
             return Ok(());
@@ -215,7 +215,7 @@ impl PostgresSession {
     }
 
     pub async fn send_blocks(&self, blocks: &[PostgresBlock]) -> anyhow::Result<()> {
-        const NUMBER_OF_ARGS: usize = 3;
+        const NUMBER_OF_ARGS: usize = 5;
 
         if blocks.is_empty() {
             return Ok(());
