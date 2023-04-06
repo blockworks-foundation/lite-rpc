@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use chrono::{TimeZone, Utc};
 use dashmap::DashMap;
 use jsonrpsee::SubscriptionSink;
 use log::{info, trace, warn};
@@ -161,6 +162,7 @@ impl BlockListener {
             CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
             _ => TransactionConfirmationStatus::Confirmed,
         };
+        
 
         let timer = if commitment_config.is_finalized() {
             TT_RECV_FIN_BLOCK.start_timer()
@@ -183,6 +185,7 @@ impl BlockListener {
                 },
             )
             .await?;
+
         timer.observe_duration();
 
         if commitment_config.is_finalized() {
@@ -211,6 +214,7 @@ impl BlockListener {
                     slot,
                     block_height,
                     instant: Instant::now(),
+                    processed_local_time: None,
                 },
                 commitment_config,
             )
@@ -317,11 +321,21 @@ impl BlockListener {
 
             let _leader_id = &leader_reward.pubkey;
 
+            // TODO insert if not exists leader_id into accountaddrs
+
+            // fetch cluster time from rpc
+            let block_time = self.rpc_client.get_block_time(slot).await?;
+
+            // fetch local time from blockstore
+            let block_info = self.block_store.get_block_info(&blockhash);
+
             postgres
                 .send(PostgresMsg::PostgresBlock(PostgresBlock {
                     slot: slot as i64,
-                    leader_id: 0, //FIX:
+                    leader_id: 0, // TODO: lookup leader
                     parent_slot: parent_slot as i64,
+                    cluster_time: Utc.timestamp_millis_opt(block_time).unwrap(),
+                    local_time: block_info.map(|b| b.processed_local_time).flatten(),
                 }))
                 .expect("Error sending block to postgres service");
 
@@ -469,6 +483,22 @@ impl BlockListener {
                 recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
 
                 tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            }
+        })
+    }
+
+    // continuosly poll processed blocks and feed into blockstore
+    pub fn listen_processed(self) -> JoinHandle<anyhow::Result<()>> {
+        let rpc_client = self.rpc_client.clone();
+        let block_store = self.block_store.clone();
+
+        tokio::spawn(async move {
+            info!("processed block listner started");
+
+            loop {
+                let (processed_blockhash, processed_block) = BlockStore::fetch_latest_processed(rpc_client.as_ref()).await?;
+                block_store.add_block(processed_blockhash, processed_block, CommitmentConfig::processed()).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
         })
     }

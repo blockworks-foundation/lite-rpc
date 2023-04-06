@@ -144,6 +144,8 @@ impl LiteBridge {
             .clone()
             .listen(CommitmentConfig::confirmed(), None);
 
+        let processed_block_listener = self.block_listner.clone().listen_processed();
+
         let cleaner = Cleaner::new(
             self.tx_sender.clone(),
             self.block_listner.clone(),
@@ -187,6 +189,7 @@ impl LiteBridge {
             tx_sender,
             finalized_block_listener,
             confirmed_block_listener,
+            processed_block_listener,
             metrics_capture,
             prometheus_sync,
             cleaner,
@@ -234,9 +237,9 @@ impl LiteRpcServer for LiteBridge {
         let Some(BlockInformation { slot, .. }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
-            .await else {
-                log::warn!("block");
-                return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
+        else {
+            log::warn!("block");
+            return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
         if let Err(e) = self

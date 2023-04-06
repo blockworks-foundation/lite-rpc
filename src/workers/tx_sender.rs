@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::bail;
+use chrono::Utc;
 use dashmap::DashMap;
 use log::{info, trace, warn};
 
@@ -101,6 +102,7 @@ impl TxSender {
         }
 
         let forwarded_slot = tpu_client.get_estimated_slot();
+        let forwarded_local_time = Utc::now();
 
         let mut quic_responses = vec![];
         for tx in txs {
@@ -125,6 +127,7 @@ impl TxSender {
                     signature: sig.clone(),
                     recent_slot: *recent_slot as i64,
                     forwarded_slot: forwarded_slot as i64,
+                    forwarded_local_time,
                     processed_slot: None,
                     cu_consumed: None,
                     cu_requested: None,

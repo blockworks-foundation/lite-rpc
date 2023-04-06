@@ -36,7 +36,8 @@ dashmap = "5.4.0"
 const_env = "0.1.2"
 jsonrpsee = { version = "0.16.2", features = ["macros", "full"] }
 tracing-subscriber = "0.3.16"
-tokio-postgres = "0.7.7"
+chrono = "0.4.24"
+tokio-postgres = { version = "0.7.7", features = ["with-chrono-0_4"] }
 native-tls = "0.2.11"
 postgres-native-tls = "0.5.0"
 prometheus = "0.13.3"
@@ -85,4 +86,5 @@ dotenv = { workspace = true }
 async-channel = { workspace = true }
 quinn = { workspace = true }
 rustls = { workspace = true }
+chrono = { workspace = true }
 async-recursion = { workspace = true }

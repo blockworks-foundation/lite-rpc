@@ -1,4 +1,5 @@
 use anyhow::{bail, Context};
+use chrono::{DateTime, Utc};
 use futures::{future::join_all, join};
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
@@ -29,6 +30,7 @@ pub struct PostgresTx {
     pub signature: String,
     pub recent_slot: i64,
     pub forwarded_slot: i64,
+    pub forwarded_local_time: DateTime<Utc>,
     pub processed_slot: Option<i64>,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
@@ -47,6 +49,8 @@ pub struct PostgresBlock {
     pub slot: i64,
     pub leader_id: i64,
     pub parent_slot: i64,
+    pub cluster_time: DateTime<Utc>,
+    pub local_time: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug)]
@@ -109,8 +113,8 @@ impl PostgresSession {
             .prepare(
                 r#"
                 UPDATE lite_rpc.txs 
-                SET processed_slot = $1, cu_consumed = $2, cu_requested = $3
-                WHERE signature = $4
+                SET processed_slot = $1, processed_cluster_time = $2, processed_local_time = $3, cu_consumed = $4, cu_requested = $5,
+                WHERE signature = $6
             "#,
             )
             .await?;
@@ -178,6 +182,7 @@ impl PostgresSession {
                 signature,
                 recent_slot,
                 forwarded_slot,
+                forwarded_local_time,
                 processed_slot,
                 cu_consumed,
                 cu_requested,
@@ -187,6 +192,7 @@ impl PostgresSession {
             args.push(signature);
             args.push(recent_slot);
             args.push(forwarded_slot);
+            args.push(forwarded_local_time);
             args.push(processed_slot);
             args.push(cu_consumed);
             args.push(cu_requested);
@@ -196,7 +202,7 @@ impl PostgresSession {
         let mut query = String::from(
             r#"
                 INSERT INTO lite_rpc.Txs 
-                (signature, recent_slot, forwarded_slot, processed_slot, cu_consumed, cu_requested, quic_response)
+                (signature, recent_slot, forwarded_slot, forwarded_local_time, processed_slot, cu_consumed, cu_requested, quic_response)
                 VALUES
             "#,
         );
@@ -222,17 +228,21 @@ impl PostgresSession {
                 slot,
                 leader_id,
                 parent_slot,
+                cluster_time,
+                local_time,
             } = block;
 
             args.push(slot);
             args.push(leader_id);
             args.push(parent_slot);
+            args.push(cluster_time);
+            args.push(local_time);
         }
 
         let mut query = String::from(
             r#"
                 INSERT INTO lite_rpc.Blocks 
-                (slot, leader_id, parent_slot)
+                (slot, leader_id, parent_slot, cluster_time, local_time)
                 VALUES
             "#,
         );
