@@ -9,9 +9,11 @@ use solana_client::{
 };
 
 use solana_sdk::{pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
-use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use solana_streamer::{
+    nonblocking::quic::ConnectionPeerType, tls_certificates::new_self_signed_tls_certificate,
+};
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
     sync::{
@@ -52,6 +54,27 @@ pub struct LeaderData {
     leader_slot: Slot,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct IdentityStakes {
+    pub peer_type: ConnectionPeerType,
+    pub stakes: u64,
+    pub total_stakes: u64,
+    pub min_stakes: u64,
+    pub max_stakes: u64,
+}
+
+impl Default for IdentityStakes {
+    fn default() -> Self {
+        IdentityStakes {
+            peer_type: ConnectionPeerType::Unstaked,
+            stakes: 0,
+            total_stakes: 0,
+            max_stakes: 0,
+            min_stakes: 0,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct TpuService {
     cluster_nodes: Arc<DashMap<Pubkey, Arc<RpcContactInfo>>>,
@@ -63,6 +86,8 @@ pub struct TpuService {
     pubsub_client: Arc<PubsubClient>,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<Vec<u8>>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
+    identity: Arc<Keypair>,
+    identity_stakes: Arc<RwLock<IdentityStakes>>,
 }
 
 impl TpuService {
@@ -95,6 +120,8 @@ impl TpuService {
             pubsub_client: Arc::new(pubsub_client),
             broadcast_sender: Arc::new(sender),
             tpu_connection_manager: Arc::new(tpu_connection_manager),
+            identity: identity.clone(),
+            identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
         })
     }
 
@@ -137,24 +164,56 @@ impl TpuService {
                 .get_slot_leaders(first_slot_to_fetch, last_slot_needed - first_slot_to_fetch)
                 .await?;
 
-            let mut leader_queue = self.leader_schedule.write().await;
-            for i in first_slot_to_fetch..last_slot_needed {
-                let current_leader = (i - first_slot_to_fetch) as usize;
-                let leader = leaders[current_leader];
-                match self.cluster_nodes.get(&leader) {
-                    Some(r) => {
-                        // push back the leader in the queue
-                        leader_queue.push_back(LeaderData {
-                            contact_info: r.value().clone(),
-                            leader_slot: i,
-                        });
+            // update leader queue with next leaders
+            {
+                let mut leader_queue = self.leader_schedule.write().await;
+                for i in first_slot_to_fetch..last_slot_needed {
+                    let current_leader = (i - first_slot_to_fetch) as usize;
+                    let leader = leaders[current_leader];
+                    match self.cluster_nodes.get(&leader) {
+                        Some(r) => {
+                            // push back the leader in the queue
+                            leader_queue.push_back(LeaderData {
+                                contact_info: r.value().clone(),
+                                leader_slot: i,
+                            });
+                        }
+                        None => {
+                            warn!("leader not found in cluster info : {}", leader.to_string());
+                        }
                     }
-                    None => {
-                        warn!("leader not found in cluster info : {}", leader.to_string());
+                }
+                NB_OF_LEADERS_IN_SCHEDULE.set(leader_queue.len() as i64);
+            }
+
+            // update stakes for the identity
+            {
+                let vote_accounts = self.rpc_client.get_vote_accounts().await;
+                if let Ok(vote_accounts) = vote_accounts {
+                    let map_of_stakes: HashMap<String, u64> = vote_accounts
+                        .current
+                        .iter()
+                        .map(|x| (x.node_pubkey.clone(), x.activated_stake))
+                        .collect();
+                    if let Some(stakes) = map_of_stakes.get(&self.identity.to_base58_string()) {
+                        let all_stakes: Vec<u64> = vote_accounts
+                            .current
+                            .iter()
+                            .map(|x| x.activated_stake)
+                            .collect();
+
+                        let identity_stakes = IdentityStakes {
+                            peer_type: ConnectionPeerType::Staked,
+                            stakes: *stakes,
+                            min_stakes: all_stakes.iter().min().map_or(0, |x| *x),
+                            max_stakes: all_stakes.iter().max().map_or(0, |x| *x),
+                            total_stakes: all_stakes.iter().sum(),
+                        };
+                        let mut lock = self.identity_stakes.write().await;
+                        *lock = identity_stakes;
                     }
                 }
             }
-            NB_OF_LEADERS_IN_SCHEDULE.set(leader_queue.len() as i64);
         }
         Ok(())
     }
@@ -196,8 +255,13 @@ impl TpuService {
                 (Pubkey::from_str(x.pubkey.as_str()).unwrap(), addr)
             })
             .collect();
+        let identity_stakes = *self.identity_stakes.read().await;
         self.tpu_connection_manager
-            .update_connections(self.broadcast_sender.clone(), connections_to_keep)
+            .update_connections(
+                self.broadcast_sender.clone(),
+                connections_to_keep,
+                identity_stakes,
+            )
             .await;
     }
 
