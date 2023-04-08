@@ -333,8 +333,8 @@ impl BlockListener {
                     slot: slot as i64,
                     leader_id: 0, // TODO: lookup leader
                     parent_slot: parent_slot as i64,
-                    cluster_time: Utc.timestamp_millis_opt(block_time * 1000).unwrap(),
-                    local_time: block_info.map(|b| b.processed_local_time).flatten(),
+                    cluster_time: Utc.timestamp_millis_opt(block_time*1000).unwrap(),
+                    local_time: block_info.and_then(|b| b.processed_local_time),
                 }))
                 .expect("Error sending block to postgres service");
 
@@ -488,8 +488,8 @@ impl BlockListener {
 
     // continuosly poll processed blocks and feed into blockstore
     pub fn listen_processed(self) -> JoinHandle<anyhow::Result<()>> {
-        let rpc_client = self.rpc_client.clone();
-        let block_store = self.block_store.clone();
+        let rpc_client = self.rpc_client;
+        let block_store = self.block_store;
 
         tokio::spawn(async move {
             info!("processed block listner started");

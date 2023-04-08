@@ -87,7 +87,7 @@ impl TpuService {
 
         Ok(Self {
             cluster_nodes: Arc::new(DashMap::new()),
-            current_slot: current_slot,
+            current_slot,
             estimated_slot: Arc::new(AtomicU64::new(slot)),
             leader_schedule: Arc::new(RwLock::new(VecDeque::new())),
             fanout_slots,
@@ -164,13 +164,12 @@ impl TpuService {
         let current_slot = self.current_slot.load(Ordering::Relaxed);
         let load_slot = if estimated_slot <= current_slot {
             current_slot
+        } else if estimated_slot - current_slot > 8 {
+            estimated_slot - 8
         } else {
-            if estimated_slot - current_slot > 8 {
-                estimated_slot - 8
-            } else {
-                current_slot
-            }
+            current_slot
         };
+
         let fanout = self.fanout_slots;
         let last_slot = estimated_slot + fanout;
 
@@ -190,7 +189,7 @@ impl TpuService {
             .iter()
             .filter(|x| x.tpu.is_some())
             .map(|x| {
-                let mut addr = x.tpu.unwrap().clone();
+                let mut addr = x.tpu.unwrap();
                 // add quic port offset
                 addr.set_port(addr.port() + QUIC_PORT_OFFSET);
                 (Pubkey::from_str(x.pubkey.as_str()).unwrap(), addr)

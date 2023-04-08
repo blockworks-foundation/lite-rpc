@@ -8,7 +8,6 @@ use std::{
     time::Duration,
 };
 
-use async_recursion::async_recursion;
 use dashmap::DashMap;
 use log::{error, info, trace, warn};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
@@ -67,7 +66,7 @@ impl ActiveConnection {
         let connecting = endpoint.connect(addr, "connect")?;
         let connection = match connecting.into_0rtt() {
             Ok((connection, zero_rtt)) => {
-                if let Ok(_) = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, zero_rtt).await {
+                if (timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, zero_rtt).await).is_ok() {
                     connection
                 } else {
                     return Err(ConnectionError::TimedOut.into());
@@ -96,10 +95,10 @@ impl ActiveConnection {
         for _i in 0..CONNECTION_RETRY_COUNT {
             let conn = if already_connected {
                 info!("making make_connection_0rtt");
-                Self::make_connection_0rtt(endpoint.clone(), addr.clone()).await
+                Self::make_connection_0rtt(endpoint.clone(), addr).await
             } else {
                 info!("making make_connection");
-                Self::make_connection(endpoint.clone(), addr.clone()).await
+                Self::make_connection(endpoint.clone(), addr).await
             };
             match conn {
                 Ok(conn) => {
@@ -117,64 +116,50 @@ impl ActiveConnection {
         None
     }
 
-    #[async_recursion]
     async fn open_unistream(
         connection: &mut Option<Arc<Connection>>,
-        reconnect: bool,
+        mut reconnect: bool,
         identity: Pubkey,
         already_connected: bool,
         endpoint: Endpoint,
         addr: SocketAddr,
         exit_signal: Arc<AtomicBool>,
     ) -> Option<SendStream> {
-        let (unistream, reconnect_and_try_again) = match connection {
-            Some(conn) => {
-                let unistream_maybe_timeout =
-                    timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, conn.open_uni()).await;
-                match unistream_maybe_timeout {
-                    Ok(unistream_res) => match unistream_res {
-                        Ok(unistream) => (Some(unistream), false),
-                        Err(_) => (None, reconnect),
-                    },
-                    Err(_) => {
-                        // timed out
-                        (None, false)
-                    }
+        loop {
+            if let Some(connection) = connection {
+                match timeout(
+                    QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC,
+                    connection.open_uni(),
+                )
+                .await
+                {
+                    Ok(Ok(unistream)) => return Some(unistream),
+                    Ok(Err(_)) => (),
+                    Err(_) => return None,
                 }
+            } else {
+                reconnect = true
             }
-            None => (None, true),
-        };
 
-        if reconnect_and_try_again {
-            let conn = Self::connect(
+            if !reconnect {
+                return None;
+            }
+
+            // re connect
+            let Some(conn) = Self::connect(
                 identity,
                 already_connected,
                 endpoint.clone(),
-                addr.clone(),
+                addr,
                 exit_signal.clone(),
             )
-            .await;
-            match conn {
-                Some(conn) => {
-                    *connection = Some(conn);
-                    Self::open_unistream(
-                        connection,
-                        false,
-                        identity,
-                        already_connected,
-                        endpoint,
-                        addr,
-                        exit_signal,
-                    )
-                    .await
-                }
-                None => {
-                    // connection with the peer is not possible
-                    None
-                }
-            }
-        } else {
-            unistream
+            .await else {
+                return None;
+            };
+
+            // new connection don't reconnect now
+            *connection = Some(conn);
+            reconnect = false;
         }
     }
 
@@ -220,10 +205,10 @@ impl ActiveConnection {
                             let unistream = Self::open_unistream(
                                 &mut connection,
                                 true,
-                                identity.clone(),
+                                identity,
                                 already_connected,
                                 endpoint.clone(),
-                                addr.clone(),
+                                addr,
                                 exit_signal.clone(),
                             ).await;
 
@@ -280,7 +265,7 @@ impl ActiveConnection {
                         },
                         Err(_) => {
                             // timed out
-                            if let Some(_) = &mut connection {
+                            if connection.is_some() {
                                 NB_QUIC_CONNECTIONS.dec();
                                 connection = None;
                             }
@@ -293,7 +278,7 @@ impl ActiveConnection {
             };
         }
 
-        if let Some(_) = &mut connection {
+        if connection.is_some() {
             NB_QUIC_CONNECTIONS.dec();
         }
         NB_QUIC_TASKS.dec();
@@ -305,9 +290,9 @@ impl ActiveConnection {
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
     ) {
         let endpoint = self.endpoint.clone();
-        let addr = self.tpu_address.clone();
+        let addr = self.tpu_address;
         let exit_signal = self.exit_signal.clone();
-        let identity = self.identity.clone();
+        let identity = self.identity;
         tokio::spawn(async move {
             Self::listen(
                 transaction_reciever,
@@ -383,18 +368,17 @@ impl TpuConnectionManager {
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
         for (identity, socket_addr) in &connections_to_keep {
-            if self.identity_to_active_connection.get(&identity).is_none() {
+            if self.identity_to_active_connection.get(identity).is_none() {
                 trace!("added a connection for {}, {}", identity, socket_addr);
                 let endpoint = self.endpoints.get();
-                let active_connection =
-                    ActiveConnection::new(endpoint, socket_addr.clone(), identity.clone());
+                let active_connection = ActiveConnection::new(endpoint, *socket_addr, *identity);
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
                 let (sx, rx) = tokio::sync::mpsc::channel(1);
 
                 let transaction_reciever = transaction_sender.subscribe();
                 active_connection.start_listening(transaction_reciever, rx);
                 self.identity_to_active_connection.insert(
-                    identity.clone(),
+                    *identity,
                     Arc::new(ActiveConnectionWithExitChannel {
                         active_connection,
                         exit_stream: sx,
@@ -407,7 +391,7 @@ impl TpuConnectionManager {
         let collect_current_active_connections = self
             .identity_to_active_connection
             .iter()
-            .map(|x| (x.key().clone(), x.value().clone()))
+            .map(|x| (*x.key(), x.value().clone()))
             .collect::<Vec<_>>();
         for (identity, value) in collect_current_active_connections.iter() {
             if !connections_to_keep.contains_key(identity) {
