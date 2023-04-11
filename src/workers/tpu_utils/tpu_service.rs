@@ -188,30 +188,28 @@ impl TpuService {
 
             // update stakes for the identity
             {
-                let vote_accounts = self.rpc_client.get_vote_accounts().await;
-                if let Ok(vote_accounts) = vote_accounts {
-                    let map_of_stakes: HashMap<String, u64> = vote_accounts
+                let vote_accounts = self.rpc_client.get_vote_accounts().await?;
+                let map_of_stakes: HashMap<String, u64> = vote_accounts
+                    .current
+                    .iter()
+                    .map(|x| (x.node_pubkey.clone(), x.activated_stake))
+                    .collect();
+                if let Some(stakes) = map_of_stakes.get(&self.identity.to_base58_string()) {
+                    let all_stakes: Vec<u64> = vote_accounts
                         .current
                         .iter()
-                        .map(|x| (x.node_pubkey.clone(), x.activated_stake))
+                        .map(|x| x.activated_stake)
                         .collect();
-                    if let Some(stakes) = map_of_stakes.get(&self.identity.to_base58_string()) {
-                        let all_stakes: Vec<u64> = vote_accounts
-                            .current
-                            .iter()
-                            .map(|x| x.activated_stake)
-                            .collect();
 
-                        let identity_stakes = IdentityStakes {
-                            peer_type: ConnectionPeerType::Staked,
-                            stakes: *stakes,
-                            min_stakes: all_stakes.iter().min().map_or(0, |x| *x),
-                            max_stakes: all_stakes.iter().max().map_or(0, |x| *x),
-                            total_stakes: all_stakes.iter().sum(),
-                        };
-                        let mut lock = self.identity_stakes.write().await;
-                        *lock = identity_stakes;
-                    }
+                    let identity_stakes = IdentityStakes {
+                        peer_type: ConnectionPeerType::Staked,
+                        stakes: *stakes,
+                        min_stakes: all_stakes.iter().min().map_or(0, |x| *x),
+                        max_stakes: all_stakes.iter().max().map_or(0, |x| *x),
+                        total_stakes: all_stakes.iter().sum(),
+                    };
+                    let mut lock = self.identity_stakes.write().await;
+                    *lock = identity_stakes;
                 }
             }
         }

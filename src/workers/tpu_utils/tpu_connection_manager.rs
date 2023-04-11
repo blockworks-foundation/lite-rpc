@@ -44,11 +44,13 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_connections_to_keep", "Number of connections to keep asked by tpu service")).unwrap();
 }
 
+// There are two exit mechanisms one is a atomic boolean which should be true if we want to exit
+// there is also a broadcast channel where 0 is sent which is used by tokio select to stop waiting a reply from quic
 struct ActiveConnection {
     pub endpoint: Endpoint,
     pub identity: Pubkey,
     pub tpu_address: SocketAddr,
-    pub exit_signal: Arc<AtomicBool>,
+    pub exit_flag: Arc<AtomicBool>,
 }
 
 impl ActiveConnection {
@@ -57,11 +59,15 @@ impl ActiveConnection {
             endpoint,
             tpu_address,
             identity,
-            exit_signal: Arc::new(AtomicBool::new(false)),
+            exit_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    async fn make_connection(endpoint: Endpoint, addr: SocketAddr, exit_channel: Arc<CopyableOneShotSender>,) -> anyhow::Result<Connection> {
+    async fn make_connection(
+        endpoint: Endpoint,
+        addr: SocketAddr,
+        exit_channel: Arc<CopyableOneShotSender>,
+    ) -> anyhow::Result<Connection> {
         let connecting = endpoint.connect(addr, "connect")?;
         let res = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, connecting).await?;
         Ok(res.unwrap())
@@ -78,8 +84,7 @@ impl ActiveConnection {
         match connecting.into_0rtt() {
             Ok((connection, zero_rtt)) => {
                 tokio::select! {
-                    res = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, zero_rtt) => {
-                        let res = res?;
+                    _ = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, zero_rtt) => {
                         Ok(connection)
                     },
                     _ = exit_recv.recv() => {
@@ -110,9 +115,14 @@ impl ActiveConnection {
         exit_channel: Arc<CopyableOneShotSender>,
     ) -> Option<Arc<Connection>> {
         for _i in 0..CONNECTION_RETRY_COUNT {
+            if exit_signal.load(Ordering::Relaxed) {
+                break;
+            }
+
             let conn = if already_connected {
                 info!("making make_connection_0rtt");
-                Self::make_connection_0rtt(endpoint.clone(), addr.clone(), exit_channel.clone()).await
+                Self::make_connection_0rtt(endpoint.clone(), addr.clone(), exit_channel.clone())
+                    .await
             } else {
                 info!("making make_connection");
                 Self::make_connection(endpoint.clone(), addr.clone(), exit_channel.clone()).await
@@ -124,9 +134,6 @@ impl ActiveConnection {
                 }
                 Err(e) => {
                     trace!("Could not connect to {} because of error {}", identity, e);
-                    if exit_signal.load(Ordering::Relaxed) {
-                        break;
-                    }
                 }
             }
         }
@@ -146,7 +153,10 @@ impl ActiveConnection {
     ) -> Option<SendStream> {
         let (unistream, reconnect_and_try_again) = match connection {
             Some(conn) => {
-                let exit_reciever = exit_channel_sender.subscribe();
+                if exit_signal.load(Ordering::Relaxed) {
+                    return None;
+                }
+                let mut exit_reciever = exit_channel_sender.subscribe();
 
                 tokio::select! {
                     unistream_maybe_timeout = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, conn.open_uni()) => {
@@ -226,7 +236,12 @@ impl ActiveConnection {
         }
     }
 
-    async fn write_all(mut send_stream: SendStream, tx: Vec<u8>, identity: Pubkey, mut exit_signal: CopyableOneShotReceiver) {
+    async fn write_all(
+        mut send_stream: SendStream,
+        tx: Vec<u8>,
+        identity: Pubkey,
+        mut exit_signal: CopyableOneShotReceiver,
+    ) {
         let finish = tokio::select! {
              write_timeout_res = timeout( QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, send_stream.write_all(tx.as_slice())) => {
                 match write_timeout_res {
@@ -251,25 +266,27 @@ impl ActiveConnection {
             },
             _ = exit_signal.recv() => {
                 false
-            } 
+            }
         };
 
-        let finish_timeout_res = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, send_stream.finish()).await;
-        match finish_timeout_res {
-            Ok(finish_res) => {
-                if let Err(e) = finish_res {
-                    warn!(
-                        "Error while writing transaction for {}, error {}",
-                        identity,
-                        e
-                    );
+        if finish {
+            let finish_timeout_res = timeout(
+                QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC,
+                send_stream.finish(),
+            )
+            .await;
+            match finish_timeout_res {
+                Ok(finish_res) => {
+                    if let Err(e) = finish_res {
+                        warn!(
+                            "Error while writing transaction for {}, error {}",
+                            identity, e
+                        );
+                    }
                 }
-            },
-            Err(_) => {
-                warn!(
-                    "timeout while writing transaction for {}",
-                    identity
-                );
+                Err(_) => {
+                    warn!("timeout while writing transaction for {}", identity);
+                }
             }
         }
     }
@@ -279,7 +296,7 @@ impl ActiveConnection {
         exit_oneshot_channel_sender: Arc<CopyableOneShotSender>,
         endpoint: Endpoint,
         addr: SocketAddr,
-        exit_signal: Arc<AtomicBool>,
+        exit_flag: Arc<AtomicBool>,
         identity: Pubkey,
         identity_stakes: IdentityStakes,
     ) {
@@ -295,7 +312,7 @@ impl ActiveConnection {
         ) as u64;
         let number_of_transactions_per_unistream = match identity_stakes.peer_type {
             solana_streamer::nonblocking::quic::ConnectionPeerType::Staked => {
-                Self::compute_receive_window_ratio_for_staked_node( 
+                Self::compute_receive_window_ratio_for_staked_node(
                     identity_stakes.max_stakes,
                     identity_stakes.min_stakes,
                     identity_stakes.stakes,
@@ -303,20 +320,17 @@ impl ActiveConnection {
             }
             solana_streamer::nonblocking::quic::ConnectionPeerType::Unstaked => 1,
         };
-        let send_limit = (max_uni_stream_connections * number_of_transactions_per_unistream - 1).max(1).min(2048 * 10);
+        let send_limit = (max_uni_stream_connections * number_of_transactions_per_unistream - 1)
+            .max(1)
+            .min(2048 * 10);
 
         loop {
             // exit signal set
-            if exit_signal.load(Ordering::Relaxed) {
+            if exit_flag.load(Ordering::Relaxed) {
                 break;
             }
             tokio::select! {
                 tx_or_timeout = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, transaction_reciever.recv() ) => {
-                    // exit signal set
-                    if exit_signal.load(Ordering::Relaxed) {
-                        break;
-                    }
-
                     match tx_or_timeout {
                         Ok(first_tx) => {
                             let first_tx: Vec<u8> = match first_tx {
@@ -342,7 +356,7 @@ impl ActiveConnection {
                                 }
                             }
 
-                            let mut batches = txs.chunks(number_of_transactions_per_unistream as usize).map(|mut txs| {
+                            let mut batches = txs.chunks(number_of_transactions_per_unistream as usize).map(|txs| {
                                 let mut ret_vec = vec![];
                                 for tx in txs {
                                     ret_vec.append(&mut tx.clone());
@@ -360,7 +374,7 @@ impl ActiveConnection {
                                 already_connected,
                                 endpoint.clone(),
                                 addr.clone(),
-                                exit_signal.clone(),
+                                exit_flag.clone(),
                                 exit_oneshot_channel_sender.clone(),
                             ).await;
 
@@ -375,8 +389,7 @@ impl ActiveConnection {
                                     // we use the created unistream for first batch and then
                                     // create other unistream for other batches
                                     let first_batch = batches.pop().unwrap();
-                                    let connection = connection.clone().unwrap();
-                                    
+
                                     let first_task = {
                                         let identity = identity.clone();
                                         let exit_signal = exit_oneshot_channel_sender.subscribe();
@@ -384,11 +397,31 @@ impl ActiveConnection {
                                             Self::write_all(send_stream, first_batch, identity, exit_signal).await
                                         })
                                     };
-                                    let tasks = vec![first_task];
+                                    let mut tasks = vec![first_task];
                                     // create multiple parallel streams to the server to send transactions
                                     for batch in batches {
-                                        let new_task = 
+                                        let identity = identity.clone();
+                                        let exit_signal = exit_oneshot_channel_sender.subscribe();
+                                        let mut exit_signal_2 = exit_oneshot_channel_sender.subscribe();
+                                        let connection = connection.clone().unwrap();
+                                        let new_task = tokio::spawn(async move {
+                                            tokio::select!{
+                                                send_stream = connection.open_uni() => {
+                                                    if let Ok(send_stream) = send_stream {
+                                                        Self::write_all(send_stream, batch, identity, exit_signal).await
+                                                    } else {
+                                                        // error opening a unistream connection
+                                                        warn!("error opening the unistream connection with {}", identity);
+                                                    }
+                                            },
+                                            _ = exit_signal_2.recv() => {
+                                                // exit signal got return
+                                            }
+                                        }
+                                        });
+                                        tasks.push(new_task);
                                     }
+                                    futures::future::join_all(tasks).await;
                                 },
                                 None => {
                                     trace!("could not create a unistream for {}", identity);
@@ -426,7 +459,7 @@ impl ActiveConnection {
     ) {
         let endpoint = self.endpoint.clone();
         let addr = self.tpu_address.clone();
-        let exit_signal = self.exit_signal.clone();
+        let exit_flag = self.exit_flag.clone();
         let identity = self.identity.clone();
         tokio::spawn(async move {
             Self::listen(
@@ -434,7 +467,7 @@ impl ActiveConnection {
                 exit_oneshot_channel,
                 endpoint,
                 addr,
-                exit_signal,
+                exit_flag,
                 identity,
                 identity_stakes,
             )
@@ -516,7 +549,11 @@ impl TpuConnectionManager {
 
                 let transaction_reciever = transaction_sender.subscribe();
                 let sx = Arc::new(sx);
-                active_connection.start_listening(transaction_reciever, sx.clone(), identity_stakes);
+                active_connection.start_listening(
+                    transaction_reciever,
+                    sx.clone(),
+                    identity_stakes,
+                );
                 self.identity_to_active_connection.insert(
                     identity.clone(),
                     Arc::new(ActiveConnectionWithExitChannel {
@@ -539,7 +576,7 @@ impl TpuConnectionManager {
                 // ignore error for exit channel
                 value
                     .active_connection
-                    .exit_signal
+                    .exit_flag
                     .store(true, Ordering::Relaxed);
                 let _ = value.exit_stream.send(0);
                 self.identity_to_active_connection.remove(identity);
