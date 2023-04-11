@@ -10,7 +10,7 @@ use prometheus::core::GenericGauge;
 use prometheus::{opts, register_int_gauge};
 use serde_json::json;
 use solana_client::rpc_request::RpcRequest;
-use solana_client::rpc_response::{RpcBlockhash, Response};
+use solana_client::rpc_response::{Response, RpcBlockhash};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcBlockConfig};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionDetails;
@@ -39,7 +39,6 @@ pub struct BlockStore {
 
 impl BlockStore {
     pub async fn new(rpc_client: &RpcClient) -> anyhow::Result<Self> {
-
         let blocks = Arc::new(DashMap::new());
 
         // fetch in order of least recency so the blockstore is as up to date as it can be on boot
@@ -50,14 +49,14 @@ impl BlockStore {
         let (processed_blockhash, processed_block) =
             Self::fetch_latest_processed(rpc_client).await?;
 
-        blocks.insert(processed_blockhash.clone(),processed_block);
+        blocks.insert(processed_blockhash.clone(), processed_block);
         blocks.insert(confirmed_blockhash.clone(), confirmed_block);
         blocks.insert(finalized_blockhash.clone(), finalized_block);
 
         Ok(Self {
             latest_processed_block: Arc::new(RwLock::new((
                 processed_blockhash.clone(),
-                processed_block
+                processed_block,
             ))),
             latest_confirmed_block: Arc::new(RwLock::new((
                 confirmed_blockhash.clone(),
@@ -75,11 +74,12 @@ impl BlockStore {
     pub async fn fetch_latest_processed(
         rpc_client: &RpcClient,
     ) -> anyhow::Result<(String, BlockInformation)> {
-        let response = rpc_client.send::<Response<RpcBlockhash>>(
-            RpcRequest::GetLatestBlockhash,
-            json!([CommitmentConfig::processed()]),
-        )
-        .await?;
+        let response = rpc_client
+            .send::<Response<RpcBlockhash>>(
+                RpcRequest::GetLatestBlockhash,
+                json!([CommitmentConfig::processed()]),
+            )
+            .await?;
 
         let processed_blockhash = response.value.blockhash;
         let processed_block = BlockInformation {
@@ -195,7 +195,6 @@ impl BlockStore {
         // save slot copy to avoid borrow issues
         let slot = block_info.slot;
 
-
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
@@ -210,7 +209,9 @@ impl BlockStore {
     }
 
     pub async fn clean(&self, cleanup_duration: Duration) {
-        let latest_processed = self.get_latest_blockhash(CommitmentConfig::processed()).await;
+        let latest_processed = self
+            .get_latest_blockhash(CommitmentConfig::processed())
+            .await;
         let latest_confirmed = self
             .get_latest_blockhash(CommitmentConfig::confirmed())
             .await;

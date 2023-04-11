@@ -172,14 +172,15 @@ impl TpuService {
             }
         };
         let fanout = self.fanout_slots;
+        let last_slot = estimated_slot + fanout;
 
         let next_leaders = {
             let leader_schedule = self.leader_schedule.read().await;
             let mut next_leaders = vec![];
             for leader in leader_schedule.iter() {
-                if leader.leader_slot >= load_slot && leader.leader_slot <= load_slot + fanout {
+                if leader.leader_slot >= load_slot && leader.leader_slot <= last_slot {
                     next_leaders.push(leader.contact_info.clone());
-                } else if leader.leader_slot > load_slot + fanout {
+                } else if leader.leader_slot > last_slot {
                     break;
                 }
             }
@@ -198,6 +199,76 @@ impl TpuService {
         self.tpu_connection_manager
             .update_connections(self.broadcast_sender.clone(), connections_to_keep)
             .await;
+    }
+
+    async fn update_current_slot(&self, update_notifier: tokio::sync::mpsc::UnboundedSender<u64>) {
+        loop {
+            let slot = self
+                .rpc_client
+                .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
+                    commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
+                })
+                .await;
+            match slot {
+                Ok(slot) => {
+                    self.current_slot.store(slot, Ordering::Relaxed);
+                }
+                Err(e) => {
+                    // error getting slot
+                    error!("error getting slot {}", e);
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    continue;
+                }
+            }
+
+            let res = tokio::time::timeout(
+                Duration::from_millis(2000),
+                self.pubsub_client.slot_subscribe(),
+            )
+            .await;     
+            match res {
+                Ok(sub_res) => {
+                    match sub_res {
+                        Ok((mut client, unsub)) => {
+                            loop {
+                                let next = tokio::time::timeout(
+                                    Duration::from_millis(2000),
+                                    client.next(),
+                                )
+                                .await;
+                                match next {
+                                    Ok(slot_info) => {
+                                        if let Some(slot_info) = slot_info {
+                                            if slot_info.slot
+                                                > self.current_slot.load(Ordering::Relaxed)
+                                            {
+                                                self.current_slot
+                                                    .store(slot_info.slot, Ordering::Relaxed);
+                                                CURRENT_SLOT.set(slot_info.slot as i64);
+                                                let _ = update_notifier.send(slot_info.slot);
+                                            }
+                                        }
+                                    }
+                                    Err(_) => {
+                                        // timedout reconnect to pubsub
+                                        warn!("slot pub sub disconnected reconnecting");
+                                        break;
+                                    }
+                                }
+                            }
+                            unsub();
+                        }
+                        Err(e) => {
+                            warn!("slot pub sub disconnected ({}) reconnecting", e);
+                        }
+                    }
+                }
+                Err(_) => {
+                    // timed out
+                    warn!("timedout subscribing to slots");
+                }
+            }
+        }
     }
 
     pub async fn start(&self) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
@@ -227,41 +298,12 @@ impl TpuService {
             }
         });
 
-        let pubsub_client = self.pubsub_client.clone();
-        let current_slot = self.current_slot.clone();
+        let this = self.clone();
         let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
 
         let slot_sub_task = tokio::spawn(async move {
-            let pubsub_client = pubsub_client.clone();
-            let current_slot = current_slot.clone();
-            loop {
-                let res = pubsub_client.slot_subscribe().await;
-                if let Ok((mut client, unsub)) = res {
-                    loop {
-                        let next =
-                            tokio::time::timeout(Duration::from_millis(2000), client.next()).await;
-                        match next {
-                            Ok(slot_info) => {
-                                if let Some(slot_info) = slot_info {
-                                    if slot_info.slot > current_slot.load(Ordering::Relaxed) {
-                                        current_slot.store(slot_info.slot, Ordering::Relaxed);
-                                        CURRENT_SLOT.set(slot_info.slot as i64);
-                                        let _ = slot_sender.send(slot_info.slot);
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                // timedout reconnect to pubsub
-                                warn!("slot pub sub disconnected reconnecting");
-                                break;
-                            }
-                        }
-                    }
-                    unsub();
-                } else if let Err(e) = res {
-                    error!("could not subsribe to the slot {}", e);
-                }
-            }
+            this.update_current_slot(slot_sender).await;
+            Ok(())
         });
 
         let estimated_slot = self.estimated_slot.clone();

@@ -25,7 +25,7 @@ use tokio::{
 use super::rotating_queue::RotatingQueue;
 
 pub const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
-const QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC: Duration = Duration::from_secs(10);
+const QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC: Duration = Duration::from_secs(5);
 const CONNECTION_RETRY_COUNT: usize = 10;
 
 lazy_static::lazy_static! {
@@ -56,8 +56,8 @@ impl ActiveConnection {
 
     async fn make_connection(endpoint: Endpoint, addr: SocketAddr) -> anyhow::Result<Connection> {
         let connecting = endpoint.connect(addr, "connect")?;
-        let res = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, connecting).await?;
-        Ok(res.unwrap())
+        let res = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, connecting).await??;
+        Ok(res)
     }
 
     async fn make_connection_0rtt(
