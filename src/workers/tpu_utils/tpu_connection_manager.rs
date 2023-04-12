@@ -66,11 +66,17 @@ impl ActiveConnection {
     async fn make_connection(
         endpoint: Endpoint,
         addr: SocketAddr,
-        exit_channel: Arc<CopyableOneShotSender>,
+        mut exit_channel: CopyableOneShotReceiver,
     ) -> anyhow::Result<Connection> {
         let connecting = endpoint.connect(addr, "connect")?;
-        let res = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, connecting).await?;
-        Ok(res.unwrap())
+        tokio::select! {
+            res = timeout(QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, connecting) => {
+                Ok(res??)
+            },
+            _ = exit_channel.recv() => {
+                Err(ConnectionError::TimedOut.into())
+            }
+        }
     }
 
     async fn make_connection_0rtt(
@@ -125,7 +131,8 @@ impl ActiveConnection {
                     .await
             } else {
                 info!("making make_connection");
-                Self::make_connection(endpoint.clone(), addr.clone(), exit_channel.clone()).await
+                Self::make_connection(endpoint.clone(), addr.clone(), exit_channel.subscribe())
+                    .await
             };
             match conn {
                 Ok(conn) => {
@@ -322,7 +329,7 @@ impl ActiveConnection {
         };
         let send_limit = (max_uni_stream_connections * number_of_transactions_per_unistream - 1)
             .max(1)
-            .min(2048 * 10);
+            .min(2048 * 10 - 1);
 
         loop {
             // exit signal set

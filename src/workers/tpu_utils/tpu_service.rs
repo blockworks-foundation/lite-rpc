@@ -287,7 +287,7 @@ impl TpuService {
                 Duration::from_millis(2000),
                 self.pubsub_client.slot_subscribe(),
             )
-            .await;     
+            .await;
             match res {
                 Ok(sub_res) => {
                     match sub_res {
