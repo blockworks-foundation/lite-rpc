@@ -162,7 +162,6 @@ impl BlockListener {
             CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
             _ => TransactionConfirmationStatus::Confirmed,
         };
-        
 
         let timer = if commitment_config.is_finalized() {
             TT_RECV_FIN_BLOCK.start_timer()
@@ -334,7 +333,7 @@ impl BlockListener {
                     slot: slot as i64,
                     leader_id: 0, // TODO: lookup leader
                     parent_slot: parent_slot as i64,
-                    cluster_time: Utc.timestamp_millis_opt(block_time*1000).unwrap(),
+                    cluster_time: Utc.timestamp_millis_opt(block_time * 1000).unwrap(),
                     local_time: block_info.map(|b| b.processed_local_time).flatten(),
                 }))
                 .expect("Error sending block to postgres service");
@@ -496,8 +495,15 @@ impl BlockListener {
             info!("processed block listner started");
 
             loop {
-                let (processed_blockhash, processed_block) = BlockStore::fetch_latest_processed(rpc_client.as_ref()).await?;
-                block_store.add_block(processed_blockhash, processed_block, CommitmentConfig::processed()).await;
+                let (processed_blockhash, processed_block) =
+                    BlockStore::fetch_latest_processed(rpc_client.as_ref()).await?;
+                block_store
+                    .add_block(
+                        processed_blockhash,
+                        processed_block,
+                        CommitmentConfig::processed(),
+                    )
+                    .await;
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
         })
