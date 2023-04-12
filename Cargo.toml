@@ -45,8 +45,7 @@ lazy_static = "1.4.0"
 dotenv = "0.15.0"
 async-channel = "1.8.0"
 quinn = "0.9.3"
-rustls = { version = "0.20.6", default-features = false }
-async-recursion = "1.0.4"
+rustls = { version = "=0.20.6", default-features = false }
 
 [dev-dependencies]
 bench = { path = "./bench" }
@@ -85,6 +84,5 @@ lazy_static = { workspace = true }
 dotenv = { workspace = true }
 async-channel = { workspace = true }
 quinn = { workspace = true }
-rustls = { workspace = true }
 chrono = { workspace = true }
-async-recursion = { workspace = true }
+rustls = { workspace = true }

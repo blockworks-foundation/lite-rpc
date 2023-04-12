@@ -54,18 +54,9 @@ impl BlockStore {
         blocks.insert(finalized_blockhash.clone(), finalized_block);
 
         Ok(Self {
-            latest_processed_block: Arc::new(RwLock::new((
-                processed_blockhash.clone(),
-                processed_block,
-            ))),
-            latest_confirmed_block: Arc::new(RwLock::new((
-                confirmed_blockhash.clone(),
-                confirmed_block,
-            ))),
-            latest_finalized_block: Arc::new(RwLock::new((
-                finalized_blockhash.clone(),
-                finalized_block,
-            ))),
+            latest_processed_block: Arc::new(RwLock::new((processed_blockhash, processed_block))),
+            latest_confirmed_block: Arc::new(RwLock::new((confirmed_blockhash, confirmed_block))),
+            latest_finalized_block: Arc::new(RwLock::new((finalized_blockhash, finalized_block))),
             blocks,
             last_add_block_metric: Arc::new(RwLock::new(Instant::now())),
         })
