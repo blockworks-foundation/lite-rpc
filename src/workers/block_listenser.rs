@@ -333,7 +333,7 @@ impl BlockListener {
                     slot: slot as i64,
                     leader_id: 0, // TODO: lookup leader
                     parent_slot: parent_slot as i64,
-                    cluster_time: Utc.timestamp_millis_opt(block_time*1000).unwrap(),
+                    cluster_time: Utc.timestamp_millis_opt(block_time * 1000).unwrap(),
                     local_time: block_info.and_then(|b| b.processed_local_time),
                 }))
                 .expect("Error sending block to postgres service");
