@@ -8,7 +8,9 @@ use solana_client::{
     rpc_response::RpcContactInfo,
 };
 
-use solana_sdk::{pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
+use solana_sdk::{
+    pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, signer::Signer, slot_history::Slot,
+};
 use solana_streamer::{
     nonblocking::quic::ConnectionPeerType, tls_certificates::new_self_signed_tls_certificate,
 };
@@ -194,7 +196,8 @@ impl TpuService {
                     .iter()
                     .map(|x| (x.node_pubkey.clone(), x.activated_stake))
                     .collect();
-                if let Some(stakes) = map_of_stakes.get(&self.identity.to_base58_string()) {
+
+                if let Some(stakes) = map_of_stakes.get(&self.identity.pubkey().to_string()) {
                     let all_stakes: Vec<u64> = vote_accounts
                         .current
                         .iter()
@@ -208,6 +211,14 @@ impl TpuService {
                         max_stakes: all_stakes.iter().max().map_or(0, |x| *x),
                         total_stakes: all_stakes.iter().sum(),
                     };
+
+                    info!(
+                        "Idenity stakes {}, {}, {}, {}",
+                        identity_stakes.total_stakes,
+                        identity_stakes.min_stakes,
+                        identity_stakes.max_stakes,
+                        identity_stakes.stakes
+                    );
                     let mut lock = self.identity_stakes.write().await;
                     *lock = identity_stakes;
                 }

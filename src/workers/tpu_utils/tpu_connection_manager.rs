@@ -249,7 +249,7 @@ impl ActiveConnection {
         identity: Pubkey,
         mut exit_signal: CopyableOneShotReceiver,
     ) {
-        let finish = tokio::select! {
+        tokio::select! {
              write_timeout_res = timeout( QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC, send_stream.write_all(tx.as_slice())) => {
                 match write_timeout_res {
                     Ok(write_res) => {
@@ -260,40 +260,35 @@ impl ActiveConnection {
                                 e
                             );
                         }
-                        true
                     },
                     Err(_) => {
                         warn!(
                             "timeout while writing transaction for {}",
                             identity
                         );
-                        true
                     }
                 }
             },
             _ = exit_signal.recv() => {
-                false
             }
         };
 
-        if finish {
-            let finish_timeout_res = timeout(
-                QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC,
-                send_stream.finish(),
-            )
-            .await;
-            match finish_timeout_res {
-                Ok(finish_res) => {
-                    if let Err(e) = finish_res {
-                        warn!(
-                            "Error while writing transaction for {}, error {}",
-                            identity, e
-                        );
-                    }
+        let finish_timeout_res = timeout(
+            QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC,
+            send_stream.finish(),
+        )
+        .await;
+        match finish_timeout_res {
+            Ok(finish_res) => {
+                if let Err(e) = finish_res {
+                    warn!(
+                        "Error while writing transaction for {}, error {}",
+                        identity, e
+                    );
                 }
-                Err(_) => {
-                    warn!("timeout while writing transaction for {}", identity);
-                }
+            }
+            Err(_) => {
+                warn!("timeout while writing transaction for {}", identity);
             }
         }
     }
