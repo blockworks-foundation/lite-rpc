@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# kill background jobs on exit/failure
+trap 'kill $(jobs -pr)' SIGINT SIGTERM EXIT
+
 # env variables
 export PGPASSWORD="password"
 export PG_CONFIG="host=localhost dbname=postgres user=postgres password=password sslmode=disable" 
@@ -16,6 +19,12 @@ docker start test-postgres
 echo "Clearing database"
 pg_run -f ../migrations/rm.sql
 pg_run -f ../migrations/create.sql
+
+echo "Starting the test validator"
+solana-test-validator > /dev/null &
+
+echo "Waiting 8 seconds for solana-test-validator to start"
+sleep 8
  
 echo "Starting lite-rpc"
 cargo run --release -- -p &
