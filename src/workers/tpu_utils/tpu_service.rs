@@ -8,10 +8,14 @@ use solana_client::{
     rpc_response::RpcContactInfo,
 };
 
-use solana_sdk::{pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
-use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use solana_sdk::{
+    pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, signer::Signer, slot_history::Slot,
+};
+use solana_streamer::{
+    nonblocking::quic::ConnectionPeerType, tls_certificates::new_self_signed_tls_certificate,
+};
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
     sync::{
@@ -31,7 +35,7 @@ const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and cont
 const CLUSTERINFO_REFRESH_TIME: u64 = 60; // refresh cluster every minute
 const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
-const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 1024;
+const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 16384;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -63,6 +67,29 @@ pub struct TpuService {
     pubsub_client: Arc<PubsubClient>,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<Vec<u8>>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
+    identity: Arc<Keypair>,
+    identity_stakes: Arc<RwLock<IdentityStakes>>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct IdentityStakes {
+    pub peer_type: ConnectionPeerType,
+    pub stakes: u64,
+    pub total_stakes: u64,
+    pub min_stakes: u64,
+    pub max_stakes: u64,
+}
+
+impl Default for IdentityStakes {
+    fn default() -> Self {
+        IdentityStakes {
+            peer_type: ConnectionPeerType::Unstaked,
+            stakes: 0,
+            total_stakes: 0,
+            max_stakes: 0,
+            min_stakes: 0,
+        }
+    }
 }
 
 impl TpuService {
@@ -95,6 +122,8 @@ impl TpuService {
             pubsub_client: Arc::new(pubsub_client),
             broadcast_sender: Arc::new(sender),
             tpu_connection_manager: Arc::new(tpu_connection_manager),
+            identity,
+            identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
         })
     }
 
@@ -106,6 +135,43 @@ impl TpuService {
             }
         });
         NB_CLUSTER_NODES.set(self.cluster_nodes.len() as i64);
+
+        // update stakes for identity
+        // update stakes for the identity
+        {
+            let vote_accounts = self.rpc_client.get_vote_accounts().await?;
+            let map_of_stakes: HashMap<String, u64> = vote_accounts
+                .current
+                .iter()
+                .map(|x| (x.node_pubkey.clone(), x.activated_stake))
+                .collect();
+
+            if let Some(stakes) = map_of_stakes.get(&self.identity.pubkey().to_string()) {
+                let all_stakes: Vec<u64> = vote_accounts
+                    .current
+                    .iter()
+                    .map(|x| x.activated_stake)
+                    .collect();
+
+                let identity_stakes = IdentityStakes {
+                    peer_type: ConnectionPeerType::Staked,
+                    stakes: *stakes,
+                    min_stakes: all_stakes.iter().min().map_or(0, |x| *x),
+                    max_stakes: all_stakes.iter().max().map_or(0, |x| *x),
+                    total_stakes: all_stakes.iter().sum(),
+                };
+
+                info!(
+                    "Idenity stakes {}, {}, {}, {}",
+                    identity_stakes.total_stakes,
+                    identity_stakes.min_stakes,
+                    identity_stakes.max_stakes,
+                    identity_stakes.stakes
+                );
+                let mut lock = self.identity_stakes.write().await;
+                *lock = identity_stakes;
+            }
+        }
         Ok(())
     }
 
@@ -195,8 +261,15 @@ impl TpuService {
                 (Pubkey::from_str(x.pubkey.as_str()).unwrap(), addr)
             })
             .collect();
+
+        let identity_stakes = self.identity_stakes.read().await;
+
         self.tpu_connection_manager
-            .update_connections(self.broadcast_sender.clone(), connections_to_keep)
+            .update_connections(
+                self.broadcast_sender.clone(),
+                connections_to_keep,
+                *identity_stakes,
+            )
             .await;
     }
 
@@ -224,7 +297,7 @@ impl TpuService {
                 Duration::from_millis(2000),
                 self.pubsub_client.slot_subscribe(),
             )
-            .await;     
+            .await;
             match res {
                 Ok(sub_res) => {
                     match sub_res {

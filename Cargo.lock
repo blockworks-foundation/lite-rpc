@@ -379,6 +379,7 @@ dependencies = [
  "clap 4.1.6",
  "csv",
  "dirs",
+ "futures",
  "log",
  "rand 0.8.5",
  "rand_chacha 0.3.1",

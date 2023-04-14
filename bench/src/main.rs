@@ -10,9 +10,10 @@ use bench::{
     metrics::{AvgMetric, Metric},
 };
 use clap::Parser;
-use log::info;
+use futures::future::join_all;
+use log::{error, info};
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
-use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
+use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature, signer::Signer};
 
 #[tokio::main]
 async fn main() {
@@ -39,15 +40,31 @@ async fn main() {
 
     let mut avg_metric = AvgMetric::default();
 
-    for run_num in 0..runs {
-        let metric = bench(rpc_client.clone(), tx_count).await;
-        info!("Run {run_num}: Sent and Confirmed {tx_count} tx(s) in {metric:?} with",);
-        // update avg metric
-        avg_metric += &metric;
-        // write metric to file
-        csv_writer.serialize(metric).unwrap();
+    let mut tasks = vec![];
+
+    for _ in 0..runs {
+        let rpc_client = rpc_client.clone();
+        tasks.push(tokio::spawn(bench(rpc_client.clone(), tx_count)));
         // wait for an interval
         run_interval_ms.tick().await;
+    }
+
+    let join_res = join_all(tasks).await;
+
+    let mut run_num = 1;
+    for res in join_res {
+        match res {
+            Ok(metric) => {
+                info!("Run {run_num}: Sent and Confirmed {tx_count} tx(s) in {metric:?} with",);
+                // update avg metric
+                avg_metric += &metric;
+                csv_writer.serialize(metric).unwrap();
+            }
+            Err(_) => {
+                error!("join error for run {}", run_num);
+            }
+        }
+        run_num += 1;
     }
 
     let avg_metric = Metric::from(avg_metric);
@@ -60,6 +77,8 @@ async fn main() {
 
 async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize) -> Metric {
     let funded_payer = BenchHelper::get_payer().await.unwrap();
+
+    println!("payer {}", funded_payer.pubkey());
     let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
     let txs = BenchHelper::generate_txs(tx_count, &funded_payer, blockhash, None);
@@ -106,7 +125,7 @@ async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize) -> Metric {
                     metrics.txs_confirmed += 1;
                     to_remove_txs.push(sig);
                 } else if time_elapsed_since_last_confirmed.unwrap().elapsed()
-                    > Duration::from_secs(3)
+                    > Duration::from_secs(30)
                 {
                     metrics.txs_un_confirmed += 1;
                     to_remove_txs.push(sig);
