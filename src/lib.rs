@@ -19,7 +19,7 @@ pub const DEFAULT_WS_ADDR: &str = "ws://0.0.0.0:8900";
 #[from_env]
 pub const DEFAULT_TX_MAX_RETRIES: u16 = 1;
 #[from_env]
-pub const DEFAULT_TX_BATCH_SIZE: usize = 32;
+pub const DEFAULT_TX_BATCH_SIZE: usize = 100;
 
 #[from_env]
 pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 40_000;

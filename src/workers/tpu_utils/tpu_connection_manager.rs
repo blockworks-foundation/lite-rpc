@@ -121,7 +121,13 @@ impl ActiveConnection {
         None
     }
 
-    async fn write_all(mut send_stream: SendStream, tx: &Vec<u8>, identity: Pubkey, last_stable_id : Arc<AtomicU64>, connection_stable_id: u64) -> bool {
+    async fn write_all(
+        mut send_stream: SendStream,
+        tx: &Vec<u8>,
+        identity: Pubkey,
+        last_stable_id: Arc<AtomicU64>,
+        connection_stable_id: u64,
+    ) -> bool {
         let write_timeout_res = timeout(
             QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC,
             send_stream.write_all(tx.as_slice()),
@@ -132,7 +138,8 @@ impl ActiveConnection {
                 if let Err(e) = write_res {
                     trace!(
                         "Error while writing transaction for {}, error {}",
-                        identity, e
+                        identity,
+                        e
                     );
                     // retry
                     last_stable_id.store(connection_stable_id, Ordering::Relaxed);
@@ -152,9 +159,11 @@ impl ActiveConnection {
         match finish_timeout_res {
             Ok(finish_res) => {
                 if let Err(e) = finish_res {
-                    warn!(
+                    last_stable_id.store(connection_stable_id, Ordering::Relaxed);
+                    trace!(
                         "Error while writing transaction for {}, error {}",
-                        identity, e
+                        identity,
+                        e
                     );
                 }
             }
@@ -166,7 +175,10 @@ impl ActiveConnection {
         false
     }
 
-    async fn open_unistream(connection: Connection, last_stable_id : Arc<AtomicU64>) -> (Option<SendStream>, bool) {
+    async fn open_unistream(
+        connection: Connection,
+        last_stable_id: Arc<AtomicU64>,
+    ) -> (Option<SendStream>, bool) {
         match timeout(
             QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC,
             connection.open_uni(),
@@ -178,7 +190,7 @@ impl ActiveConnection {
                 // reset connection for next retry
                 last_stable_id.store(connection.stable_id() as u64, Ordering::Relaxed);
                 (None, true)
-            },
+            }
             Err(_) => return (None, false),
         }
     }
@@ -186,21 +198,28 @@ impl ActiveConnection {
     async fn send_transaction_batch(
         connection: Arc<RwLock<Connection>>,
         txs: Vec<Vec<u8>>,
-        identity: Pubkey, 
+        identity: Pubkey,
         endpoint: Endpoint,
         socket_addr: SocketAddr,
         exit_signal: Arc<AtomicBool>,
-        last_stable_id : Arc<AtomicU64>
+        last_stable_id: Arc<AtomicU64>,
     ) {
         for _ in 0..3 {
-            let conn = { 
+            let conn = {
                 let last_stable_id = last_stable_id.load(Ordering::Relaxed) as usize;
                 let conn = connection.read().await;
                 if conn.stable_id() == last_stable_id {
                     // problematic connection
                     drop(conn);
                     let mut conn = connection.write().await;
-                    let new_conn = Self::connect(identity, true, endpoint.clone(), socket_addr.clone(), exit_signal.clone()).await;
+                    let new_conn = Self::connect(
+                        identity,
+                        true,
+                        endpoint.clone(),
+                        socket_addr.clone(),
+                        exit_signal.clone(),
+                    )
+                    .await;
                     if let Some(new_conn) = new_conn {
                         *conn = new_conn;
                         conn.clone()
@@ -214,13 +233,21 @@ impl ActiveConnection {
             };
             let mut retry = false;
             for tx in &txs {
-                let (stream, retry_conn) = Self::open_unistream(conn.clone(), last_stable_id.clone()).await;
+                let (stream, retry_conn) =
+                    Self::open_unistream(conn.clone(), last_stable_id.clone()).await;
                 if let Some(send_stream) = stream {
                     if exit_signal.load(Ordering::Relaxed) {
                         return;
                     }
 
-                    retry = Self::write_all(send_stream, tx, identity, last_stable_id.clone(), conn.stable_id() as u64).await;
+                    retry = Self::write_all(
+                        send_stream,
+                        tx,
+                        identity,
+                        last_stable_id.clone(),
+                        conn.stable_id() as u64,
+                    )
+                    .await;
                 } else {
                     retry = retry_conn;
                 }
@@ -283,8 +310,8 @@ impl ActiveConnection {
         };
 
         let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-        let mut connection : Option<Arc<RwLock<Connection>>> = None;
-        let last_stable_id : Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+        let mut connection: Option<Arc<RwLock<Connection>>> = None;
+        let last_stable_id: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
         loop {
             // exit signal set
