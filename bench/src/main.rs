@@ -12,7 +12,7 @@ use bench::{
 use clap::Parser;
 use log::info;
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
-use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
+use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature, signer::Signer};
 
 #[tokio::main]
 async fn main() {
@@ -60,6 +60,8 @@ async fn main() {
 
 async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize) -> Metric {
     let funded_payer = BenchHelper::get_payer().await.unwrap();
+
+    println!("payer {}", funded_payer.pubkey());
     let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
     let txs = BenchHelper::generate_txs(tx_count, &funded_payer, blockhash, None);
@@ -106,7 +108,7 @@ async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize) -> Metric {
                     metrics.txs_confirmed += 1;
                     to_remove_txs.push(sig);
                 } else if time_elapsed_since_last_confirmed.unwrap().elapsed()
-                    > Duration::from_secs(3)
+                    > Duration::from_secs(30)
                 {
                     metrics.txs_un_confirmed += 1;
                     to_remove_txs.push(sig);
