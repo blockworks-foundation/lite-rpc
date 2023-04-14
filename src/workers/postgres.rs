@@ -92,7 +92,6 @@ impl PostgresSession {
             let ca_pem = BinaryEncoding::Base64
                 .decode(ca_pem_b64)
                 .context("ca pem decode")?;
-
             let client_pks = BinaryEncoding::Base64
                 .decode(client_pks_b64)
                 .context("client pks decode")?;
@@ -346,13 +345,13 @@ impl Postgres {
                 );
 
                 if let Err(err) = res_txs {
-                    warn!("Error sending tx batch to postgres {err:?}");
+                    warn!("Error sending tx batch ({:?}) to postgres {err:?}", tx_que.len());
                 } else {
                     tx_que.clear();
                 }
 
                 if let Err(err) = res_block {
-                    warn!("Error sending block batch to postgres {err:?}");
+                    warn!("Error sending block batch ({:?}) to postgres {err:?}", block_que.len());
                 } else {
                     block_que.clear();
                 }
