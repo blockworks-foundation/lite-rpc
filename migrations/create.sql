@@ -16,9 +16,9 @@ CREATE TABLE lite_rpc.Txs (
 CREATE TABLE lite_rpc.Blocks (
   slot BIGINT NOT NULL PRIMARY KEY,
   leader_id BIGINT NOT NULL,
-  parent_slot BIGINT NOT NULL
+  parent_slot BIGINT NOT NULL,
   cluster_time TIMESTAMP WITH TIME ZONE NOT NULL,
-  local_time TIMESTAMP WITH TIME ZONE,
+  local_time TIMESTAMP WITH TIME ZONE
 );
 
 CREATE TABLE lite_rpc.AccountAddrs (
