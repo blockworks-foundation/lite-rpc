@@ -205,27 +205,34 @@ impl ActiveConnection {
         last_stable_id: Arc<AtomicU64>,
     ) {
         for _ in 0..3 {
+            // get new connection reset if necessary
             let conn = {
                 let last_stable_id = last_stable_id.load(Ordering::Relaxed) as usize;
                 let conn = connection.read().await;
                 if conn.stable_id() == last_stable_id {
+                    let current_stable_id = conn.stable_id();
                     // problematic connection
                     drop(conn);
                     let mut conn = connection.write().await;
-                    let new_conn = Self::connect(
-                        identity,
-                        true,
-                        endpoint.clone(),
-                        socket_addr.clone(),
-                        exit_signal.clone(),
-                    )
-                    .await;
-                    if let Some(new_conn) = new_conn {
-                        *conn = new_conn;
+                    // check may be already written by another thread
+                    if conn.stable_id() != current_stable_id {
                         conn.clone()
                     } else {
-                        // could not connect
-                        return;
+                        let new_conn = Self::connect(
+                            identity,
+                            true,
+                            endpoint.clone(),
+                            socket_addr.clone(),
+                            exit_signal.clone(),
+                        )
+                        .await;
+                        if let Some(new_conn) = new_conn {
+                            *conn = new_conn;
+                            conn.clone()
+                        } else {
+                            // could not connect
+                            return;
+                        }
                     }
                 } else {
                     conn.clone()
@@ -390,6 +397,7 @@ impl ActiveConnection {
                 }
             };
         }
+        drop(transaction_reciever);
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
     }
 
