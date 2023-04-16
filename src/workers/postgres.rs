@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use chrono::{DateTime, Utc};
-use futures::{future::join_all, join};
+use futures::join;
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
 use std::{sync::Arc, time::Duration};
@@ -13,9 +13,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use tokio_postgres::{
-    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket, Statement,
-};
+use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket};
 
 use native_tls::{Certificate, Identity, TlsConnector};
 
@@ -68,13 +66,14 @@ impl SchemaSize for PostgresTx {
 
 #[derive(Debug)]
 pub struct PostgresUpdateTx {
+    pub signature: String,   // 88 bytes
     pub processed_slot: i64, // 8 bytes
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
 }
 
 impl SchemaSize for PostgresUpdateTx {
-    const DEFAULT_SIZE: usize = 8;
+    const DEFAULT_SIZE: usize = 88 + 8;
     const MAX_SIZE: usize = Self::DEFAULT_SIZE + (2 * 8);
 }
 
@@ -103,7 +102,7 @@ pub enum PostgresMsg {
     PostgresTx(Vec<PostgresTx>),
     PostgresBlock(PostgresBlock),
     PostgreAccountAddr(PostgreAccountAddr),
-    PostgresUpdateTx(PostgresUpdateTx, String),
+    PostgresUpdateTx(Vec<PostgresUpdateTx>),
 }
 
 pub type PostgresMpscRecv = UnboundedReceiver<PostgresMsg>;
@@ -111,7 +110,6 @@ pub type PostgresMpscSend = UnboundedSender<PostgresMsg>;
 
 pub struct PostgresSession {
     client: Client,
-    update_tx_statement: Statement,
 }
 
 impl PostgresSession {
@@ -147,20 +145,7 @@ impl PostgresSession {
             Self::spawn_connection(pg_config, MakeTlsConnector::new(connector)).await?
         };
 
-        let update_tx_statement = client
-            .prepare(
-                r#"
-                UPDATE lite_rpc.Txs 
-                SET processed_slot = $1, cu_consumed = $2, cu_requested = $3
-                WHERE signature = $4
-            "#,
-            )
-            .await?;
-
-        Ok(Self {
-            client,
-            update_tx_statement,
-        })
+        Ok(Self { client })
     }
 
     async fn spawn_connection<T>(
@@ -297,19 +282,49 @@ impl PostgresSession {
         Ok(())
     }
 
-    pub async fn update_tx(&self, tx: &PostgresUpdateTx, signature: &str) -> anyhow::Result<()> {
-        let PostgresUpdateTx {
-            processed_slot,
-            cu_consumed,
-            cu_requested,
-        } = tx;
+    pub async fn update_txs(&self, txs: &[PostgresUpdateTx]) -> anyhow::Result<()> {
+        const NUMBER_OF_ARGS: usize = 4;
 
-        self.client
-            .execute(
-                &self.update_tx_statement,
-                &[processed_slot, cu_consumed, cu_requested, &signature],
-            )
-            .await?;
+        if txs.is_empty() {
+            return Ok(());
+        }
+
+        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * txs.len());
+
+        for tx in txs.iter() {
+            let PostgresUpdateTx {
+                signature,
+                processed_slot,
+                cu_consumed,
+                cu_requested,
+            } = tx;
+
+            args.push(signature);
+            args.push(processed_slot);
+            args.push(cu_consumed);
+            args.push(cu_requested);
+        }
+
+        let mut query = String::from(
+            r#"
+                UPDATE lite_rpc.Txs as t1 set
+                    processed_slot  = t2.processed_slot,
+                    cu_consumed = t2.cu_consumed,
+                    cu_requested = t2.cu_requested
+                FROM (VALUES
+            "#,
+        );
+
+        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len());
+
+        query.push_str(
+            r#"
+                ) AS t2(signature, processed_slot, cu_consumed, cu_requested)
+                WHERE t1.signature = t2.signature
+            "#,
+        );
+
+        self.client.execute(&query, &args).await?;
 
         Ok(())
     }
@@ -341,7 +356,7 @@ impl Postgres {
 
     pub fn start(mut self, mut recv: PostgresMpscRecv) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
-            info!("Writing to postgres");
+            info!("start postgres worker");
 
             const TX_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresTx>();
             const BLOCK_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresBlock>();
@@ -349,12 +364,12 @@ impl Postgres {
 
             let mut tx_batch: Vec<PostgresTx> = Vec::with_capacity(TX_MAX_CAPACITY);
             let mut block_batch: Vec<PostgresBlock> = Vec::with_capacity(BLOCK_MAX_CAPACITY);
-            let mut update_batch =
-                Vec::<(PostgresUpdateTx, String)>::with_capacity(UPDATE_MAX_CAPACITY);
+            let mut update_batch = Vec::<PostgresUpdateTx>::with_capacity(UPDATE_MAX_CAPACITY);
 
             let mut session_establish_error = false;
 
             loop {
+                // drain channel until we reach max capacity for any statement type
                 loop {
                     if session_establish_error {
                         break;
@@ -375,9 +390,10 @@ impl Postgres {
                             match msg {
                                 PostgresMsg::PostgresTx(mut tx) => tx_batch.append(&mut tx),
                                 PostgresMsg::PostgresBlock(block) => block_batch.push(block),
-                                PostgresMsg::PostgresUpdateTx(tx, sig) => {
-                                    update_batch.push((tx, sig))
+                                PostgresMsg::PostgresUpdateTx(mut update) => {
+                                    update_batch.append(&mut update)
                                 }
+
                                 PostgresMsg::PostgreAccountAddr(_) => todo!(),
                             }
                         }
@@ -388,8 +404,9 @@ impl Postgres {
                     }
                 }
 
+                // if there's nothing to do, yield for a brief time
                 if tx_batch.is_empty() && block_batch.is_empty() && update_batch.is_empty() {
-                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
                     continue;
                 }
 
@@ -409,19 +426,14 @@ impl Postgres {
 
                 POSTGRES_SESSION_ERRORS.set(0);
 
-                // Write when a successful connection is made
-                let tx_update_fut = update_batch
-                    .iter()
-                    .map(|(tx, sig)| session.update_tx(tx, sig));
-
-                let (res_txs, res_block, res_tx_update) = join!(
+                // write to database when a successful connection is made
+                let (res_txs, res_blocks, res_update) = join!(
                     session.send_txs(&tx_batch),
                     session.send_blocks(&block_batch),
-                    join_all(tx_update_fut)
+                    session.update_txs(&update_batch)
                 );
 
-                // FIX: we are just clearing the batches here which can cause lost inserts and
-                // updates
+                // clear batches only if results were successful
                 if let Err(err) = res_txs {
                     warn!(
                         "Error sending tx batch ({:?}) to postgres {err:?}",
@@ -430,8 +442,7 @@ impl Postgres {
                 } else {
                     tx_batch.clear();
                 }
-
-                if let Err(err) = res_block {
+                if let Err(err) = res_blocks {
                     warn!(
                         "Error sending block batch ({:?}) to postgres {err:?}",
                         block_batch.len()
@@ -439,19 +450,14 @@ impl Postgres {
                 } else {
                     block_batch.clear();
                 }
-
-                let mut update_que_iter = update_batch.into_iter();
-                update_batch = res_tx_update
-                    .iter()
-                    .filter_map(|res| {
-                        let item = update_que_iter.next();
-                        if let Err(err) = res {
-                            warn!("Error updating tx to postgres {err:?}");
-                            return item;
-                        }
-                        None
-                    })
-                    .collect();
+                if let Err(err) = res_update {
+                    warn!(
+                        "Error sending update batch ({:?}) to postgres {err:?}",
+                        update_batch.len()
+                    );
+                } else {
+                    update_batch.clear();
+                }
             }
         })
     }
