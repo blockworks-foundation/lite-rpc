@@ -181,7 +181,7 @@ impl PostgresSession {
             query.push('(');
 
             for i in 0..args {
-                if row == 0 && types.len() > 0  {
+                if row == 0 && types.len() > 0 {
                     query.push_str(&format!("(${arg_index})::{}", types[i]));
                 } else {
                     query.push_str(&format!("${arg_index}"));
@@ -241,6 +241,8 @@ impl PostgresSession {
 
         Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &[]);
 
+        query.push_str("ON CONFLICT (signature) DO NOTHING");
+
         self.client.execute(&query, &args).await?;
 
         Ok(())
@@ -273,13 +275,23 @@ impl PostgresSession {
 
         let mut query = String::from(
             r#"
-                INSERT INTO lite_rpc.Blocks 
+                INSERT INTO lite_rpc.Blocks
                 (slot, leader_id, parent_slot, cluster_time, local_time)
                 VALUES
             "#,
         );
 
         Self::multiline_query(&mut query, NUMBER_OF_ARGS, blocks.len(), &[]);
+
+        query.push_str(
+            r#"
+                ON CONFLICT (slot) DO UPDATE SET
+                leader_id = EXCLUDED.leader_id
+                parent_slot = EXCLUDED.parent_slot
+                cluster_time = EXCLUDED.cluster_time
+                local_time = EXCLUDED.local_time
+            "#,
+        );
 
         self.client.execute(&query, &args).await?;
 
@@ -319,7 +331,12 @@ impl PostgresSession {
             "#,
         );
 
-        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &["text", "bigint", "bigint", "bigint"]);
+        Self::multiline_query(
+            &mut query,
+            NUMBER_OF_ARGS,
+            txs.len(),
+            &["text", "bigint", "bigint", "bigint"],
+        );
 
         query.push_str(
             r#"
@@ -474,7 +491,6 @@ fn multiline_query_test() {
     PostgresSession::multiline_query(&mut query, 3, 2, &[]);
     assert_eq!(query, "($1,$2,$3),($4,$5,$6)");
 }
-
 
 #[test]
 fn multiline_query_test_types() {
