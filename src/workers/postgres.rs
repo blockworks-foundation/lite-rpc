@@ -1,4 +1,5 @@
 use anyhow::{bail, Context};
+use arrayvec::ArrayVec;
 use chrono::{DateTime, Utc};
 use futures::{future::join_all, join};
 use log::{info, warn};
@@ -23,34 +24,64 @@ use crate::encoding::BinaryEncoding;
 
 lazy_static::lazy_static! {
     pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();
+    pub static ref POSTGRES_SESSION_ERRORS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_session_errors", "Number of failures while establishing postgres session")).unwrap();
+}
+
+const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
+
+trait SchemaSize {
+    const DEFAULT_SIZE: usize = 0;
+    const MAX_SIZE: usize = 0;
+}
+
+const fn get_max_safe_inserts<T: SchemaSize>() -> usize {
+    let Some(n) =  MAX_QUERY_SIZE.checked_div(T::DEFAULT_SIZE) else {
+        return 0;
+    };
+    n
 }
 
 #[derive(Debug)]
 pub struct PostgresTx {
-    pub signature: String,
-    pub recent_slot: i64,
-    pub forwarded_slot: i64,
-    pub forwarded_local_time: DateTime<Utc>,
+    pub signature: String,                   // 88 bytes
+    pub recent_slot: i64,                    // 8 bytes
+    pub forwarded_slot: i64,                 // 8 bytes
+    pub forwarded_local_time: DateTime<Utc>, // 8 bytes
     pub processed_slot: Option<i64>,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
-    pub quic_response: i16,
+    pub quic_response: i16, // 8 bytes
+}
+
+impl SchemaSize for PostgresTx {
+    const DEFAULT_SIZE: usize = 88 + (4 * 8);
+    const MAX_SIZE: usize = Self::DEFAULT_SIZE + (3 * 8);
 }
 
 #[derive(Debug)]
 pub struct PostgresUpdateTx {
-    pub processed_slot: i64,
+    pub processed_slot: i64, // 8 bytes
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
 }
 
+impl SchemaSize for PostgresUpdateTx {
+    const DEFAULT_SIZE: usize = 8;
+    const MAX_SIZE: usize = Self::DEFAULT_SIZE + (2 * 8);
+}
+
 #[derive(Debug)]
 pub struct PostgresBlock {
-    pub slot: i64,
-    pub leader_id: i64,
-    pub parent_slot: i64,
-    pub cluster_time: DateTime<Utc>,
+    pub slot: i64,                   // 8 bytes
+    pub leader_id: i64,              // 8 bytes
+    pub parent_slot: i64,            // 8 bytes
+    pub cluster_time: DateTime<Utc>, // 8 bytes
     pub local_time: Option<DateTime<Utc>>,
+}
+
+impl SchemaSize for PostgresBlock {
+    const DEFAULT_SIZE: usize = 4 * 8;
+    const MAX_SIZE: usize = Self::DEFAULT_SIZE + 8;
 }
 
 #[derive(Debug)]
@@ -111,7 +142,7 @@ impl PostgresSession {
         let update_tx_statement = client
             .prepare(
                 r#"
-                UPDATE lite_rpc.txs 
+                UPDATE lite_rpc.Txs 
                 SET processed_slot = $1, cu_consumed = $2, cu_requested = $3
                 WHERE signature = $4
             "#,
@@ -138,9 +169,14 @@ impl PostgresSession {
             .context("Connecting to Postgres failed")?;
 
         tokio::spawn(async move {
+            log::info!("Connecting to Postgres");
+
             if let Err(err) = connection.await {
                 log::error!("Connection to Postgres broke {err:?}");
+                return ;
             }
+
+            unreachable!("Postgres thread returned")
         });
 
         Ok(client)
@@ -299,23 +335,40 @@ impl Postgres {
         tokio::spawn(async move {
             info!("Writing to postgres");
 
-            let mut tx_que = Vec::<PostgresTx>::new();
-            let mut block_que = Vec::new();
-            let mut update_que = Vec::new();
+            const TX_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresTx>();
+            const BLOCK_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresBlock>();
+            const UPDATE_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresUpdateTx>();
+
+            let mut tx_batch: Vec<PostgresTx> = Vec::with_capacity(TX_MAX_CAPACITY);
+            let mut block_batch: Vec<PostgresBlock> = Vec::with_capacity(BLOCK_MAX_CAPACITY);
+            let mut update_batch =
+                Vec::<(PostgresUpdateTx, String)>::with_capacity(UPDATE_MAX_CAPACITY);
+
+            let mut session_establish_error = false;
 
             loop {
                 loop {
-                    let msg = recv.try_recv();
+                    if session_establish_error {
+                        break;
+                    }
 
-                    match msg {
+                    // check for capacity
+                    if tx_batch.len() >= TX_MAX_CAPACITY
+                        || block_batch.len() == BLOCK_MAX_CAPACITY
+                        || update_batch.len() == UPDATE_MAX_CAPACITY
+                    {
+                        break;
+                    }
+
+                    match recv.try_recv() {
                         Ok(msg) => {
                             MESSAGES_IN_POSTGRES_CHANNEL.dec();
 
                             match msg {
-                                PostgresMsg::PostgresTx(mut tx) => tx_que.append(&mut tx),
-                                PostgresMsg::PostgresBlock(block) => block_que.push(block),
+                                PostgresMsg::PostgresTx(mut tx) => tx_batch.append(&mut tx),
+                                PostgresMsg::PostgresBlock(block) => block_batch.push(block),
                                 PostgresMsg::PostgresUpdateTx(tx, sig) => {
-                                    update_que.push((tx, sig))
+                                    update_batch.push((tx, sig))
                                 }
                                 PostgresMsg::PostgreAccountAddr(_) => todo!(),
                             }
@@ -327,37 +380,59 @@ impl Postgres {
                     }
                 }
 
-                let Ok(session) = self.get_session().await else {
+                if tx_batch.is_empty() && block_batch.is_empty() && update_batch.is_empty() {
+                    tokio::time::sleep(Duration::from_millis(400)).await;
+                }
+
+                // Establish session with postgres or get an existing one
+                let session = self.get_session().await;
+                session_establish_error = session.is_err();
+
+                let Ok(session) = session else {
+                    POSTGRES_SESSION_ERRORS.inc();
+
                     const TIME_OUT:Duration = Duration::from_millis(1000);
                     warn!("Unable to get postgres session. Retrying in {TIME_OUT:?}");
                     tokio::time::sleep(TIME_OUT).await;
+
                     continue;
                 };
 
-                let tx_update_fut = update_que
+                POSTGRES_SESSION_ERRORS.set(0);
+
+                // Write when a successful connection is made
+                let tx_update_fut = update_batch
                     .iter()
                     .map(|(tx, sig)| session.update_tx(tx, sig));
 
                 let (res_txs, res_block, res_tx_update) = join!(
-                    session.send_txs(&tx_que),
-                    session.send_blocks(&block_que),
+                    session.send_txs(&tx_batch),
+                    session.send_blocks(&block_batch),
                     join_all(tx_update_fut)
                 );
 
+                // FIX: we are just clearing the batches here which can cause lost inserts and
+                // updates
                 if let Err(err) = res_txs {
-                    warn!("Error sending tx batch ({:?}) to postgres {err:?}", tx_que.len());
+                    warn!(
+                        "Error sending tx batch ({:?}) to postgres {err:?}",
+                        tx_batch.len()
+                    );
                 } else {
-                    tx_que.clear();
+                    tx_batch.clear();
                 }
 
                 if let Err(err) = res_block {
-                    warn!("Error sending block batch ({:?}) to postgres {err:?}", block_que.len());
+                    warn!(
+                        "Error sending block batch ({:?}) to postgres {err:?}",
+                        block_batch.len()
+                    );
                 } else {
-                    block_que.clear();
+                    block_batch.clear();
                 }
 
-                let mut update_que_iter = update_que.into_iter();
-                update_que = res_tx_update
+                let mut update_que_iter = update_batch.into_iter();
+                update_batch = res_tx_update
                     .iter()
                     .filter_map(|res| {
                         let item = update_que_iter.next();
@@ -368,28 +443,6 @@ impl Postgres {
                         None
                     })
                     .collect();
-
-                //{
-                //    let mut batcher =
-                //        Batcher::new(&mut tx_que, MAX_BATCH_SIZE, BatcherStrategy::Start);
-
-                //    while let Some(txs) = batcher.next_batch() {
-                //        if let Err(err) = session.send_txs(txs).await {
-                //            warn!("Error sending tx batch to postgres {err:?}");
-                //        }
-                //    }
-                //}
-
-                //{
-                //    let mut batcher =
-                //        Batcher::new(&mut block_que, MAX_BATCH_SIZE, BatcherStrategy::Start);
-
-                //    while let Some(txs) = batcher.next_batch() {
-                //        if let Err(err) = session.send_blocks(txs).await {
-                //            warn!("Error sending block batch to postgres {err:?}");
-                //        }
-                //    }
-                //}
             }
         })
     }

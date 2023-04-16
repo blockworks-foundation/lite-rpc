@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # kill background jobs on exit/failure
-trap 'kill $(jobs -pr)' SIGINT SIGTERM EXIT
+trap 'kill $(jobs -pr) && docker kill test-postgres' SIGINT SIGTERM EXIT
 
 # env variables
 export PGPASSWORD="password"
@@ -16,12 +16,15 @@ pg_run() {
 docker create --name test-postgres -e POSTGRES_PASSWORD=password -p 5432:5432 postgres:latest || true
 docker start test-postgres
 
+echo "Waiting 10 seconds for postgres to start"
+sleep 10
+
 echo "Clearing database"
 pg_run -f ../migrations/rm.sql
 pg_run -f ../migrations/create.sql
 
 echo "Starting the test validator"
-solana-test-validator > /dev/null &
+(cd $HOME; solana-test-validator > /dev/null &)
 
 echo "Waiting 8 seconds for solana-test-validator to start"
 sleep 8
