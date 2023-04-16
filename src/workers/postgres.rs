@@ -35,7 +35,14 @@ trait SchemaSize {
 }
 
 const fn get_max_safe_inserts<T: SchemaSize>() -> usize {
-    let Some(n) =  MAX_QUERY_SIZE.checked_div(T::DEFAULT_SIZE) else {
+    let Some(n) = MAX_QUERY_SIZE.checked_div(T::DEFAULT_SIZE) else {
+        return 0;
+    };
+    n
+}
+
+const fn get_max_safe_updates<T: SchemaSize>() -> usize {
+    let Some(n) = MAX_QUERY_SIZE.checked_div(T::MAX_SIZE) else {
         return 0;
     };
     n
@@ -173,7 +180,7 @@ impl PostgresSession {
 
             if let Err(err) = connection.await {
                 log::error!("Connection to Postgres broke {err:?}");
-                return ;
+                return;
             }
 
             unreachable!("Postgres thread returned")
@@ -337,7 +344,7 @@ impl Postgres {
 
             const TX_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresTx>();
             const BLOCK_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresBlock>();
-            const UPDATE_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresUpdateTx>();
+            const UPDATE_MAX_CAPACITY: usize = get_max_safe_updates::<PostgresUpdateTx>();
 
             let mut tx_batch: Vec<PostgresTx> = Vec::with_capacity(TX_MAX_CAPACITY);
             let mut block_batch: Vec<PostgresBlock> = Vec::with_capacity(BLOCK_MAX_CAPACITY);
