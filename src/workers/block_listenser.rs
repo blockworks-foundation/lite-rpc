@@ -272,46 +272,60 @@ impl BlockListener {
                         _ => None,
                     };
 
-                    let cu_requested = tx
-                        .message
-                        .instructions()
-                        .iter()
-                        .find_map(|i| {
-                            if i.program_id(tx.message.static_account_keys())
-                                .eq(&compute_budget::id())
+                    let legacy_compute_budget = tx.message.instructions().iter().find_map(|i| {
+                        if i.program_id(tx.message.static_account_keys())
+                            .eq(&compute_budget::id())
+                        {
+                            if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
+                                units,
+                                additional_fee,
+                            }) = try_from_slice_unchecked(i.data.as_slice())
                             {
-                                if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                                    try_from_slice_unchecked(i.data.as_slice())
-                                {
-                                    return Some(limit as i64);
-                                }
+                                return Some((units as i64, additional_fee as i64));
                             }
-                            None
-                        });
+                        }
+                        None
+                    });
 
-                        let cu_price = tx
-                        .message
-                        .instructions()
-                        .iter()
-                        .find_map(|i| {
-                            if i.program_id(tx.message.static_account_keys())
-                                .eq(&compute_budget::id())
+                    let mut cu_requested = tx.message.instructions().iter().find_map(|i| {
+                        if i.program_id(tx.message.static_account_keys())
+                            .eq(&compute_budget::id())
+                        {
+                            if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
+                                try_from_slice_unchecked(i.data.as_slice())
                             {
-                                if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                                    try_from_slice_unchecked(i.data.as_slice())
-                                {
-                                    return Some(price as i64);
-                                }
+                                return Some(limit as i64);
                             }
-                            None
-                        });
+                        }
+                        None
+                    });
+
+                    let mut cu_price = tx.message.instructions().iter().find_map(|i| {
+                        if i.program_id(tx.message.static_account_keys())
+                            .eq(&compute_budget::id())
+                        {
+                            if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
+                                try_from_slice_unchecked(i.data.as_slice())
+                            {
+                                return Some(price as i64);
+                            }
+                        }
+                        None
+                    });
+
+                    if let Some((units, additional_fee))  = legacy_compute_budget {
+                        cu_requested = Some(units);
+                        if additional_fee > 0 {
+                            cu_price = Some((units * 1000) / additional_fee)
+                        }
+                    };
 
                     transactions_to_update.push(PostgresUpdateTx {
                         signature: sig.clone(),
                         processed_slot: slot as i64,
                         cu_consumed,
                         cu_requested,
-                        cu_price
+                        cu_price,
                     });
                 }
             };
