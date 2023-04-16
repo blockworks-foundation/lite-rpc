@@ -330,7 +330,7 @@ impl PostgresSession {
                 UPDATE lite_rpc.Txs AS t1 SET
                     processed_slot  = t2.processed_slot,
                     cu_consumed = t2.cu_consumed,
-                    cu_requested = t2.cu_requested
+                    cu_requested = t2.cu_requested,
                     cu_price = t2.cu_price
                 FROM (VALUES
             "#,
