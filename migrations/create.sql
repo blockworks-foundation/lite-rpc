@@ -9,6 +9,7 @@ CREATE TABLE lite_rpc.Txs (
   processed_slot BIGINT,
   cu_consumed BIGINT,
   cu_requested BIGINT,
+  cu_price BIGINT,
   quic_response SMALLINT
 );
 
