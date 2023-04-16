@@ -328,6 +328,8 @@ impl PostgresSession {
             "#,
         );
 
+        info!("update txs query={query}");
+
         self.client.execute(&query, &args).await?;
 
         Ok(())
