@@ -360,8 +360,8 @@ impl Postgres {
 
                     // check for capacity
                     if tx_batch.len() >= TX_MAX_CAPACITY
-                        || block_batch.len() == BLOCK_MAX_CAPACITY
-                        || update_batch.len() == UPDATE_MAX_CAPACITY
+                        || block_batch.len() >= BLOCK_MAX_CAPACITY
+                        || update_batch.len() >= UPDATE_MAX_CAPACITY
                     {
                         break;
                     }
