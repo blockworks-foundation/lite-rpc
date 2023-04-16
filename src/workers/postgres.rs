@@ -287,9 +287,9 @@ impl PostgresSession {
         query.push_str(
             r#"
                 ON CONFLICT (slot) DO UPDATE SET
-                leader_id = EXCLUDED.leader_id
-                parent_slot = EXCLUDED.parent_slot
-                cluster_time = EXCLUDED.cluster_time
+                leader_id = EXCLUDED.leader_id,
+                parent_slot = EXCLUDED.parent_slot,
+                cluster_time = EXCLUDED.cluster_time,
                 local_time = EXCLUDED.local_time
             "#,
         );
@@ -339,7 +339,7 @@ impl PostgresSession {
             &mut query,
             NUMBER_OF_ARGS,
             txs.len(),
-            &["text", "bigint", "bigint", "bigint"],
+            &["text", "bigint", "bigint", "bigint", "bigint"],
         );
 
         query.push_str(
