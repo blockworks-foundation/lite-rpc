@@ -29,22 +29,24 @@ lazy_static::lazy_static! {
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 
 trait SchemaSize {
-    const DEFAULT_SIZE: usize = 0;
-    const MAX_SIZE: usize = 0;
+    const DEFAULT_SIZE: usize = 1;
+    const MAX_SIZE: usize = 1;
 }
 
 const fn get_max_safe_inserts<T: SchemaSize>() -> usize {
-    let Some(n) = MAX_QUERY_SIZE.checked_div(T::DEFAULT_SIZE) else {
-        return 0;
-    };
-    n
+    if T::DEFAULT_SIZE == 0 {
+        panic!("DEFAULT_SIZE can't be 0. SchemaSize impl should override the DEFAULT_SIZE const");
+    }
+
+    MAX_QUERY_SIZE / T::DEFAULT_SIZE
 }
 
 const fn get_max_safe_updates<T: SchemaSize>() -> usize {
-    let Some(n) = MAX_QUERY_SIZE.checked_div(T::MAX_SIZE) else {
-        return 0;
-    };
-    n
+    if T::MAX_SIZE == 0 {
+        panic!("MAX_SIZE can't be 0. SchemaSize impl should override the MAX_SIZE const");
+    }
+
+    MAX_QUERY_SIZE / T::MAX_SIZE
 }
 
 #[derive(Debug)]
