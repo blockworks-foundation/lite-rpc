@@ -324,7 +324,9 @@ impl PostgresSession {
             "#,
         );
 
-        self.client.execute(&query, &args).await?;
+        if let Err(err) = self.client.execute(&query, &args).await {
+            return Err(anyhow::format_err!("could not execute query={query} err={err:?}"));
+        }
 
         Ok(())
     }
