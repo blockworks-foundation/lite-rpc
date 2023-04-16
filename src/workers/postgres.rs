@@ -242,7 +242,8 @@ impl PostgresSession {
 
         Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &[]);
 
-        query.push_str("ON CONFLICT (signature) DO NOTHING");
+        // TODO: enable this when signautre is a unique column
+        // query.push_str("ON CONFLICT (signature) DO NOTHING");
 
         self.client.execute(&query, &args).await?;
 
