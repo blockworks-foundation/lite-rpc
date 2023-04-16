@@ -35,6 +35,9 @@ impl AddAssign<&Self> for Metric {
 
 impl DivAssign<u64> for Metric {
     fn div_assign(&mut self, rhs: u64) {
+        if rhs == 0 {
+            return;
+        }
         self.total_time_elapsed_sec /= rhs as f64;
         self.txs_sent /= rhs;
         self.time_to_send_txs /= rhs as f64;
