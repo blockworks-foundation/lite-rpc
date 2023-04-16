@@ -319,7 +319,7 @@ impl PostgresSession {
             "#,
         );
 
-        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &["text", "int", "int", "int"]);
+        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &["text", "bigint", "bigint", "bigint"]);
 
         query.push_str(
             r#"
