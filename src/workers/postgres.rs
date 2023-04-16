@@ -176,13 +176,17 @@ impl PostgresSession {
         Ok(client)
     }
 
-    pub fn multiline_query(query: &mut String, args: usize, rows: usize) {
+    pub fn multiline_query(query: &mut String, args: usize, rows: usize, types: &[&str]) {
         let mut arg_index = 1usize;
         for row in 0..rows {
             query.push('(');
 
             for i in 0..args {
-                query.push_str(&format!("${arg_index}"));
+                if row == 0 && types.len() > 0 {
+                    query.push_str(&format!("(${arg_index})::{}", types[i]));
+                } else {
+                    query.push_str(&format!("${arg_index}"));
+                }
                 arg_index += 1;
                 if i != (args - 1) {
                     query.push(',');
@@ -236,7 +240,9 @@ impl PostgresSession {
             "#,
         );
 
-        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len());
+        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &[]);
+
+        query.push_str("ON CONFLICT (signature) DO NOTHING");
 
         self.client.execute(&query, &args).await?;
 
@@ -270,13 +276,23 @@ impl PostgresSession {
 
         let mut query = String::from(
             r#"
-                INSERT INTO lite_rpc.Blocks 
+                INSERT INTO lite_rpc.Blocks
                 (slot, leader_id, parent_slot, cluster_time, local_time)
                 VALUES
             "#,
         );
 
-        Self::multiline_query(&mut query, NUMBER_OF_ARGS, blocks.len());
+        Self::multiline_query(&mut query, NUMBER_OF_ARGS, blocks.len(), &[]);
+
+        query.push_str(
+            r#"
+                ON CONFLICT (slot) DO UPDATE SET
+                leader_id = EXCLUDED.leader_id
+                parent_slot = EXCLUDED.parent_slot
+                cluster_time = EXCLUDED.cluster_time
+                local_time = EXCLUDED.local_time
+            "#,
+        );
 
         self.client.execute(&query, &args).await?;
 
@@ -310,7 +326,7 @@ impl PostgresSession {
 
         let mut query = String::from(
             r#"
-                UPDATE lite_rpc.Txs as t1 set
+                UPDATE lite_rpc.Txs AS t1 SET
                     processed_slot  = t2.processed_slot,
                     cu_consumed = t2.cu_consumed,
                     cu_requested = t2.cu_requested
@@ -319,7 +335,12 @@ impl PostgresSession {
             "#,
         );
 
-        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len());
+        Self::multiline_query(
+            &mut query,
+            NUMBER_OF_ARGS,
+            txs.len(),
+            &["text", "bigint", "bigint", "bigint"],
+        );
 
         query.push_str(
             r#"
@@ -471,6 +492,14 @@ impl Postgres {
 fn multiline_query_test() {
     let mut query = String::new();
 
-    PostgresSession::multiline_query(&mut query, 3, 2);
+    PostgresSession::multiline_query(&mut query, 3, 2, &[]);
     assert_eq!(query, "($1,$2,$3),($4,$5,$6)");
+}
+
+#[test]
+fn multiline_query_test_types() {
+    let mut query = String::new();
+
+    PostgresSession::multiline_query(&mut query, 3, 2, &["text", "int", "int"]);
+    assert_eq!(query, "(($1)::text,($2)::int,($3)::int),($4,$5,$6)");
 }
