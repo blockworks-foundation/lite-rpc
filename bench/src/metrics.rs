@@ -34,6 +34,7 @@ impl AddAssign<&Self> for Metric {
 }
 
 impl DivAssign<u64> for Metric {
+    // used to avg metrics, if there were no runs then benchmark averages across 0 runs
     fn div_assign(&mut self, rhs: u64) {
         if rhs == 0 {
             return;
