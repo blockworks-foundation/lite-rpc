@@ -175,7 +175,7 @@ impl PostgresSession {
         Ok(client)
     }
 
-    pub fn multiline_query(query: &mut String, args: usize, rows: usize, types: &[str]) {
+    pub fn multiline_query(query: &mut String, args: usize, rows: usize, types: &[&str]) {
         let mut arg_index = 1usize;
         for row in 0..rows {
             query.push('(');
