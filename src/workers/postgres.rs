@@ -389,7 +389,7 @@ impl Postgres {
                 }
 
                 if tx_batch.is_empty() && block_batch.is_empty() && update_batch.is_empty() {
-                    tokio::time::sleep(Duration::from_millis(400)).await;
+                    tokio::time::sleep(Duration::from_millis(50)).await;
                     continue;
                 }
 
