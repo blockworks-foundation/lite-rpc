@@ -175,13 +175,17 @@ impl PostgresSession {
         Ok(client)
     }
 
-    pub fn multiline_query(query: &mut String, args: usize, rows: usize) {
+    pub fn multiline_query(query: &mut String, args: usize, rows: usize, types: &[str]) {
         let mut arg_index = 1usize;
         for row in 0..rows {
             query.push('(');
 
             for i in 0..args {
-                query.push_str(&format!("${arg_index}"));
+                if row == 0 && types.len() > 0  {
+                    query.push_str(&format!("(${arg_index})::{}", types[i]));
+                } else {
+                    query.push_str(&format!("${arg_index}"));
+                }
                 arg_index += 1;
                 if i != (args - 1) {
                     query.push(',');
@@ -235,7 +239,7 @@ impl PostgresSession {
             "#,
         );
 
-        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len());
+        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &[]);
 
         self.client.execute(&query, &args).await?;
 
@@ -275,7 +279,7 @@ impl PostgresSession {
             "#,
         );
 
-        Self::multiline_query(&mut query, NUMBER_OF_ARGS, blocks.len());
+        Self::multiline_query(&mut query, NUMBER_OF_ARGS, blocks.len(), &[]);
 
         self.client.execute(&query, &args).await?;
 
@@ -307,7 +311,7 @@ impl PostgresSession {
 
         let mut query = String::from(
             r#"
-                UPDATE lite_rpc.Txs as t1 set
+                UPDATE lite_rpc.Txs AS t1 SET
                     processed_slot  = t2.processed_slot,
                     cu_consumed = t2.cu_consumed,
                     cu_requested = t2.cu_requested
@@ -315,7 +319,7 @@ impl PostgresSession {
             "#,
         );
 
-        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len());
+        Self::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &["text", "int", "int", "int"]);
 
         query.push_str(
             r#"
@@ -324,9 +328,7 @@ impl PostgresSession {
             "#,
         );
 
-        if let Err(err) = self.client.execute(&query, &args).await {
-            return Err(anyhow::format_err!("could not execute query={query} err={err:?}"));
-        }
+        self.client.execute(&query, &args).await?;
 
         Ok(())
     }
