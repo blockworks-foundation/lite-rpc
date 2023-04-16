@@ -29,8 +29,8 @@ lazy_static::lazy_static! {
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 
 trait SchemaSize {
-    const DEFAULT_SIZE: usize = 1;
-    const MAX_SIZE: usize = 1;
+    const DEFAULT_SIZE: usize = 0;
+    const MAX_SIZE: usize = 0;
 }
 
 const fn get_max_safe_inserts<T: SchemaSize>() -> usize {
