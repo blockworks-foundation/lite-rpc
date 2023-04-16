@@ -471,6 +471,15 @@ impl Postgres {
 fn multiline_query_test() {
     let mut query = String::new();
 
-    PostgresSession::multiline_query(&mut query, 3, 2);
+    PostgresSession::multiline_query(&mut query, 3, 2, &[]);
     assert_eq!(query, "($1,$2,$3),($4,$5,$6)");
+}
+
+
+#[test]
+fn multiline_query_test_types() {
+    let mut query = String::new();
+
+    PostgresSession::multiline_query(&mut query, 3, 2, &["text", "int", "int"]);
+    assert_eq!(query, "(($1)::text,($2)::int,($3)::int),($4,$5,$6)");
 }
