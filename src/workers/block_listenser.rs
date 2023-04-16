@@ -220,6 +220,9 @@ impl BlockListener {
             .await;
 
         let mut transactions_processed = 0;
+        let mut transactions_to_update = vec![];
+        transactions_to_update.reserve(transactions.len());
+
         for tx in transactions {
             let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
                 info!("tx with no meta");
@@ -260,26 +263,19 @@ impl BlockListener {
                     confirmation_status: Some(comfirmation_status.clone()),
                 });
 
-                //
-                // Write to postgres
-                //
-                if let Some(postgres) = &postgres {
+                // prepare writing to postgres
+                if let Some(_postgres) = &postgres {
                     let cu_consumed = match compute_units_consumed {
                         OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
                         _ => None,
                     };
 
-                    postgres
-                        .send(PostgresMsg::PostgresUpdateTx(
-                            PostgresUpdateTx {
-                                processed_slot: slot as i64,
-                                cu_consumed,
-                                cu_requested: None, //TODO: cu requested
-                            },
-                            sig.clone(),
-                        ))
-                        .unwrap();
-                    MESSAGES_IN_POSTGRES_CHANNEL.inc();
+                    transactions_to_update.push(PostgresUpdateTx {
+                        signature: sig.clone(),
+                        processed_slot: slot as i64,
+                        cu_consumed,
+                        cu_requested: None, //TODO: cu requested
+                    });
                 }
             };
 
@@ -297,6 +293,14 @@ impl BlockListener {
                 })?;
                 NUMBER_OF_SIGNATURE_SUBSCRIBERS.dec();
             }
+        }
+
+        //
+        // Write to postgres
+        //
+        if let Some(postgres) = &postgres {
+            postgres.send(PostgresMsg::PostgresUpdateTx(transactions_to_update)).unwrap();
+            MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
 
         trace!(
