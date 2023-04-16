@@ -70,11 +70,12 @@ pub struct PostgresUpdateTx {
     pub processed_slot: i64, // 8 bytes
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
+    pub cu_price: Option<i64>
 }
 
 impl SchemaSize for PostgresUpdateTx {
     const DEFAULT_SIZE: usize = 88 + 8;
-    const MAX_SIZE: usize = Self::DEFAULT_SIZE + (2 * 8);
+    const MAX_SIZE: usize = Self::DEFAULT_SIZE + (3 * 8);
 }
 
 #[derive(Debug)]
@@ -299,7 +300,7 @@ impl PostgresSession {
     }
 
     pub async fn update_txs(&self, txs: &[PostgresUpdateTx]) -> anyhow::Result<()> {
-        const NUMBER_OF_ARGS: usize = 4;
+        const NUMBER_OF_ARGS: usize = 5;
 
         if txs.is_empty() {
             return Ok(());
@@ -313,12 +314,14 @@ impl PostgresSession {
                 processed_slot,
                 cu_consumed,
                 cu_requested,
+                cu_price
             } = tx;
 
             args.push(signature);
             args.push(processed_slot);
             args.push(cu_consumed);
             args.push(cu_requested);
+            args.push(cu_price);
         }
 
         let mut query = String::from(
@@ -327,6 +330,7 @@ impl PostgresSession {
                     processed_slot  = t2.processed_slot,
                     cu_consumed = t2.cu_consumed,
                     cu_requested = t2.cu_requested
+                    cu_price = t2.cu_price
                 FROM (VALUES
             "#,
         );
@@ -340,7 +344,7 @@ impl PostgresSession {
 
         query.push_str(
             r#"
-                ) AS t2(signature, processed_slot, cu_consumed, cu_requested)
+                ) AS t2(signature, processed_slot, cu_consumed, cu_requested, cu_price)
                 WHERE t1.signature = t2.signature
             "#,
         );

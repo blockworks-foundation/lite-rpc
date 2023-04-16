@@ -20,7 +20,9 @@ use solana_rpc_client_api::{
 };
 
 use solana_sdk::{
+    borsh::try_from_slice_unchecked,
     commitment_config::{CommitmentConfig, CommitmentLevel},
+    compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
 };
 
@@ -270,11 +272,60 @@ impl BlockListener {
                         _ => None,
                     };
 
+                    let legacy_compute_budget = tx.message.instructions().iter().find_map(|i| {
+                        if i.program_id(tx.message.static_account_keys())
+                            .eq(&compute_budget::id())
+                        {
+                            if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
+                                units,
+                                additional_fee,
+                            }) = try_from_slice_unchecked(i.data.as_slice())
+                            {
+                                return Some((units as i64, additional_fee as i64));
+                            }
+                        }
+                        None
+                    });
+
+                    let mut cu_requested = tx.message.instructions().iter().find_map(|i| {
+                        if i.program_id(tx.message.static_account_keys())
+                            .eq(&compute_budget::id())
+                        {
+                            if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
+                                try_from_slice_unchecked(i.data.as_slice())
+                            {
+                                return Some(limit as i64);
+                            }
+                        }
+                        None
+                    });
+
+                    let mut cu_price = tx.message.instructions().iter().find_map(|i| {
+                        if i.program_id(tx.message.static_account_keys())
+                            .eq(&compute_budget::id())
+                        {
+                            if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
+                                try_from_slice_unchecked(i.data.as_slice())
+                            {
+                                return Some(price as i64);
+                            }
+                        }
+                        None
+                    });
+
+                    if let Some((units, additional_fee))  = legacy_compute_budget {
+                        cu_requested = Some(units);
+                        if additional_fee > 0 {
+                            cu_price = Some((units * 1000) / additional_fee)
+                        }
+                    };
+
                     transactions_to_update.push(PostgresUpdateTx {
                         signature: sig.clone(),
                         processed_slot: slot as i64,
                         cu_consumed,
-                        cu_requested: None, //TODO: cu requested
+                        cu_requested,
+                        cu_price,
                     });
                 }
             };
@@ -299,7 +350,9 @@ impl BlockListener {
         // Write to postgres
         //
         if let Some(postgres) = &postgres {
-            postgres.send(PostgresMsg::PostgresUpdateTx(transactions_to_update)).unwrap();
+            postgres
+                .send(PostgresMsg::PostgresUpdateTx(transactions_to_update))
+                .unwrap();
             MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
 
