@@ -222,6 +222,8 @@ impl ActiveConnection {
                     if conn.stable_id() != current_stable_id {
                         conn.clone()
                     } else {
+                        NB_QUIC_CONNECTIONS.dec();
+
                         let new_conn = Self::connect(
                             identity,
                             true,
@@ -402,6 +404,7 @@ impl ActiveConnection {
             };
         }
         drop(transaction_reciever);
+        NB_QUIC_CONNECTIONS.dec();
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
     }
 
