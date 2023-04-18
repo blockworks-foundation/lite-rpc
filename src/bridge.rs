@@ -6,7 +6,6 @@ use crate::{
     workers::{
         tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
         PrometheusSync, TransactionReplay, TransactionReplayer, TxSender, WireTransaction,
-        RETRY_AFTER,
     },
     DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
@@ -67,6 +66,7 @@ pub struct LiteBridge {
 
     pub tx_replayer: TransactionReplayer,
     pub tx_replay_sender: Option<UnboundedSender<TransactionReplay>>,
+    pub max_retries: usize,
 }
 
 impl LiteBridge {
@@ -75,6 +75,8 @@ impl LiteBridge {
         ws_addr: String,
         fanout_slots: u64,
         identity: Keypair,
+        retry_after: Duration,
+        max_retries: usize,
     ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
         let current_slot = rpc_client.get_slot().await?;
@@ -96,7 +98,7 @@ impl LiteBridge {
         let block_listner =
             BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store.clone());
 
-        let tx_replayer = TransactionReplayer::new(tx_sender.clone());
+        let tx_replayer = TransactionReplayer::new(tx_sender.clone(), retry_after);
         Ok(Self {
             rpc_client,
             tpu_service,
@@ -106,6 +108,7 @@ impl LiteBridge {
             block_store,
             tx_replayer,
             tx_replay_sender: None,
+            max_retries,
         })
     }
 
@@ -272,8 +275,8 @@ impl LiteRpcServer for LiteBridge {
         }
 
         if let Some(tx_replay_sender) = &self.tx_replay_sender {
-            let max_replay = max_retries.map_or(10, |x| x) as usize;
-            let replay_at = Instant::now() + RETRY_AFTER;
+            let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
+            let replay_at = Instant::now() + self.tx_replayer.retry_after;
             // ignore error for replay service
             let _ = tx_replay_sender.send(TransactionReplay {
                 signature: sig.to_string(),

@@ -7,8 +7,6 @@ use tokio::{
     time::Instant,
 };
 
-pub const RETRY_AFTER: Duration = Duration::from_secs(4);
-
 #[derive(Debug, Clone)]
 pub struct TransactionReplay {
     pub signature: String,
@@ -21,11 +19,15 @@ pub struct TransactionReplay {
 #[derive(Clone)]
 pub struct TransactionReplayer {
     pub tx_sender: TxSender,
+    pub retry_after: Duration,
 }
 
 impl TransactionReplayer {
-    pub fn new(tx_sender: TxSender) -> Self {
-        Self { tx_sender }
+    pub fn new(tx_sender: TxSender, retry_after: Duration) -> Self {
+        Self {
+            tx_sender,
+            retry_after,
+        }
     }
 
     pub fn start_service(
@@ -34,6 +36,7 @@ impl TransactionReplayer {
         reciever: UnboundedReceiver<TransactionReplay>,
     ) -> JoinHandle<anyhow::Result<()>> {
         let tx_sender = self.tx_sender.clone();
+        let retry_after = self.retry_after;
         tokio::spawn(async move {
             let mut reciever = reciever;
             loop {
@@ -57,7 +60,7 @@ impl TransactionReplayer {
 
                         if tx_replay.replay_count < tx_replay.max_replay {
                             tx_replay.replay_count += 1;
-                            tx_replay.replay_at = Instant::now() + RETRY_AFTER;
+                            tx_replay.replay_at = Instant::now() + retry_after;
                             if let Err(e) = sender.send(tx_replay) {
                                 error!("error while scheduling replay ({})", e);
                                 continue;

@@ -1,4 +1,7 @@
-use crate::{DEFAULT_CLEAN_INTERVAL_MS, DEFAULT_FANOUT_SIZE, DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR};
+use crate::{
+    DEFAULT_CLEAN_INTERVAL_MS, DEFAULT_FANOUT_SIZE, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
+    DEFAULT_WS_ADDR, MAX_RETRIES,
+};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
@@ -26,4 +29,8 @@ pub struct Args {
     pub prometheus_addr: String,
     #[arg(short = 'k', long, default_value_t = String::new())]
     pub identity_keypair: String,
+    #[arg(long, default_value_t = MAX_RETRIES)]
+    pub maximum_retries_per_tx: usize,
+    #[arg(long, default_value_t = DEFAULT_RETRY_TIMEOUT)]
+    pub transaction_retry_after_secs: u64,
 }

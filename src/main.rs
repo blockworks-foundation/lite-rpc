@@ -45,6 +45,8 @@ pub async fn main() -> anyhow::Result<()> {
         enable_postgres,
         prometheus_addr,
         identity_keypair,
+        maximum_retries_per_tx,
+        transaction_retry_after_secs,
     } = Args::parse();
 
     dotenv().ok();
@@ -53,7 +55,16 @@ pub async fn main() -> anyhow::Result<()> {
 
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
 
-    let light_bridge = LiteBridge::new(rpc_addr, ws_addr, fanout_size, identity).await?;
+    let retry_after = Duration::from_secs(transaction_retry_after_secs);
+    let light_bridge = LiteBridge::new(
+        rpc_addr,
+        ws_addr,
+        fanout_size,
+        identity,
+        retry_after,
+        maximum_retries_per_tx,
+    )
+    .await?;
 
     let services = light_bridge
         .start_services(
