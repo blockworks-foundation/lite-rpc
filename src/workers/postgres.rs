@@ -70,7 +70,7 @@ pub struct PostgresUpdateTx {
     pub processed_slot: i64, // 8 bytes
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
-    pub cu_price: Option<i64>
+    pub cu_price: Option<i64>,
 }
 
 impl SchemaSize for PostgresUpdateTx {
@@ -315,7 +315,7 @@ impl PostgresSession {
                 processed_slot,
                 cu_consumed,
                 cu_requested,
-                cu_price
+                cu_price,
             } = tx;
 
             args.push(signature);

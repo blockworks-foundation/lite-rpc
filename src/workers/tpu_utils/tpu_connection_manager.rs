@@ -205,6 +205,10 @@ impl ActiveConnection {
         last_stable_id: Arc<AtomicU64>,
     ) {
         for _ in 0..3 {
+            if exit_signal.load(Ordering::Relaxed) {
+                // return
+                return;
+            }
             // get new connection reset if necessary
             let conn = {
                 let last_stable_id = last_stable_id.load(Ordering::Relaxed) as usize;

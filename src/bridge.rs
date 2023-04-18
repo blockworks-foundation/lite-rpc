@@ -5,7 +5,8 @@ use crate::{
     rpc::LiteRpcServer,
     workers::{
         tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
-        PrometheusSync, TxSender, WireTransaction,
+        PrometheusSync, TransactionReplay, TransactionReplayer, TxSender, WireTransaction,
+        RETRY_AFTER,
     },
     DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
@@ -31,8 +32,9 @@ use solana_sdk::{
 use solana_transaction_status::TransactionStatus;
 use tokio::{
     net::ToSocketAddrs,
-    sync::mpsc::{self, Sender},
+    sync::mpsc::{self, Sender, UnboundedSender},
     task::JoinHandle,
+    time::Instant,
 };
 
 lazy_static::lazy_static! {
@@ -62,6 +64,9 @@ pub struct LiteBridge {
     pub tx_sender: TxSender,
     pub block_listner: BlockListener,
     pub block_store: BlockStore,
+
+    pub tx_replayer: TransactionReplayer,
+    pub tx_replay_sender: Option<UnboundedSender<TransactionReplay>>,
 }
 
 impl LiteBridge {
@@ -91,6 +96,7 @@ impl LiteBridge {
         let block_listner =
             BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store.clone());
 
+        let tx_replayer = TransactionReplayer::new(tx_sender.clone());
         Ok(Self {
             rpc_client,
             tpu_service,
@@ -98,6 +104,8 @@ impl LiteBridge {
             tx_sender,
             block_listner,
             block_store,
+            tx_replayer,
+            tx_replay_sender: None,
         })
     }
 
@@ -130,6 +138,12 @@ impl LiteBridge {
             .tx_sender
             .clone()
             .execute(tx_recv, postgres_send.clone());
+
+        let (replay_sender, replay_reciever) = tokio::sync::mpsc::unbounded_channel();
+        let replay_service = self
+            .tx_replayer
+            .start_service(replay_sender.clone(), replay_reciever);
+        self.tx_replay_sender = Some(replay_sender);
 
         let metrics_capture = MetricsCapture::new(self.tx_sender.clone()).capture();
         let prometheus_sync = PrometheusSync.sync(prometheus_addr);
@@ -193,6 +207,7 @@ impl LiteBridge {
             metrics_capture,
             prometheus_sync,
             cleaner,
+            replay_service,
         ];
 
         services.append(&mut tpu_services);
@@ -216,7 +231,7 @@ impl LiteRpcServer for LiteBridge {
 
         let SendTransactionConfig {
             encoding,
-            max_retries: _,
+            max_retries,
         } = send_transaction_config.unwrap_or_default();
 
         let raw_tx = match encoding.decode(tx) {
@@ -242,6 +257,7 @@ impl LiteRpcServer for LiteBridge {
             return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
         };
 
+        let raw_tx_clone = raw_tx.clone();
         if let Err(e) = self
             .tx_send_channel
             .as_ref()
@@ -253,6 +269,19 @@ impl LiteRpcServer for LiteBridge {
                 "Internal error sending transaction on send channel error {}",
                 e
             );
+        }
+
+        if let Some(tx_replay_sender) = &self.tx_replay_sender {
+            let max_replay = max_retries.map_or(10, |x| x) as usize;
+            let replay_at = Instant::now() + RETRY_AFTER;
+            // ignore error for replay service
+            let _ = tx_replay_sender.send(TransactionReplay {
+                signature: sig.to_string(),
+                tx: raw_tx_clone,
+                replay_count: 0,
+                max_replay,
+                replay_at,
+            });
         }
         TXS_IN_CHANNEL.inc();
 
