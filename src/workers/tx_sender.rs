@@ -170,11 +170,11 @@ impl TxSender {
                     {
                         Ok(value) => match value {
                             Some((sig, tx, slot)) => {
+                                TXS_IN_CHANNEL.dec();
                                 if self.txs_sent_store.contains_key(&sig) {
                                     // duplicate transaction
                                     continue;
                                 }
-                                TXS_IN_CHANNEL.dec();
                                 sigs_and_slots.push((sig, slot));
                                 txs.push(tx);
                                 // update the timeout inteval
