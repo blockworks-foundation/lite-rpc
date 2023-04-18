@@ -313,7 +313,7 @@ impl BlockListener {
                         None
                     });
 
-                    if let Some((units, additional_fee))  = legacy_compute_budget {
+                    if let Some((units, additional_fee)) = legacy_compute_budget {
                         cu_requested = Some(units);
                         if additional_fee > 0 {
                             cu_price = Some((units * 1000) / additional_fee)
