@@ -17,7 +17,7 @@ use anyhow::bail;
 
 use log::{error, info};
 
-use jsonrpsee::{server::ServerBuilder, types::SubscriptionResult, SubscriptionSink};
+use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
 
 use prometheus::{core::GenericGauge, opts, register_int_counter, register_int_gauge, IntCounter};
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
@@ -444,16 +444,18 @@ impl LiteRpcServer for LiteBridge {
         Ok(airdrop_sig)
     }
 
-    fn signature_subscribe(
+    async fn signature_subscribe(
         &self,
-        mut sink: SubscriptionSink,
+        pending: PendingSubscriptionSink,
         signature: String,
         commitment_config: CommitmentConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
-        sink.accept()?;
+        let sink = pending.accept().await?;
+
         self.block_listner
             .signature_subscribe(signature, commitment_config, sink);
+
         Ok(())
     }
 }

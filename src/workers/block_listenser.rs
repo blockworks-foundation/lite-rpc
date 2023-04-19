@@ -6,7 +6,7 @@ use std::{
 
 use chrono::{TimeZone, Utc};
 use dashmap::DashMap;
-use jsonrpsee::SubscriptionSink;
+use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
 use log::{info, trace, warn};
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
@@ -331,17 +331,23 @@ impl BlockListener {
             };
 
             // subscribers
-            if let Some((_sig, (mut sink, _))) =
+            if let Some((_sig, (sink, _))) =
                 self.signature_subscribers.remove(&(sig, commitment_config))
             {
                 // none if transaction succeeded
-                sink.send(&RpcResponse {
-                    context: RpcResponseContext {
-                        slot,
-                        api_version: None,
-                    },
-                    value: serde_json::json!({ "err": err }),
-                })?;
+                let _res = sink
+                    .send(
+                        SubscriptionMessage::from_json(&RpcResponse {
+                            context: RpcResponseContext {
+                                slot,
+                                api_version: None,
+                            },
+                            value: serde_json::json!({ "err": err }),
+                        })
+                        .unwrap(),
+                    )
+                    .await;
+
                 NUMBER_OF_SIGNATURE_SUBSCRIBERS.dec();
             }
         }
