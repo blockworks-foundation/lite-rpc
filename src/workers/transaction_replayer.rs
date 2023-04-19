@@ -10,7 +10,7 @@ use tokio::{
 
 lazy_static::lazy_static! {
     pub static ref MESSAGES_IN_REPLAY_QUEUE: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_messages_in_replay_queue", "Number of quic connections open")).unwrap();
+        register_int_gauge!(opts!("literpc_messages_in_replay_queue", "Number of transactions waiting for replay")).unwrap();
 }
 
 #[derive(Debug, Clone)]
