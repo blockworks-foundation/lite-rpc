@@ -11,7 +11,7 @@ echo "Switching to local lite-rpc rpc config"
 solana config set --url "http://0.0.0.0:8899"
 
 echo "Starting the test validator"
-solana-test-validator &
+(cd $HOME; solana-test-validator > /dev/null &)
 
 echo "Air Dropping 10000 sol" 
 sleep 20 && solana airdrop 10000
