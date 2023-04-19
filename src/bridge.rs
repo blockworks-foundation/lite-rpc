@@ -6,6 +6,7 @@ use crate::{
     workers::{
         tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
         PrometheusSync, TransactionReplay, TransactionReplayer, TxSender, WireTransaction,
+        MESSAGES_IN_REPLAY_QUEUE,
     },
     DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
@@ -278,13 +279,18 @@ impl LiteRpcServer for LiteBridge {
             let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
             let replay_at = Instant::now() + self.tx_replayer.retry_after;
             // ignore error for replay service
-            let _ = tx_replay_sender.send(TransactionReplay {
-                signature: sig.to_string(),
-                tx: raw_tx_clone,
-                replay_count: 0,
-                max_replay,
-                replay_at,
-            });
+            if tx_replay_sender
+                .send(TransactionReplay {
+                    signature: sig.to_string(),
+                    tx: raw_tx_clone,
+                    replay_count: 0,
+                    max_replay,
+                    replay_at,
+                })
+                .is_ok()
+            {
+                MESSAGES_IN_REPLAY_QUEUE.inc();
+            }
         }
         TXS_IN_CHANNEL.inc();
 

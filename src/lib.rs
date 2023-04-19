@@ -22,12 +22,12 @@ pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 40_000;
 
 /// 25 slots in 10s send to little more leaders
 #[from_env]
-pub const DEFAULT_FANOUT_SIZE: u64 = 100;
+pub const DEFAULT_FANOUT_SIZE: u64 = 16;
 
 #[from_env]
-pub const MAX_RETRIES: usize = 10;
+pub const MAX_RETRIES: usize = 40;
 
-pub const DEFAULT_RETRY_TIMEOUT: u64 = 4;
+pub const DEFAULT_RETRY_TIMEOUT: u64 = 2;
 
 #[from_env]
 pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 5 * 60 * 1000; // five minute

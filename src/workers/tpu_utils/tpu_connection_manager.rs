@@ -222,8 +222,6 @@ impl ActiveConnection {
                     if conn.stable_id() != current_stable_id {
                         conn.clone()
                     } else {
-                        NB_QUIC_CONNECTIONS.dec();
-
                         let new_conn = Self::connect(
                             identity,
                             true,
@@ -233,6 +231,7 @@ impl ActiveConnection {
                         )
                         .await;
                         if let Some(new_conn) = new_conn {
+                            NB_QUIC_CONNECTIONS.dec();
                             *conn = new_conn;
                             conn.clone()
                         } else {
