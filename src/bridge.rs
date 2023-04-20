@@ -2,6 +2,7 @@ use crate::{
     block_store::{BlockInformation, BlockStore},
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
+    errors::{RpcCustomError, RpcCustomResult},
     rpc::LiteRpcServer,
     workers::{
         tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
@@ -230,7 +231,7 @@ impl LiteRpcServer for LiteBridge {
         &self,
         tx: String,
         send_transaction_config: Option<SendTransactionConfig>,
-    ) -> crate::rpc::Result<String> {
+    ) -> RpcCustomResult<String> {
         RPC_SEND_TX.inc();
 
         let SendTransactionConfig {
@@ -238,42 +239,26 @@ impl LiteRpcServer for LiteBridge {
             max_retries,
         } = send_transaction_config.unwrap_or_default();
 
-        let raw_tx = match encoding.decode(tx) {
-            Ok(raw_tx) => raw_tx,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+        let raw_tx = encoding.decode(tx).map_err(anyhow::Error::new)?;
 
-        let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
-            Ok(tx) => tx,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
-
+        let tx =
+            bincode::deserialize::<VersionedTransaction>(&raw_tx).map_err(anyhow::Error::new)?;
         let sig = tx.get_signature();
+
         let Some(BlockInformation { slot, .. }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {
             log::warn!("block");
-            return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
+            return Err(RpcCustomError::Custom("Blockhash not found in block store".to_string()));
         };
 
-        let raw_tx_clone = raw_tx.clone();
-        if let Err(e) = self
-            .tx_send_channel
+        self.tx_send_channel
             .as_ref()
             .expect("Lite Bridge Not Executed")
-            .send((sig.to_string(), raw_tx, slot))
+            .send((sig.to_string(), raw_tx.clone(), slot))
             .await
-        {
-            error!(
-                "Internal error sending transaction on send channel error {}",
-                e
-            );
-        }
+            .expect("Internal error sending transaction on send channel error");
 
         if let Some(tx_replay_sender) = &self.tx_replay_sender {
             let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
@@ -282,7 +267,7 @@ impl LiteRpcServer for LiteBridge {
             if tx_replay_sender
                 .send(TransactionReplay {
                     signature: sig.to_string(),
-                    tx: raw_tx_clone,
+                    tx: raw_tx,
                     replay_count: 0,
                     max_replay,
                     replay_at,
@@ -292,6 +277,7 @@ impl LiteRpcServer for LiteBridge {
                 MESSAGES_IN_REPLAY_QUEUE.inc();
             }
         }
+
         TXS_IN_CHANNEL.inc();
 
         Ok(BinaryEncoding::Base58.encode(sig))
@@ -300,7 +286,7 @@ impl LiteRpcServer for LiteBridge {
     async fn get_latest_blockhash(
         &self,
         config: Option<RpcContextConfig>,
-    ) -> crate::rpc::Result<RpcResponse<RpcBlockhash>> {
+    ) -> RpcCustomResult<RpcResponse<RpcBlockhash>> {
         RPC_GET_LATEST_BLOCKHASH.inc();
 
         let commitment_config = config
@@ -332,29 +318,19 @@ impl LiteRpcServer for LiteBridge {
         &self,
         blockhash: String,
         config: Option<IsBlockHashValidConfig>,
-    ) -> crate::rpc::Result<RpcResponse<bool>> {
+    ) -> RpcCustomResult<RpcResponse<bool>> {
         RPC_IS_BLOCKHASH_VALID.inc();
 
         let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
         let commitment = CommitmentConfig { commitment };
 
-        let blockhash = match Hash::from_str(&blockhash) {
-            Ok(blockhash) => blockhash,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+        let blockhash = Hash::from_str(&blockhash).map_err(anyhow::Error::new)?;
 
-        let is_valid = match self
+        let is_valid = self
             .rpc_client
             .is_blockhash_valid(&blockhash, commitment)
             .await
-        {
-            Ok(is_valid) => is_valid,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+            .map_err(anyhow::Error::new)?;
 
         let slot = self
             .block_store
@@ -375,7 +351,7 @@ impl LiteRpcServer for LiteBridge {
         &self,
         sigs: Vec<String>,
         _config: Option<RpcSignatureStatusConfig>,
-    ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
+    ) -> RpcCustomResult<RpcResponse<Vec<Option<TransactionStatus>>>> {
         RPC_GET_SIGNATURE_STATUSES.inc();
 
         let sig_statuses = sigs
@@ -401,7 +377,7 @@ impl LiteRpcServer for LiteBridge {
         })
     }
 
-    fn get_version(&self) -> crate::rpc::Result<RpcVersionInfo> {
+    fn get_version(&self) -> RpcCustomResult<RpcVersionInfo> {
         RPC_GET_VERSION.inc();
 
         let version = solana_version::Version::default();
@@ -416,26 +392,17 @@ impl LiteRpcServer for LiteBridge {
         pubkey_str: String,
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
-    ) -> crate::rpc::Result<String> {
+    ) -> RpcCustomResult<String> {
         RPC_REQUEST_AIRDROP.inc();
 
-        let pubkey = match Pubkey::from_str(&pubkey_str) {
-            Ok(pubkey) => pubkey,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+        let pubkey = Pubkey::from_str(&pubkey_str).map_err(anyhow::Error::new)?;
 
-        let airdrop_sig = match self
+        let airdrop_sig = self
             .rpc_client
             .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
             .await
-        {
-            Ok(airdrop_sig) => airdrop_sig.to_string(),
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+            .map_err(anyhow::Error::new)?
+            .to_string();
 
         self.tx_sender
             .txs_sent_store
