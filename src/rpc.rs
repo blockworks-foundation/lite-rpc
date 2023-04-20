@@ -1,3 +1,4 @@
+use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::proc_macros::rpc;
 use solana_rpc_client_api::config::{
     RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
@@ -51,5 +52,9 @@ pub trait LiteRpc {
     ) -> Result<String>;
 
     #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<serde_json::Value>)]
-    fn signature_subscribe(&self, signature: String, commitment_config: CommitmentConfig);
+    async fn signature_subscribe(
+        &self,
+        signature: String,
+        commitment_config: CommitmentConfig,
+    ) -> SubscriptionResult;
 }
