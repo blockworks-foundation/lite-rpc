@@ -35,7 +35,7 @@ const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and cont
 const CLUSTERINFO_REFRESH_TIME: u64 = 60; // refresh cluster every minute
 const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
-const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 16384;
+const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
