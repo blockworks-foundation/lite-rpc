@@ -83,7 +83,7 @@ impl LiteBridge {
         let current_slot = rpc_client.get_slot().await?;
 
         let tpu_service = TpuService::new(
-            Arc::new(std::sync::atomic::AtomicU64::new(current_slot)),
+            current_slot,
             fanout_slots,
             Arc::new(identity),
             rpc_client.clone(),

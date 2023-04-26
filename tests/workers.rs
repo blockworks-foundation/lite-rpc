@@ -1,7 +1,4 @@
-use std::{
-    sync::{atomic::AtomicU64, Arc},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 use bench::helpers::BenchHelper;
 use futures::future::try_join_all;
@@ -23,7 +20,7 @@ async fn send_and_confirm_txs() {
     let current_slot = rpc_client.get_slot().await.unwrap();
 
     let tpu_service = TpuService::new(
-        Arc::new(AtomicU64::new(current_slot)),
+        current_slot,
         32,
         Arc::new(Keypair::new()),
         rpc_client.clone(),
