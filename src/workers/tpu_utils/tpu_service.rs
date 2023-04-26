@@ -412,7 +412,7 @@ impl TpuService {
                     }
                     Err(_) => {
                         let es = estimated_slot.load(Ordering::Relaxed);
-                        let cs = estimated_slot.load(Ordering::Relaxed);
+                        let cs = current_slot.load(Ordering::Relaxed);
                         // estimated slot should not go ahead more than 32 slots
                         // this is because it may be a slot block
                         if es < cs + 32 {
