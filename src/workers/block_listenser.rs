@@ -55,10 +55,6 @@ lazy_static::lazy_static! {
         "Time to receive finalized block from block subscribe",
     ))
     .unwrap();
-    static ref FIN_BLOCKS_RECV: IntCounter =
-    register_int_counter!(opts!("literpc_fin_blocks_recv", "Number of Finalized Blocks Received")).unwrap();
-    static ref CON_BLOCKS_RECV: IntCounter =
-    register_int_counter!(opts!("literpc_con_blocks_recv", "Number of Confirmed Blocks Received")).unwrap();
     static ref INCOMPLETE_FIN_BLOCKS_RECV: IntCounter =
     register_int_counter!(opts!("literpc_incomplete_fin_blocks_recv", "Number of Incomplete Finalized Blocks Received")).unwrap();
     static ref INCOMPLETE_CON_BLOCKS_RECV: IntCounter =
@@ -188,12 +184,6 @@ impl BlockListener {
             .await?;
 
         timer.observe_duration();
-
-        if commitment_config.is_finalized() {
-            FIN_BLOCKS_RECV.inc();
-        } else {
-            CON_BLOCKS_RECV.inc();
-        };
 
         let Some(block_height) = block.block_height else {
             Self::increment_invalid_block_metric(commitment_config);
