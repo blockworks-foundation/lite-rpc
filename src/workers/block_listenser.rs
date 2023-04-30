@@ -1,5 +1,4 @@
 use std::{
-    collections::VecDeque,
     sync::{atomic::AtomicU64, Arc},
     time::Duration,
 };
@@ -7,7 +6,7 @@ use std::{
 use chrono::{TimeZone, Utc};
 use dashmap::DashMap;
 use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
-use log::{info, trace, warn};
+use log::{error, info, trace, warn};
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
     register_int_gauge, Histogram, IntCounter,
@@ -31,11 +30,7 @@ use solana_transaction_status::{
     TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
     UiTransactionStatusMeta,
 };
-use tokio::{
-    sync::{mpsc::Sender, Mutex},
-    task::JoinHandle,
-    time::Instant,
-};
+use tokio::{sync::mpsc::Sender, task::JoinHandle, time::Instant};
 
 use crate::{
     block_store::{BlockInformation, BlockStore},
@@ -412,30 +407,32 @@ impl BlockListener {
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
     ) -> JoinHandle<anyhow::Result<()>> {
-        let slots_task_queue = Arc::new(Mutex::new(VecDeque::<(u64, u8)>::new()));
         let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (block_schedule_queue_sx, block_schedule_queue_rx) =
+            async_channel::unbounded::<(Slot, u8)>();
 
         // task to fetch blocks
-        for _i in 0..6 {
+        for _i in 0..8 {
             let this = self.clone();
             let postgres = postgres.clone();
-            let slots_task_queue = slots_task_queue.clone();
             let slot_retry_queue_sx = slot_retry_queue_sx.clone();
+            let block_schedule_queue_rx = block_schedule_queue_rx.clone();
 
             tokio::spawn(async move {
-                let slots_task_queue = slots_task_queue.clone();
                 loop {
-                    let (slot, error_count) = {
-                        let mut queue = slots_task_queue.lock().await;
-                        match queue.pop_front() {
-                            Some(t) => t,
-                            None => {
-                                // no task
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                                continue;
-                            }
+                    let (slot, error_count) = match block_schedule_queue_rx.recv().await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!("Recv error on block channel {}", e);
+                            continue;
                         }
                     };
+
+                    if commitment_config.is_finalized() {
+                        BLOCKS_IN_FINALIZED_QUEUE.dec();
+                    } else {
+                        BLOCKS_IN_CONFIRMED_QUEUE.dec();
+                    }
 
                     if this
                         .index_slot(slot, commitment_config, postgres.clone())
@@ -469,7 +466,7 @@ impl BlockListener {
         let recent_slot = Arc::new(AtomicU64::new(0));
 
         {
-            let slots_task_queue = slots_task_queue.clone();
+            let block_schedule_queue_sx = block_schedule_queue_sx.clone();
             let recent_slot = recent_slot.clone();
             tokio::spawn(async move {
                 while let Some((slot, error_count, instant)) = slot_retry_queue_rx.recv().await {
@@ -486,8 +483,13 @@ impl BlockListener {
                     if now < instant {
                         tokio::time::sleep_until(instant).await;
                     }
-                    let mut queue = slots_task_queue.lock().await;
-                    queue.push_back((slot, error_count + 1));
+                    if let Ok(_) = block_schedule_queue_sx.send((slot, error_count + 1)).await {
+                        if commitment_config.is_finalized() {
+                            BLOCKS_IN_FINALIZED_QUEUE.inc();
+                        } else {
+                            BLOCKS_IN_CONFIRMED_QUEUE.inc();
+                        }
+                    }
                 }
             });
         }
@@ -496,7 +498,6 @@ impl BlockListener {
         tokio::spawn(async move {
             info!("{commitment_config:?} block listner started");
 
-            let slots_task_queue = slots_task_queue.clone();
             let last_latest_slot = self
                 .block_store
                 .get_latest_block_info(commitment_config)
@@ -514,14 +515,13 @@ impl BlockListener {
                     Err(err) => {
                         warn!("Error while fetching slot {err:?}");
                         ERRORS_WHILE_FETCHING_SLOTS.inc();
-                        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                         continue;
                     }
                 };
 
                 if last_latest_slot == new_slot {
-                    warn!("No new slots");
-                    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
                     continue;
                 }
 
@@ -529,22 +529,23 @@ impl BlockListener {
                 let new_block_slots: Vec<u64> = (last_latest_slot..new_slot).collect();
                 // context for lock
                 {
-                    let mut lock = slots_task_queue.lock().await;
                     for slot in new_block_slots {
-                        lock.push_back((slot, 0));
-                    }
-
-                    if commitment_config.is_finalized() {
-                        BLOCKS_IN_FINALIZED_QUEUE.set(lock.len() as i64);
-                    } else {
-                        BLOCKS_IN_CONFIRMED_QUEUE.set(lock.len() as i64);
+                        if let Err(e) = block_schedule_queue_sx.send((slot, 0)).await {
+                            error!("error sending of block schedule queue {}", e);
+                        } else {
+                            if commitment_config.is_finalized() {
+                                BLOCKS_IN_FINALIZED_QUEUE.inc();
+                            } else {
+                                BLOCKS_IN_CONFIRMED_QUEUE.inc();
+                            }
+                        }
                     }
                 }
 
                 last_latest_slot = new_slot;
                 recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
 
-                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
         })
     }
