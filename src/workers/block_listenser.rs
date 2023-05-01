@@ -413,7 +413,7 @@ impl BlockListener {
     ) -> JoinHandle<anyhow::Result<()>> {
         let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
         let (block_schedule_queue_sx, block_schedule_queue_rx) =
-            async_channel::unbounded::<(Slot, u8)>();
+            async_channel::unbounded::<Slot>();
 
         // task to fetch blocks
         for _i in 0..8 {
@@ -424,7 +424,7 @@ impl BlockListener {
 
             tokio::spawn(async move {
                 loop {
-                    let (slot, error_count) = match block_schedule_queue_rx.recv().await {
+                    let slot = match block_schedule_queue_rx.recv().await {
                         Ok(v) => v,
                         Err(e) => {
                             error!("Recv error on block channel {}", e);
@@ -447,7 +447,7 @@ impl BlockListener {
                         let retry_at = tokio::time::Instant::now()
                             .checked_add(Duration::from_millis(10))
                             .unwrap();
-                        let _ = slot_retry_queue_sx.send((slot, error_count, retry_at));
+                        let _ = slot_retry_queue_sx.send((slot, retry_at));
                         BLOCKS_IN_RETRY_QUEUE.inc();
                     };
                 }
@@ -461,7 +461,7 @@ impl BlockListener {
             let block_schedule_queue_sx = block_schedule_queue_sx.clone();
             let recent_slot = recent_slot.clone();
             tokio::spawn(async move {
-                while let Some((slot, error_count, instant)) = slot_retry_queue_rx.recv().await {
+                while let Some((slot, instant)) = slot_retry_queue_rx.recv().await {
                     BLOCKS_IN_RETRY_QUEUE.dec();
                     let recent_slot = recent_slot.load(std::sync::atomic::Ordering::Relaxed);
                     // if slot is too old ignore
@@ -475,7 +475,7 @@ impl BlockListener {
                     if now < instant {
                         tokio::time::sleep_until(instant).await;
                     }
-                    if let Ok(_) = block_schedule_queue_sx.send((slot, error_count + 1)).await {
+                    if let Ok(_) = block_schedule_queue_sx.send(slot).await {
                         if commitment_config.is_finalized() {
                             BLOCKS_IN_FINALIZED_QUEUE.inc();
                         } else {
@@ -495,7 +495,7 @@ impl BlockListener {
                 .await
                 .slot;
             // -5 for warmup
-            let mut last_latest_slot = last_latest_slot - 5;
+            let mut last_latest_slot = last_latest_slot.saturating_sub(5);
             recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
 
             loop {
@@ -511,7 +511,7 @@ impl BlockListener {
                 // context for lock
                 {
                     for slot in new_block_slots {
-                        if let Err(e) = block_schedule_queue_sx.send((slot, 0)).await {
+                        if let Err(e) = block_schedule_queue_sx.send(slot).await {
                             error!("error sending of block schedule queue {}", e);
                         } else {
                             if commitment_config.is_finalized() {

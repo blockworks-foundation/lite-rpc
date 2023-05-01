@@ -17,7 +17,7 @@ use tokio::{
     time::{Duration, Instant},
 };
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
     tracing_subscriber::fmt::init();
 
@@ -38,7 +38,6 @@ async fn main() {
     let mut avg_metric = AvgMetric::default();
 
     let mut tasks = vec![];
-    let block_hash: Arc<RwLock<Hash>> = Default::default();
 
     let funded_payer = BenchHelper::get_payer().await.unwrap();
     println!("payer : {}", funded_payer.pubkey());
@@ -47,23 +46,26 @@ async fn main() {
         lite_rpc_addr.clone(),
         CommitmentConfig::confirmed(),
     ));
-
-    {
+    let bh = rpc_client.get_latest_blockhash().await.unwrap();
+    let block_hash: Arc<RwLock<Hash>> = Arc::new(RwLock::new(bh));
+    let _jh = {
         // block hash updater task
         let block_hash = block_hash.clone();
         let rpc_client = rpc_client.clone();
         tokio::spawn(async move {
             loop {
                 let bh = rpc_client.get_latest_blockhash().await;
-                if let Ok(bh) = bh {
-                    let mut lock = block_hash.write().await;
-                    *lock = bh;
+                match bh {
+                    Ok(bh) => {
+                        let mut lock = block_hash.write().await;
+                        *lock = bh;
+                    },
+                    Err(e) => println!("blockhash update error {}", e),
                 }
-
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
-        });
-    }
+        })
+    };
 
     for seed in 0..runs {
         let funded_payer = Keypair::from_bytes(funded_payer.to_bytes().as_slice()).unwrap();
@@ -118,7 +120,6 @@ async fn bench(
     block_hash: Arc<RwLock<Hash>>,
 ) -> Metric {
     let map_of_txs = Arc::new(DashMap::new());
-
     // transaction sender task
     {
         let map_of_txs = map_of_txs.clone();
@@ -128,7 +129,7 @@ async fn bench(
             let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed));
 
             for rand_string in rand_strings {
-                let blockhash = *block_hash.read().await;
+                let blockhash = { *block_hash.read().await };
                 let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
                 let start_time = Instant::now();
                 if let Ok(signature) = rpc_client.send_transaction(&tx).await {
@@ -154,6 +155,11 @@ async fn bench(
             .iter()
             .map(|x| x.key().clone())
             .collect::<Vec<_>>();
+        if signatures.is_empty() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            continue;
+        }
+
         if let Ok(res) = rpc_client.get_signature_statuses(&signatures).await {
             for i in 0..signatures.len() {
                 let tx_status = &res.value[i];
@@ -164,6 +170,7 @@ async fn bench(
                         tx_data.sent_duration,
                         tx_data.sent_instant.elapsed(),
                     );
+                    drop(tx_data);
                     map_of_txs.remove(&signature);
                     confirmed_count += 1;
                 }
