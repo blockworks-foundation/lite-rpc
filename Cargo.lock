@@ -427,6 +427,7 @@ dependencies = [
  "anyhow",
  "clap 4.2.4",
  "csv",
+ "dashmap",
  "dirs",
  "futures",
  "log",

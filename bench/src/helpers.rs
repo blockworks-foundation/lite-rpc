@@ -1,5 +1,3 @@
-use std::{str::FromStr, time::Duration};
-
 use anyhow::Context;
 use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -14,6 +12,7 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
+use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
@@ -67,6 +66,14 @@ impl BenchHelper {
         let message = Message::new(&[instruction], Some(&funded_payer.pubkey()));
 
         Transaction::new(&[funded_payer], message, blockhash)
+    }
+
+    pub fn generate_random_strings(num_of_txs: usize, random_seed: Option<u64>) -> Vec<Vec<u8>> {
+        let seed = random_seed.map_or(0, |x| x);
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        (0..num_of_txs)
+            .map(|_| Alphanumeric.sample_iter(&mut rng).take(10).collect())
+            .collect()
     }
 
     #[inline]

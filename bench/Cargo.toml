@@ -18,3 +18,4 @@ dirs = "5.0.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 futures = { workspace = true }
+dashmap = {workspace = true }
