@@ -38,11 +38,13 @@ impl Metric {
 
     pub fn finalize(&mut self) {
         if self.txs_sent > 0 {
-            self.average_time_to_send_txs = self.total_sent_time.as_millis() as f64 / self.txs_sent as f64;
+            self.average_time_to_send_txs =
+                self.total_sent_time.as_millis() as f64 / self.txs_sent as f64;
         }
 
         if self.txs_confirmed > 0 {
-            self.average_confirmation_time_ms = self.total_confirmation_time.as_millis() as f64 / self.txs_confirmed as f64;
+            self.average_confirmation_time_ms =
+                self.total_confirmation_time.as_millis() as f64 / self.txs_confirmed as f64;
         }
     }
 }
@@ -81,8 +83,10 @@ impl DivAssign<u64> for Metric {
         self.txs_confirmed /= rhs;
         self.txs_un_confirmed /= rhs;
 
-        self.total_confirmation_time = Duration::from_micros((self.total_confirmation_time.as_micros() / rhs as u128) as u64);
-        self.total_sent_time = Duration::from_micros((self.total_sent_time.as_micros() / rhs as u128) as u64);
+        self.total_confirmation_time =
+            Duration::from_micros((self.total_confirmation_time.as_micros() / rhs as u128) as u64);
+        self.total_sent_time =
+            Duration::from_micros((self.total_sent_time.as_micros() / rhs as u128) as u64);
         self.finalize();
     }
 }

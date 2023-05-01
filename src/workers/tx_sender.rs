@@ -70,10 +70,13 @@ impl Default for TxProps {
 }
 
 impl TxSender {
-    pub fn new(tpu_service: Arc<TpuService>) -> Self {
+    pub fn new(
+        txs_sent_store: Arc<DashMap<String, TxProps>>,
+        tpu_service: Arc<TpuService>,
+    ) -> Self {
         Self {
             tpu_service,
-            txs_sent_store: Default::default(),
+            txs_sent_store: txs_sent_store,
         }
     }
 
@@ -105,8 +108,9 @@ impl TxSender {
         let forwarded_local_time = Utc::now();
 
         let mut quic_responses = vec![];
-        for tx in txs {
-            let quic_response = match tpu_client.send_transaction(tx) {
+        for (tx, (signature, _)) in txs.iter().zip(sigs_and_slots.clone()) {
+            txs_sent.insert(signature.to_owned(), TxProps::default());
+            let quic_response = match tpu_client.send_transaction(signature.clone(), tx.clone()) {
                 Ok(_) => {
                     TXS_SENT.inc_by(1);
                     1

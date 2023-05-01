@@ -25,6 +25,8 @@ use tokio::{
     time::timeout,
 };
 
+use crate::workers::TxProps;
+
 use super::{rotating_queue::RotatingQueue, tpu_service::IdentityStakes};
 
 pub const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
@@ -43,19 +45,26 @@ lazy_static::lazy_static! {
 }
 
 struct ActiveConnection {
-    pub endpoint: Endpoint,
-    pub identity: Pubkey,
-    pub tpu_address: SocketAddr,
-    pub exit_signal: Arc<AtomicBool>,
+    endpoint: Endpoint,
+    identity: Pubkey,
+    tpu_address: SocketAddr,
+    exit_signal: Arc<AtomicBool>,
+    txs_sent_store: Arc<DashMap<String, TxProps>>,
 }
 
 impl ActiveConnection {
-    pub fn new(endpoint: Endpoint, tpu_address: SocketAddr, identity: Pubkey) -> Self {
+    pub fn new(
+        endpoint: Endpoint,
+        tpu_address: SocketAddr,
+        identity: Pubkey,
+        txs_sent_store: Arc<DashMap<String, TxProps>>,
+    ) -> Self {
         Self {
             endpoint,
             tpu_address,
             identity,
             exit_signal: Arc::new(AtomicBool::new(false)),
+            txs_sent_store,
         }
     }
 
@@ -292,14 +301,25 @@ impl ActiveConnection {
         }
     }
 
+    fn check_for_confirmation(
+        txs_sent_store: &Arc<DashMap<String, TxProps>>,
+        signature: String,
+    ) -> bool {
+        match txs_sent_store.get(&signature) {
+            Some(props) => props.status.is_some(),
+            None => false,
+        }
+    }
+
     async fn listen(
-        transaction_reciever: Receiver<Vec<u8>>,
+        transaction_reciever: Receiver<(String, Vec<u8>)>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         endpoint: Endpoint,
         addr: SocketAddr,
         exit_signal: Arc<AtomicBool>,
         identity: Pubkey,
         identity_stakes: IdentityStakes,
+        txs_sent_store: Arc<DashMap<String, TxProps>>,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
@@ -346,7 +366,13 @@ impl ActiveConnection {
                     match tx_or_timeout {
                         Ok(tx) => {
                             let first_tx: Vec<u8> = match tx {
-                                Ok(tx) => tx,
+                                Ok((sig, tx)) => {
+                                    if Self::check_for_confirmation(&txs_sent_store, sig) {
+                                        // transaction is already confirmed/ no need to send
+                                        continue;
+                                    }
+                                    tx
+                                },
                                 Err(e) => {
                                     error!(
                                         "Broadcast channel error on recv for {} error {}",
@@ -358,7 +384,10 @@ impl ActiveConnection {
 
                             let mut txs = vec![first_tx];
                             for _ in 1..number_of_transactions_per_unistream {
-                                if let Ok(tx) = transaction_reciever.try_recv() {
+                                if let Ok((signature, tx)) = transaction_reciever.try_recv() {
+                                    if Self::check_for_confirmation(&txs_sent_store, signature) {
+                                        continue;
+                                    }
                                     txs.push(tx);
                                 }
                             }
@@ -409,7 +438,7 @@ impl ActiveConnection {
 
     pub fn start_listening(
         &self,
-        transaction_reciever: Receiver<Vec<u8>>,
+        transaction_reciever: Receiver<(String, Vec<u8>)>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         identity_stakes: IdentityStakes,
     ) {
@@ -417,6 +446,7 @@ impl ActiveConnection {
         let addr = self.tpu_address;
         let exit_signal = self.exit_signal.clone();
         let identity = self.identity;
+        let txs_sent_store = self.txs_sent_store.clone();
         tokio::spawn(async move {
             Self::listen(
                 transaction_reciever,
@@ -426,6 +456,7 @@ impl ActiveConnection {
                 exit_signal,
                 identity,
                 identity_stakes,
+                txs_sent_store,
             )
             .await;
         });
@@ -488,16 +519,22 @@ impl TpuConnectionManager {
 
     pub async fn update_connections(
         &self,
-        transaction_sender: Arc<Sender<Vec<u8>>>,
+        transaction_sender: Arc<Sender<(String, Vec<u8>)>>,
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakes,
+        txs_sent_store: Arc<DashMap<String, TxProps>>,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
         for (identity, socket_addr) in &connections_to_keep {
             if self.identity_to_active_connection.get(identity).is_none() {
                 trace!("added a connection for {}, {}", identity, socket_addr);
                 let endpoint = self.endpoints.get();
-                let active_connection = ActiveConnection::new(endpoint, *socket_addr, *identity);
+                let active_connection = ActiveConnection::new(
+                    endpoint,
+                    *socket_addr,
+                    *identity,
+                    txs_sent_store.clone(),
+                );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
                 let (sx, rx) = tokio::sync::mpsc::channel(1);
 

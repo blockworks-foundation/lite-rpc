@@ -63,7 +63,9 @@ impl TransactionReplayer {
                             continue;
                         }
                         // ignore reset error
-                        let _ = tx_sender.tpu_service.send_transaction(tx_replay.tx.clone());
+                        let _ = tx_sender
+                            .tpu_service
+                            .send_transaction(tx_replay.signature.clone(), tx_replay.tx.clone());
 
                         if tx_replay.replay_count < tx_replay.max_replay {
                             tx_replay.replay_count += 1;

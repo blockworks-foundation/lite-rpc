@@ -1,4 +1,4 @@
-use std::{sync::Arc, collections::HashMap};
+use std::{collections::HashMap, sync::Arc};
 
 use bench::{
     cli::Args,
@@ -9,10 +9,8 @@ use clap::Parser;
 use futures::future::join_all;
 use log::{error, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{commitment_config::CommitmentConfig, signer::Signer, signature::Keypair};
-use tokio::{
-    time::{Duration, Instant},
-};
+use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair, signer::Signer};
+use tokio::time::{Duration, Instant};
 
 #[tokio::main]
 async fn main() {
@@ -45,7 +43,12 @@ async fn main() {
     ));
     for seed in 0..runs {
         let funded_payer = Keypair::from_bytes(funded_payer.to_bytes().as_slice()).unwrap();
-        tasks.push(tokio::spawn(bench(rpc_client.clone(), tx_count, funded_payer, seed as u64)));
+        tasks.push(tokio::spawn(bench(
+            rpc_client.clone(),
+            tx_count,
+            funded_payer,
+            seed as u64,
+        )));
         // wait for an interval
         run_interval_ms.tick().await;
     }
@@ -82,7 +85,12 @@ struct TxSendData {
     sent_instant: Instant,
 }
 
-async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize, funded_payer: Keypair, seed: u64) -> Metric {
+async fn bench(
+    rpc_client: Arc<RpcClient>,
+    tx_count: usize,
+    funded_payer: Keypair,
+    seed: u64,
+) -> Metric {
     let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
     let txs = BenchHelper::generate_txs(tx_count, &funded_payer, blockhash, Some(seed));
@@ -93,10 +101,13 @@ async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize, funded_payer: Keypai
         let rpc_client = rpc_client.clone();
         let start_time = Instant::now();
         if let Ok(signature) = rpc_client.send_transaction(&tx).await {
-            map_of_txs.insert( signature, TxSendData {
-                sent_duration: start_time.elapsed(),
-                sent_instant: Instant::now(),
-            });
+            map_of_txs.insert(
+                signature,
+                TxSendData {
+                    sent_duration: start_time.elapsed(),
+                    sent_instant: Instant::now(),
+                },
+            );
         }
     }
     let confirmation_time = Instant::now();
@@ -108,7 +119,10 @@ async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize, funded_payer: Keypai
                 if let Some(_) = tx_status {
                     let signature = signatures[i];
                     let tx_data = map_of_txs.get(&signature).unwrap();
-                    metric.add_successful_transaction( tx_data.sent_duration, tx_data.sent_instant.elapsed());
+                    metric.add_successful_transaction(
+                        tx_data.sent_duration,
+                        tx_data.sent_instant.elapsed(),
+                    );
                     map_of_txs.remove(&signature);
                 }
             }
