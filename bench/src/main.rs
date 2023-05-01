@@ -144,10 +144,12 @@ async fn bench(
         });
     }
 
-    tokio::time::sleep(Duration::from_secs(2)).await;
     let mut metric = Metric::default();
     let confirmation_time = Instant::now();
-    while confirmation_time.elapsed() < Duration::from_secs(60) && !map_of_txs.is_empty() {
+    let mut confirmed_count = 0;
+    while confirmation_time.elapsed() < Duration::from_secs(60)
+        && !(map_of_txs.is_empty() && confirmed_count == tx_count)
+    {
         let signatures = map_of_txs
             .iter()
             .map(|x| x.key().clone())
@@ -163,6 +165,7 @@ async fn bench(
                         tx_data.sent_instant.elapsed(),
                     );
                     map_of_txs.remove(&signature);
+                    confirmed_count += 1;
                 }
             }
         }
