@@ -29,13 +29,15 @@ use tokio::{
     time::{Duration, Instant},
 };
 
+use crate::workers::TxProps;
+
 use super::tpu_connection_manager::TpuConnectionManager;
 
 const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
 const CLUSTERINFO_REFRESH_TIME: u64 = 60; // refresh cluster every minute
 const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
-const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 16384;
+const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -65,10 +67,11 @@ pub struct TpuService {
     fanout_slots: u64,
     rpc_client: Arc<RpcClient>,
     pubsub_client: Arc<PubsubClient>,
-    broadcast_sender: Arc<tokio::sync::broadcast::Sender<Vec<u8>>>,
+    broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
     identity: Arc<Keypair>,
     identity_stakes: Arc<RwLock<IdentityStakes>>,
+    txs_sent_store: Arc<DashMap<String, TxProps>>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -99,6 +102,7 @@ impl TpuService {
         identity: Arc<Keypair>,
         rpc_client: Arc<RpcClient>,
         rpc_ws_address: String,
+        txs_sent_store: Arc<DashMap<String, TxProps>>,
     ) -> anyhow::Result<Self> {
         let pubsub_client = PubsubClient::new(&rpc_ws_address).await?;
         let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
@@ -123,6 +127,7 @@ impl TpuService {
             tpu_connection_manager: Arc::new(tpu_connection_manager),
             identity,
             identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
+            txs_sent_store,
         })
     }
 
@@ -174,8 +179,8 @@ impl TpuService {
         Ok(())
     }
 
-    pub fn send_transaction(&self, transaction: Vec<u8>) -> anyhow::Result<()> {
-        self.broadcast_sender.send(transaction)?;
+    pub fn send_transaction(&self, signature: String, transaction: Vec<u8>) -> anyhow::Result<()> {
+        self.broadcast_sender.send((signature, transaction))?;
         Ok(())
     }
 
@@ -271,6 +276,7 @@ impl TpuService {
                 self.broadcast_sender.clone(),
                 connections_to_keep,
                 *identity_stakes,
+                self.txs_sent_store.clone(),
             )
             .await;
     }
@@ -440,5 +446,9 @@ impl TpuService {
 
     pub fn get_estimated_slot(&self) -> u64 {
         self.estimated_slot.load(Ordering::Relaxed)
+    }
+
+    pub fn get_estimated_slot_holder(&self) -> Arc<AtomicU64> {
+        self.estimated_slot.clone()
     }
 }

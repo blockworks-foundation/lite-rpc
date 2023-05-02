@@ -1,11 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
 use bench::helpers::BenchHelper;
+use dashmap::DashMap;
 use futures::future::try_join_all;
 use lite_rpc::{
     block_store::BlockStore,
     encoding::BinaryEncoding,
-    workers::{tpu_utils::tpu_service::TpuService, BlockListener, TxSender},
+    workers::{tpu_utils::tpu_service::TpuService, BlockListener, TxProps, TxSender},
     DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -18,20 +19,21 @@ use tokio::sync::mpsc;
 async fn send_and_confirm_txs() {
     let rpc_client = Arc::new(RpcClient::new(DEFAULT_RPC_ADDR.to_string()));
     let current_slot = rpc_client.get_slot().await.unwrap();
-
+    let txs_sent_store: Arc<DashMap<String, TxProps>> = Default::default();
     let tpu_service = TpuService::new(
         current_slot,
         32,
         Arc::new(Keypair::new()),
         rpc_client.clone(),
         DEFAULT_WS_ADDR.into(),
+        txs_sent_store.clone(),
     )
     .await
     .unwrap();
 
-    let tpu_client = Arc::new(tpu_service);
+    let tpu_client = Arc::new(tpu_service.clone());
 
-    let tx_sender = TxSender::new(tpu_client);
+    let tx_sender = TxSender::new(txs_sent_store, tpu_client);
     let block_store = BlockStore::new(&rpc_client).await.unwrap();
 
     let block_listener = BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store);
@@ -39,9 +41,11 @@ async fn send_and_confirm_txs() {
     let (tx_send, tx_recv) = mpsc::channel(1024);
 
     let services = try_join_all(vec![
-        block_listener
-            .clone()
-            .listen(CommitmentConfig::confirmed(), None),
+        block_listener.clone().listen(
+            CommitmentConfig::confirmed(),
+            None,
+            tpu_service.get_estimated_slot_holder(),
+        ),
         tx_sender.clone().execute(tx_recv, None),
     ]);
 

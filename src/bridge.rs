@@ -5,7 +5,7 @@ use crate::{
     rpc::LiteRpcServer,
     workers::{
         tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
-        PrometheusSync, TransactionReplay, TransactionReplayer, TxSender, WireTransaction,
+        PrometheusSync, TransactionReplay, TransactionReplayer, TxProps, TxSender, WireTransaction,
         MESSAGES_IN_REPLAY_QUEUE,
     },
     DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
@@ -15,6 +15,7 @@ use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::bail;
 
+use dashmap::DashMap;
 use log::{error, info};
 
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
@@ -82,17 +83,21 @@ impl LiteBridge {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
         let current_slot = rpc_client.get_slot().await?;
 
+        let tx_store: Arc<DashMap<String, TxProps>> = Default::default();
+
         let tpu_service = TpuService::new(
             current_slot,
             fanout_slots,
             Arc::new(identity),
             rpc_client.clone(),
             ws_addr,
+            tx_store.clone(),
         )
         .await?;
+
         let tpu_service = Arc::new(tpu_service);
 
-        let tx_sender = TxSender::new(tpu_service.clone());
+        let tx_sender = TxSender::new(tx_store, tpu_service.clone());
 
         let block_store = BlockStore::new(&rpc_client).await?;
 
@@ -152,15 +157,17 @@ impl LiteBridge {
         let metrics_capture = MetricsCapture::new(self.tx_sender.clone()).capture();
         let prometheus_sync = PrometheusSync.sync(prometheus_addr);
 
-        let finalized_block_listener = self
-            .block_listner
-            .clone()
-            .listen(CommitmentConfig::finalized(), postgres_send.clone());
+        let finalized_block_listener = self.block_listner.clone().listen(
+            CommitmentConfig::finalized(),
+            postgres_send.clone(),
+            self.tpu_service.get_estimated_slot_holder(),
+        );
 
-        let confirmed_block_listener = self
-            .block_listner
-            .clone()
-            .listen(CommitmentConfig::confirmed(), None);
+        let confirmed_block_listener = self.block_listner.clone().listen(
+            CommitmentConfig::confirmed(),
+            None,
+            self.tpu_service.get_estimated_slot_holder(),
+        );
 
         let processed_block_listener = self.block_listner.clone().listen_processed();
 

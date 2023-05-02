@@ -1,5 +1,8 @@
 use std::{
-    sync::{atomic::AtomicU64, Arc},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -406,10 +409,11 @@ impl BlockListener {
         self,
         commitment_config: CommitmentConfig,
         postgres: Option<PostgresMpscSend>,
+        estimated_slot: Arc<AtomicU64>,
     ) -> JoinHandle<anyhow::Result<()>> {
         let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
         let (block_schedule_queue_sx, block_schedule_queue_rx) =
-            async_channel::unbounded::<(Slot, u8)>();
+            async_channel::unbounded::<Slot>();
 
         // task to fetch blocks
         for _i in 0..8 {
@@ -420,7 +424,7 @@ impl BlockListener {
 
             tokio::spawn(async move {
                 loop {
-                    let (slot, error_count) = match block_schedule_queue_rx.recv().await {
+                    let slot = match block_schedule_queue_rx.recv().await {
                         Ok(v) => v,
                         Err(e) => {
                             error!("Recv error on block channel {}", e);
@@ -439,24 +443,12 @@ impl BlockListener {
                         .await
                         .is_err()
                     {
-                        // usually as we index all the slots even if they are not been processed we get some errors for slot
-                        // as they are not in long term storage of the rpc // we check 5 times before ignoring the slot
-
-                        if error_count > 5 {
-                            // retried for 10 times / there should be no block for this slot
-                            warn!(
-                                "unable to get block at slot {} and commitment {}",
-                                slot, commitment_config.commitment
-                            );
-                            continue;
-                        } else {
-                            // add a task to be queued after a delay
-                            let retry_at = tokio::time::Instant::now()
-                                .checked_add(Duration::from_millis(100))
-                                .unwrap();
-                            let _ = slot_retry_queue_sx.send((slot, error_count, retry_at));
-                            BLOCKS_IN_RETRY_QUEUE.inc();
-                        }
+                        // add a task to be queued after a delay
+                        let retry_at = tokio::time::Instant::now()
+                            .checked_add(Duration::from_millis(10))
+                            .unwrap();
+                        let _ = slot_retry_queue_sx.send((slot, retry_at));
+                        BLOCKS_IN_RETRY_QUEUE.inc();
                     };
                 }
             });
@@ -469,11 +461,11 @@ impl BlockListener {
             let block_schedule_queue_sx = block_schedule_queue_sx.clone();
             let recent_slot = recent_slot.clone();
             tokio::spawn(async move {
-                while let Some((slot, error_count, instant)) = slot_retry_queue_rx.recv().await {
+                while let Some((slot, instant)) = slot_retry_queue_rx.recv().await {
                     BLOCKS_IN_RETRY_QUEUE.dec();
                     let recent_slot = recent_slot.load(std::sync::atomic::Ordering::Relaxed);
                     // if slot is too old ignore
-                    if recent_slot.saturating_sub(slot) > 256 {
+                    if recent_slot.saturating_sub(slot) > 128 {
                         // slot too old to retry
                         // most probably its an empty slot
                         continue;
@@ -483,7 +475,7 @@ impl BlockListener {
                     if now < instant {
                         tokio::time::sleep_until(instant).await;
                     }
-                    if let Ok(_) = block_schedule_queue_sx.send((slot, error_count + 1)).await {
+                    if let Ok(_) = block_schedule_queue_sx.send(slot).await {
                         if commitment_config.is_finalized() {
                             BLOCKS_IN_FINALIZED_QUEUE.inc();
                         } else {
@@ -494,7 +486,6 @@ impl BlockListener {
             });
         }
 
-        let rpc_client = self.rpc_client.clone();
         tokio::spawn(async move {
             info!("{commitment_config:?} block listner started");
 
@@ -504,24 +495,14 @@ impl BlockListener {
                 .await
                 .slot;
             // -5 for warmup
-            let mut last_latest_slot = last_latest_slot - 5;
+            let mut last_latest_slot = last_latest_slot.saturating_sub(5);
             recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
 
-            // storage for recent slots processed
-            let rpc_client = rpc_client.clone();
             loop {
-                let new_slot = match rpc_client.get_slot_with_commitment(commitment_config).await {
-                    Ok(new_slot) => new_slot,
-                    Err(err) => {
-                        warn!("Error while fetching slot {err:?}");
-                        ERRORS_WHILE_FETCHING_SLOTS.inc();
-                        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                        continue;
-                    }
-                };
+                let new_slot = estimated_slot.load(Ordering::Relaxed);
 
                 if last_latest_slot == new_slot {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
                     continue;
                 }
 
@@ -530,7 +511,7 @@ impl BlockListener {
                 // context for lock
                 {
                     for slot in new_block_slots {
-                        if let Err(e) = block_schedule_queue_sx.send((slot, 0)).await {
+                        if let Err(e) = block_schedule_queue_sx.send(slot).await {
                             error!("error sending of block schedule queue {}", e);
                         } else {
                             if commitment_config.is_finalized() {
@@ -544,8 +525,6 @@ impl BlockListener {
 
                 last_latest_slot = new_slot;
                 recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
-
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
         })
     }

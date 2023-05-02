@@ -1,20 +1,23 @@
-use std::{sync::Arc, collections::HashMap};
-
 use bench::{
     cli::Args,
     helpers::BenchHelper,
     metrics::{AvgMetric, Metric},
 };
 use clap::Parser;
+use dashmap::DashMap;
 use futures::future::join_all;
 use log::{error, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{commitment_config::CommitmentConfig, signer::Signer, signature::Keypair};
+use solana_sdk::{
+    commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
+};
+use std::sync::Arc;
 use tokio::{
+    sync::RwLock,
     time::{Duration, Instant},
 };
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
     tracing_subscriber::fmt::init();
 
@@ -43,9 +46,36 @@ async fn main() {
         lite_rpc_addr.clone(),
         CommitmentConfig::confirmed(),
     ));
+    let bh = rpc_client.get_latest_blockhash().await.unwrap();
+    let block_hash: Arc<RwLock<Hash>> = Arc::new(RwLock::new(bh));
+    let _jh = {
+        // block hash updater task
+        let block_hash = block_hash.clone();
+        let rpc_client = rpc_client.clone();
+        tokio::spawn(async move {
+            loop {
+                let bh = rpc_client.get_latest_blockhash().await;
+                match bh {
+                    Ok(bh) => {
+                        let mut lock = block_hash.write().await;
+                        *lock = bh;
+                    },
+                    Err(e) => println!("blockhash update error {}", e),
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        })
+    };
+
     for seed in 0..runs {
         let funded_payer = Keypair::from_bytes(funded_payer.to_bytes().as_slice()).unwrap();
-        tasks.push(tokio::spawn(bench(rpc_client.clone(), tx_count, funded_payer, seed as u64)));
+        tasks.push(tokio::spawn(bench(
+            rpc_client.clone(),
+            tx_count,
+            funded_payer,
+            seed as u64,
+            block_hash.clone(),
+        )));
         // wait for an interval
         run_interval_ms.tick().await;
     }
@@ -82,40 +112,73 @@ struct TxSendData {
     sent_instant: Instant,
 }
 
-async fn bench(rpc_client: Arc<RpcClient>, tx_count: usize, funded_payer: Keypair, seed: u64) -> Metric {
-    let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
+async fn bench(
+    rpc_client: Arc<RpcClient>,
+    tx_count: usize,
+    funded_payer: Keypair,
+    seed: u64,
+    block_hash: Arc<RwLock<Hash>>,
+) -> Metric {
+    let map_of_txs = Arc::new(DashMap::new());
+    // transaction sender task
+    {
+        let map_of_txs = map_of_txs.clone();
+        let rpc_client = rpc_client.clone();
+        tokio::spawn(async move {
+            let map_of_txs = map_of_txs.clone();
+            let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed));
 
-    let txs = BenchHelper::generate_txs(tx_count, &funded_payer, blockhash, Some(seed));
+            for rand_string in rand_strings {
+                let blockhash = { *block_hash.read().await };
+                let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
+                let start_time = Instant::now();
+                if let Ok(signature) = rpc_client.send_transaction(&tx).await {
+                    map_of_txs.insert(
+                        signature,
+                        TxSendData {
+                            sent_duration: start_time.elapsed(),
+                            sent_instant: Instant::now(),
+                        },
+                    );
+                }
+            }
+        });
+    }
 
     let mut metric = Metric::default();
-    let mut map_of_txs = HashMap::new();
-    for tx in txs {
-        let rpc_client = rpc_client.clone();
-        let start_time = Instant::now();
-        if let Ok(signature) = rpc_client.send_transaction(&tx).await {
-            map_of_txs.insert( signature, TxSendData {
-                sent_duration: start_time.elapsed(),
-                sent_instant: Instant::now(),
-            });
-        }
-    }
     let confirmation_time = Instant::now();
-    while confirmation_time.elapsed() < Duration::from_secs(60) && !map_of_txs.is_empty() {
-        let signatures = map_of_txs.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
+    let mut confirmed_count = 0;
+    while confirmation_time.elapsed() < Duration::from_secs(60)
+        && !(map_of_txs.is_empty() && confirmed_count == tx_count)
+    {
+        let signatures = map_of_txs
+            .iter()
+            .map(|x| x.key().clone())
+            .collect::<Vec<_>>();
+        if signatures.is_empty() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            continue;
+        }
+
         if let Ok(res) = rpc_client.get_signature_statuses(&signatures).await {
             for i in 0..signatures.len() {
                 let tx_status = &res.value[i];
                 if let Some(_) = tx_status {
                     let signature = signatures[i];
                     let tx_data = map_of_txs.get(&signature).unwrap();
-                    metric.add_successful_transaction( tx_data.sent_duration, tx_data.sent_instant.elapsed());
+                    metric.add_successful_transaction(
+                        tx_data.sent_duration,
+                        tx_data.sent_instant.elapsed(),
+                    );
+                    drop(tx_data);
                     map_of_txs.remove(&signature);
+                    confirmed_count += 1;
                 }
             }
         }
     }
 
-    for (_, tx) in map_of_txs {
+    for tx in map_of_txs.iter() {
         metric.add_unsuccessful_transaction(tx.sent_duration);
     }
     metric.finalize();
