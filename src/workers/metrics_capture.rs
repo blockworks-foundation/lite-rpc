@@ -64,6 +64,7 @@ impl MetricsCapture {
             info!("Metrics Tokio Unstable enabled");
 
             loop {
+
                 one_second.tick().await;
 
                 let txs_sent = self.tx_sender.txs_sent_store.len();

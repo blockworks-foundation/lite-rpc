@@ -80,6 +80,8 @@ pub async fn main() -> anyhow::Result<()> {
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
+    info!("I am selecting");
+
     tokio::select! {
         _ = services => {
             bail!("Services quit unexpectedly");

@@ -402,26 +402,17 @@ impl BlockListener {
         estimated_slot: Arc<AtomicU64>,
     ) -> JoinHandle<anyhow::Result<()>> {
         let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (block_schedule_queue_sx, block_schedule_queue_rx) =
-            async_channel::unbounded::<Slot>();
+        let (block_schedule_queue_sx, block_schedule_queue_rx) = async_channel::unbounded::<Slot>();
 
         // task to fetch blocks
-        for _i in 0..8 {
+        for _ in 0..8 {
             let this = self.clone();
             let postgres = postgres.clone();
             let slot_retry_queue_sx = slot_retry_queue_sx.clone();
             let block_schedule_queue_rx = block_schedule_queue_rx.clone();
 
             tokio::spawn(async move {
-                loop {
-                    let slot = match block_schedule_queue_rx.recv().await {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error!("Recv error on block channel {}", e);
-                            continue;
-                        }
-                    };
-
+                while let Ok(slot) = block_schedule_queue_rx.recv().await {
                     if commitment_config.is_finalized() {
                         BLOCKS_IN_FINALIZED_QUEUE.dec();
                     } else {
@@ -437,10 +428,18 @@ impl BlockListener {
                         let retry_at = tokio::time::Instant::now()
                             .checked_add(Duration::from_millis(10))
                             .unwrap();
-                        let _ = slot_retry_queue_sx.send((slot, retry_at));
+
+                        slot_retry_queue_sx.send((slot, retry_at))?;
+
                         BLOCKS_IN_RETRY_QUEUE.inc();
                     };
                 }
+
+                anyhow::bail!("Block Slot channel closed");
+
+                // for type
+                #[allow(unreachable_code)]
+                Ok(())
             });
         }
 
@@ -450,6 +449,7 @@ impl BlockListener {
         {
             let block_schedule_queue_sx = block_schedule_queue_sx.clone();
             let recent_slot = recent_slot.clone();
+
             tokio::spawn(async move {
                 while let Some((slot, instant)) = slot_retry_queue_rx.recv().await {
                     BLOCKS_IN_RETRY_QUEUE.dec();
@@ -461,11 +461,11 @@ impl BlockListener {
                         continue;
                     }
 
-                    let now = tokio::time::Instant::now();
-                    if now < instant {
+                    if tokio::time::Instant::now() < instant {
                         tokio::time::sleep_until(instant).await;
                     }
-                    if let Ok(_) = block_schedule_queue_sx.send(slot).await {
+
+                    if (block_schedule_queue_sx.send(slot).await).is_ok() {
                         if commitment_config.is_finalized() {
                             BLOCKS_IN_FINALIZED_QUEUE.inc();
                         } else {
@@ -503,12 +503,10 @@ impl BlockListener {
                     for slot in new_block_slots {
                         if let Err(e) = block_schedule_queue_sx.send(slot).await {
                             error!("error sending of block schedule queue {}", e);
+                        } else if commitment_config.is_finalized() {
+                            BLOCKS_IN_FINALIZED_QUEUE.inc();
                         } else {
-                            if commitment_config.is_finalized() {
-                                BLOCKS_IN_FINALIZED_QUEUE.inc();
-                            } else {
-                                BLOCKS_IN_CONFIRMED_QUEUE.inc();
-                            }
+                            BLOCKS_IN_CONFIRMED_QUEUE.inc();
                         }
                     }
                 }
