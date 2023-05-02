@@ -402,8 +402,7 @@ impl BlockListener {
         estimated_slot: Arc<AtomicU64>,
     ) -> JoinHandle<anyhow::Result<()>> {
         let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (block_schedule_queue_sx, block_schedule_queue_rx) =
-            async_channel::unbounded::<Slot>();
+        let (block_schedule_queue_sx, block_schedule_queue_rx) = async_channel::unbounded::<Slot>();
 
         // task to fetch blocks
         for _i in 0..8 {
