@@ -66,5 +66,5 @@ in `./migrations`
 
 Copyright (c) 2022 Blockworks Foundation
 
-Licensed under the **[MIT LICENSE](LICENSE)**
+Licensed under the **[AGPL-3.0 license](LICENSE)**
 
