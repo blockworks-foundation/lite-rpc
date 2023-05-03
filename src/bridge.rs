@@ -16,7 +16,7 @@ use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 use anyhow::bail;
 
 use dashmap::DashMap;
-use futures::future::OptionFuture;
+
 use log::{error, info};
 
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
@@ -132,12 +132,11 @@ impl LiteBridge {
         let (postgres, postgres_send) = if enable_postgres {
             let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
             let postgres = Postgres::new().await?;
-            let postgres: OptionFuture<AnyhowJoinHandle> =
-                Some(postgres.start(postgres_recv)).into();
+            let postgres = postgres.start(postgres_recv);
 
-            (postgres, Some(postgres_send))
+            (Some(postgres), Some(postgres_send))
         } else {
-            (None.into(), None)
+            (None, None)
         };
 
         let tpu_service = self.tpu_service.clone();
@@ -209,6 +208,15 @@ impl LiteBridge {
             });
 
             (ws_server, http_server)
+        };
+
+        let postgres = async {
+            let Some(postgres) = postgres else {
+                std::future::pending::<()>().await;
+                unreachable!();
+            };
+
+            postgres.await
         };
 
         tokio::select! {

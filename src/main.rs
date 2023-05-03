@@ -75,8 +75,8 @@ pub async fn main() -> anyhow::Result<()> {
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
-        _ = services => {
-            bail!("Services quit unexpectedly");
+        res = services => {
+            bail!("Services quit unexpectedly {res:?}");
         }
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");
