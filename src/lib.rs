@@ -1,5 +1,6 @@
 use const_env::from_env;
 use solana_transaction_status::TransactionConfirmationStatus;
+use tokio::task::JoinHandle;
 
 pub mod block_store;
 pub mod bridge;
@@ -9,6 +10,8 @@ pub mod encoding;
 pub mod errors;
 pub mod rpc;
 pub mod workers;
+
+pub type AnyhowJoinHandle = JoinHandle<anyhow::Result<()>>;
 
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";

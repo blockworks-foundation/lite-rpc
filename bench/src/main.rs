@@ -59,7 +59,7 @@ async fn main() {
                     Ok(bh) => {
                         let mut lock = block_hash.write().await;
                         *lock = bh;
-                    },
+                    }
                     Err(e) => println!("blockhash update error {}", e),
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;

@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use bench::helpers::BenchHelper;
 use dashmap::DashMap;
-use futures::future::try_join_all;
+
 use lite_rpc::{
     block_store::BlockStore,
     encoding::BinaryEncoding,
@@ -40,14 +40,13 @@ async fn send_and_confirm_txs() {
 
     let (tx_send, tx_recv) = mpsc::channel(1024);
 
-    let services = try_join_all(vec![
-        block_listener.clone().listen(
-            CommitmentConfig::confirmed(),
-            None,
-            tpu_service.get_estimated_slot_holder(),
-        ),
-        tx_sender.clone().execute(tx_recv, None),
-    ]);
+    let block_listner_service = block_listener.clone().listen(
+        CommitmentConfig::confirmed(),
+        None,
+        tpu_service.get_estimated_slot_holder(),
+    );
+
+    let tx_sender_service = tx_sender.clone().execute(tx_recv, None);
 
     let confirm = tokio::spawn(async move {
         let funded_payer = BenchHelper::get_payer().await.unwrap();
@@ -77,8 +76,11 @@ async fn send_and_confirm_txs() {
     });
 
     tokio::select! {
-        _ = services => {
-            panic!("Services stopped unexpectedly")
+        res = block_listner_service => {
+            panic!("BlockListener service stopped unexpectedly {res:?}")
+        },
+        res = tx_sender_service => {
+            panic!("TxSender service stopped unexpectedly {res:?}")
         },
         _ = confirm => {}
     }

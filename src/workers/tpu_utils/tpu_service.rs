@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::{error, info, warn};
@@ -25,11 +25,10 @@ use std::{
 };
 use tokio::{
     sync::RwLock,
-    task::JoinHandle,
     time::{Duration, Instant},
 };
 
-use crate::workers::TxProps;
+use crate::{workers::TxProps, AnyhowJoinHandle};
 
 use super::tpu_connection_manager::TpuConnectionManager;
 
@@ -352,7 +351,7 @@ impl TpuService {
         }
     }
 
-    pub async fn start(&self) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
+    pub async fn start(&self) -> anyhow::Result<()> {
         self.update_cluster_nodes().await?;
         self.update_leader_schedule().await?;
         self.update_quic_connections().await;
@@ -382,7 +381,7 @@ impl TpuService {
         let this = self.clone();
         let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
 
-        let slot_sub_task = tokio::spawn(async move {
+        let slot_sub_task: AnyhowJoinHandle = tokio::spawn(async move {
             this.update_current_slot(slot_sender).await;
             Ok(())
         });
@@ -437,11 +436,17 @@ impl TpuService {
             }
         });
 
-        Ok(vec![
-            jh_update_leaders,
-            slot_sub_task,
-            estimated_slot_calculation,
-        ])
+        tokio::select! {
+            res = jh_update_leaders => {
+                bail!("Leader update service exited unexpectedly {res:?}");
+            },
+            res = slot_sub_task => {
+                bail!("Leader update service exited unexpectedly {res:?}");
+            },
+            res = estimated_slot_calculation => {
+                bail!("Estimated slot calculation service exited unexpectedly {res:?}");
+            },
+        }
     }
 
     pub fn get_estimated_slot(&self) -> u64 {
