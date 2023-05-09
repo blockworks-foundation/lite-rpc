@@ -8,7 +8,7 @@ use crate::{
         PrometheusSync, TransactionReplay, TransactionReplayer, TxProps, TxSender, WireTransaction,
         MESSAGES_IN_REPLAY_QUEUE,
     },
-    AnyhowJoinHandle, DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
+    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
@@ -16,7 +16,6 @@ use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 use anyhow::bail;
 
 use dashmap::DashMap;
-
 use log::{error, info};
 
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
@@ -35,6 +34,7 @@ use solana_transaction_status::TransactionStatus;
 use tokio::{
     net::ToSocketAddrs,
     sync::mpsc::{self, Sender, UnboundedSender},
+    task::JoinHandle,
     time::Instant,
 };
 
@@ -63,10 +63,9 @@ pub struct LiteBridge {
     // None if LiteBridge is not executed
     pub tx_send_channel: Option<Sender<(String, WireTransaction, u64)>>,
     pub tx_sender: TxSender,
-    // blocks
     pub block_listner: BlockListener,
     pub block_store: BlockStore,
-    // txs
+
     pub tx_replayer: TransactionReplayer,
     pub tx_replay_sender: Option<UnboundedSender<TransactionReplay>>,
     pub max_retries: usize,
@@ -128,7 +127,7 @@ impl LiteBridge {
         clean_interval: Duration,
         enable_postgres: bool,
         prometheus_addr: T,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
         let (postgres, postgres_send) = if enable_postgres {
             let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
             let postgres = Postgres::new().await?;
@@ -139,8 +138,7 @@ impl LiteBridge {
             (None, None)
         };
 
-        let tpu_service = self.tpu_service.clone();
-        let tpu_service = tpu_service.start();
+        let mut tpu_services = self.tpu_service.start().await?;
 
         let (tx_send, tx_recv) = mpsc::channel(DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE);
         self.tx_send_channel = Some(tx_send);
@@ -195,13 +193,13 @@ impl LiteBridge {
                 .await?
                 .start(rpc)?;
 
-            let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
+            let ws_server = tokio::spawn(async move {
                 info!("Websocket Server started at {ws_addr:?}");
                 ws_server_handle.stopped().await;
                 bail!("Websocket server stopped");
             });
 
-            let http_server: AnyhowJoinHandle = tokio::spawn(async move {
+            let http_server = tokio::spawn(async move {
                 info!("HTTP Server started at {http_addr:?}");
                 http_server_handle.stopped().await;
                 bail!("HTTP server stopped");
@@ -210,53 +208,26 @@ impl LiteBridge {
             (ws_server, http_server)
         };
 
-        let postgres = async {
-            let Some(postgres) = postgres else {
-                std::future::pending::<()>().await;
-                unreachable!();
-            };
+        let mut services = vec![
+            ws_server,
+            http_server,
+            tx_sender,
+            finalized_block_listener,
+            confirmed_block_listener,
+            processed_block_listener,
+            metrics_capture,
+            prometheus_sync,
+            cleaner,
+            replay_service,
+        ];
 
-            postgres.await
-        };
+        services.append(&mut tpu_services);
 
-        tokio::select! {
-            res = tpu_service => {
-                bail!("Tpu Services exited unexpectedly {res:?}");
-            },
-            res = ws_server => {
-                bail!("WebSocket server exited unexpectedly {res:?}");
-            },
-            res = http_server => {
-                bail!("HTTP server exited unexpectedly {res:?}");
-            },
-            res = tx_sender => {
-                bail!("Tx Sender exited unexpectedly {res:?}");
-            },
-            res = finalized_block_listener => {
-                bail!("Finalized Block Listener exited unexpectedly {res:?}");
-            },
-            res = confirmed_block_listener => {
-                bail!("Confirmed Block Listener exited unexpectedly {res:?}");
-            },
-            res = processed_block_listener => {
-                bail!("Processed Block Listener exited unexpectedly {res:?}");
-            },
-            res = metrics_capture => {
-                bail!("Metrics Capture exited unexpectedly {res:?}");
-            },
-            res = prometheus_sync => {
-                bail!("Prometheus Service exited unexpectedly {res:?}");
-            },
-            res = cleaner => {
-                bail!("Cleaner Service exited unexpectedly {res:?}");
-            },
-            res = replay_service => {
-                bail!("Tx replay service exited unexpectedly {res:?}");
-            },
-            res = postgres => {
-                bail!("Postgres service exited unexpectedly {res:?}");
-            },
+        if let Some(postgres) = postgres {
+            services.push(postgres);
         }
+
+        Ok(services)
     }
 }
 
