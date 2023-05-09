@@ -210,14 +210,14 @@ impl LiteBridge {
             (ws_server, http_server)
         };
 
-        let postgres = async {
+        let postgres = tokio::spawn(async {
             let Some(postgres) = postgres else {
                 std::future::pending::<()>().await;
                 unreachable!();
             };
 
             postgres.await
-        };
+        });
 
         tokio::select! {
             res = tpu_service => {
