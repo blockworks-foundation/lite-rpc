@@ -48,19 +48,41 @@ $ cd bench and cargo run --release
 
 Find a new file named `metrics.csv` in the project root.
 
-## Metrics and Postgres
+## Deployment
 
-LiteRpc implements a postgres service that can write to a postgres database tables as defined
-in `./migrations`
+### Environment Variables
 
-### env variables
+| env               | purpose                           | required?       |
+| ---------         | ------                            | ----------      |
+| `RPC_URL`         | HTTP URL for a full RPC node      | yes, for docker |
+| `WS_URL`          | WS URL for a full RPC node        | yes, for docker |
+| `IDENTITY`        | Staked validator identity keypair | no              |
+| `CA_PEM_B64`      | Base64 encoded `ca.pem`           | if `-p` passed  |
+| `CLIENT_PKS_B64`  | Base64 encoded `client.pks`       | if `-p` passed  |
+| `CLIENT_PKS_PASS` | Password to `client.pks`          | if `-p` passed  |
+| `PG_CONFIG`       | Postgres Connection Config        | if `-p` passed  |
 
-| env               | purpose                     |
-| ---------         | ------                      |
-| `CA_PEM_B64`      | Base64 encoded `ca.pem`     |
-| `CLIENT_PKS_B64`  | Base64 encoded `client.pks` |
-| `CLIENT_PKS_PASS` | Password to `client.pks`    |
-| `PG_CONFIG`       | Postgres Connection Config  |
+### Postgres
+LiteRpc implements an optional postgres service that can write to a postgres database tables as defined
+in `./migrations`. This can be enabled by passing the `-p` option when launching the executable and defining the below environment variables
+
+### Metrics
+Various Prometheus metrics are exposed on `localhost:9091/metrics` which can be used to monitor the health of the application in production. 
+Grafana dashboard coming soon!
+
+### Deployment on fly.io
+While lite-rpc can be deployed on any cloud infrastructure, it has been tested extensively on https://fly.io.
+An example configuration has been provided in `fly.toml`. We recommend a `dedicated-cpu-2x` VM with at least 4GB RAM.
+
+The app listens by default on ports 8890 and 8891 for HTTP and Websockets respectively. Since only a subset of RPC methods are implemented, we recommend serving unimplemented methods from a full RPC node using a reverse proxy such as HAProxy or Kong. Alternatively, you can connect directly to lite-rpc using a web3.js Connection object that is _only_ used for sending and confirming transactions.
+
+#### Example
+```
+fly apps create my-lite-rpc
+fly secrets set ...                           # See above table for env options
+fly scale vm dedicated-cpu-2x --memory 4096
+fly deploy --remote-only
+```
 
 ## License & Copyright
 
