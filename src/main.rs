@@ -54,6 +54,11 @@ pub async fn main() -> anyhow::Result<()> {
     let identity = get_identity_keypair(&identity_keypair).await;
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
+    let enable_postgres = enable_postgres || if let Ok(enable_postgres_env_var) = env::var("PG_ENABLED") { 
+        enable_postgres_env_var != "false"
+    } else {
+        false
+    };
 
     let services = LiteBridge::new(
         rpc_addr,
