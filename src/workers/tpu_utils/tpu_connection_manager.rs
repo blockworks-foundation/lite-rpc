@@ -15,7 +15,9 @@ use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig,
 };
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{
+    pubkey::Pubkey,
+};
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
 use tokio::{
     sync::{broadcast::Receiver, broadcast::Sender, RwLock},
@@ -211,6 +213,7 @@ impl ActiveConnection {
         exit_signal: Arc<AtomicBool>,
         last_stable_id: Arc<AtomicU64>,
     ) {
+
         let mut queue = VecDeque::new();
         for tx in txs {
             queue.push_back(tx);

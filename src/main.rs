@@ -52,15 +52,17 @@ pub async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
     let identity = get_identity_keypair(&identity_keypair).await;
+
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
-    let retry_after = Duration::from_secs(transaction_retry_after_secs);
+
     let enable_postgres = enable_postgres || if let Ok(enable_postgres_env_var) = env::var("PG_ENABLED") { 
         enable_postgres_env_var != "false"
     } else {
         false
     };
 
-    let services = LiteBridge::new(
+    let retry_after = Duration::from_secs(transaction_retry_after_secs);
+    let light_bridge = LiteBridge::new(
         rpc_addr,
         ws_addr,
         fanout_size,
@@ -68,25 +70,29 @@ pub async fn main() -> anyhow::Result<()> {
         retry_after,
         maximum_retries_per_tx,
     )
-    .await?
-    .start_services(
-        lite_rpc_http_addr,
-        lite_rpc_ws_addr,
-        clean_interval_ms,
-        enable_postgres,
-        prometheus_addr,
-    );
+    .await?;
+
+    let services = light_bridge
+        .start_services(
+            lite_rpc_http_addr,
+            lite_rpc_ws_addr,
+            clean_interval_ms,
+            enable_postgres,
+            prometheus_addr,
+        )
+        .await?;
+
+    let services = futures::future::try_join_all(services);
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
-        res = services => {
-            bail!("Services quit unexpectedly {res:?}");
+        _ = services => {
+            bail!("Services quit unexpectedly");
         }
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");
+            Ok(())
         }
     }
-
-    Ok(())
 }
