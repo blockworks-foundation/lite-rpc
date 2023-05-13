@@ -55,6 +55,12 @@ pub async fn main() -> anyhow::Result<()> {
 
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
 
+    let enable_postgres = enable_postgres || if let Ok(enable_postgres_env_var) = env::var("PG_ENABLED") { 
+        enable_postgres_env_var != "false"
+    } else {
+        false
+    };
+
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
     let light_bridge = LiteBridge::new(
         rpc_addr,

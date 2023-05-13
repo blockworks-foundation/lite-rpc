@@ -48,19 +48,42 @@ $ cd bench and cargo run --release
 
 Find a new file named `metrics.csv` in the project root.
 
-## Metrics and Postgres
+## Deployment
 
-LiteRpc implements a postgres service that can write to a postgres database tables as defined
-in `./migrations`
+### Environment Variables
 
-### env variables
+| env               | purpose                                        | required?           |
+| ---------         | ------                                         | ----------          |
+| `RPC_URL`         | HTTP URL for a full RPC node                   | yes, for docker     |
+| `WS_URL`          | WS URL for a full RPC node                     | yes, for docker     |
+| `IDENTITY`        | Staked validator identity keypair              | no                  |
+| `PG_ENABLED`      | Set to anything but 'false' to enable Postgres | no                  |
+| `PG_CONFIG`       | Postgres Connection Config                     | if postgres enabled |
+| `CA_PEM_B64`      | Base64 encoded `ca.pem`                        | if postgres enabled |
+| `CLIENT_PKS_B64`  | Base64 encoded `client.pks`                    | if postgres enabled |
+| `CLIENT_PKS_PASS` | Password to `client.pks`                       | if postgres enabled |
 
-| env               | purpose                     |
-| ---------         | ------                      |
-| `CA_PEM_B64`      | Base64 encoded `ca.pem`     |
-| `CLIENT_PKS_B64`  | Base64 encoded `client.pks` |
-| `CLIENT_PKS_PASS` | Password to `client.pks`    |
-| `PG_CONFIG`       | Postgres Connection Config  |
+### Postgres
+lite-rpc implements an optional postgres service that can write to postgres database tables as defined
+in `./migrations`. This can be enabled by either setting the environment variable `PG_ENABLED` to `true` or by passing the `-p` option when launching the executable. If postgres is enabled then the optional environment variables shown above must be set.
+
+### Metrics
+Various Prometheus metrics are exposed on `localhost:9091/metrics` which can be used to monitor the health of the application in production. 
+Grafana dashboard coming soon!
+
+### Deployment on fly.io
+While lite-rpc can be deployed on any cloud infrastructure, it has been tested extensively on https://fly.io.
+An example configuration has been provided in `fly.toml`. We recommend a `dedicated-cpu-2x` VM with at least 4GB RAM.
+
+The app listens by default on ports 8890 and 8891 for HTTP and Websockets respectively. Since only a subset of RPC methods are implemented, we recommend serving unimplemented methods from a full RPC node using a reverse proxy such as HAProxy or Kong. Alternatively, you can connect directly to lite-rpc using a web3.js Connection object that is _only_ used for sending and confirming transactions.
+
+#### Example
+```bash
+fly apps create my-lite-rpc
+fly secrets set -a my-lite-rpc RPC_URL=... WS_URL=...   # See above table for env options
+fly scale vm dedicated-cpu-2x --memory 4096 -a my-lite-rpc
+fly deploy -a my-lite-rpc --remote-only
+```
 
 ## License & Copyright
 
