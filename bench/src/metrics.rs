@@ -3,6 +3,8 @@ use std::{
     time::Duration,
 };
 
+use solana_sdk::slot_history::Slot;
+
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct Metric {
     pub txs_sent: u64,
@@ -103,4 +105,13 @@ impl From<AvgMetric> for Metric {
         avg_metric.total_metric /= avg_metric.num_of_runs;
         avg_metric.total_metric
     }
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct TxMetricData {
+    pub signature: String,
+    pub sent_slot: Slot,
+    pub confirmed_slot: Slot,
+    pub time_to_send_in_millis: u64,
+    pub time_to_confirm_in_millis: u64,
 }

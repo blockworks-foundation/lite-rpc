@@ -4,7 +4,7 @@ use clap::{command, Parser};
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     /// Number of tx(s) sent in each run
-    #[arg(short = 't', long, default_value_t = 20_000)]
+    #[arg(short = 'n', long, default_value_t = 5_000)]
     pub tx_count: usize,
     /// Number of bench runs
     #[arg(short = 'r', long, default_value_t = 1)]
@@ -18,4 +18,6 @@ pub struct Args {
     /// Lite Rpc Address
     #[arg(short = 'l', long, default_value_t = String::from("http://127.0.0.1:8890"))]
     pub lite_rpc_addr: String,
+    #[arg(short = 't', long, default_value_t = String::from("transactions.csv"))]
+    pub transaction_save_file: String,
 }
