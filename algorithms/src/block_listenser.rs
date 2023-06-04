@@ -37,10 +37,13 @@ use tokio::{sync::mpsc::Sender, task::JoinHandle, time::Instant};
 
 use crate::{
     block_store::{BlockInformation, BlockStore},
-    workers::{PostgresBlock, PostgresMsg, PostgresUpdateTx, MESSAGES_IN_POSTGRES_CHANNEL},
+    notifications::{
+        BlockNotification, NotificationMsg, NotificationSender, TransactionUpdateNotification,
+        MESSAGES_IN_POSTGRES_CHANNEL,
+    },
 };
 
-use super::{PostgresMpscSend, TxProps, TxSender};
+use crate::tx_sender::{TxProps, TxSender};
 
 lazy_static::lazy_static! {
     static ref TT_RECV_CON_BLOCK: Histogram = register_histogram!(histogram_opts!(
@@ -151,7 +154,7 @@ impl BlockListener {
         &self,
         slot: Slot,
         commitment_config: CommitmentConfig,
-        postgres: Option<PostgresMpscSend>,
+        postgres: Option<NotificationSender>,
     ) -> anyhow::Result<()> {
         //info!("indexing slot {} commitment {}", slot, commitment_config.commitment);
         let comfirmation_status = match commitment_config.commitment {
@@ -308,7 +311,7 @@ impl BlockListener {
                         }
                     };
 
-                    transactions_to_update.push(PostgresUpdateTx {
+                    transactions_to_update.push(TransactionUpdateNotification {
                         signature: sig.clone(),
                         processed_slot: slot as i64,
                         cu_consumed,
@@ -345,7 +348,9 @@ impl BlockListener {
         //
         if let Some(postgres) = &postgres {
             postgres
-                .send(PostgresMsg::PostgresUpdateTx(transactions_to_update))
+                .send(NotificationMsg::UpdateTransactionMsg(
+                    transactions_to_update,
+                ))
                 .unwrap();
             MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
@@ -380,7 +385,7 @@ impl BlockListener {
             let block_info = self.block_store.get_block_info(&blockhash);
 
             postgres
-                .send(PostgresMsg::PostgresBlock(PostgresBlock {
+                .send(NotificationMsg::BlockNotificationMsg(BlockNotification {
                     slot: slot as i64,
                     leader_id: 0, // TODO: lookup leader
                     parent_slot: parent_slot as i64,
@@ -398,7 +403,7 @@ impl BlockListener {
     pub fn listen(
         self,
         commitment_config: CommitmentConfig,
-        postgres: Option<PostgresMpscSend>,
+        notifier: Option<NotificationSender>,
         estimated_slot: Arc<AtomicU64>,
     ) -> JoinHandle<anyhow::Result<()>> {
         let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -407,7 +412,7 @@ impl BlockListener {
         // task to fetch blocks
         for _i in 0..8 {
             let this = self.clone();
-            let postgres = postgres.clone();
+            let notifier = notifier.clone();
             let slot_retry_queue_sx = slot_retry_queue_sx.clone();
             let block_schedule_queue_rx = block_schedule_queue_rx.clone();
 
@@ -428,7 +433,7 @@ impl BlockListener {
                     }
 
                     if this
-                        .index_slot(slot, commitment_config, postgres.clone())
+                        .index_slot(slot, commitment_config, notifier.clone())
                         .await
                         .is_err()
                     {

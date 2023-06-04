@@ -22,9 +22,8 @@ use tokio::{
     time::timeout,
 };
 
-use crate::workers::TxProps;
-
 use super::{rotating_queue::RotatingQueue, tpu_service::IdentityStakes};
+use crate::tx_sender::TxProps;
 
 pub const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 const QUIC_CONNECTION_TIMEOUT_DURATION_IN_SEC: Duration = Duration::from_secs(1);

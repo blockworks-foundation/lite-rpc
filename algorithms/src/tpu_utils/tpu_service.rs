@@ -29,9 +29,8 @@ use tokio::{
     time::{Duration, Instant},
 };
 
-use crate::workers::TxProps;
-
 use super::tpu_connection_manager::TpuConnectionManager;
+use crate::tx_sender::TxProps;
 
 const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
 const CLUSTERINFO_REFRESH_TIME: u64 = 60; // refresh cluster every minute

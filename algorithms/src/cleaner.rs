@@ -1,11 +1,10 @@
 use std::time::Duration;
 
+use crate::block_listenser::BlockListener;
+use crate::block_store::BlockStore;
+use crate::tx_sender::TxSender;
 use log::info;
 use tokio::task::JoinHandle;
-
-use crate::block_store::BlockStore;
-
-use super::{BlockListener, TxSender};
 
 /// Background worker which cleans up memory  
 #[derive(Clone)]

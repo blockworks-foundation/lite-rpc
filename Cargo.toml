@@ -1,14 +1,17 @@
-[package]
-name = "lite-rpc"
-version = "0.1.0"
-edition = "2021"
-description = "A lite version of solana rpc to send and confirm transactions"
-rust-version = "1.67.1"
-
 [workspace]
 members = [
+    "algorithms",
+    "lite-rpc",
     "bench"
 ]
+
+[workspace.package]
+version = "0.2.0"
+authors = ["gmgalactus <gmgalactus@mango.markets>", "Aniket Prajapati <contact@aniketprajapati.me>"]
+repository = "https://github.com/blockworks-foundation/lite-rpc"
+license = "AGPL"
+edition = "2021"
+default-run = "lite-rpc"
 
 [workspace.dependencies]
 solana-sdk = "1.15.2"
@@ -46,43 +49,4 @@ dotenv = "0.15.0"
 async-channel = "1.8.0"
 quinn = "0.9.3"
 rustls = { version = "=0.20.6", default-features = false }
-
-[dev-dependencies]
-bench = { path = "./bench" }
-
-[dependencies]
-solana-sdk = { workspace = true }
-solana-rpc-client = { workspace = true }
-solana-rpc-client-api = { workspace = true }
-solana-transaction-status = { workspace = true }
-solana-version = { workspace = true }
-solana-client = { workspace = true }
-solana-net-utils = { workspace = true }
-solana-pubsub-client = { workspace = true }
-solana-streamer = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true }
-bincode = { workspace = true }
-bs58 = { workspace = true }
-base64 = { workspace = true }
-thiserror = { workspace = true }
-futures = { workspace = true }
-bytes = { workspace = true }
-anyhow = { workspace = true }
-log = { workspace = true }
-clap = { workspace = true }
-dashmap = { workspace = true }
-const_env = { workspace = true }
-jsonrpsee = { workspace = true }
-tracing-subscriber = { workspace = true }
-tokio-postgres = { workspace = true }
-native-tls = { workspace = true }
-postgres-native-tls = { workspace = true }
-prometheus = { workspace = true }
-lazy_static = { workspace = true }
-dotenv = { workspace = true }
-async-channel = { workspace = true }
-quinn = { workspace = true }
-chrono = { workspace = true }
-rustls = { workspace = true }
+solana-lite-rpc-algorithms = {path = "algorithms", version="0.2.0"}

@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
+use crate::tx_sender::TxSender;
 use log::info;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use serde::{Deserialize, Serialize};
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::{sync::RwLock, task::JoinHandle};
-
-use super::TxSender;
-use serde::{Deserialize, Serialize};
 
 lazy_static::lazy_static! {
     static ref TXS_IN_STORE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_store", "Transactions in store")).unwrap();

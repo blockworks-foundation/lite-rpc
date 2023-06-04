@@ -15,14 +15,11 @@ use prometheus::{
 use solana_transaction_status::TransactionStatus;
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
+use crate::notifications::NotificationSender;
 use crate::{
-    bridge::TXS_IN_CHANNEL,
-    workers::{
-        tpu_utils::tpu_service::TpuService, PostgresMsg, PostgresTx, MESSAGES_IN_POSTGRES_CHANNEL,
-    },
+    notifications::NotificationMsg, notifications::TransactionNotification,
+    notifications::MESSAGES_IN_POSTGRES_CHANNEL, tpu_utils::tpu_service::TpuService,
 };
-
-use super::PostgresMpscSend;
 
 lazy_static::lazy_static! {
     static ref TXS_SENT: IntCounter =
@@ -36,6 +33,8 @@ lazy_static::lazy_static! {
     ))
     .unwrap();
     static ref TX_TIMED_OUT: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tx_timeout", "Number of transactions that timeout")).unwrap();
+    pub static ref TXS_IN_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_channel", "Transactions in channel")).unwrap();
+
 }
 
 pub type WireTransaction = Vec<u8>;
@@ -85,7 +84,7 @@ impl TxSender {
         &self,
         sigs_and_slots: Vec<(String, u64)>,
         txs: Vec<WireTransaction>,
-        postgres: Option<PostgresMpscSend>,
+        postgres: Option<NotificationSender>,
     ) {
         assert_eq!(sigs_and_slots.len(), txs.len());
 
@@ -127,7 +126,7 @@ impl TxSender {
             let postgres_msgs = sigs_and_slots
                 .iter()
                 .enumerate()
-                .map(|(index, (sig, recent_slot))| PostgresTx {
+                .map(|(index, (sig, recent_slot))| TransactionNotification {
                     signature: sig.clone(),
                     recent_slot: *recent_slot as i64,
                     forwarded_slot: forwarded_slot as i64,
@@ -139,7 +138,7 @@ impl TxSender {
                 })
                 .collect();
             postgres
-                .send(PostgresMsg::PostgresTx(postgres_msgs))
+                .send(NotificationMsg::TxNotificationMsg(postgres_msgs))
                 .expect("Error writing to postgres service");
 
             MESSAGES_IN_POSTGRES_CHANNEL.inc();
@@ -156,7 +155,7 @@ impl TxSender {
     pub fn execute(
         self,
         mut recv: Receiver<(String, WireTransaction, u64)>,
-        postgres_send: Option<PostgresMpscSend>,
+        postgres_send: Option<NotificationSender>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             let tx_sender = self.clone();

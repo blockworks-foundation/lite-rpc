@@ -1,14 +1,13 @@
 use const_env::from_env;
 use solana_transaction_status::TransactionConfirmationStatus;
 
-pub mod block_store;
 pub mod bridge;
 pub mod cli;
 pub mod configs;
 pub mod encoding;
 pub mod errors;
+pub mod postgres;
 pub mod rpc;
-pub mod workers;
 
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";
