@@ -6,7 +6,7 @@ use crate::{
     DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
-use solana_lite_rpc_algorithms::{
+use solana_lite_rpc_services::{
     block_listenser::BlockListener,
     block_store::{BlockInformation, BlockStore},
     cleaner::Cleaner,

@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "algorithms",
+    "services",
     "lite-rpc",
     "bench"
 ]
@@ -49,4 +49,4 @@ dotenv = "0.15.0"
 async-channel = "1.8.0"
 quinn = "0.9.3"
 rustls = { version = "=0.20.6", default-features = false }
-solana-lite-rpc-algorithms = {path = "algorithms", version="0.2.0"}
+solana-lite-rpc-services = {path = "services", version="0.2.0"}

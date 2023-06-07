@@ -1,8 +1,8 @@
 [package]
-name = "solana-lite-rpc-algorithms"
+name = "solana-lite-rpc-services"
 version = "0.2.0"
 edition = "2021"
-description = "Algorithms used by solana lite rpc"
+description = "Services used by solana lite rpc"
 rust-version = "1.67.1"
 
 [dependencies]

@@ -2318,7 +2318,7 @@ dependencies = [
  "quinn",
  "serde",
  "serde_json",
- "solana-lite-rpc-algorithms",
+ "solana-lite-rpc-services",
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",
@@ -3957,7 +3957,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-lite-rpc-algorithms"
+name = "solana-lite-rpc-services"
 version = "0.2.0"
 dependencies = [
  "anyhow",

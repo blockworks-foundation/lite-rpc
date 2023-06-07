@@ -13,7 +13,7 @@ use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client,
 use native_tls::{Certificate, Identity, TlsConnector};
 
 use crate::encoding::BinaryEncoding;
-use solana_lite_rpc_algorithms::notifications::{
+use solana_lite_rpc_services::notifications::{
     BlockNotification, NotificationMsg, NotificationReciever, SchemaSize, TransactionNotification,
     TransactionUpdateNotification, MESSAGES_IN_POSTGRES_CHANNEL, POSTGRES_SESSION_ERRORS,
 };
