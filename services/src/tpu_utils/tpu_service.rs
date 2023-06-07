@@ -5,17 +5,16 @@ use log::{error, info, warn};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::{
     nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
-    rpc_response::RpcContactInfo,
 };
 
+use solana_lite_rpc_core::{structures::identity_stakes::IdentityStakes, solana_utils::SolanaUtils, leader_schedule::LeaderSchedule};
 use solana_sdk::{
     pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, signer::Signer, slot_history::Slot,
 };
 use solana_streamer::{
-    nonblocking::quic::ConnectionPeerType, tls_certificates::new_self_signed_tls_certificate,
+    tls_certificates::new_self_signed_tls_certificate,
 };
 use std::{
-    collections::{HashMap, VecDeque},
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
     sync::{
@@ -33,7 +32,7 @@ use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tx_sender::TxProps;
 
 const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
-const CLUSTERINFO_REFRESH_TIME: u64 = 60; // refresh cluster every minute
+const CLUSTERINFO_REFRESH_TIME: u64 = 60 * 60; // stakes every 1hrs
 const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
@@ -52,17 +51,10 @@ lazy_static::lazy_static! {
     register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
 }
 
-pub struct LeaderData {
-    contact_info: Arc<RpcContactInfo>,
-    leader_slot: Slot,
-}
-
 #[derive(Clone)]
 pub struct TpuService {
-    cluster_nodes: Arc<DashMap<Pubkey, Arc<RpcContactInfo>>>,
     current_slot: Arc<AtomicU64>,
     estimated_slot: Arc<AtomicU64>,
-    leader_schedule: Arc<RwLock<VecDeque<LeaderData>>>,
     fanout_slots: u64,
     rpc_client: Arc<RpcClient>,
     pubsub_client: Arc<PubsubClient>,
@@ -71,27 +63,7 @@ pub struct TpuService {
     identity: Arc<Keypair>,
     identity_stakes: Arc<RwLock<IdentityStakes>>,
     txs_sent_store: Arc<DashMap<String, TxProps>>,
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct IdentityStakes {
-    pub peer_type: ConnectionPeerType,
-    pub stakes: u64,
-    pub total_stakes: u64,
-    pub min_stakes: u64,
-    pub max_stakes: u64,
-}
-
-impl Default for IdentityStakes {
-    fn default() -> Self {
-        IdentityStakes {
-            peer_type: ConnectionPeerType::Unstaked,
-            stakes: 0,
-            total_stakes: 0,
-            max_stakes: 0,
-            min_stakes: 0,
-        }
-    }
+    leader_schedule: Arc<LeaderSchedule>,
 }
 
 impl TpuService {
@@ -115,10 +87,9 @@ impl TpuService {
             TpuConnectionManager::new(certificate, key, fanout_slots as usize);
 
         Ok(Self {
-            cluster_nodes: Arc::new(DashMap::new()),
             current_slot: Arc::new(AtomicU64::new(current_slot)),
             estimated_slot: Arc::new(AtomicU64::new(current_slot)),
-            leader_schedule: Arc::new(RwLock::new(VecDeque::new())),
+            leader_schedule: Arc::new(LeaderSchedule::new(CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE)),
             fanout_slots,
             rpc_client,
             pubsub_client: Arc::new(pubsub_client),
@@ -130,50 +101,12 @@ impl TpuService {
         })
     }
 
-    pub async fn update_cluster_nodes(&self) -> Result<()> {
-        let cluster_nodes = self.rpc_client.get_cluster_nodes().await?;
-        cluster_nodes.iter().for_each(|x| {
-            if let Ok(pubkey) = Pubkey::from_str(x.pubkey.as_str()) {
-                self.cluster_nodes.insert(pubkey, Arc::new(x.clone()));
-            }
-        });
-        NB_CLUSTER_NODES.set(self.cluster_nodes.len() as i64);
-
+    pub async fn update_current_stakes(&self) -> Result<()> {
         // update stakes for identity
         // update stakes for the identity
         {
-            let vote_accounts = self.rpc_client.get_vote_accounts().await?;
-            let map_of_stakes: HashMap<String, u64> = vote_accounts
-                .current
-                .iter()
-                .map(|x| (x.node_pubkey.clone(), x.activated_stake))
-                .collect();
-
-            if let Some(stakes) = map_of_stakes.get(&self.identity.pubkey().to_string()) {
-                let all_stakes: Vec<u64> = vote_accounts
-                    .current
-                    .iter()
-                    .map(|x| x.activated_stake)
-                    .collect();
-
-                let identity_stakes = IdentityStakes {
-                    peer_type: ConnectionPeerType::Staked,
-                    stakes: *stakes,
-                    min_stakes: all_stakes.iter().min().map_or(0, |x| *x),
-                    max_stakes: all_stakes.iter().max().map_or(0, |x| *x),
-                    total_stakes: all_stakes.iter().sum(),
-                };
-
-                info!(
-                    "Idenity stakes {}, {}, {}, {}",
-                    identity_stakes.total_stakes,
-                    identity_stakes.min_stakes,
-                    identity_stakes.max_stakes,
-                    identity_stakes.stakes
-                );
-                let mut lock = self.identity_stakes.write().await;
-                *lock = identity_stakes;
-            }
+            let mut lock = self.identity_stakes.write().await;
+            *lock = SolanaUtils::get_stakes_for_identity(self.rpc_client.clone(), self.identity.pubkey()).await?;
         }
         Ok(())
     }
@@ -186,48 +119,9 @@ impl TpuService {
     pub async fn update_leader_schedule(&self) -> Result<()> {
         let current_slot = self.current_slot.load(Ordering::Relaxed);
         let estimated_slot = self.estimated_slot.load(Ordering::Relaxed);
-
-        let (queue_begin_slot, queue_end_slot) = {
-            let mut leader_queue = self.leader_schedule.write().await;
-            // remove old leaders
-            while leader_queue.front().map_or(current_slot, |x| x.leader_slot) < current_slot {
-                leader_queue.pop_front();
-            }
-
-            let last_element = leader_queue
-                .back()
-                .map_or(estimated_slot, |x| x.leader_slot);
-            (estimated_slot, last_element)
-        };
-
-        let last_slot_needed = queue_begin_slot + CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE as u64;
-
-        if last_slot_needed > queue_end_slot + 1 {
-            let first_slot_to_fetch = queue_end_slot + 1;
-            let leaders = self
-                .rpc_client
-                .get_slot_leaders(first_slot_to_fetch, last_slot_needed - first_slot_to_fetch)
-                .await?;
-
-            let mut leader_queue = self.leader_schedule.write().await;
-            for i in first_slot_to_fetch..last_slot_needed {
-                let current_leader = (i - first_slot_to_fetch) as usize;
-                let leader = leaders[current_leader];
-                match self.cluster_nodes.get(&leader) {
-                    Some(r) => {
-                        // push back the leader in the queue
-                        leader_queue.push_back(LeaderData {
-                            contact_info: r.value().clone(),
-                            leader_slot: i,
-                        });
-                    }
-                    None => {
-                        warn!("leader not found in cluster info : {}", leader.to_string());
-                    }
-                }
-            }
-            NB_OF_LEADERS_IN_SCHEDULE.set(leader_queue.len() as i64);
-        }
+        self.leader_schedule.update_leader_schedule(self.rpc_client.clone(), current_slot, estimated_slot).await?;
+        NB_OF_LEADERS_IN_SCHEDULE.set(self.leader_schedule.len().await as i64);
+        NB_CLUSTER_NODES.set(self.leader_schedule.cluster_nodes_len() as i64);
         Ok(())
     }
 
@@ -245,18 +139,7 @@ impl TpuService {
         let fanout = self.fanout_slots;
         let last_slot = estimated_slot + fanout;
 
-        let next_leaders = {
-            let leader_schedule = self.leader_schedule.read().await;
-            let mut next_leaders = vec![];
-            for leader in leader_schedule.iter() {
-                if leader.leader_slot >= load_slot && leader.leader_slot <= last_slot {
-                    next_leaders.push(leader.contact_info.clone());
-                } else if leader.leader_slot > last_slot {
-                    break;
-                }
-            }
-            next_leaders
-        };
+        let next_leaders = self.leader_schedule.get_leaders(load_slot, last_slot).await;
         let connections_to_keep = next_leaders
             .iter()
             .filter(|x| x.tpu.is_some())
@@ -352,7 +235,8 @@ impl TpuService {
     }
 
     pub async fn start(&self) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
-        self.update_cluster_nodes().await?;
+        self.leader_schedule.load_cluster_info(self.rpc_client.clone()).await?;
+        self.update_current_stakes().await?;
         self.update_leader_schedule().await?;
         self.update_quic_connections().await;
 
@@ -369,7 +253,7 @@ impl TpuService {
                     error!("unable to update leader shedule");
                 }
                 if last_cluster_info_update.elapsed() > cluster_info_update_interval {
-                    if this.update_cluster_nodes().await.is_err() {
+                    if this.update_current_stakes().await.is_err() {
                         error!("unable to update cluster infos");
                     } else {
                         last_cluster_info_update = Instant::now();

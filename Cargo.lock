@@ -2295,7 +2295,7 @@ checksum = "d59d8c75012853d2e872fb56bc8a2e53718e2cafe1a4c823143141c6d90c322f"
 
 [[package]]
 name = "lite-rpc"
-version = "0.2.0"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3957,8 +3957,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-lite-rpc-services"
-version = "0.2.0"
+name = "solana-lite-rpc-core"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3981,6 +3981,46 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-client",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
+ "tokio-postgres",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "solana-lite-rpc-services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "base64 0.21.0",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "clap 4.2.4",
+ "const_env",
+ "dashmap",
+ "dotenv",
+ "futures",
+ "jsonrpsee",
+ "lazy_static",
+ "log",
+ "prometheus",
+ "quinn",
+ "rustls 0.20.6",
+ "serde",
+ "serde_json",
+ "solana-client",
+ "solana-lite-rpc-core",
  "solana-net-utils",
  "solana-pubsub-client",
  "solana-rpc-client",
