@@ -469,7 +469,7 @@ impl BlockListener {
                     if now < instant {
                         tokio::time::sleep_until(instant).await;
                     }
-                    if let Ok(_) = block_schedule_queue_sx.send(slot).await {
+                    if block_schedule_queue_sx.send(slot).await.is_ok() {
                         if commitment_config.is_finalized() {
                             BLOCKS_IN_FINALIZED_QUEUE.inc();
                         } else {
@@ -507,12 +507,10 @@ impl BlockListener {
                     for slot in new_block_slots {
                         if let Err(e) = block_schedule_queue_sx.send(slot).await {
                             error!("error sending of block schedule queue {}", e);
+                        } else if commitment_config.is_finalized() {
+                            BLOCKS_IN_FINALIZED_QUEUE.inc();
                         } else {
-                            if commitment_config.is_finalized() {
-                                BLOCKS_IN_FINALIZED_QUEUE.inc();
-                            } else {
-                                BLOCKS_IN_CONFIRMED_QUEUE.inc();
-                            }
+                            BLOCKS_IN_CONFIRMED_QUEUE.inc();
                         }
                     }
                 }

@@ -75,7 +75,7 @@ impl TxSender {
     ) -> Self {
         Self {
             tpu_service,
-            txs_sent_store: txs_sent_store,
+            txs_sent_store,
         }
     }
 

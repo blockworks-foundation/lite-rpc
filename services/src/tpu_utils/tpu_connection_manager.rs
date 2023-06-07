@@ -191,13 +191,13 @@ impl ActiveConnection {
         )
         .await
         {
-            Ok(Ok(unistream)) => return (Some(unistream), false),
+            Ok(Ok(unistream)) => (Some(unistream), false),
             Ok(Err(_)) => {
                 // reset connection for next retry
                 last_stable_id.store(connection.stable_id() as u64, Ordering::Relaxed);
                 (None, true)
             }
-            Err(_) => return (None, false),
+            Err(_) => (None, false),
         }
     }
 
@@ -236,7 +236,7 @@ impl ActiveConnection {
                             identity,
                             true,
                             endpoint.clone(),
-                            socket_addr.clone(),
+                            socket_addr,
                             exit_signal.clone(),
                         )
                         .await;
@@ -295,6 +295,7 @@ impl ActiveConnection {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn listen(
         transaction_reciever: Receiver<(String, Vec<u8>)>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
@@ -367,7 +368,7 @@ impl ActiveConnection {
 
                     if connection.is_none() {
                         // initial connection
-                        let conn = Self::connect(identity, false, endpoint.clone(), addr.clone(), exit_signal.clone()).await;
+                        let conn = Self::connect(identity, false, endpoint.clone(), addr, exit_signal.clone()).await;
                         if let Some(conn) = conn {
                             // could connect
                             connection = Some(Arc::new(RwLock::new(conn)));
@@ -379,7 +380,6 @@ impl ActiveConnection {
                     let task_counter = task_counter.clone();
                     let endpoint = endpoint.clone();
                     let exit_signal = exit_signal.clone();
-                    let addr = addr.clone();
                     let connection = connection.clone();
                     let last_stable_id = last_stable_id.clone();
 

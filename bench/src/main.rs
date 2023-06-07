@@ -87,15 +87,8 @@ async fn main() {
     if log_transactions {
         tokio::spawn(async move {
             let mut tx_writer = csv::Writer::from_path(transaction_save_file).unwrap();
-            loop {
-                match tx_log_rx.recv().await {
-                    Some(x) => {
-                        tx_writer.serialize(x).unwrap();
-                    }
-                    None => {
-                        break;
-                    }
-                }
+            while let Some(x) = tx_log_rx.recv().await {
+                tx_writer.serialize(x).unwrap();
             }
         });
     }
@@ -151,6 +144,7 @@ struct TxSendData {
     sent_slot: Slot,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn bench(
     rpc_client: Arc<RpcClient>,
     tx_count: usize,
@@ -195,21 +189,17 @@ async fn bench(
     while confirmation_time.elapsed() < Duration::from_secs(60)
         && !(map_of_txs.is_empty() && confirmed_count == tx_count)
     {
-        let signatures = map_of_txs
-            .iter()
-            .map(|x| x.key().clone())
-            .collect::<Vec<_>>();
+        let signatures = map_of_txs.iter().map(|x| *x.key()).collect::<Vec<_>>();
         if signatures.is_empty() {
             tokio::time::sleep(Duration::from_millis(1)).await;
             continue;
         }
 
         if let Ok(res) = rpc_client.get_signature_statuses(&signatures).await {
-            for i in 0..signatures.len() {
+            for (i, signature) in signatures.iter().enumerate() {
                 let tx_status = &res.value[i];
-                if let Some(_) = tx_status {
-                    let signature = signatures[i];
-                    let tx_data = map_of_txs.get(&signature).unwrap();
+                if tx_status.is_some() {
+                    let tx_data = map_of_txs.get(signature).unwrap();
                     let time_to_confirm = tx_data.sent_instant.elapsed();
                     metric.add_successful_transaction(tx_data.sent_duration, time_to_confirm);
 
@@ -223,7 +213,7 @@ async fn bench(
                         });
                     }
                     drop(tx_data);
-                    map_of_txs.remove(&signature);
+                    map_of_txs.remove(signature);
                     confirmed_count += 1;
                 }
             }

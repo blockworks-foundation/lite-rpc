@@ -109,7 +109,7 @@ impl PostgresSession {
             query.push('(');
 
             for i in 0..args {
-                if row == 0 && types.len() > 0 {
+                if row == 0 && !types.is_empty() {
                     query.push_str(&format!("(${arg_index})::{}", types[i]));
                 } else {
                     query.push_str(&format!("${arg_index}"));
