@@ -1,9 +1,12 @@
 use log::{trace, warn};
-use quinn::{Connection, ConnectionError, Endpoint, SendStream, EndpointConfig, TokioRuntime, ClientConfig, TransportConfig, IdleTimeout};
+use quinn::{
+    ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
+    TokioRuntime, TransportConfig,
+};
 use solana_sdk::pubkey::Pubkey;
 use std::{
     collections::VecDeque,
-    net::{SocketAddr, IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
@@ -17,7 +20,6 @@ const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 pub struct QuicConnectionUtils {}
 
 impl QuicConnectionUtils {
-
     pub fn create_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
         let mut endpoint = {
             let client_socket =
@@ -50,7 +52,7 @@ impl QuicConnectionUtils {
 
         endpoint
     }
-    
+
     pub async fn make_connection(
         endpoint: Endpoint,
         addr: SocketAddr,
@@ -86,6 +88,7 @@ impl QuicConnectionUtils {
         Ok(connection)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect(
         identity: Pubkey,
         already_connected: bool,
@@ -100,8 +103,7 @@ impl QuicConnectionUtils {
             let conn = if already_connected {
                 Self::make_connection_0rtt(endpoint.clone(), addr, connection_timeout).await
             } else {
-                let conn = Self::make_connection(endpoint.clone(), addr, connection_timeout).await;
-                conn
+                Self::make_connection(endpoint.clone(), addr, connection_timeout).await
             };
             match conn {
                 Ok(conn) => {
@@ -184,6 +186,7 @@ impl QuicConnectionUtils {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_transaction_batch(
         connection: Arc<RwLock<Connection>>,
         txs: Vec<Vec<u8>>,

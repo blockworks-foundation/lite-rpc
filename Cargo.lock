@@ -3970,12 +3970,9 @@ dependencies = [
  "clap 4.2.4",
  "const_env",
  "dashmap",
- "dotenv",
  "futures",
  "jsonrpsee",
- "lazy_static",
  "log",
- "prometheus",
  "quinn",
  "rustls 0.20.6",
  "serde",
@@ -3991,7 +3988,6 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
- "tokio-postgres",
  "tracing-subscriber",
 ]
 

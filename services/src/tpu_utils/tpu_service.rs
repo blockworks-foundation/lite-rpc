@@ -1,19 +1,17 @@
 use anyhow::Result;
 use dashmap::DashMap;
-use futures::StreamExt;
-use log::{error, info, warn};
+use log::{error, info};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use solana_client::{
-    nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient},
-};
+use solana_client::nonblocking::{pubsub_client::PubsubClient, rpc_client::RpcClient};
 
-use solana_lite_rpc_core::{structures::identity_stakes::IdentityStakes, solana_utils::SolanaUtils, leader_schedule::LeaderSchedule};
+use solana_lite_rpc_core::{
+    leader_schedule::LeaderSchedule, solana_utils::SolanaUtils,
+    structures::identity_stakes::IdentityStakes,
+};
 use solana_sdk::{
     pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, signer::Signer, slot_history::Slot,
 };
-use solana_streamer::{
-    tls_certificates::new_self_signed_tls_certificate,
-};
+use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
@@ -34,7 +32,6 @@ use crate::tx_sender::TxProps;
 const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
 const CLUSTERINFO_REFRESH_TIME: u64 = 60 * 60; // stakes every 1hrs
 const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
-const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
 
 lazy_static::lazy_static! {
@@ -106,7 +103,11 @@ impl TpuService {
         // update stakes for the identity
         {
             let mut lock = self.identity_stakes.write().await;
-            *lock = SolanaUtils::get_stakes_for_identity(self.rpc_client.clone(), self.identity.pubkey()).await?;
+            *lock = SolanaUtils::get_stakes_for_identity(
+                self.rpc_client.clone(),
+                self.identity.pubkey(),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -119,7 +120,9 @@ impl TpuService {
     pub async fn update_leader_schedule(&self) -> Result<()> {
         let current_slot = self.current_slot.load(Ordering::Relaxed);
         let estimated_slot = self.estimated_slot.load(Ordering::Relaxed);
-        self.leader_schedule.update_leader_schedule(self.rpc_client.clone(), current_slot, estimated_slot).await?;
+        self.leader_schedule
+            .update_leader_schedule(self.rpc_client.clone(), current_slot, estimated_slot)
+            .await?;
         NB_OF_LEADERS_IN_SCHEDULE.set(self.leader_schedule.len().await as i64);
         NB_CLUSTER_NODES.set(self.leader_schedule.cluster_nodes_len() as i64);
         Ok(())
@@ -164,78 +167,28 @@ impl TpuService {
     }
 
     async fn update_current_slot(&self, update_notifier: tokio::sync::mpsc::UnboundedSender<u64>) {
+        let current_slot = self.current_slot.clone();
+
         let update_slot = |slot: u64| {
-            if slot > self.current_slot.load(Ordering::Relaxed) {
-                self.current_slot.store(slot, Ordering::Relaxed);
+            if slot > current_slot.load(Ordering::Relaxed) {
+                current_slot.store(slot, Ordering::Relaxed);
                 CURRENT_SLOT.set(slot as i64);
                 let _ = update_notifier.send(slot);
             }
         };
 
-        loop {
-            let slot = self
-                .rpc_client
-                .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
-                    commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
-                })
-                .await;
-            match slot {
-                Ok(slot) => {
-                    update_slot(slot);
-                }
-                Err(e) => {
-                    // error getting slot
-                    error!("error getting slot {}", e);
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                    continue;
-                }
-            }
-
-            let res = tokio::time::timeout(
-                Duration::from_millis(1000),
-                self.pubsub_client.slot_subscribe(),
-            )
-            .await;
-            match res {
-                Ok(sub_res) => {
-                    match sub_res {
-                        Ok((mut client, unsub)) => {
-                            loop {
-                                let next = tokio::time::timeout(
-                                    Duration::from_millis(2000),
-                                    client.next(),
-                                )
-                                .await;
-                                match next {
-                                    Ok(slot_info) => {
-                                        if let Some(slot_info) = slot_info {
-                                            update_slot(slot_info.slot);
-                                        }
-                                    }
-                                    Err(_) => {
-                                        // timedout reconnect to pubsub
-                                        warn!("slot pub sub disconnected reconnecting");
-                                        break;
-                                    }
-                                }
-                            }
-                            unsub();
-                        }
-                        Err(e) => {
-                            warn!("slot pub sub disconnected ({}) reconnecting", e);
-                        }
-                    }
-                }
-                Err(_) => {
-                    // timed out
-                    warn!("timedout subscribing to slots");
-                }
-            }
-        }
+        SolanaUtils::poll_slots(
+            self.rpc_client.clone(),
+            self.pubsub_client.clone(),
+            update_slot,
+        )
+        .await;
     }
 
     pub async fn start(&self) -> anyhow::Result<Vec<JoinHandle<anyhow::Result<()>>>> {
-        self.leader_schedule.load_cluster_info(self.rpc_client.clone()).await?;
+        self.leader_schedule
+            .load_cluster_info(self.rpc_client.clone())
+            .await?;
         self.update_current_stakes().await?;
         self.update_leader_schedule().await?;
         self.update_quic_connections().await;
@@ -274,47 +227,16 @@ impl TpuService {
         let current_slot = self.current_slot.clone();
         let this = self.clone();
         let estimated_slot_calculation = tokio::spawn(async move {
-            // this is an estimated slot. we get the current slot and if we do not recieve any notification in 400ms we update it manually
-            let mut slot_reciever = slot_reciever;
+            let mut slot_update_notifier = slot_reciever;
             loop {
-                let update_connections = match tokio::time::timeout(
-                    Duration::from_millis(AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS),
-                    slot_reciever.recv(),
+                if SolanaUtils::slot_estimator(
+                    &mut slot_update_notifier,
+                    current_slot.clone(),
+                    estimated_slot.clone(),
                 )
                 .await
                 {
-                    Ok(recv) => {
-                        if let Some(slot) = recv {
-                            if slot > estimated_slot.load(Ordering::Relaxed) {
-                                // incase of multilple slot update events / take the current slot
-                                let current_slot = current_slot.load(Ordering::Relaxed);
-                                estimated_slot.store(current_slot, Ordering::Relaxed);
-                                ESTIMATED_SLOT.set(current_slot as i64);
-                                true
-                            } else {
-                                // queue is late estimate slot is already ahead
-                                false
-                            }
-                        } else {
-                            false
-                        }
-                    }
-                    Err(_) => {
-                        let es = estimated_slot.load(Ordering::Relaxed);
-                        let cs = current_slot.load(Ordering::Relaxed);
-                        // estimated slot should not go ahead more than 32 slots
-                        // this is because it may be a slot block
-                        if es < cs + 32 {
-                            estimated_slot.fetch_add(1, Ordering::Relaxed);
-                            ESTIMATED_SLOT.set((es + 1) as i64);
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                };
-
-                if update_connections {
+                    ESTIMATED_SLOT.set(estimated_slot.load(Ordering::Relaxed) as i64);
                     this.update_quic_connections().await;
                 }
             }

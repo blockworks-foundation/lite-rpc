@@ -1,15 +1,11 @@
-use std::{
-    sync::Arc,
-    collections::VecDeque, str::FromStr,
-};
+use std::{collections::VecDeque, str::FromStr, sync::Arc};
 
 use dashmap::DashMap;
 use log::warn;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::response::RpcContactInfo;
-use solana_sdk::{slot_history::Slot, pubkey::Pubkey};
+use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use tokio::sync::RwLock;
-
 
 pub struct LeaderData {
     pub contact_info: Arc<RpcContactInfo>,
@@ -23,11 +19,11 @@ pub struct LeaderSchedule {
 
 impl LeaderSchedule {
     pub fn new(leaders_to_cache_count: usize) -> Self {
-        Self { 
-            leader_schedule: RwLock::new(VecDeque::new()), 
+        Self {
+            leader_schedule: RwLock::new(VecDeque::new()),
             leaders_to_cache_count,
             cluster_nodes: Arc::new(DashMap::new()),
-         }
+        }
     }
 
     pub async fn len(&self) -> usize {
@@ -48,7 +44,12 @@ impl LeaderSchedule {
         Ok(())
     }
 
-    pub async fn update_leader_schedule(&self, rpc_client: Arc<RpcClient>, current_slot: u64, estimated_slot: u64) -> anyhow::Result<()> {
+    pub async fn update_leader_schedule(
+        &self,
+        rpc_client: Arc<RpcClient>,
+        current_slot: u64,
+        estimated_slot: u64,
+    ) -> anyhow::Result<()> {
         let (queue_begin_slot, queue_end_slot) = {
             let mut leader_queue = self.leader_schedule.write().await;
             // remove old leaders
