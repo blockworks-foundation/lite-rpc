@@ -2,6 +2,7 @@ use anyhow::{bail, Context};
 use futures::join;
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use std::{sync::Arc, time::Duration};
 
 use tokio::{
@@ -13,10 +14,15 @@ use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client,
 use native_tls::{Certificate, Identity, TlsConnector};
 
 use crate::encoding::BinaryEncoding;
-use solana_lite_rpc_services::notifications::{
+use solana_lite_rpc_core::notifications::{
     BlockNotification, NotificationMsg, NotificationReciever, SchemaSize, TransactionNotification,
-    TransactionUpdateNotification, MESSAGES_IN_POSTGRES_CHANNEL, POSTGRES_SESSION_ERRORS,
+    TransactionUpdateNotification,
 };
+
+lazy_static::lazy_static! {
+    pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();
+    pub static ref POSTGRES_SESSION_ERRORS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_session_errors", "Number of failures while establishing postgres session")).unwrap();
+}
 
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 

@@ -8,7 +8,6 @@ use crate::{
 
 use solana_lite_rpc_services::{
     block_listenser::BlockListener,
-    block_store::{BlockInformation, BlockStore},
     cleaner::Cleaner,
     metrics_capture::MetricsCapture,
     prometheus_sync::PrometheusSync,
@@ -17,6 +16,8 @@ use solana_lite_rpc_services::{
     tx_sender::WireTransaction,
     tx_sender::{TxProps, TxSender, TXS_IN_CHANNEL},
 };
+
+use solana_lite_rpc_core::block_store::{BlockInformation, BlockStore};
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 

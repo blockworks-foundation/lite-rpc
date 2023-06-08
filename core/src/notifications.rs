@@ -1,11 +1,5 @@
 use chrono::{DateTime, Utc};
-use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-
-lazy_static::lazy_static! {
-    pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();
-    pub static ref POSTGRES_SESSION_ERRORS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_session_errors", "Number of failures while establishing postgres session")).unwrap();
-}
 
 pub trait SchemaSize {
     const DEFAULT_SIZE: usize = 0;

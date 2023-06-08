@@ -15,10 +15,9 @@ use prometheus::{
 use solana_transaction_status::TransactionStatus;
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
-use crate::notifications::NotificationSender;
-use crate::{
-    notifications::NotificationMsg, notifications::TransactionNotification,
-    notifications::MESSAGES_IN_POSTGRES_CHANNEL, tpu_utils::tpu_service::TpuService,
+use crate::tpu_utils::tpu_service::TpuService;
+use solana_lite_rpc_core::notifications::{
+    NotificationMsg, NotificationSender, TransactionNotification,
 };
 
 lazy_static::lazy_static! {
@@ -140,8 +139,6 @@ impl TxSender {
             postgres
                 .send(NotificationMsg::TxNotificationMsg(postgres_msgs))
                 .expect("Error writing to postgres service");
-
-            MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
         histo_timer.observe_duration();
         trace!(

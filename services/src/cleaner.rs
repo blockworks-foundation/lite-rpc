@@ -1,10 +1,16 @@
 use std::time::Duration;
 
 use crate::block_listenser::BlockListener;
-use crate::block_store::BlockStore;
 use crate::tx_sender::TxSender;
 use log::info;
+use prometheus::core::GenericGauge;
+use prometheus::{opts, register_int_gauge};
+use solana_lite_rpc_core::block_store::BlockStore;
 use tokio::task::JoinHandle;
+
+lazy_static::lazy_static! {
+    static ref BLOCKS_IN_BLOCKSTORE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_blockstore", "Number of blocks in blockstore")).unwrap();
+}
 
 /// Background worker which cleans up memory  
 #[derive(Clone)]
@@ -38,6 +44,7 @@ impl Cleaner {
 
     pub async fn clean_block_store(&self, ttl_duration: Duration) {
         self.block_store.clean(ttl_duration).await;
+        BLOCKS_IN_BLOCKSTORE.set(self.block_store.number_of_blocks_in_store() as i64);
     }
 
     pub fn start(self, ttl_duration: Duration) -> JoinHandle<anyhow::Result<()>> {

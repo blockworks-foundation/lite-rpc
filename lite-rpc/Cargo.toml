@@ -35,6 +35,7 @@ lazy_static = { workspace = true }
 dotenv = { workspace = true }
 async-channel = { workspace = true }
 quinn = { workspace = true }
+solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-services = { workspace = true }
 
 [dev-dependencies]

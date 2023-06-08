@@ -6,41 +6,34 @@ use std::{
     time::Duration,
 };
 
+use anyhow::bail;
 use chrono::{TimeZone, Utc};
-use dashmap::DashMap;
-use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
-use log::{error, info, trace, warn};
+use jsonrpsee::SubscriptionSink;
+use log::{error, info, trace};
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
     register_int_gauge, Histogram, IntCounter,
 };
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::{
-    config::RpcBlockConfig,
-    response::{Response as RpcResponse, RpcResponseContext},
-};
 
 use solana_sdk::{
-    borsh::try_from_slice_unchecked,
     commitment_config::{CommitmentConfig, CommitmentLevel},
-    compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
 };
 
 use solana_transaction_status::{
-    option_serializer::OptionSerializer, RewardType, TransactionConfirmationStatus,
-    TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
-    UiTransactionStatusMeta,
+    TransactionConfirmationStatus, TransactionStatus, UiConfirmedBlock,
 };
 use tokio::{sync::mpsc::Sender, task::JoinHandle, time::Instant};
 
-use crate::{
-    block_store::{BlockInformation, BlockStore},
+use solana_lite_rpc_core::{
+    block_processor::BlockProcessor,
+    block_store::BlockStore,
     notifications::{
         BlockNotification, NotificationMsg, NotificationSender, TransactionUpdateNotification,
-        MESSAGES_IN_POSTGRES_CHANNEL,
     },
+    subscription_handler::SubscriptionHandler,
 };
 
 use crate::tx_sender::{TxProps, TxSender};
@@ -79,9 +72,10 @@ lazy_static::lazy_static! {
 #[derive(Clone)]
 pub struct BlockListener {
     tx_sender: TxSender,
-    block_store: BlockStore,
     rpc_client: Arc<RpcClient>,
-    signature_subscribers: Arc<DashMap<(String, CommitmentConfig), (SubscriptionSink, Instant)>>,
+    block_processor: BlockProcessor,
+    subscription_handler: SubscriptionHandler,
+    block_store: BlockStore,
 }
 
 pub struct BlockListnerNotificatons {
@@ -92,10 +86,11 @@ pub struct BlockListnerNotificatons {
 impl BlockListener {
     pub fn new(rpc_client: Arc<RpcClient>, tx_sender: TxSender, block_store: BlockStore) -> Self {
         Self {
+            block_processor: BlockProcessor::new(rpc_client.clone(), Some(block_store.clone())),
             rpc_client,
             tx_sender,
+            subscription_handler: SubscriptionHandler::default(),
             block_store,
-            signature_subscribers: Default::default(),
         }
     }
 
@@ -109,36 +104,20 @@ impl BlockListener {
         num_of_sigs_commited
     }
 
-    #[allow(deprecated)]
-    fn get_supported_commitment_config(commitment_config: CommitmentConfig) -> CommitmentConfig {
-        match commitment_config.commitment {
-            CommitmentLevel::Finalized | CommitmentLevel::Root | CommitmentLevel::Max => {
-                CommitmentConfig {
-                    commitment: CommitmentLevel::Finalized,
-                }
-            }
-            _ => CommitmentConfig {
-                commitment: CommitmentLevel::Confirmed,
-            },
-        }
-    }
-
     pub fn signature_subscribe(
         &self,
         signature: String,
         commitment_config: CommitmentConfig,
         sink: SubscriptionSink,
     ) {
-        let commitment_config = Self::get_supported_commitment_config(commitment_config);
-        self.signature_subscribers
-            .insert((signature, commitment_config), (sink, Instant::now()));
+        self.subscription_handler
+            .signature_subscribe(signature, commitment_config, sink);
         NUMBER_OF_SIGNATURE_SUBSCRIBERS.inc();
     }
 
     pub fn signature_un_subscribe(&self, signature: String, commitment_config: CommitmentConfig) {
-        let commitment_config = Self::get_supported_commitment_config(commitment_config);
-        self.signature_subscribers
-            .remove(&(signature, commitment_config));
+        self.subscription_handler
+            .signature_un_subscribe(signature, commitment_config);
         NUMBER_OF_SIGNATURE_SUBSCRIBERS.dec();
     }
 
@@ -169,70 +148,24 @@ impl BlockListener {
         };
 
         let start = Instant::now();
-
-        let block = self
-            .rpc_client
-            .get_block_with_config(
-                slot,
-                RpcBlockConfig {
-                    transaction_details: Some(TransactionDetails::Full),
-                    commitment: Some(commitment_config),
-                    max_supported_transaction_version: Some(0),
-                    encoding: Some(UiTransactionEncoding::Base64),
-                    rewards: Some(true),
-                },
-            )
+        let block_processor_result = self
+            .block_processor
+            .process(slot, commitment_config)
             .await?;
 
+        if block_processor_result.invalid_block {
+            Self::increment_invalid_block_metric(commitment_config);
+            bail!("Invalid block");
+        }
+
         timer.observe_duration();
-
-        let Some(block_height) = block.block_height else {
-            Self::increment_invalid_block_metric(commitment_config);
-            return Ok(());
-        };
-
-        let Some(transactions) = block.transactions else {
-            Self::increment_invalid_block_metric(commitment_config);
-            return Ok(());
-         };
-
-        let blockhash = block.blockhash;
-        let parent_slot = block.parent_slot;
-
-        self.block_store
-            .add_block(
-                blockhash.clone(),
-                BlockInformation {
-                    slot,
-                    block_height,
-                    instant: Instant::now(),
-                    processed_local_time: None,
-                },
-                commitment_config,
-            )
-            .await;
-
         let mut transactions_processed = 0;
         let mut transactions_to_update = vec![];
-        transactions_to_update.reserve(transactions.len());
 
-        for tx in transactions {
-            let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
-                info!("tx with no meta");
-                continue;
-            };
-
-            let tx = match tx.transaction.decode() {
-                Some(tx) => tx,
-                None => {
-                    warn!("transaction could not be decoded");
-                    continue;
-                }
-            };
+        for tx_info in block_processor_result.transaction_infos {
             transactions_processed += 1;
-            let sig = tx.signatures[0].to_string();
 
-            if let Some(mut tx_status) = self.tx_sender.txs_sent_store.get_mut(&sig) {
+            if let Some(mut tx_status) = self.tx_sender.txs_sent_store.get_mut(&tx_info.signature) {
                 //
                 // Metrics
                 //
@@ -244,107 +177,37 @@ impl BlockListener {
 
                 trace!(
                     "got transaction {} confrimation level {}",
-                    sig,
+                    tx_info.signature,
                     commitment_config.commitment
                 );
 
                 tx_status.value_mut().status = Some(TransactionStatus {
                     slot,
                     confirmations: None,
-                    status,
-                    err: err.clone(),
+                    status: tx_info.status.clone(),
+                    err: tx_info.err.clone(),
                     confirmation_status: Some(comfirmation_status.clone()),
                 });
 
                 // prepare writing to postgres
                 if let Some(_postgres) = &postgres {
-                    let cu_consumed = match compute_units_consumed {
-                        OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
-                        _ => None,
-                    };
-
-                    let legacy_compute_budget = tx.message.instructions().iter().find_map(|i| {
-                        if i.program_id(tx.message.static_account_keys())
-                            .eq(&compute_budget::id())
-                        {
-                            if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                                units,
-                                additional_fee,
-                            }) = try_from_slice_unchecked(i.data.as_slice())
-                            {
-                                return Some((units as i64, additional_fee as i64));
-                            }
-                        }
-                        None
-                    });
-
-                    let mut cu_requested = tx.message.instructions().iter().find_map(|i| {
-                        if i.program_id(tx.message.static_account_keys())
-                            .eq(&compute_budget::id())
-                        {
-                            if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                                try_from_slice_unchecked(i.data.as_slice())
-                            {
-                                return Some(limit as i64);
-                            }
-                        }
-                        None
-                    });
-
-                    let mut cu_price = tx.message.instructions().iter().find_map(|i| {
-                        if i.program_id(tx.message.static_account_keys())
-                            .eq(&compute_budget::id())
-                        {
-                            if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                                try_from_slice_unchecked(i.data.as_slice())
-                            {
-                                return Some(price as i64);
-                            }
-                        }
-                        None
-                    });
-
-                    if let Some((units, additional_fee)) = legacy_compute_budget {
-                        cu_requested = Some(units);
-                        if additional_fee > 0 {
-                            cu_price = Some((units * 1000) / additional_fee)
-                        }
-                    };
-
                     transactions_to_update.push(TransactionUpdateNotification {
-                        signature: sig.clone(),
+                        signature: tx_info.signature.clone(),
                         processed_slot: slot as i64,
-                        cu_consumed,
-                        cu_requested,
-                        cu_price,
+                        cu_consumed: tx_info.cu_consumed,
+                        cu_requested: tx_info.cu_requested,
+                        cu_price: tx_info.prioritization_fees,
                     });
                 }
             };
 
             // subscribers
-            if let Some((_sig, (sink, _))) =
-                self.signature_subscribers.remove(&(sig, commitment_config))
-            {
-                // none if transaction succeeded
-                let _res = sink
-                    .send(
-                        SubscriptionMessage::from_json(&RpcResponse {
-                            context: RpcResponseContext {
-                                slot,
-                                api_version: None,
-                            },
-                            value: serde_json::json!({ "err": err }),
-                        })
-                        .unwrap(),
-                    )
-                    .await;
-
-                NUMBER_OF_SIGNATURE_SUBSCRIBERS.dec();
-            }
+            self.subscription_handler
+                .notify(slot, &tx_info, commitment_config)
+                .await;
         }
-
         //
-        // Write to postgres
+        // Notify
         //
         if let Some(postgres) = &postgres {
             postgres
@@ -352,7 +215,6 @@ impl BlockListener {
                     transactions_to_update,
                 ))
                 .unwrap();
-            MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
 
         trace!(
@@ -364,37 +226,25 @@ impl BlockListener {
         );
 
         if let Some(postgres) = &postgres {
-            let Some(rewards) = block.rewards else {
-                return Ok(());
-            };
-
-            let Some(leader_reward) = rewards
-                      .iter()
-                      .find(|reward| Some(RewardType::Fee) == reward.reward_type) else {
-                return Ok(());
-            };
-
-            let _leader_id = &leader_reward.pubkey;
-
             // TODO insert if not exists leader_id into accountaddrs
 
             // fetch cluster time from rpc
             let block_time = self.rpc_client.get_block_time(slot).await?;
 
             // fetch local time from blockstore
-            let block_info = self.block_store.get_block_info(&blockhash);
+            let block_info = self
+                .block_store
+                .get_block_info(&block_processor_result.blockhash);
 
             postgres
                 .send(NotificationMsg::BlockNotificationMsg(BlockNotification {
                     slot: slot as i64,
                     leader_id: 0, // TODO: lookup leader
-                    parent_slot: parent_slot as i64,
+                    parent_slot: block_processor_result.parent_slot as i64,
                     cluster_time: Utc.timestamp_millis_opt(block_time * 1000).unwrap(),
                     local_time: block_info.and_then(|b| b.processed_local_time),
                 }))
                 .expect("Error sending block to postgres service");
-
-            MESSAGES_IN_POSTGRES_CHANNEL.inc();
         }
 
         Ok(())
@@ -523,21 +373,15 @@ impl BlockListener {
 
     // continuosly poll processed blocks and feed into blockstore
     pub fn listen_processed(self) -> JoinHandle<anyhow::Result<()>> {
-        let rpc_client = self.rpc_client;
-        let block_store = self.block_store;
+        let block_processor = self.block_processor;
 
         tokio::spawn(async move {
             info!("processed block listner started");
 
             loop {
-                let (processed_blockhash, processed_block) =
-                    BlockStore::fetch_latest_processed(rpc_client.as_ref()).await?;
-                block_store
-                    .add_block(
-                        processed_blockhash,
-                        processed_block,
-                        CommitmentConfig::processed(),
-                    )
+                // ignore errors from processed block polling
+                let _ = block_processor
+                    .poll_latest_block(CommitmentConfig::processed())
                     .await;
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
@@ -545,14 +389,13 @@ impl BlockListener {
     }
 
     pub fn clean(&self, ttl_duration: Duration) {
-        let length_before = self.signature_subscribers.len();
-        self.signature_subscribers
-            .retain(|_k, (sink, instant)| !sink.is_closed() && instant.elapsed() < ttl_duration);
-
-        NUMBER_OF_SIGNATURE_SUBSCRIBERS.set(self.signature_subscribers.len() as i64);
+        let length_before = self.subscription_handler.number_of_subscribers();
+        self.subscription_handler.clean(ttl_duration);
+        NUMBER_OF_SIGNATURE_SUBSCRIBERS
+            .set(self.subscription_handler.number_of_subscribers() as i64);
         info!(
             "Cleaned {} Signature Subscribers",
-            length_before - self.signature_subscribers.len()
+            length_before - self.subscription_handler.number_of_subscribers()
         );
     }
 }
