@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use anyhow::{bail, Context};
 use chrono::{TimeZone, Utc};
 use dashmap::DashMap;
 use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
@@ -413,7 +414,7 @@ impl BlockListener {
             let slot_retry_queue_sx = slot_retry_queue_sx.clone();
             let block_schedule_queue_rx = block_schedule_queue_rx.clone();
 
-            tokio::spawn(async move {
+            let task: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                 while let Ok(slot) = block_schedule_queue_rx.recv().await {
                     if commitment_config.is_finalized() {
                         BLOCKS_IN_FINALIZED_QUEUE.dec();
@@ -437,18 +438,16 @@ impl BlockListener {
                     };
                 }
 
-                anyhow::bail!("Block Slot channel closed");
+                bail!("Block Slot channel closed")
+            });
 
-                // for type
-                #[allow(unreachable_code)]
-                Ok(())
-            })
+            task
         });
 
         // a task that will queue back the slots to be retried after a certain delay
         let recent_slot = Arc::new(AtomicU64::new(0));
 
-        let slot_retry_task = {
+        let slot_retry_task: JoinHandle<anyhow::Result<()>> = {
             let block_schedule_queue_sx = block_schedule_queue_sx.clone();
             let recent_slot = recent_slot.clone();
 
@@ -467,14 +466,18 @@ impl BlockListener {
                         tokio::time::sleep_until(instant).await;
                     }
 
-                    if (block_schedule_queue_sx.send(slot).await).is_ok() {
-                        if commitment_config.is_finalized() {
-                            BLOCKS_IN_FINALIZED_QUEUE.inc();
-                        } else {
-                            BLOCKS_IN_CONFIRMED_QUEUE.inc();
-                        }
+                    block_schedule_queue_sx.send(slot).await.context(
+                        "Slot retry que failed to send block to block_schedule_queue_sx",
+                    )?;
+
+                    if commitment_config.is_finalized() {
+                        BLOCKS_IN_FINALIZED_QUEUE.inc();
+                    } else {
+                        BLOCKS_IN_CONFIRMED_QUEUE.inc();
                     }
                 }
+
+                bail!("Slot retry task exit")
             })
         };
 
