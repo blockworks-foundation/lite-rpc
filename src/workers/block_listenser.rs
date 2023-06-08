@@ -10,7 +10,7 @@ use anyhow::{bail, Context};
 use chrono::{TimeZone, Utc};
 use dashmap::DashMap;
 use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
-use log::{info, trace, warn};
+use log::{error, info, trace, warn};
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
     register_int_gauge, Histogram, IntCounter,
@@ -18,7 +18,10 @@ use prometheus::{
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
+    client_error::ErrorKind,
     config::RpcBlockConfig,
+    custom_error::JSON_RPC_SERVER_ERROR_BLOCK_NOT_AVAILABLE,
+    request::RpcError,
     response::{Response as RpcResponse, RpcResponseContext},
 };
 
@@ -181,6 +184,19 @@ impl BlockListener {
                 },
             )
             .await?;
+        //{
+        //    Ok(block) => block,
+        //    Err(err) => {
+        //        if let ErrorKind::RpcError(RpcError::RpcResponseError { code, ..}) = err.kind() {
+        //            if *code == JSON_RPC_SERVER_ERROR_BLOCK_NOT_AVAILABLE {
+        //                // there is no block for this slot
+        //                return Ok(());
+        //            }
+        //        }
+
+        //        bail!("Error getting block for indexing {err:?}");
+        //    },
+        //};
 
         timer.observe_duration();
 
@@ -432,7 +448,9 @@ impl BlockListener {
                             .checked_add(Duration::from_millis(10))
                             .unwrap();
 
-                        slot_retry_queue_sx.send((slot, retry_at))?;
+                        slot_retry_queue_sx
+                            .send((slot, retry_at))
+                            .context("Error sending slot to retry queue from slot indexer task")?;
 
                         BLOCKS_IN_RETRY_QUEUE.inc();
                     };
@@ -543,15 +561,20 @@ impl BlockListener {
             info!("processed block listner started");
 
             loop {
-                let (processed_blockhash, processed_block) =
-                    BlockStore::fetch_latest_processed(rpc_client.as_ref()).await?;
-                block_store
-                    .add_block(
-                        processed_blockhash,
-                        processed_block,
-                        CommitmentConfig::processed(),
-                    )
-                    .await;
+                match BlockStore::fetch_latest_processed(rpc_client.as_ref()).await {
+                    Ok((processed_blockhash, processed_block)) => {
+                        block_store
+                            .add_block(
+                                processed_blockhash,
+                                processed_block,
+                                CommitmentConfig::processed(),
+                            )
+                            .await;
+                    }
+                    Err(err) => error!("Error fetching latest processed block {err:?}"),
+                }
+
+                // sleep
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
         })
