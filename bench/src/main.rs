@@ -153,7 +153,7 @@ async fn bench(
     {
         let signatures = map_of_txs
             .iter()
-            .map(|x| x.key().clone())
+            .map(|x| *x.key())
             .collect::<Vec<_>>();
         if signatures.is_empty() {
             tokio::time::sleep(Duration::from_millis(1)).await;
@@ -163,7 +163,7 @@ async fn bench(
         if let Ok(res) = rpc_client.get_signature_statuses(&signatures).await {
             for i in 0..signatures.len() {
                 let tx_status = &res.value[i];
-                if let Some(_) = tx_status {
+                if tx_status.is_some() {
                     let signature = signatures[i];
                     let tx_data = map_of_txs.get(&signature).unwrap();
                     metric.add_successful_transaction(

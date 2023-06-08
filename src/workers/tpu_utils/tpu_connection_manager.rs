@@ -108,8 +108,7 @@ impl ActiveConnection {
             let conn = if already_connected {
                 Self::make_connection_0rtt(endpoint.clone(), addr).await
             } else {
-                let conn = Self::make_connection(endpoint.clone(), addr).await;
-                conn
+                Self::make_connection(endpoint.clone(), addr).await
             };
             match conn {
                 Ok(conn) => {
@@ -237,7 +236,7 @@ impl ActiveConnection {
                             identity,
                             true,
                             endpoint.clone(),
-                            socket_addr.clone(),
+                            socket_addr,
                             exit_signal.clone(),
                         )
                         .await;
