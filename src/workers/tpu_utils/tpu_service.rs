@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use dashmap::DashMap;
 use futures::StreamExt;
 use log::{error, info, warn};
@@ -65,7 +65,7 @@ pub struct TpuService {
     leader_schedule: Arc<RwLock<VecDeque<LeaderData>>>,
     fanout_slots: u64,
     rpc_client: Arc<RpcClient>,
-    pubsub_client: Arc<PubsubClient>,
+    rpc_ws_address: String,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
     identity: Arc<Keypair>,
@@ -103,7 +103,6 @@ impl TpuService {
         rpc_ws_address: String,
         txs_sent_store: Arc<DashMap<String, TxProps>>,
     ) -> anyhow::Result<Self> {
-        let pubsub_client = PubsubClient::new(&rpc_ws_address).await?;
         let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let (certificate, key) = new_self_signed_tls_certificate(
             identity.as_ref(),
@@ -121,7 +120,7 @@ impl TpuService {
             leader_schedule: Arc::new(RwLock::new(VecDeque::new())),
             fanout_slots,
             rpc_client,
-            pubsub_client: Arc::new(pubsub_client),
+            rpc_ws_address,
             broadcast_sender: Arc::new(sender),
             tpu_connection_manager: Arc::new(tpu_connection_manager),
             identity,
@@ -280,7 +279,10 @@ impl TpuService {
             .await;
     }
 
-    async fn update_current_slot(&self, update_notifier: tokio::sync::mpsc::UnboundedSender<u64>) {
+    async fn update_current_slot(
+        &self,
+        update_notifier: tokio::sync::mpsc::UnboundedSender<u64>,
+    ) -> anyhow::Result<()> {
         let update_slot = |slot: u64| {
             if slot > self.current_slot.load(Ordering::Relaxed) {
                 self.current_slot.store(slot, Ordering::Relaxed);
@@ -289,66 +291,38 @@ impl TpuService {
             }
         };
 
-        loop {
-            let slot = self
-                .rpc_client
-                .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
-                    commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
-                })
-                .await;
-            match slot {
-                Ok(slot) => {
-                    update_slot(slot);
-                }
-                Err(e) => {
-                    // error getting slot
-                    error!("error getting slot {}", e);
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                    continue;
-                }
-            }
+        let pubsub_client = PubsubClient::new(&self.rpc_ws_address)
+            .await
+            .context("Error creating pubsub client")?;
 
-            let res = tokio::time::timeout(
-                Duration::from_millis(1000),
-                self.pubsub_client.slot_subscribe(),
-            )
-            .await;
-            match res {
-                Ok(sub_res) => {
-                    match sub_res {
-                        Ok((mut client, unsub)) => {
-                            loop {
-                                let next = tokio::time::timeout(
-                                    Duration::from_millis(2000),
-                                    client.next(),
-                                )
-                                .await;
-                                match next {
-                                    Ok(slot_info) => {
-                                        if let Some(slot_info) = slot_info {
-                                            update_slot(slot_info.slot);
-                                        }
-                                    }
-                                    Err(_) => {
-                                        // timedout reconnect to pubsub
-                                        warn!("slot pub sub disconnected reconnecting");
-                                        break;
-                                    }
-                                }
-                            }
-                            unsub();
-                        }
-                        Err(e) => {
-                            warn!("slot pub sub disconnected ({}) reconnecting", e);
-                        }
-                    }
-                }
-                Err(_) => {
-                    // timed out
-                    warn!("timedout subscribing to slots");
-                }
+        let slot = self
+            .rpc_client
+            .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
+                commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
+            })
+            .await
+            .context("error getting slot")?;
+
+        update_slot(slot);
+
+        let (mut client, unsub) =
+            tokio::time::timeout(Duration::from_millis(1000), pubsub_client.slot_subscribe())
+                .await
+                .context("timedout subscribing to slots")?
+                .context("slot pub sub disconnected")?;
+
+        while let Ok(slot_info) =
+            tokio::time::timeout(Duration::from_millis(2000), client.next()).await
+        {
+            if let Some(slot_info) = slot_info {
+                update_slot(slot_info.slot);
             }
         }
+
+        warn!("slot pub sub disconnected reconnecting");
+        unsub();
+
+        Ok(())
     }
 
     pub async fn start(&self) -> anyhow::Result<()> {
@@ -382,8 +356,16 @@ impl TpuService {
         let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
 
         let slot_sub_task: AnyhowJoinHandle = tokio::spawn(async move {
-            this.update_current_slot(slot_sender).await;
-            Ok(())
+            loop {
+                let slot_sender = slot_sender.clone();
+                let Err(err) =  this.update_current_slot(slot_sender).await else {
+                    bail!("current slot fetch task exited");
+                };
+
+                error!("slot fetch task error: {err:?}");
+
+                tokio::time::sleep(Duration::from_millis(2000)).await;
+            }
         });
 
         let estimated_slot = self.estimated_slot.clone();
