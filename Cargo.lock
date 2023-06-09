@@ -2295,7 +2295,7 @@ checksum = "d59d8c75012853d2e872fb56bc8a2e53718e2cafe1a4c823143141c6d90c322f"
 
 [[package]]
 name = "lite-rpc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3959,7 +3959,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.21.0",
@@ -3990,7 +3990,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-services"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-channel",

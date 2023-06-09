@@ -8,9 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Note:** Version 0 of Semantic Versioning is handled differently from version 1 and above.
 The minor version will be incremented upon a breaking change and the patch version will be incremented for features.
 
-## [Unreleased]
-
 ### Features:
+
+## [0.2.0]
+
+commit: 271a8e0232f812f8befcc8c7287e8c18c1ccb16b
 
 - all: Seperating services that can be used by other projects into a library and creating a solana-lite-rpc-services package
 - rpc: Creating a custom TPU Client instead of using solana TPU client more suitable for lite-rpc loads [PR](https://github.com/blockworks-foundation/lite-rpc/pull/105)
