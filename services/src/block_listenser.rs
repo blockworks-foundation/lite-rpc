@@ -7,7 +7,6 @@ use std::{
 };
 
 use anyhow::bail;
-use async_channel::RecvError;
 use chrono::{TimeZone, Utc};
 use jsonrpsee::SubscriptionSink;
 use log::{error, info, trace};
