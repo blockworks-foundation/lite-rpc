@@ -7,6 +7,7 @@ use std::{
 };
 
 use anyhow::bail;
+use async_channel::RecvError;
 use chrono::{TimeZone, Utc};
 use jsonrpsee::SubscriptionSink;
 use log::{error, info, trace};
@@ -272,8 +273,7 @@ impl BlockListener {
                         Ok(v) => v,
                         Err(e) => {
                             error!("Recv error on block channel {}", e);
-                            tokio::time::sleep(Duration::from_millis(1)).await;
-                            continue;
+                            break;
                         }
                     };
 
