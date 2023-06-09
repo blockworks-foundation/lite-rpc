@@ -272,6 +272,7 @@ impl BlockListener {
                         Ok(v) => v,
                         Err(e) => {
                             error!("Recv error on block channel {}", e);
+                            tokio::time::sleep(Duration::from_millis(1)).await;
                             continue;
                         }
                     };
