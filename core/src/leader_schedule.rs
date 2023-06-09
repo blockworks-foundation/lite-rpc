@@ -26,6 +26,7 @@ impl LeaderSchedule {
         }
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub async fn len(&self) -> usize {
         self.leader_schedule.read().await.len()
     }

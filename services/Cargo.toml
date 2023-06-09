@@ -26,15 +26,10 @@ futures = { workspace = true }
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
-clap = { workspace = true }
 dashmap = { workspace = true }
-const_env = { workspace = true }
 jsonrpsee = { workspace = true }
-tracing-subscriber = { workspace = true }
-tokio-postgres = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
-dotenv = { workspace = true }
 async-channel = { workspace = true }
 quinn = { workspace = true }
 chrono = { workspace = true }
