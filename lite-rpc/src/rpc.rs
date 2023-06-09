@@ -5,6 +5,7 @@ use solana_rpc_client_api::config::{
 };
 use solana_rpc_client_api::response::{Response as RpcResponse, RpcBlockhash, RpcVersionInfo};
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::slot_history::Slot;
 use solana_transaction_status::TransactionStatus;
 
 use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
@@ -50,6 +51,9 @@ pub trait LiteRpc {
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
     ) -> Result<String>;
+
+    #[method(name = "getSlot")]
+    async fn get_slot(&self, config: Option<RpcContextConfig>) -> Result<Slot>;
 
     #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<serde_json::Value>)]
     async fn signature_subscribe(

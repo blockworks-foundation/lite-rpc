@@ -36,7 +36,7 @@ use solana_rpc_client_api::{
 };
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
-    transaction::VersionedTransaction,
+    transaction::VersionedTransaction, slot_history::Slot,
 };
 use solana_transaction_status::TransactionStatus;
 use tokio::{
@@ -456,6 +456,22 @@ impl LiteRpcServer for LiteBridge {
             .insert(airdrop_sig.clone(), Default::default());
 
         Ok(airdrop_sig)
+    }
+
+    async fn get_slot(
+        &self,
+        config: Option<RpcContextConfig>,
+    ) -> crate::rpc::Result<Slot> {
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
+
+        let (_,
+            BlockInformation {
+                slot, ..
+            }
+        ) = self.block_store.get_latest_block(commitment_config).await;
+        Ok(slot)
     }
 
     async fn signature_subscribe(
