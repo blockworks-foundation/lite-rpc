@@ -1,15 +1,23 @@
 use crate::{
-    block_store::{BlockInformation, BlockStore},
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
+    postgres::Postgres,
     rpc::LiteRpcServer,
-    workers::{
-        tpu_utils::tpu_service::TpuService, BlockListener, Cleaner, MetricsCapture, Postgres,
-        PrometheusSync, TransactionReplay, TransactionReplayer, TxProps, TxSender, WireTransaction,
-        MESSAGES_IN_REPLAY_QUEUE,
-    },
     DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
+
+use solana_lite_rpc_services::{
+    block_listenser::BlockListener,
+    cleaner::Cleaner,
+    metrics_capture::MetricsCapture,
+    prometheus_sync::PrometheusSync,
+    tpu_utils::tpu_service::TpuService,
+    transaction_replayer::{TransactionReplay, TransactionReplayer, MESSAGES_IN_REPLAY_QUEUE},
+    tx_sender::WireTransaction,
+    tx_sender::{TxProps, TxSender, TXS_IN_CHANNEL},
+};
+
+use solana_lite_rpc_core::block_store::{BlockInformation, BlockStore};
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
@@ -20,7 +28,7 @@ use log::{error, info};
 
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
 
-use prometheus::{core::GenericGauge, opts, register_int_counter, register_int_gauge, IntCounter};
+use prometheus::{opts, register_int_counter, IntCounter};
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
@@ -28,7 +36,7 @@ use solana_rpc_client_api::{
 };
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
-    transaction::VersionedTransaction,
+    transaction::VersionedTransaction, slot_history::Slot,
 };
 use solana_transaction_status::TransactionStatus;
 use tokio::{
@@ -53,7 +61,6 @@ lazy_static::lazy_static! {
     register_int_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
     static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
     register_int_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
-    pub static ref TXS_IN_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_channel", "Transactions in channel")).unwrap();
 }
 
 /// A bridge between clients and tpu
@@ -449,6 +456,22 @@ impl LiteRpcServer for LiteBridge {
             .insert(airdrop_sig.clone(), Default::default());
 
         Ok(airdrop_sig)
+    }
+
+    async fn get_slot(
+        &self,
+        config: Option<RpcContextConfig>,
+    ) -> crate::rpc::Result<Slot> {
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
+
+        let (_,
+            BlockInformation {
+                slot, ..
+            }
+        ) = self.block_store.get_latest_block(commitment_config).await;
+        Ok(slot)
     }
 
     async fn signature_subscribe(

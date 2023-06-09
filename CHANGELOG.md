@@ -10,7 +10,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ## [Unreleased]
 
-### Features : 
+### Features:
+
+- all: Seperating services that can be used by other projects into a library and creating a solana-lite-rpc-services package
 - rpc: Creating a custom TPU Client instead of using solana TPU client more suitable for lite-rpc loads [PR](https://github.com/blockworks-foundation/lite-rpc/pull/105)
 - metrics: Adding metrics related to custom tpu client [bf5841f](https://github.com/blockworks-foundation/lite-rpc/pull/105/commits/bf5841f43841d2bebd612abb714c53fbc920f090)
 

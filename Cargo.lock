@@ -2304,7 +2304,6 @@ dependencies = [
  "bincode",
  "bs58",
  "bytes",
- "chrono",
  "clap 4.2.4",
  "const_env",
  "dashmap",
@@ -2317,16 +2316,13 @@ dependencies = [
  "postgres-native-tls",
  "prometheus",
  "quinn",
- "rustls 0.20.6",
  "serde",
  "serde_json",
- "solana-client",
- "solana-net-utils",
- "solana-pubsub-client",
+ "solana-lite-rpc-core",
+ "solana-lite-rpc-services",
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",
- "solana-streamer",
  "solana-transaction-status",
  "solana-version",
  "thiserror",
@@ -3962,6 +3958,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-lite-rpc-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.21.0",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "futures",
+ "jsonrpsee",
+ "log",
+ "quinn",
+ "rustls 0.20.6",
+ "serde",
+ "serde_json",
+ "solana-client",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "solana-lite-rpc-services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "base64 0.21.0",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "futures",
+ "jsonrpsee",
+ "lazy_static",
+ "log",
+ "prometheus",
+ "quinn",
+ "rustls 0.20.6",
+ "serde",
+ "serde_json",
+ "solana-client",
+ "solana-lite-rpc-core",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "solana-logger"
 version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4827,9 +4889,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.27.0"
+version = "1.28.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0de47a4eecbe11f498978a9b29d792f0d2692d1dd003650c24c76510e3bc001"
+checksum = "94d7b1cfd2aa4011f2de74c2c4c63665e27a71006b0a192dcd2710272e73dfa2"
 dependencies = [
  "autocfg",
  "bytes",
@@ -4841,14 +4903,14 @@ dependencies = [
  "signal-hook-registry",
  "socket2 0.4.9",
  "tokio-macros",
- "windows-sys 0.45.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
 name = "tokio-macros"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61a573bdc87985e9d6ddeed1b3d864e8a302c847e40d647746df2f1de209d1ce"
+checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
  "proc-macro2 1.0.56",
  "quote 1.0.26",

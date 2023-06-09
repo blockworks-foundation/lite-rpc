@@ -1,4 +1,4 @@
-use super::TxSender;
+use crate::tx_sender::TxSender;
 use log::error;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use std::time::Duration;

@@ -6,8 +6,6 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 
 use log::info;
-use prometheus::core::GenericGauge;
-use prometheus::{opts, register_int_gauge};
 use serde_json::json;
 use solana_client::rpc_request::RpcRequest;
 use solana_client::rpc_response::{Response, RpcBlockhash};
@@ -16,9 +14,6 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionDetails;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
-lazy_static::lazy_static! {
-    static ref BLOCKS_IN_BLOCKSTORE: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_blocks_in_blockstore", "Number of blocks in blockstore")).unwrap();
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockInformation {
@@ -47,7 +42,7 @@ impl BlockStore {
         let (confirmed_blockhash, confirmed_block) =
             Self::fetch_latest(rpc_client, CommitmentConfig::confirmed()).await?;
         let (processed_blockhash, processed_block) =
-            Self::fetch_latest_processed(rpc_client).await?;
+            Self::poll_latest(rpc_client, CommitmentConfig::processed()).await?;
 
         blocks.insert(processed_blockhash.clone(), processed_block);
         blocks.insert(confirmed_blockhash.clone(), confirmed_block);
@@ -62,13 +57,14 @@ impl BlockStore {
         })
     }
 
-    pub async fn fetch_latest_processed(
+    pub async fn poll_latest(
         rpc_client: &RpcClient,
+        commitment_config: CommitmentConfig,
     ) -> anyhow::Result<(String, BlockInformation)> {
         let response = rpc_client
             .send::<Response<RpcBlockhash>>(
                 RpcRequest::GetLatestBlockhash,
-                json!([CommitmentConfig::processed()]),
+                json!([commitment_config]),
             )
             .await?;
 
@@ -190,7 +186,6 @@ impl BlockStore {
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
         self.blocks.insert(blockhash.clone(), block_info);
-        BLOCKS_IN_BLOCKSTORE.inc();
 
         // update latest block
         let latest_block = self.get_latest_block_arc(commitment_config);
@@ -217,11 +212,14 @@ impl BlockStore {
                 || k.eq(&latest_confirmed)
                 || k.eq(&latest_finalized)
         });
-        BLOCKS_IN_BLOCKSTORE.set(self.blocks.len() as i64);
 
         info!(
             "Cleaned {} block info",
             before_length.saturating_sub(self.blocks.len())
         );
+    }
+
+    pub fn number_of_blocks_in_store(&self) -> usize {
+        self.blocks.len()
     }
 }
