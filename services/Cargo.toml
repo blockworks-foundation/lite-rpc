@@ -1,9 +1,11 @@
 [package]
 name = "solana-lite-rpc-services"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Services used by solana lite rpc"
 rust-version = "1.67.1"
+repository = "https://github.com/blockworks-foundation/lite-rpc"
+license = "AGPL"
 
 [dependencies]
 solana-sdk = { workspace = true }
