@@ -12,7 +12,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ## [0.2.0]
 
-commit: 271a8e0232f812f8befcc8c7287e8c18c1ccb16b
+commit: fffb302ce6f01ab0522a4ab23be60394bb9aa40f
 
 - all: Seperating services that can be used by other projects into a library and creating a solana-lite-rpc-services package
 - rpc: Creating a custom TPU Client instead of using solana TPU client more suitable for lite-rpc loads [PR](https://github.com/blockworks-foundation/lite-rpc/pull/105)
