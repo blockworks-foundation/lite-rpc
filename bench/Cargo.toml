@@ -1,7 +1,8 @@
 [package]
 name = "bench"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+package = false
 
 [dependencies]
 solana-sdk = { workspace = true }
@@ -11,7 +12,7 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
-tokio = { workspace = true }
+tokio = { version = "1.28.2", features = ["full", "fs"]}
 tracing-subscriber = { workspace = true }
 csv = "1.2.1"
 dirs = "5.0.0"
@@ -19,3 +20,4 @@ rand = "0.8.5"
 rand_chacha = "0.3.1"
 futures = { workspace = true }
 dashmap = {workspace = true }
+
