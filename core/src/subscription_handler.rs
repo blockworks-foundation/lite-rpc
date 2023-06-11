@@ -1,20 +1,21 @@
 use std::{sync::Arc, time::Duration};
 
 use dashmap::DashMap;
-use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
-use solana_rpc_client_api::response::{Response as RpcResponse, RpcResponseContext};
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     slot_history::Slot,
 };
 use tokio::time::Instant;
 
-use crate::block_processor::TransactionInfo;
+use crate::{block_processor::TransactionInfo, subscription_sink::SubscriptionSink};
+
+
+pub type SubscptionHanderSink = Arc<dyn SubscriptionSink + Sync + Send>;
 
 #[derive(Clone, Default)]
 pub struct SubscriptionHandler {
     pub signature_subscribers:
-        Arc<DashMap<(String, CommitmentConfig), (SubscriptionSink, Instant)>>,
+        Arc<DashMap<(String, CommitmentConfig), (SubscptionHanderSink, Instant)>>,
 }
 
 impl SubscriptionHandler {
@@ -38,7 +39,7 @@ impl SubscriptionHandler {
         &self,
         signature: String,
         commitment_config: CommitmentConfig,
-        sink: SubscriptionSink,
+        sink: SubscptionHanderSink,
     ) {
         let commitment_config = Self::get_supported_commitment_config(commitment_config);
         self.signature_subscribers
@@ -62,18 +63,11 @@ impl SubscriptionHandler {
             .remove(&(transaction_info.signature.clone(), commitment_config))
         {
             // none if transaction succeeded
-            let _res = sink
+            sink
                 .send(
-                    SubscriptionMessage::from_json(&RpcResponse {
-                        context: RpcResponseContext {
-                            slot,
-                            api_version: None,
-                        },
-                        value: serde_json::json!({ "err": transaction_info.err }),
-                    })
-                    .unwrap(),
-                )
-                .await;
+                    slot,
+                    serde_json::json!({ "err": transaction_info.err })
+                ).await;
         }
     }
 

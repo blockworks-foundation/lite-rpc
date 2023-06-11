@@ -3,7 +3,7 @@ use crate::{
     encoding::BinaryEncoding,
     postgres::Postgres,
     rpc::LiteRpcServer,
-    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
+    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
 };
 
 use solana_lite_rpc_services::{
@@ -507,8 +507,9 @@ impl LiteRpcServer for LiteBridge {
         RPC_SIGNATURE_SUBSCRIBE.inc();
         let sink = pending.accept().await?;
 
+        let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
         self.block_listner
-            .signature_subscribe(signature, commitment_config, sink);
+            .signature_subscribe(signature, commitment_config, Arc::new(jsonrpsee_sink));
 
         Ok(())
     }

@@ -8,6 +8,7 @@ pub mod encoding;
 pub mod errors;
 pub mod postgres;
 pub mod rpc;
+pub mod jsonrpsee_subscrption_handler_sink;
 
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";

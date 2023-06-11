@@ -34,7 +34,7 @@ use solana_lite_rpc_core::{
     notifications::{
         BlockNotification, NotificationMsg, NotificationSender, TransactionUpdateNotification,
     },
-    subscription_handler::SubscriptionHandler,
+    subscription_handler::{SubscriptionHandler, SubscptionHanderSink},
 };
 
 use crate::tx_sender::{TxProps, TxSender};
@@ -109,7 +109,7 @@ impl BlockListener {
         &self,
         signature: String,
         commitment_config: CommitmentConfig,
-        sink: SubscriptionSink,
+        sink: SubscptionHanderSink,
     ) {
         self.subscription_handler
             .signature_subscribe(signature, commitment_config, sink);

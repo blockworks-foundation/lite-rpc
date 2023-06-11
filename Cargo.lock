@@ -2299,6 +2299,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "async-trait",
  "base64 0.21.0",
  "bench",
  "bincode",
@@ -3962,6 +3963,7 @@ name = "solana-lite-rpc-core"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.21.0",
  "bincode",
  "bs58",
@@ -3969,7 +3971,6 @@ dependencies = [
  "chrono",
  "dashmap",
  "futures",
- "jsonrpsee",
  "log",
  "quinn",
  "rustls 0.20.8",
@@ -4001,7 +4002,6 @@ dependencies = [
  "chrono",
  "dashmap",
  "futures",
- "jsonrpsee",
  "lazy_static",
  "log",
  "prometheus",
