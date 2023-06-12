@@ -174,7 +174,7 @@ impl TpuService {
     async fn update_current_slot(
         &self,
         update_notifier: tokio::sync::mpsc::UnboundedSender<u64>,
-    ) -> anyhow::Result<()> {
+    ) {
         let current_slot = self.current_slot.clone();
         let update_slot = |slot: u64| {
             if slot > current_slot.load(Ordering::Relaxed) {
@@ -185,6 +185,9 @@ impl TpuService {
         };
 
         loop {
+            if self.check_exit_signal() {
+                break;
+            }
             // always loop update the current slots as it is central to working of TPU
             let _ = SolanaUtils::poll_slots(
                 self.rpc_client.clone(),
@@ -230,14 +233,13 @@ impl TpuService {
                     }
                 }
             }
-            Ok(())
         });
 
         let this = self.clone();
         let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
 
         let slot_sub_task: AnyhowJoinHandle = tokio::spawn(async move {
-            this.update_current_slot(slot_sender).await?;
+            this.update_current_slot(slot_sender).await;
             Ok(())
         });
 
@@ -283,5 +285,9 @@ impl TpuService {
 
     pub fn get_estimated_slot_holder(&self) -> Arc<AtomicU64> {
         self.estimated_slot.clone()
+    }
+
+    pub fn exit(&self) {
+        self.exit_signal.store(true, Ordering::Relaxed);
     }
 }

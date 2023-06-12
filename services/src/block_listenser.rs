@@ -8,8 +8,6 @@ use std::{
 
 use anyhow::{bail, Context};
 use chrono::{TimeZone, Utc};
-
-use jsonrpsee::SubscriptionSink;
 use log::{error, info, trace};
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
