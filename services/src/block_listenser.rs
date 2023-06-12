@@ -1,4 +1,3 @@
-
 use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -10,7 +9,7 @@ use std::{
 use anyhow::{bail, Context};
 use chrono::{TimeZone, Utc};
 
-use jsonrpsee::{SubscriptionSink};
+use jsonrpsee::SubscriptionSink;
 use log::{error, info, trace};
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
@@ -18,7 +17,6 @@ use prometheus::{
 };
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-
 
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
@@ -403,7 +401,8 @@ impl BlockListener {
             loop {
                 if let Err(err) = block_processor
                     .poll_latest_block(CommitmentConfig::processed())
-                    .await {
+                    .await
+                {
                     error!("Error fetching latest processed block {err:?}");
                 }
 
