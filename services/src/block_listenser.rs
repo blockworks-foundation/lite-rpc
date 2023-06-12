@@ -6,8 +6,9 @@ use std::{
     time::Duration,
 };
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use chrono::{TimeZone, Utc};
+
 use jsonrpsee::SubscriptionSink;
 use log::{error, info, trace};
 use prometheus::{
@@ -250,32 +251,26 @@ impl BlockListener {
         Ok(())
     }
 
-    pub fn listen(
+    pub async fn listen(
         self,
         commitment_config: CommitmentConfig,
         notifier: Option<NotificationSender>,
         estimated_slot: Arc<AtomicU64>,
-    ) -> JoinHandle<anyhow::Result<()>> {
+    ) -> anyhow::Result<()> {
         let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
         let (block_schedule_queue_sx, block_schedule_queue_rx) = async_channel::unbounded::<Slot>();
 
         // task to fetch blocks
-        for _i in 0..8 {
-            let this = self.clone();
+        //
+        let this = self.clone();
+        let slot_indexer_tasks = (0..8).map(move |_| {
+            let this = this.clone();
             let notifier = notifier.clone();
             let slot_retry_queue_sx = slot_retry_queue_sx.clone();
             let block_schedule_queue_rx = block_schedule_queue_rx.clone();
 
-            tokio::spawn(async move {
-                loop {
-                    let slot = match block_schedule_queue_rx.recv().await {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error!("Recv error on block channel {}", e);
-                            break;
-                        }
-                    };
-
+            let task: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
+                while let Ok(slot) = block_schedule_queue_rx.recv().await {
                     if commitment_config.is_finalized() {
                         BLOCKS_IN_FINALIZED_QUEUE.dec();
                     } else {
@@ -291,19 +286,28 @@ impl BlockListener {
                         let retry_at = tokio::time::Instant::now()
                             .checked_add(Duration::from_millis(10))
                             .unwrap();
-                        let _ = slot_retry_queue_sx.send((slot, retry_at));
+
+                        slot_retry_queue_sx
+                            .send((slot, retry_at))
+                            .context("Error sending slot to retry queue from slot indexer task")?;
+
                         BLOCKS_IN_RETRY_QUEUE.inc();
                     };
                 }
+
+                bail!("Block Slot channel closed")
             });
-        }
+
+            task
+        });
 
         // a task that will queue back the slots to be retried after a certain delay
         let recent_slot = Arc::new(AtomicU64::new(0));
 
-        {
+        let slot_retry_task: JoinHandle<anyhow::Result<()>> = {
             let block_schedule_queue_sx = block_schedule_queue_sx.clone();
             let recent_slot = recent_slot.clone();
+
             tokio::spawn(async move {
                 while let Some((slot, instant)) = slot_retry_queue_rx.recv().await {
                     BLOCKS_IN_RETRY_QUEUE.dec();
@@ -315,22 +319,26 @@ impl BlockListener {
                         continue;
                     }
 
-                    let now = tokio::time::Instant::now();
-                    if now < instant {
+                    if tokio::time::Instant::now() < instant {
                         tokio::time::sleep_until(instant).await;
                     }
-                    if block_schedule_queue_sx.send(slot).await.is_ok() {
-                        if commitment_config.is_finalized() {
-                            BLOCKS_IN_FINALIZED_QUEUE.inc();
-                        } else {
-                            BLOCKS_IN_CONFIRMED_QUEUE.inc();
-                        }
+
+                    block_schedule_queue_sx.send(slot).await.context(
+                        "Slot retry que failed to send block to block_schedule_queue_sx",
+                    )?;
+
+                    if commitment_config.is_finalized() {
+                        BLOCKS_IN_FINALIZED_QUEUE.inc();
+                    } else {
+                        BLOCKS_IN_CONFIRMED_QUEUE.inc();
                     }
                 }
-            });
-        }
 
-        tokio::spawn(async move {
+                bail!("Slot retry task exit")
+            })
+        };
+
+        let get_slot_task: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
             info!("{commitment_config:?} block listner started");
 
             let last_latest_slot = self
@@ -355,9 +363,9 @@ impl BlockListener {
                 // context for lock
                 {
                     for slot in new_block_slots {
-                        if let Err(e) = block_schedule_queue_sx.send(slot).await {
-                            error!("error sending of block schedule queue {}", e);
-                        } else if commitment_config.is_finalized() {
+                        block_schedule_queue_sx.send(slot).await?;
+
+                        if commitment_config.is_finalized() {
                             BLOCKS_IN_FINALIZED_QUEUE.inc();
                         } else {
                             BLOCKS_IN_CONFIRMED_QUEUE.inc();
@@ -368,7 +376,19 @@ impl BlockListener {
                 last_latest_slot = new_slot;
                 recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
             }
-        })
+        });
+
+        tokio::select! {
+            res = get_slot_task => {
+                anyhow::bail!("Get slot task exited unexpectedly {res:?}")
+            }
+            res = slot_retry_task => {
+                anyhow::bail!("Slot retry task exited unexpectedly {res:?}")
+            },
+            res = futures::future::try_join_all(slot_indexer_tasks) => {
+                anyhow::bail!("Slot indexer exited unexpectedly {res:?}")
+            },
+        }
     }
 
     // continuosly poll processed blocks and feed into blockstore
@@ -379,10 +399,14 @@ impl BlockListener {
             info!("processed block listner started");
 
             loop {
-                // ignore errors from processed block polling
-                let _ = block_processor
+                if let Err(err) = block_processor
                     .poll_latest_block(CommitmentConfig::processed())
-                    .await;
+                    .await
+                {
+                    error!("Error fetching latest processed block {err:?}");
+                }
+
+                // sleep
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
         })

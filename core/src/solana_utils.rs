@@ -1,6 +1,7 @@
 use crate::structures::identity_stakes::IdentityStakes;
+use anyhow::Context;
 use futures::StreamExt;
-use log::{error, info, warn};
+use log::{info, warn};
 use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -61,66 +62,40 @@ impl SolanaUtils {
 
     pub async fn poll_slots(
         rpc_client: Arc<RpcClient>,
-        pubsub_client: Arc<PubsubClient>,
+        rpc_ws_address: &str,
         update_slot: impl Fn(u64),
-    ) {
-        loop {
-            let slot = rpc_client
-                .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
-                    commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
-                })
-                .await;
-            match slot {
-                Ok(slot) => {
-                    update_slot(slot);
-                }
-                Err(e) => {
-                    // error getting slot
-                    error!("error getting slot {}", e);
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                    continue;
-                }
-            }
+    ) -> anyhow::Result<()> {
+        let pubsub_client = PubsubClient::new(rpc_ws_address)
+            .await
+            .context("Error creating pubsub client")?;
 
-            let res =
-                tokio::time::timeout(Duration::from_millis(1000), pubsub_client.slot_subscribe())
-                    .await;
-            match res {
-                Ok(sub_res) => {
-                    match sub_res {
-                        Ok((mut client, unsub)) => {
-                            loop {
-                                let next = tokio::time::timeout(
-                                    Duration::from_millis(2000),
-                                    client.next(),
-                                )
-                                .await;
-                                match next {
-                                    Ok(slot_info) => {
-                                        if let Some(slot_info) = slot_info {
-                                            update_slot(slot_info.slot);
-                                        }
-                                    }
-                                    Err(_) => {
-                                        // timedout reconnect to pubsub
-                                        warn!("slot pub sub disconnected reconnecting");
-                                        break;
-                                    }
-                                }
-                            }
-                            unsub();
-                        }
-                        Err(e) => {
-                            warn!("slot pub sub disconnected ({}) reconnecting", e);
-                        }
-                    }
-                }
-                Err(_) => {
-                    // timed out
-                    warn!("timedout subscribing to slots");
-                }
+        let slot = rpc_client
+            .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
+                commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
+            })
+            .await
+            .context("error getting slot")?;
+
+        update_slot(slot);
+
+        let (mut client, unsub) =
+            tokio::time::timeout(Duration::from_millis(1000), pubsub_client.slot_subscribe())
+                .await
+                .context("timedout subscribing to slots")?
+                .context("slot pub sub disconnected")?;
+
+        while let Ok(slot_info) =
+            tokio::time::timeout(Duration::from_millis(2000), client.next()).await
+        {
+            if let Some(slot_info) = slot_info {
+                update_slot(slot_info.slot);
             }
         }
+
+        warn!("slot pub sub disconnected reconnecting");
+        unsub();
+
+        Ok(())
     }
 
     // Estimates the slots, either from polled slot or by forcefully updating after every 400ms
