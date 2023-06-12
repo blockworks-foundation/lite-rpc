@@ -9,6 +9,8 @@ pub mod errors;
 pub mod postgres;
 pub mod rpc;
 
+pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;
+
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";
 #[from_env]
