@@ -3,7 +3,7 @@ use crate::{
     encoding::BinaryEncoding,
     postgres::Postgres,
     rpc::LiteRpcServer,
-    AnyhowJoinHandle, DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
+    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
 use solana_lite_rpc_services::{
@@ -17,7 +17,10 @@ use solana_lite_rpc_services::{
     tx_sender::{TxProps, TxSender, TXS_IN_CHANNEL},
 };
 
-use solana_lite_rpc_core::block_store::{BlockInformation, BlockStore};
+use solana_lite_rpc_core::{
+    block_store::{BlockInformation, BlockStore},
+    AnyhowJoinHandle,
+};
 
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
