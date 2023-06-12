@@ -17,7 +17,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering, AtomicBool},
         Arc,
     },
 };
@@ -61,6 +61,7 @@ pub struct TpuService {
     identity_stakes: Arc<RwLock<IdentityStakes>>,
     txs_sent_store: Arc<DashMap<String, TxProps>>,
     leader_schedule: Arc<LeaderSchedule>,
+    exit_signal: Arc<AtomicBool>,
 }
 
 impl TpuService {
@@ -94,6 +95,7 @@ impl TpuService {
             identity,
             identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
             txs_sent_store,
+            exit_signal: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -125,6 +127,10 @@ impl TpuService {
         NB_OF_LEADERS_IN_SCHEDULE.set(self.leader_schedule.len().await as i64);
         NB_CLUSTER_NODES.set(self.leader_schedule.cluster_nodes_len() as i64);
         Ok(())
+    }
+
+    fn check_exit_signal(&self) -> bool {
+        self.exit_signal.load(Ordering::Relaxed)
     }
 
     async fn update_quic_connections(&self) {
@@ -204,7 +210,14 @@ impl TpuService {
                 Duration::from_secs(LEADER_SCHEDULE_UPDATE_INTERVAL);
             let cluster_info_update_interval = Duration::from_secs(CLUSTERINFO_REFRESH_TIME);
             loop {
+                if this.check_exit_signal() {
+                    break;
+                }
                 tokio::time::sleep(leader_schedule_update_interval).await;
+                if this.check_exit_signal() {
+                    break;
+                }
+
                 info!("update leader schedule and cluster nodes");
                 if this.update_leader_schedule().await.is_err() {
                     error!("unable to update leader shedule");
@@ -217,6 +230,7 @@ impl TpuService {
                     }
                 }
             }
+            Ok(())
         });
 
         let this = self.clone();
@@ -233,6 +247,10 @@ impl TpuService {
         let estimated_slot_calculation = tokio::spawn(async move {
             let mut slot_update_notifier = slot_reciever;
             loop {
+                if this.check_exit_signal() {
+                    break;
+                }
+
                 if SolanaUtils::slot_estimator(
                     &mut slot_update_notifier,
                     current_slot.clone(),
