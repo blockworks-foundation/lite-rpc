@@ -89,8 +89,8 @@ pub async fn main() -> anyhow::Result<()> {
         }
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");
+
+            Ok(())
         }
     }
-
-    Ok(())
 }
