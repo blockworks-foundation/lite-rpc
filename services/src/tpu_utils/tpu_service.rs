@@ -179,18 +179,13 @@ impl TpuService {
         };
 
         loop {
-            let Err(err) = SolanaUtils::poll_slots(
+            // always loop update the current slots as it is central to working of TPU
+            let _ = SolanaUtils::poll_slots(
                 self.rpc_client.clone(),
                 &self.rpc_ws_address,
                 update_slot,
             )
-            .await else {
-                bail!("current slot fetch task exited");
-            };
-
-            error!("slot fetch task error: {err:?}");
-
-            tokio::time::sleep(Duration::from_millis(2000)).await;
+            .await;
         }
     }
 
