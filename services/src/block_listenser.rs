@@ -34,7 +34,7 @@ use solana_lite_rpc_core::{
     notifications::{
         BlockNotification, NotificationMsg, NotificationSender, TransactionUpdateNotification,
     },
-    subscription_handler::{SubscriptionHandler, SubscptionHanderSink},
+    subscription_handler::{SubscptionHanderSink, SubscriptionHandler},
 };
 
 use crate::tx_sender::{TxProps, TxSender};

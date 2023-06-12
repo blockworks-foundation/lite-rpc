@@ -1,21 +1,25 @@
 use async_trait::async_trait;
-use jsonrpsee::{SubscriptionSink, SubscriptionMessage};
-use solana_rpc_client_api::response::{RpcResponseContext, Response as RpcResponse};
+use jsonrpsee::{SubscriptionMessage, SubscriptionSink};
+use solana_rpc_client_api::response::{Response as RpcResponse, RpcResponseContext};
 
 pub struct JsonRpseeSubscriptionHandlerSink {
-    jsonrpsee_sink : SubscriptionSink,
+    jsonrpsee_sink: SubscriptionSink,
 }
 
 impl JsonRpseeSubscriptionHandlerSink {
-    pub fn new(jsonrpsee_sink : SubscriptionSink) -> Self {
+    pub fn new(jsonrpsee_sink: SubscriptionSink) -> Self {
         Self { jsonrpsee_sink }
-    } 
+    }
 }
 
 #[async_trait]
-impl solana_lite_rpc_core::subscription_sink::SubscriptionSink for JsonRpseeSubscriptionHandlerSink {
+impl solana_lite_rpc_core::subscription_sink::SubscriptionSink
+    for JsonRpseeSubscriptionHandlerSink
+{
     async fn send(&self, slot: solana_sdk::slot_history::Slot, message: serde_json::Value) {
-        let _ = self.jsonrpsee_sink.send(
+        let _ = self
+            .jsonrpsee_sink
+            .send(
                 SubscriptionMessage::from_json(&RpcResponse {
                     context: RpcResponseContext {
                         slot,
@@ -33,9 +37,6 @@ impl solana_lite_rpc_core::subscription_sink::SubscriptionSink for JsonRpseeSubs
     }
 }
 
-unsafe impl Send for JsonRpseeSubscriptionHandlerSink {
-}
+unsafe impl Send for JsonRpseeSubscriptionHandlerSink {}
 
-unsafe impl Sync for JsonRpseeSubscriptionHandlerSink {
-    
-}
+unsafe impl Sync for JsonRpseeSubscriptionHandlerSink {}

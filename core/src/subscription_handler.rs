@@ -9,7 +9,6 @@ use tokio::time::Instant;
 
 use crate::{block_processor::TransactionInfo, subscription_sink::SubscriptionSink};
 
-
 pub type SubscptionHanderSink = Arc<dyn SubscriptionSink + Sync + Send>;
 
 #[derive(Clone, Default)]
@@ -63,11 +62,8 @@ impl SubscriptionHandler {
             .remove(&(transaction_info.signature.clone(), commitment_config))
         {
             // none if transaction succeeded
-            sink
-                .send(
-                    slot,
-                    serde_json::json!({ "err": transaction_info.err })
-                ).await;
+            sink.send(slot, serde_json::json!({ "err": transaction_info.err }))
+                .await;
         }
     }
 

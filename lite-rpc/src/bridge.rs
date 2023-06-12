@@ -1,9 +1,10 @@
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     encoding::BinaryEncoding,
+    jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     postgres::Postgres,
     rpc::LiteRpcServer,
-    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
+    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
 use solana_lite_rpc_services::{
@@ -508,8 +509,11 @@ impl LiteRpcServer for LiteBridge {
         let sink = pending.accept().await?;
 
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
-        self.block_listner
-            .signature_subscribe(signature, commitment_config, Arc::new(jsonrpsee_sink));
+        self.block_listner.signature_subscribe(
+            signature,
+            commitment_config,
+            Arc::new(jsonrpsee_sink),
+        );
 
         Ok(())
     }
