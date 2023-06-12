@@ -2,7 +2,10 @@
 // It will send, replay if necessary and confirm by listening to blocks
 
 use std::{
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -71,9 +74,12 @@ impl TransactionServiceBuilder {
         let exit_signal_t = exit_signal.clone();
         let block_store_t = block_store.clone();
         let jh_services: JoinHandle<String> = tokio::spawn(async move {
-            let tpu_service_fx = tpu_service.start();
+            let tpu_service_fx = tpu_service.start(exit_signal_t.clone());
 
-            let tx_sender_jh = tx_sender.clone().execute(tx_recv, notifier.clone());
+            let tx_sender_jh =
+                tx_sender
+                    .clone()
+                    .execute(tx_recv, notifier.clone(), exit_signal_t.clone());
 
             let replay_service = tx_replayer.start_service(
                 replay_channel_task,
@@ -85,18 +91,22 @@ impl TransactionServiceBuilder {
                 CommitmentConfig::finalized(),
                 notifier.clone(),
                 tpu_service.get_estimated_slot_holder(),
+                exit_signal_t.clone(),
             );
 
             let confirmed_block_listener = block_listner.clone().listen(
                 CommitmentConfig::confirmed(),
                 None,
                 tpu_service.get_estimated_slot_holder(),
+                exit_signal_t.clone(),
             );
 
-            let processed_block_listener = block_listner.clone().listen_processed();
+            let processed_block_listener = block_listner
+                .clone()
+                .listen_processed(exit_signal_t.clone());
 
             let cleaner = Cleaner::new(tx_sender.clone(), block_listner.clone(), block_store_t)
-                .start(clean_interval);
+                .start(clean_interval, exit_signal_t);
 
             tokio::select! {
                 res = tpu_service_fx => {
@@ -198,5 +208,9 @@ impl TransactionService {
             MESSAGES_IN_REPLAY_QUEUE.inc();
         }
         Ok(signature.to_string())
+    }
+
+    pub fn stop(&self) {
+        self.exit_signal.store(true, Ordering::Relaxed)
     }
 }

@@ -58,7 +58,6 @@ pub struct TpuService {
     identity_stakes: Arc<RwLock<IdentityStakes>>,
     txs_sent_store: TxStore,
     leader_schedule: Arc<LeaderSchedule>,
-    exit_signal: Arc<AtomicBool>,
 }
 
 impl TpuService {
@@ -92,7 +91,6 @@ impl TpuService {
             identity,
             identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
             txs_sent_store,
-            exit_signal: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -124,10 +122,6 @@ impl TpuService {
         NB_OF_LEADERS_IN_SCHEDULE.set(self.leader_schedule.len().await as i64);
         NB_CLUSTER_NODES.set(self.leader_schedule.cluster_nodes_len() as i64);
         Ok(())
-    }
-
-    fn check_exit_signal(&self) -> bool {
-        self.exit_signal.load(Ordering::Relaxed)
     }
 
     async fn update_quic_connections(&self) {
@@ -168,7 +162,15 @@ impl TpuService {
             .await;
     }
 
-    async fn update_current_slot(&self, update_notifier: tokio::sync::mpsc::UnboundedSender<u64>) {
+    fn check_exit_signal(exit_signal: &Arc<AtomicBool>) -> bool {
+        exit_signal.load(Ordering::Relaxed)
+    }
+
+    async fn update_current_slot(
+        &self,
+        update_notifier: tokio::sync::mpsc::UnboundedSender<u64>,
+        exit_signal: Arc<AtomicBool>,
+    ) {
         let current_slot = self.current_slot.clone();
         let update_slot = |slot: u64| {
             if slot > current_slot.load(Ordering::Relaxed) {
@@ -179,7 +181,7 @@ impl TpuService {
         };
 
         loop {
-            if self.check_exit_signal() {
+            if Self::check_exit_signal(&exit_signal) {
                 break;
             }
             // always loop update the current slots as it is central to working of TPU
@@ -189,7 +191,7 @@ impl TpuService {
         }
     }
 
-    pub async fn start(&self) -> anyhow::Result<()> {
+    pub async fn start(&self, exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
         self.leader_schedule
             .load_cluster_info(self.rpc_client.clone())
             .await?;
@@ -198,17 +200,18 @@ impl TpuService {
         self.update_quic_connections().await;
 
         let this = self.clone();
+        let exit_signal_l = exit_signal.clone();
         let jh_update_leaders = tokio::spawn(async move {
             let mut last_cluster_info_update = Instant::now();
             let leader_schedule_update_interval =
                 Duration::from_secs(LEADER_SCHEDULE_UPDATE_INTERVAL);
             let cluster_info_update_interval = Duration::from_secs(CLUSTERINFO_REFRESH_TIME);
             loop {
-                if this.check_exit_signal() {
+                if Self::check_exit_signal(&exit_signal_l) {
                     break;
                 }
                 tokio::time::sleep(leader_schedule_update_interval).await;
-                if this.check_exit_signal() {
+                if Self::check_exit_signal(&exit_signal_l) {
                     break;
                 }
 
@@ -228,19 +231,20 @@ impl TpuService {
 
         let this = self.clone();
         let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
-
+        let exit_signal_l = exit_signal.clone();
         let slot_sub_task: AnyhowJoinHandle = tokio::spawn(async move {
-            this.update_current_slot(slot_sender).await;
+            this.update_current_slot(slot_sender, exit_signal_l).await;
             Ok(())
         });
 
         let estimated_slot = self.estimated_slot.clone();
         let current_slot = self.current_slot.clone();
         let this = self.clone();
+        let exit_signal_l = exit_signal.clone();
         let estimated_slot_calculation = tokio::spawn(async move {
             let mut slot_update_notifier = slot_reciever;
             loop {
-                if this.check_exit_signal() {
+                if Self::check_exit_signal(&exit_signal_l) {
                     break;
                 }
 
@@ -276,9 +280,5 @@ impl TpuService {
 
     pub fn get_estimated_slot_holder(&self) -> Arc<AtomicU64> {
         self.estimated_slot.clone()
-    }
-
-    pub fn exit(&self) {
-        self.exit_signal.store(true, Ordering::Relaxed);
     }
 }

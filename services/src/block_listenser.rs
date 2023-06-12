@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
@@ -253,6 +253,7 @@ impl BlockListener {
         commitment_config: CommitmentConfig,
         notifier: Option<NotificationSender>,
         estimated_slot: Arc<AtomicU64>,
+        exit_signal: Arc<AtomicBool>,
     ) -> anyhow::Result<()> {
         let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
         let (block_schedule_queue_sx, block_schedule_queue_rx) = async_channel::unbounded::<Slot>();
@@ -260,14 +261,18 @@ impl BlockListener {
         // task to fetch blocks
         //
         let this = self.clone();
+        let exit_signal_l = exit_signal.clone();
         let slot_indexer_tasks = (0..8).map(move |_| {
             let this = this.clone();
             let notifier = notifier.clone();
             let slot_retry_queue_sx = slot_retry_queue_sx.clone();
             let block_schedule_queue_rx = block_schedule_queue_rx.clone();
-
+            let exit_signal_l = exit_signal_l.clone();
             let task: JoinHandle<anyhow::Result<()>> = tokio::spawn(async move {
                 loop {
+                    if exit_signal_l.load(Ordering::Relaxed) {
+                        break;
+                    }
                     match block_schedule_queue_rx.recv().await {
                         Ok(slot) => {
                             if commitment_config.is_finalized() {
@@ -299,7 +304,7 @@ impl BlockListener {
                         }
                     }
                 }
-                //bail!("Block Slot channel closed")
+                bail!("Block Slot channel closed")
             });
 
             task
@@ -311,9 +316,13 @@ impl BlockListener {
         let slot_retry_task: JoinHandle<anyhow::Result<()>> = {
             let block_schedule_queue_sx = block_schedule_queue_sx.clone();
             let recent_slot = recent_slot.clone();
-
+            let exit_signal_l = exit_signal.clone();
             tokio::spawn(async move {
                 while let Some((slot, instant)) = slot_retry_queue_rx.recv().await {
+                    if exit_signal_l.load(Ordering::Relaxed) {
+                        break;
+                    }
+
                     BLOCKS_IN_RETRY_QUEUE.dec();
                     let recent_slot = recent_slot.load(std::sync::atomic::Ordering::Relaxed);
                     // if slot is too old ignore
@@ -363,6 +372,9 @@ impl BlockListener {
                     continue;
                 }
 
+                if exit_signal.load(Ordering::Relaxed) {
+                    break;
+                }
                 // filter already processed slots
                 let new_block_slots: Vec<u64> = (last_latest_slot..new_slot).collect();
                 // context for lock
@@ -384,6 +396,7 @@ impl BlockListener {
                 last_latest_slot = new_slot;
                 recent_slot.store(last_latest_slot, std::sync::atomic::Ordering::Relaxed);
             }
+            Ok(())
         });
 
         tokio::select! {
@@ -400,13 +413,17 @@ impl BlockListener {
     }
 
     // continuosly poll processed blocks and feed into blockstore
-    pub fn listen_processed(self) -> JoinHandle<anyhow::Result<()>> {
+    pub fn listen_processed(self, exit_signal: Arc<AtomicBool>) -> JoinHandle<anyhow::Result<()>> {
         let block_processor = self.block_processor;
 
         tokio::spawn(async move {
             info!("processed block listner started");
 
             loop {
+                if exit_signal.load(Ordering::Relaxed) {
+                    break;
+                }
+
                 if let Err(err) = block_processor
                     .poll_latest_block(CommitmentConfig::processed())
                     .await
@@ -417,6 +434,7 @@ impl BlockListener {
                 // sleep
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
             }
+            Ok(())
         })
     }
 

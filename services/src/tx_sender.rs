@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::{atomic::AtomicBool, Arc},
+    time::{Duration, Instant},
+};
 
 use anyhow::bail;
 use chrono::Utc;
@@ -130,6 +133,7 @@ impl TxSender {
         self,
         mut recv: Receiver<(String, WireTransaction, u64)>,
         notifier: Option<NotificationSender>,
+        exit_signal: Arc<AtomicBool>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             let tx_sender = self.clone();
@@ -137,6 +141,9 @@ impl TxSender {
                 let mut sigs_and_slots = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
                 let mut txs = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
                 let mut timeout_interval = INTERVAL_PER_BATCH_IN_MS;
+                if exit_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
 
                 // In solana there in sig verify stage rate is limited to 2000 txs in 50ms
                 // taking this as reference
@@ -180,6 +187,7 @@ impl TxSender {
                     .forward_txs(sigs_and_slots, txs, notifier.clone())
                     .await;
             }
+            Ok(())
         })
     }
 
