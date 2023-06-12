@@ -33,9 +33,8 @@ use solana_lite_rpc_core::{
         BlockNotification, NotificationMsg, NotificationSender, TransactionUpdateNotification,
     },
     subscription_handler::{SubscptionHanderSink, SubscriptionHandler},
+    tx_store::{TxProps, TxStore},
 };
-
-use crate::tx_sender::{TxProps, TxSender};
 
 lazy_static::lazy_static! {
     static ref TT_RECV_CON_BLOCK: Histogram = register_histogram!(histogram_opts!(
@@ -70,7 +69,7 @@ lazy_static::lazy_static! {
 /// and keeps a track of confirmed txs
 #[derive(Clone)]
 pub struct BlockListener {
-    tx_sender: TxSender,
+    tx_store: TxStore,
     rpc_client: Arc<RpcClient>,
     block_processor: BlockProcessor,
     subscription_handler: SubscriptionHandler,
@@ -83,11 +82,11 @@ pub struct BlockListnerNotificatons {
 }
 
 impl BlockListener {
-    pub fn new(rpc_client: Arc<RpcClient>, tx_sender: TxSender, block_store: BlockStore) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient>, tx_store: TxStore, block_store: BlockStore) -> Self {
         Self {
             block_processor: BlockProcessor::new(rpc_client.clone(), Some(block_store.clone())),
             rpc_client,
-            tx_sender,
+            tx_store,
             subscription_handler: SubscriptionHandler::default(),
             block_store,
         }
@@ -96,7 +95,7 @@ impl BlockListener {
     pub async fn num_of_sigs_commited(&self, sigs: &[String]) -> usize {
         let mut num_of_sigs_commited = 0;
         for sig in sigs {
-            if self.tx_sender.txs_sent_store.contains_key(sig) {
+            if self.tx_store.contains_key(sig) {
                 num_of_sigs_commited += 1;
             }
         }
@@ -164,7 +163,7 @@ impl BlockListener {
         for tx_info in block_processor_result.transaction_infos {
             transactions_processed += 1;
 
-            if let Some(mut tx_status) = self.tx_sender.txs_sent_store.get_mut(&tx_info.signature) {
+            if let Some(mut tx_status) = self.tx_store.get_mut(&tx_info.signature) {
                 //
                 // Metrics
                 //

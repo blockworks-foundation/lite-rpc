@@ -1,14 +1,14 @@
 use anyhow::bail;
-use dashmap::DashMap;
 use log::{error, info};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 use solana_lite_rpc_core::{
     leader_schedule::LeaderSchedule, solana_utils::SolanaUtils,
-    structures::identity_stakes::IdentityStakes, AnyhowJoinHandle,
+    structures::identity_stakes::IdentityStakes, tx_store::TxStore, AnyhowJoinHandle,
 };
 
+use super::tpu_connection_manager::TpuConnectionManager;
 use solana_sdk::{
     pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, signer::Signer, slot_history::Slot,
 };
@@ -17,7 +17,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
     sync::{
-        atomic::{AtomicU64, Ordering, AtomicBool},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -25,9 +25,6 @@ use tokio::{
     sync::RwLock,
     time::{Duration, Instant},
 };
-
-use super::tpu_connection_manager::TpuConnectionManager;
-use crate::tx_sender::TxProps;
 
 const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
 const CLUSTERINFO_REFRESH_TIME: u64 = 60 * 60; // stakes every 1hrs
@@ -59,7 +56,7 @@ pub struct TpuService {
     tpu_connection_manager: Arc<TpuConnectionManager>,
     identity: Arc<Keypair>,
     identity_stakes: Arc<RwLock<IdentityStakes>>,
-    txs_sent_store: Arc<DashMap<String, TxProps>>,
+    txs_sent_store: TxStore,
     leader_schedule: Arc<LeaderSchedule>,
     exit_signal: Arc<AtomicBool>,
 }
@@ -71,7 +68,7 @@ impl TpuService {
         identity: Arc<Keypair>,
         rpc_client: Arc<RpcClient>,
         rpc_ws_address: String,
-        txs_sent_store: Arc<DashMap<String, TxProps>>,
+        txs_sent_store: TxStore,
     ) -> anyhow::Result<Self> {
         let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let (certificate, key) = new_self_signed_tls_certificate(
@@ -171,10 +168,7 @@ impl TpuService {
             .await;
     }
 
-    async fn update_current_slot(
-        &self,
-        update_notifier: tokio::sync::mpsc::UnboundedSender<u64>,
-    ) {
+    async fn update_current_slot(&self, update_notifier: tokio::sync::mpsc::UnboundedSender<u64>) {
         let current_slot = self.current_slot.clone();
         let update_slot = |slot: u64| {
             if slot > current_slot.load(Ordering::Relaxed) {
@@ -189,12 +183,9 @@ impl TpuService {
                 break;
             }
             // always loop update the current slots as it is central to working of TPU
-            let _ = SolanaUtils::poll_slots(
-                self.rpc_client.clone(),
-                &self.rpc_ws_address,
-                update_slot,
-            )
-            .await;
+            let _ =
+                SolanaUtils::poll_slots(self.rpc_client.clone(), &self.rpc_ws_address, update_slot)
+                    .await;
         }
     }
 

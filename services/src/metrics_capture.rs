@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use crate::tx_sender::TxSender;
 use log::info;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use serde::{Deserialize, Serialize};
+use solana_lite_rpc_core::tx_store::TxStore;
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::{sync::RwLock, task::JoinHandle};
 
@@ -26,7 +26,7 @@ lazy_static::lazy_static! {
 /// Background worker which captures metrics
 #[derive(Clone)]
 pub struct MetricsCapture {
-    tx_sender: TxSender,
+    txs_store: TxStore,
     metrics: Arc<RwLock<Metrics>>,
 }
 
@@ -41,9 +41,9 @@ pub struct Metrics {
 }
 
 impl MetricsCapture {
-    pub fn new(tx_sender: TxSender) -> Self {
+    pub fn new(txs_store: TxStore) -> Self {
         Self {
-            tx_sender,
+            txs_store,
             metrics: Default::default(),
         }
     }
@@ -65,11 +65,11 @@ impl MetricsCapture {
             loop {
                 one_second.tick().await;
 
-                let txs_sent = self.tx_sender.txs_sent_store.len();
+                let txs_sent = self.txs_store.len();
                 let mut txs_confirmed: usize = 0;
                 let mut txs_finalized: usize = 0;
 
-                for tx in self.tx_sender.txs_sent_store.iter() {
+                for tx in self.txs_store.iter() {
                     if let Some(tx) = &tx.value().status {
                         match tx.confirmation_status() {
                             TransactionConfirmationStatus::Confirmed => txs_confirmed += 1,

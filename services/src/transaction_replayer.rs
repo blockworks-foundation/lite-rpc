@@ -1,7 +1,11 @@
-use crate::tx_sender::TxSender;
+use crate::tpu_utils::tpu_service::TpuService;
 use log::error;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use std::time::Duration;
+use solana_lite_rpc_core::tx_store::TxStore;
+use std::{
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
@@ -24,14 +28,16 @@ pub struct TransactionReplay {
 
 #[derive(Clone)]
 pub struct TransactionReplayer {
-    pub tx_sender: TxSender,
+    pub tpu_service: TpuService,
+    pub tx_store: TxStore,
     pub retry_after: Duration,
 }
 
 impl TransactionReplayer {
-    pub fn new(tx_sender: TxSender, retry_after: Duration) -> Self {
+    pub fn new(tpu_service: TpuService, tx_store: TxStore, retry_after: Duration) -> Self {
         Self {
-            tx_sender,
+            tpu_service,
+            tx_store,
             retry_after,
         }
     }
@@ -40,12 +46,17 @@ impl TransactionReplayer {
         &self,
         sender: UnboundedSender<TransactionReplay>,
         reciever: UnboundedReceiver<TransactionReplay>,
+        exit_signal: Arc<AtomicBool>,
     ) -> JoinHandle<anyhow::Result<()>> {
-        let tx_sender = self.tx_sender.clone();
+        let tpu_service = self.tpu_service.clone();
+        let tx_store = self.tx_store.clone();
         let retry_after = self.retry_after;
         tokio::spawn(async move {
             let mut reciever = reciever;
             loop {
+                if exit_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
                 let tx = reciever.recv().await;
                 match tx {
                     Some(mut tx_replay) => {
@@ -53,7 +64,7 @@ impl TransactionReplayer {
                         if Instant::now() < tx_replay.replay_at {
                             tokio::time::sleep_until(tx_replay.replay_at).await;
                         }
-                        if let Some(tx) = tx_sender.txs_sent_store.get(&tx_replay.signature) {
+                        if let Some(tx) = tx_store.get(&tx_replay.signature) {
                             if tx.status.is_some() {
                                 // transaction has been confirmed / no retry needed
                                 continue;
@@ -63,8 +74,7 @@ impl TransactionReplayer {
                             continue;
                         }
                         // ignore reset error
-                        let _ = tx_sender
-                            .tpu_service
+                        let _ = tpu_service
                             .send_transaction(tx_replay.signature.clone(), tx_replay.tx.clone());
 
                         if tx_replay.replay_count < tx_replay.max_replay {
