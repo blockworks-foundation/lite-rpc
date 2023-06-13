@@ -160,9 +160,13 @@ impl BlockListener {
         let mut transactions_processed = 0;
         let mut transactions_to_update = vec![];
 
+        let mut total_cu_consumed: u64 = 0;
+        let mut cu_consumed_by_txs: u64 = 0;
+        let total_txs = block_processor_result.transaction_infos.len();
+        let mut tx_count: usize = 0;
         for tx_info in block_processor_result.transaction_infos {
             transactions_processed += 1;
-
+            total_cu_consumed = total_cu_consumed.saturating_add(tx_info.cu_consumed.unwrap_or(0));
             if let Some(mut tx_status) = self.tx_store.get_mut(&tx_info.signature) {
                 //
                 // Metrics
@@ -172,6 +176,9 @@ impl BlockListener {
                 } else {
                     TXS_CONFIRMED.inc();
                 }
+                cu_consumed_by_txs =
+                    cu_consumed_by_txs.saturating_add(tx_info.cu_consumed.unwrap_or(0));
+                tx_count = tx_count.saturating_add(1);
 
                 trace!(
                     "got transaction {} confrimation level {}",
@@ -191,10 +198,14 @@ impl BlockListener {
                 if let Some(_postgres) = &postgres {
                     transactions_to_update.push(TransactionUpdateNotification {
                         signature: tx_info.signature.clone(),
-                        processed_slot: slot as i64,
+                        slot,
                         cu_consumed: tx_info.cu_consumed,
                         cu_requested: tx_info.cu_requested,
                         cu_price: tx_info.prioritization_fees,
+                        transaction_status: tx_info.status.clone(),
+                        blockhash: block_processor_result.blockhash.clone(),
+                        leader: block_processor_result.leader_id.clone().unwrap_or_default(),
+                        commitment: commitment_config.commitment,
                     });
                 }
             };
@@ -236,11 +247,18 @@ impl BlockListener {
 
             postgres
                 .send(NotificationMsg::BlockNotificationMsg(BlockNotification {
-                    slot: slot as i64,
-                    leader_id: 0, // TODO: lookup leader
-                    parent_slot: block_processor_result.parent_slot as i64,
+                    slot,
+                    block_leader: block_processor_result.leader_id.unwrap_or_default(), // TODO: lookup leader
+                    parent_slot: block_processor_result.parent_slot,
                     cluster_time: Utc.timestamp_millis_opt(block_time * 1000).unwrap(),
                     local_time: block_info.and_then(|b| b.processed_local_time),
+                    blockhash: block_processor_result.blockhash,
+                    commitment: commitment_config.commitment,
+                    block_time: block_processor_result.block_time,
+                    total_transactions: total_txs as u64,
+                    transaction_found: tx_count as u64,
+                    cu_consumed_by_txs,
+                    total_cu_consumed,
                 }))
                 .expect("Error sending block to postgres service");
         }
@@ -291,13 +309,13 @@ impl BlockListener {
                                     .checked_add(Duration::from_millis(10))
                                     .unwrap();
 
-                                slot_retry_queue_sx
-                                    .send((slot, retry_at))
-                                    .context("Error sending slot to retry queue from slot indexer task")?;
+                                slot_retry_queue_sx.send((slot, retry_at)).context(
+                                    "Error sending slot to retry queue from slot indexer task",
+                                )?;
 
                                 BLOCKS_IN_RETRY_QUEUE.inc();
                             };
-                        },
+                        }
                         Err(_) => {
                             // We get error because channel is empty we retry recv again
                             tokio::time::sleep(Duration::from_millis(1)).await;

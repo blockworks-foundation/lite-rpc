@@ -24,22 +24,21 @@ pub struct BlockProcessor {
     block_store: Option<BlockStore>,
 }
 
+#[derive(Default)]
 pub struct BlockProcessorResult {
     pub invalid_block: bool,
     pub transaction_infos: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
     pub blockhash: String,
     pub parent_slot: Slot,
+    pub block_time: u64,
 }
 
 impl BlockProcessorResult {
     pub fn invalid() -> Self {
         Self {
             invalid_block: true,
-            transaction_infos: vec![],
-            leader_id: None,
-            blockhash: String::new(),
-            parent_slot: 0,
+            ..Default::default()
         }
     }
 }
@@ -48,9 +47,9 @@ pub struct TransactionInfo {
     pub signature: String,
     pub err: Option<TransactionError>,
     pub status: Result<(), TransactionError>,
-    pub cu_requested: Option<i64>,
-    pub prioritization_fees: Option<i64>,
-    pub cu_consumed: Option<i64>,
+    pub cu_requested: Option<u32>,
+    pub prioritization_fees: Option<u64>,
+    pub cu_consumed: Option<u64>,
 }
 
 impl BlockProcessor {
@@ -123,7 +122,7 @@ impl BlockProcessor {
             };
             let signature = tx.signatures[0].to_string();
             let cu_consumed = match compute_units_consumed {
-                OptionSerializer::Some(cu_consumed) => Some(cu_consumed as i64),
+                OptionSerializer::Some(cu_consumed) => Some(cu_consumed),
                 _ => None,
             };
 
@@ -149,7 +148,7 @@ impl BlockProcessor {
                     if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
                         try_from_slice_unchecked(i.data.as_slice())
                     {
-                        return Some(limit as i64);
+                        return Some(limit);
                     }
                 }
                 None
@@ -162,14 +161,14 @@ impl BlockProcessor {
                     if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
                         try_from_slice_unchecked(i.data.as_slice())
                     {
-                        return Some(price as i64);
+                        return Some(price);
                     }
                 }
                 None
             });
 
             if let Some((units, additional_fee)) = legacy_compute_budget {
-                cu_requested = Some(units as i64);
+                cu_requested = Some(units);
                 if additional_fee > 0 {
                     prioritization_fees = Some(((units * 1000) / additional_fee).into())
                 }
@@ -194,12 +193,15 @@ impl BlockProcessor {
             None
         };
 
+        let block_time = block.block_time.unwrap_or(0) as u64;
+
         Ok(BlockProcessorResult {
             invalid_block: false,
             transaction_infos,
             leader_id,
             blockhash,
             parent_slot,
+            block_time,
         })
     }
 

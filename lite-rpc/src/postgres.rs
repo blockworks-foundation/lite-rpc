@@ -1,4 +1,5 @@
 use anyhow::{bail, Context};
+use chrono::{DateTime, Utc};
 use futures::join;
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
@@ -15,7 +16,7 @@ use native_tls::{Certificate, Identity, TlsConnector};
 
 use crate::encoding::BinaryEncoding;
 use solana_lite_rpc_core::notifications::{
-    BlockNotification, NotificationMsg, NotificationReciever, SchemaSize, TransactionNotification,
+    BlockNotification, NotificationMsg, NotificationReciever, TransactionNotification,
     TransactionUpdateNotification,
 };
 
@@ -24,7 +25,104 @@ lazy_static::lazy_static! {
     pub static ref POSTGRES_SESSION_ERRORS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_session_errors", "Number of failures while establishing postgres session")).unwrap();
 }
 
+use std::convert::From;
+
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
+
+pub trait SchemaSize {
+    const DEFAULT_SIZE: usize = 0;
+    const MAX_SIZE: usize = 0;
+}
+
+#[derive(Debug)]
+pub struct PostgresTx {
+    pub signature: String,                   // 88 bytes
+    pub recent_slot: i64,                    // 8 bytes
+    pub forwarded_slot: i64,                 // 8 bytes
+    pub forwarded_local_time: DateTime<Utc>, // 8 bytes
+    pub processed_slot: Option<i64>,
+    pub cu_consumed: Option<i64>,
+    pub cu_requested: Option<i64>,
+    pub quic_response: i16, // 8 bytes
+}
+
+impl SchemaSize for PostgresTx {
+    const DEFAULT_SIZE: usize = 88 + (4 * 8);
+    const MAX_SIZE: usize = Self::DEFAULT_SIZE + (3 * 8);
+}
+
+impl From<&TransactionNotification> for PostgresTx {
+    fn from(value: &TransactionNotification) -> Self {
+        Self {
+            signature: value.signature.clone(),
+            recent_slot: value.recent_slot as i64,
+            forwarded_slot: value.forwarded_slot as i64,
+            forwarded_local_time: value.forwarded_local_time,
+            processed_slot: value.processed_slot.map(|x| x as i64),
+            cu_consumed: value.cu_consumed.map(|x| x as i64),
+            cu_requested: value.cu_requested.map(|x| x as i64),
+            quic_response: value.quic_response,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PostgresTxUpdate {
+    pub signature: String,   // 88 bytes
+    pub processed_slot: i64, // 8 bytes
+    pub cu_consumed: Option<i64>,
+    pub cu_requested: Option<i64>,
+    pub cu_price: Option<i64>,
+}
+
+impl SchemaSize for PostgresTxUpdate {
+    const DEFAULT_SIZE: usize = 88 + 8;
+    const MAX_SIZE: usize = Self::DEFAULT_SIZE + (3 * 8);
+}
+
+impl From<&TransactionUpdateNotification> for PostgresTxUpdate {
+    fn from(value: &TransactionUpdateNotification) -> Self {
+        Self {
+            signature: value.signature.clone(),
+            processed_slot: value.slot as i64,
+            cu_consumed: value.cu_consumed.map(|x| x as i64),
+            cu_requested: value.cu_requested.map(|x| x as i64),
+            cu_price: value.cu_price.map(|x| x as i64),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PostgresBlock {
+    pub slot: i64,                   // 8 bytes
+    pub leader_id: i64,              // 8 bytes
+    pub parent_slot: i64,            // 8 bytes
+    pub cluster_time: DateTime<Utc>, // 8 bytes
+    pub local_time: Option<DateTime<Utc>>,
+}
+
+impl SchemaSize for PostgresBlock {
+    const DEFAULT_SIZE: usize = 4 * 8;
+    const MAX_SIZE: usize = Self::DEFAULT_SIZE + 8;
+}
+
+impl From<BlockNotification> for PostgresBlock {
+    fn from(value: BlockNotification) -> Self {
+        Self {
+            slot: value.slot as i64,
+            leader_id: 0, // TODO
+            cluster_time: value.cluster_time,
+            local_time: value.local_time,
+            parent_slot: value.parent_slot as i64,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct AccountAddr {
+    pub id: u32,
+    pub addr: String,
+}
 
 const fn get_max_safe_inserts<T: SchemaSize>() -> usize {
     if T::DEFAULT_SIZE == 0 {
@@ -134,7 +232,7 @@ impl PostgresSession {
         }
     }
 
-    pub async fn send_txs(&self, txs: &[TransactionNotification]) -> anyhow::Result<()> {
+    pub async fn send_txs(&self, txs: &[PostgresTx]) -> anyhow::Result<()> {
         const NUMBER_OF_ARGS: usize = 8;
 
         if txs.is_empty() {
@@ -144,7 +242,7 @@ impl PostgresSession {
         let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * txs.len());
 
         for tx in txs.iter() {
-            let TransactionNotification {
+            let PostgresTx {
                 signature,
                 recent_slot,
                 forwarded_slot,
@@ -183,7 +281,7 @@ impl PostgresSession {
         Ok(())
     }
 
-    pub async fn send_blocks(&self, blocks: &[BlockNotification]) -> anyhow::Result<()> {
+    pub async fn send_blocks(&self, blocks: &[PostgresBlock]) -> anyhow::Result<()> {
         const NUMBER_OF_ARGS: usize = 5;
 
         if blocks.is_empty() {
@@ -193,7 +291,7 @@ impl PostgresSession {
         let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * blocks.len());
 
         for block in blocks.iter() {
-            let BlockNotification {
+            let PostgresBlock {
                 slot,
                 leader_id,
                 parent_slot,
@@ -233,7 +331,7 @@ impl PostgresSession {
         Ok(())
     }
 
-    pub async fn update_txs(&self, txs: &[TransactionUpdateNotification]) -> anyhow::Result<()> {
+    pub async fn update_txs(&self, txs: &[PostgresTxUpdate]) -> anyhow::Result<()> {
         const NUMBER_OF_ARGS: usize = 5;
 
         if txs.is_empty() {
@@ -243,7 +341,7 @@ impl PostgresSession {
         let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * txs.len());
 
         for tx in txs.iter() {
-            let TransactionUpdateNotification {
+            let PostgresTxUpdate {
                 signature,
                 processed_slot,
                 cu_consumed,
@@ -317,15 +415,13 @@ impl Postgres {
         tokio::spawn(async move {
             info!("start postgres worker");
 
-            const TX_MAX_CAPACITY: usize = get_max_safe_inserts::<TransactionNotification>();
-            const BLOCK_MAX_CAPACITY: usize = get_max_safe_inserts::<BlockNotification>();
-            const UPDATE_MAX_CAPACITY: usize =
-                get_max_safe_updates::<TransactionUpdateNotification>();
+            const TX_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresTx>();
+            const BLOCK_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresBlock>();
+            const UPDATE_MAX_CAPACITY: usize = get_max_safe_updates::<PostgresTxUpdate>();
 
-            let mut tx_batch: Vec<TransactionNotification> = Vec::with_capacity(TX_MAX_CAPACITY);
-            let mut block_batch: Vec<BlockNotification> = Vec::with_capacity(BLOCK_MAX_CAPACITY);
-            let mut update_batch =
-                Vec::<TransactionUpdateNotification>::with_capacity(UPDATE_MAX_CAPACITY);
+            let mut tx_batch: Vec<PostgresTx> = Vec::with_capacity(TX_MAX_CAPACITY);
+            let mut block_batch: Vec<PostgresBlock> = Vec::with_capacity(BLOCK_MAX_CAPACITY);
+            let mut update_batch = Vec::<PostgresTxUpdate>::with_capacity(UPDATE_MAX_CAPACITY);
 
             let mut session_establish_error = false;
 
@@ -349,13 +445,15 @@ impl Postgres {
                             MESSAGES_IN_POSTGRES_CHANNEL.dec();
 
                             match msg {
-                                NotificationMsg::TxNotificationMsg(mut tx) => {
+                                NotificationMsg::TxNotificationMsg(tx) => {
+                                    let mut tx = tx.iter().map(|x| x.into()).collect::<Vec<_>>();
                                     tx_batch.append(&mut tx)
                                 }
                                 NotificationMsg::BlockNotificationMsg(block) => {
-                                    block_batch.push(block)
+                                    block_batch.push(block.into())
                                 }
-                                NotificationMsg::UpdateTransactionMsg(mut update) => {
+                                NotificationMsg::UpdateTransactionMsg(update) => {
+                                    let mut update = update.iter().map(|x| x.into()).collect();
                                     update_batch.append(&mut update)
                                 }
 

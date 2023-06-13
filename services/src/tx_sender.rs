@@ -107,8 +107,8 @@ impl TxSender {
                 .enumerate()
                 .map(|(index, (sig, recent_slot))| TransactionNotification {
                     signature: sig.clone(),
-                    recent_slot: *recent_slot as i64,
-                    forwarded_slot: forwarded_slot as i64,
+                    recent_slot: *recent_slot,
+                    forwarded_slot,
                     forwarded_local_time,
                     processed_slot: None,
                     cu_consumed: None,
