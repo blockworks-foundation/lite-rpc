@@ -1,3 +1,6 @@
+use std::time::Duration;
+
+use log::error;
 use prometheus::{Encoder, TextEncoder};
 use tokio::{
     io::AsyncWriteExt,
@@ -43,6 +46,8 @@ impl PrometheusSync {
 
             loop {
                 let Ok((mut stream, _addr)) =  listener.accept().await else {
+                    error!("Error accepting prometheus stream");
+                    tokio::time::sleep(Duration::from_millis(1)).await;
                     continue;
                 };
 
