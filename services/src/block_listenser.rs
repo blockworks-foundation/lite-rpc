@@ -296,8 +296,9 @@ impl BlockListener {
                                 BLOCKS_IN_RETRY_QUEUE.inc();
                             };
                         },
-                        Err(e) => {
-                            error!("Error on block listner recv stream {e:?}");
+                        Err(_) => {
+                            // We get error because channel is empty we retry recv again
+                            tokio::time::sleep(Duration::from_millis(1)).await;
                         }
                     }
                 }
