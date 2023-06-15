@@ -131,7 +131,7 @@ impl BlockListener {
         &self,
         slot: Slot,
         commitment_config: CommitmentConfig,
-        postgres: Option<NotificationSender>,
+        notification_channel: Option<NotificationSender>,
     ) -> anyhow::Result<()> {
         //info!("indexing slot {} commitment {}", slot, commitment_config.commitment);
         let comfirmation_status = match commitment_config.commitment {
@@ -195,7 +195,7 @@ impl BlockListener {
                 });
 
                 // prepare writing to postgres
-                if let Some(_postgres) = &postgres {
+                if let Some(_notification_channel) = &notification_channel {
                     transactions_to_update.push(TransactionUpdateNotification {
                         signature: tx_info.signature.clone(),
                         slot,
@@ -218,12 +218,12 @@ impl BlockListener {
         //
         // Notify
         //
-        if let Some(postgres) = &postgres {
-            postgres
+        if let Some(notification_channel) = &notification_channel {
+            // ignore error because may be the channel is already closed
+            let _ = notification_channel
                 .send(NotificationMsg::UpdateTransactionMsg(
                     transactions_to_update,
-                ))
-                .unwrap();
+                ));
         }
 
         trace!(
@@ -234,7 +234,7 @@ impl BlockListener {
             start.elapsed().as_millis()
         );
 
-        if let Some(postgres) = &postgres {
+        if let Some(notification_channel) = &notification_channel {
             // TODO insert if not exists leader_id into accountaddrs
 
             // fetch cluster time from rpc
@@ -245,7 +245,8 @@ impl BlockListener {
                 .block_store
                 .get_block_info(&block_processor_result.blockhash);
 
-            postgres
+                // ignore error because may be the channel is already closed
+                let _ = notification_channel
                 .send(NotificationMsg::BlockNotificationMsg(BlockNotification {
                     slot,
                     block_leader: block_processor_result.leader_id.unwrap_or_default(), // TODO: lookup leader
@@ -259,8 +260,7 @@ impl BlockListener {
                     transaction_found: tx_count as u64,
                     cu_consumed_by_txs,
                     total_cu_consumed,
-                }))
-                .expect("Error sending block to postgres service");
+                }));
         }
 
         Ok(())

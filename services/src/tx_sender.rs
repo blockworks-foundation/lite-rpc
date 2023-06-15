@@ -116,9 +116,9 @@ impl TxSender {
                     quic_response: quic_responses[index],
                 })
                 .collect();
-            notifier
-                .send(NotificationMsg::TxNotificationMsg(notification_msgs))
-                .expect("Error writing to notification service");
+            // ignore error on sent because the channel may be already closed
+            let  _ = notifier
+                .send(NotificationMsg::TxNotificationMsg(notification_msgs));
         }
         histo_timer.observe_duration();
         trace!(
