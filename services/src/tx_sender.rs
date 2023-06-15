@@ -117,8 +117,7 @@ impl TxSender {
                 })
                 .collect();
             // ignore error on sent because the channel may be already closed
-            let  _ = notifier
-                .send(NotificationMsg::TxNotificationMsg(notification_msgs));
+            let _ = notifier.send(NotificationMsg::TxNotificationMsg(notification_msgs));
         }
         histo_timer.observe_duration();
         trace!(

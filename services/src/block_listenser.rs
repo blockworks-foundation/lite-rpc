@@ -220,10 +220,9 @@ impl BlockListener {
         //
         if let Some(notification_channel) = &notification_channel {
             // ignore error because may be the channel is already closed
-            let _ = notification_channel
-                .send(NotificationMsg::UpdateTransactionMsg(
-                    transactions_to_update,
-                ));
+            let _ = notification_channel.send(NotificationMsg::UpdateTransactionMsg(
+                transactions_to_update,
+            ));
         }
 
         trace!(
@@ -245,9 +244,9 @@ impl BlockListener {
                 .block_store
                 .get_block_info(&block_processor_result.blockhash);
 
-                // ignore error because may be the channel is already closed
-                let _ = notification_channel
-                .send(NotificationMsg::BlockNotificationMsg(BlockNotification {
+            // ignore error because may be the channel is already closed
+            let _ = notification_channel.send(NotificationMsg::BlockNotificationMsg(
+                BlockNotification {
                     slot,
                     block_leader: block_processor_result.leader_id.unwrap_or_default(), // TODO: lookup leader
                     parent_slot: block_processor_result.parent_slot,
@@ -260,7 +259,8 @@ impl BlockListener {
                     transaction_found: tx_count as u64,
                     cu_consumed_by_txs,
                     total_cu_consumed,
-                }));
+                },
+            ));
         }
 
         Ok(())

@@ -176,7 +176,6 @@ impl TransactionService {
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {
-            log::warn!("block");
             bail!("Blockhash not found in block store".to_string());
         };
 

@@ -43,7 +43,7 @@ pub struct PostgresTx {
     pub processed_slot: Option<i64>,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
-    pub quic_response: i16, // 8 bytes
+    pub quic_response: i16, // 2 bytes
 }
 
 impl SchemaSize for PostgresTx {
