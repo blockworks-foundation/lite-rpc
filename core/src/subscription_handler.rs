@@ -9,7 +9,7 @@ use tokio::time::Instant;
 
 use crate::{block_processor::TransactionInfo, subscription_sink::SubscriptionSink};
 
-pub type SubscptionHanderSink = Arc<dyn SubscriptionSink + Sync + Send>;
+pub type SubscptionHanderSink = Arc<dyn SubscriptionSink>;
 
 #[derive(Clone, Default)]
 pub struct SubscriptionHandler {

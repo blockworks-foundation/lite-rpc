@@ -36,7 +36,3 @@ impl solana_lite_rpc_core::subscription_sink::SubscriptionSink
         self.jsonrpsee_sink.is_closed()
     }
 }
-
-unsafe impl Send for JsonRpseeSubscriptionHandlerSink {}
-
-unsafe impl Sync for JsonRpseeSubscriptionHandlerSink {}
