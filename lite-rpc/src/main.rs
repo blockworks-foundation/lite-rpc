@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use anyhow::bail;
 use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 use log::info;
+use prometheus::{opts, register_int_counter, IntCounter};
 use solana_sdk::signature::Keypair;
 use std::env;
 
@@ -31,6 +31,11 @@ async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
     }
 }
 
+lazy_static::lazy_static! {
+    static ref RESTARTS: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_restarts", "Nutber of times lite rpc restarted")).unwrap();
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -51,8 +56,6 @@ pub async fn main() -> anyhow::Result<()> {
 
     dotenv().ok();
 
-    let identity = get_identity_keypair(&identity_keypair).await;
-
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
 
     let enable_postgres = enable_postgres
@@ -64,33 +67,42 @@ pub async fn main() -> anyhow::Result<()> {
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 
-    let services = LiteBridge::new(
-        rpc_addr,
-        ws_addr,
-        fanout_size,
-        identity,
-        retry_after,
-        maximum_retries_per_tx,
-    )
-    .await?
-    .start_services(
-        lite_rpc_http_addr,
-        lite_rpc_ws_addr,
-        clean_interval_ms,
-        enable_postgres,
-        prometheus_addr,
-    );
+    loop {
+        let identity = get_identity_keypair(&identity_keypair).await;
 
-    let ctrl_c_signal = tokio::signal::ctrl_c();
+        let services = LiteBridge::new(
+            rpc_addr.clone(),
+            ws_addr.clone(),
+            fanout_size,
+            identity,
+            retry_after,
+            maximum_retries_per_tx,
+        )
+        .await?
+        .start_services(
+            lite_rpc_http_addr.clone(),
+            lite_rpc_ws_addr.clone(),
+            clean_interval_ms,
+            enable_postgres,
+            prometheus_addr.clone(),
+        );
 
-    tokio::select! {
-        res = services => {
-            bail!("Services quit unexpectedly {res:?}");
-        }
-        _ = ctrl_c_signal => {
-            info!("Received ctrl+c signal");
+        let ctrl_c_signal = tokio::signal::ctrl_c();
 
-            Ok(())
+        tokio::select! {
+            res = services => {
+                const RESTART_DURATION: Duration = Duration::from_secs(20);
+
+                log::error!("Services quit unexpectedly {res:?} restarting in {RESTART_DURATION:?}");
+                tokio::time::sleep(RESTART_DURATION).await;
+                log::error!("Restarting services");
+                RESTARTS.inc();
+            }
+            _ = ctrl_c_signal => {
+                info!("Received ctrl+c signal");
+
+                break Ok(())
+            }
         }
     }
 }
