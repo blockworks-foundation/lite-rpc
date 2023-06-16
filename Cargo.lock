@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "bench"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap 4.2.4",
@@ -2295,7 +2295,7 @@ checksum = "d59d8c75012853d2e872fb56bc8a2e53718e2cafe1a4c823143141c6d90c322f"
 
 [[package]]
 name = "lite-rpc"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3961,7 +3961,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3992,7 +3992,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-services"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-channel",

@@ -7,7 +7,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 authors = ["gmgalactus <gmgalactus@mango.markets>", "Aniket Prajapati <contact@aniketprajapati.me>"]
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
@@ -47,6 +47,6 @@ dotenv = "0.15.0"
 async-channel = "1.8.0"
 quinn = "0.9.3"
 rustls = { version = "=0.20.8", default-features = false }
-solana-lite-rpc-services = {path = "services", version="0.2.0"}
-solana-lite-rpc-core = {path = "core", version="0.2.0"}
+solana-lite-rpc-services = {path = "services", version="0.2.1"}
+solana-lite-rpc-core = {path = "core", version="0.2.1"}
 async-trait = "0.1.68"

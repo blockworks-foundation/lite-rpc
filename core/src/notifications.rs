@@ -29,10 +29,10 @@ pub struct TransactionUpdateNotification {
 
 #[derive(Debug)]
 pub struct BlockNotification {
-    pub slot: u64,                   // 8 bytes
-    pub block_leader: String,        // 8 bytes
-    pub parent_slot: u64,            // 8 bytes
-    pub cluster_time: DateTime<Utc>, // 8 bytes
+    pub slot: u64,
+    pub block_leader: String,
+    pub parent_slot: u64,
+    pub cluster_time: DateTime<Utc>,
     pub local_time: Option<DateTime<Utc>>,
     pub blockhash: String,
     pub total_transactions: u64,
