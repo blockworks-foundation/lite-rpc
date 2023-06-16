@@ -10,6 +10,13 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features:
 
+## [0.2.1]
+
+commit: 
+
+- postgres : removing postgres dependency on core and services
+- all: refactored notification so that they do not fail, making the lite-rpc code and services work with other projects.
+
 ## [0.2.0]
 
 commit: fffb302ce6f01ab0522a4ab23be60394bb9aa40f

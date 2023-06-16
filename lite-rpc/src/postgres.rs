@@ -47,7 +47,7 @@ pub struct PostgresTx {
 }
 
 impl SchemaSize for PostgresTx {
-    const DEFAULT_SIZE: usize = 88 + (4 * 8);
+    const DEFAULT_SIZE: usize = 88 + (3 * 8) + 2;
     const MAX_SIZE: usize = Self::DEFAULT_SIZE + (3 * 8);
 }
 
