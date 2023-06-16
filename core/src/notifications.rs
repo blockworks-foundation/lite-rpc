@@ -1,54 +1,46 @@
 use chrono::{DateTime, Utc};
+use solana_sdk::{commitment_config::CommitmentLevel, transaction::TransactionError};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-
-pub trait SchemaSize {
-    const DEFAULT_SIZE: usize = 0;
-    const MAX_SIZE: usize = 0;
-}
 
 #[derive(Debug)]
 pub struct TransactionNotification {
     pub signature: String,                   // 88 bytes
-    pub recent_slot: i64,                    // 8 bytes
-    pub forwarded_slot: i64,                 // 8 bytes
+    pub recent_slot: u64,                    // 8 bytes
+    pub forwarded_slot: u64,                 // 8 bytes
     pub forwarded_local_time: DateTime<Utc>, // 8 bytes
-    pub processed_slot: Option<i64>,
-    pub cu_consumed: Option<i64>,
-    pub cu_requested: Option<i64>,
+    pub processed_slot: Option<u64>,
+    pub cu_consumed: Option<u64>,
+    pub cu_requested: Option<u64>,
     pub quic_response: i16, // 8 bytes
-}
-
-impl SchemaSize for TransactionNotification {
-    const DEFAULT_SIZE: usize = 88 + (4 * 8);
-    const MAX_SIZE: usize = Self::DEFAULT_SIZE + (3 * 8);
 }
 
 #[derive(Debug)]
 pub struct TransactionUpdateNotification {
-    pub signature: String,   // 88 bytes
-    pub processed_slot: i64, // 8 bytes
-    pub cu_consumed: Option<i64>,
-    pub cu_requested: Option<i64>,
-    pub cu_price: Option<i64>,
-}
-
-impl SchemaSize for TransactionUpdateNotification {
-    const DEFAULT_SIZE: usize = 88 + 8;
-    const MAX_SIZE: usize = Self::DEFAULT_SIZE + (3 * 8);
+    pub signature: String, // 88 bytes
+    pub slot: u64,
+    pub cu_consumed: Option<u64>,
+    pub cu_requested: Option<u32>,
+    pub cu_price: Option<u64>,
+    pub transaction_status: Result<(), TransactionError>,
+    pub blockhash: String,
+    pub leader: String,
+    pub commitment: CommitmentLevel,
 }
 
 #[derive(Debug)]
 pub struct BlockNotification {
-    pub slot: i64,                   // 8 bytes
-    pub leader_id: i64,              // 8 bytes
-    pub parent_slot: i64,            // 8 bytes
+    pub slot: u64,                   // 8 bytes
+    pub block_leader: String,        // 8 bytes
+    pub parent_slot: u64,            // 8 bytes
     pub cluster_time: DateTime<Utc>, // 8 bytes
     pub local_time: Option<DateTime<Utc>>,
-}
-
-impl SchemaSize for BlockNotification {
-    const DEFAULT_SIZE: usize = 4 * 8;
-    const MAX_SIZE: usize = Self::DEFAULT_SIZE + 8;
+    pub blockhash: String,
+    pub total_transactions: u64,
+    pub block_time: u64,
+    pub total_cu_consumed: u64,
+    pub commitment: CommitmentLevel,
+    pub transaction_found: u64,
+    pub cu_consumed_by_txs: u64,
 }
 
 #[derive(Debug)]

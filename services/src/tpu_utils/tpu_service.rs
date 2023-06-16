@@ -1,14 +1,14 @@
 use anyhow::bail;
-use dashmap::DashMap;
 use log::{error, info};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 use solana_lite_rpc_core::{
     leader_schedule::LeaderSchedule, solana_utils::SolanaUtils,
-    structures::identity_stakes::IdentityStakes, AnyhowJoinHandle,
+    structures::identity_stakes::IdentityStakes, tx_store::TxStore, AnyhowJoinHandle,
 };
 
+use super::tpu_connection_manager::TpuConnectionManager;
 use solana_sdk::{
     pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, signer::Signer, slot_history::Slot,
 };
@@ -17,7 +17,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -25,9 +25,6 @@ use tokio::{
     sync::RwLock,
     time::{Duration, Instant},
 };
-
-use super::tpu_connection_manager::TpuConnectionManager;
-use crate::tx_sender::TxProps;
 
 const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
 const CLUSTERINFO_REFRESH_TIME: u64 = 60 * 60; // stakes every 1hrs
@@ -59,7 +56,7 @@ pub struct TpuService {
     tpu_connection_manager: Arc<TpuConnectionManager>,
     identity: Arc<Keypair>,
     identity_stakes: Arc<RwLock<IdentityStakes>>,
-    txs_sent_store: Arc<DashMap<String, TxProps>>,
+    txs_sent_store: TxStore,
     leader_schedule: Arc<LeaderSchedule>,
 }
 
@@ -70,7 +67,7 @@ impl TpuService {
         identity: Arc<Keypair>,
         rpc_client: Arc<RpcClient>,
         rpc_ws_address: String,
-        txs_sent_store: Arc<DashMap<String, TxProps>>,
+        txs_sent_store: TxStore,
     ) -> anyhow::Result<Self> {
         let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let (certificate, key) = new_self_signed_tls_certificate(
@@ -165,10 +162,15 @@ impl TpuService {
             .await;
     }
 
+    fn check_exit_signal(exit_signal: &Arc<AtomicBool>) -> bool {
+        exit_signal.load(Ordering::Relaxed)
+    }
+
     async fn update_current_slot(
         &self,
         update_notifier: tokio::sync::mpsc::UnboundedSender<u64>,
-    ) -> anyhow::Result<()> {
+        exit_signal: Arc<AtomicBool>,
+    ) {
         let current_slot = self.current_slot.clone();
         let update_slot = |slot: u64| {
             if slot > current_slot.load(Ordering::Relaxed) {
@@ -179,17 +181,17 @@ impl TpuService {
         };
 
         loop {
+            if Self::check_exit_signal(&exit_signal) {
+                break;
+            }
             // always loop update the current slots as it is central to working of TPU
-            let _ = SolanaUtils::poll_slots(
-                self.rpc_client.clone(),
-                &self.rpc_ws_address,
-                update_slot,
-            )
-            .await;
+            let _ =
+                SolanaUtils::poll_slots(self.rpc_client.clone(), &self.rpc_ws_address, update_slot)
+                    .await;
         }
     }
 
-    pub async fn start(&self) -> anyhow::Result<()> {
+    pub async fn start(&self, exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
         self.leader_schedule
             .load_cluster_info(self.rpc_client.clone())
             .await?;
@@ -198,13 +200,21 @@ impl TpuService {
         self.update_quic_connections().await;
 
         let this = self.clone();
+        let exit_signal_l = exit_signal.clone();
         let jh_update_leaders = tokio::spawn(async move {
             let mut last_cluster_info_update = Instant::now();
             let leader_schedule_update_interval =
                 Duration::from_secs(LEADER_SCHEDULE_UPDATE_INTERVAL);
             let cluster_info_update_interval = Duration::from_secs(CLUSTERINFO_REFRESH_TIME);
             loop {
+                if Self::check_exit_signal(&exit_signal_l) {
+                    break;
+                }
                 tokio::time::sleep(leader_schedule_update_interval).await;
+                if Self::check_exit_signal(&exit_signal_l) {
+                    break;
+                }
+
                 info!("update leader schedule and cluster nodes");
                 if this.update_leader_schedule().await.is_err() {
                     error!("unable to update leader shedule");
@@ -221,18 +231,23 @@ impl TpuService {
 
         let this = self.clone();
         let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
-
+        let exit_signal_l = exit_signal.clone();
         let slot_sub_task: AnyhowJoinHandle = tokio::spawn(async move {
-            this.update_current_slot(slot_sender).await?;
+            this.update_current_slot(slot_sender, exit_signal_l).await;
             Ok(())
         });
 
         let estimated_slot = self.estimated_slot.clone();
         let current_slot = self.current_slot.clone();
         let this = self.clone();
+        let exit_signal_l = exit_signal.clone();
         let estimated_slot_calculation = tokio::spawn(async move {
             let mut slot_update_notifier = slot_reciever;
             loop {
+                if Self::check_exit_signal(&exit_signal_l) {
+                    break;
+                }
+
                 if SolanaUtils::slot_estimator(
                     &mut slot_update_notifier,
                     current_slot.clone(),

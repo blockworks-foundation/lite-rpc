@@ -1,6 +1,6 @@
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
-    encoding::BinaryEncoding,
+    jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     postgres::Postgres,
     rpc::LiteRpcServer,
     DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
@@ -8,44 +8,38 @@ use crate::{
 
 use solana_lite_rpc_services::{
     block_listenser::BlockListener,
-    cleaner::Cleaner,
     metrics_capture::MetricsCapture,
     prometheus_sync::PrometheusSync,
     tpu_utils::tpu_service::TpuService,
-    transaction_replayer::{TransactionReplay, TransactionReplayer, MESSAGES_IN_REPLAY_QUEUE},
+    transaction_replayer::TransactionReplayer,
+    transaction_service::{TransactionService, TransactionServiceBuilder},
     tx_sender::WireTransaction,
-    tx_sender::{TxProps, TxSender, TXS_IN_CHANNEL},
+    tx_sender::{TxSender, TXS_IN_CHANNEL},
 };
-
-use solana_lite_rpc_core::{
-    block_store::{BlockInformation, BlockStore},
-    AnyhowJoinHandle,
-};
-
-use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::bail;
-
-use dashmap::DashMap;
-use log::{error, info};
-
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
-
+use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
-use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
+use solana_lite_rpc_core::{
+    block_store::{BlockInformation, BlockStore},
+    tx_store::{empty_tx_store, TxStore},
+    AnyhowJoinHandle,
+};
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
-    slot_history::Slot, transaction::VersionedTransaction,
+    slot_history::Slot,
 };
 use solana_transaction_status::TransactionStatus;
+use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 use tokio::{
     net::ToSocketAddrs,
-    sync::mpsc::{self, Sender, UnboundedSender},
-    time::Instant,
+    sync::mpsc::{self, Sender},
 };
 
 lazy_static::lazy_static! {
@@ -68,16 +62,14 @@ lazy_static::lazy_static! {
 /// A bridge between clients and tpu
 pub struct LiteBridge {
     pub rpc_client: Arc<RpcClient>,
-    pub tpu_service: Arc<TpuService>,
+    pub tx_store: TxStore,
     // None if LiteBridge is not executed
     pub tx_send_channel: Option<Sender<(String, WireTransaction, u64)>>,
-    pub tx_sender: TxSender,
-    pub block_listner: BlockListener,
     pub block_store: BlockStore,
-
-    pub tx_replayer: TransactionReplayer,
-    pub tx_replay_sender: Option<UnboundedSender<TransactionReplay>>,
     pub max_retries: usize,
+    pub transaction_service_builder: TransactionServiceBuilder,
+    pub transaction_service: Option<TransactionService>,
+    pub block_listner: BlockListener,
 }
 
 impl LiteBridge {
@@ -92,7 +84,7 @@ impl LiteBridge {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
         let current_slot = rpc_client.get_slot().await?;
 
-        let tx_store: Arc<DashMap<String, TxProps>> = Default::default();
+        let tx_store = empty_tx_store();
 
         let tpu_service = TpuService::new(
             current_slot,
@@ -104,26 +96,33 @@ impl LiteBridge {
         )
         .await?;
 
-        let tpu_service = Arc::new(tpu_service);
-
-        let tx_sender = TxSender::new(tx_store, tpu_service.clone());
+        let tx_sender = TxSender::new(tx_store.clone(), tpu_service.clone());
 
         let block_store = BlockStore::new(&rpc_client).await?;
 
         let block_listner =
-            BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store.clone());
+            BlockListener::new(rpc_client.clone(), tx_store.clone(), block_store.clone());
 
-        let tx_replayer = TransactionReplayer::new(tx_sender.clone(), retry_after);
+        let tx_replayer =
+            TransactionReplayer::new(tpu_service.clone(), tx_store.clone(), retry_after);
+
+        let transaction_manager = TransactionServiceBuilder::new(
+            tx_sender,
+            tx_replayer,
+            block_listner.clone(),
+            tpu_service,
+            DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
+        );
+
         Ok(Self {
             rpc_client,
-            tpu_service,
+            tx_store,
             tx_send_channel: None,
-            tx_sender,
-            block_listner,
             block_store,
-            tx_replayer,
-            tx_replay_sender: None,
             max_retries,
+            transaction_service_builder: transaction_manager,
+            transaction_service: None,
+            block_listner,
         })
     }
 
@@ -147,47 +146,20 @@ impl LiteBridge {
             (None, None)
         };
 
-        let tpu_service = self.tpu_service.clone();
-        let tpu_service = tpu_service.start();
-
-        let (tx_send, tx_recv) = mpsc::channel(DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE);
-        self.tx_send_channel = Some(tx_send);
-
-        let tx_sender = self
-            .tx_sender
-            .clone()
-            .execute(tx_recv, postgres_send.clone());
-
-        let (replay_sender, replay_reciever) = tokio::sync::mpsc::unbounded_channel();
-        let replay_service = self
-            .tx_replayer
-            .start_service(replay_sender.clone(), replay_reciever);
-        self.tx_replay_sender = Some(replay_sender);
-
-        let metrics_capture = MetricsCapture::new(self.tx_sender.clone()).capture();
+        let metrics_capture = MetricsCapture::new(self.tx_store.clone()).capture();
         let prometheus_sync = PrometheusSync.sync(prometheus_addr);
 
-        let finalized_block_listener = self.block_listner.clone().listen(
-            CommitmentConfig::finalized(),
-            postgres_send.clone(),
-            self.tpu_service.get_estimated_slot_holder(),
-        );
-
-        let confirmed_block_listener = self.block_listner.clone().listen(
-            CommitmentConfig::confirmed(),
-            None,
-            self.tpu_service.get_estimated_slot_holder(),
-        );
-
-        let processed_block_listener = self.block_listner.clone().listen_processed();
-
-        let cleaner = Cleaner::new(
-            self.tx_sender.clone(),
-            self.block_listner.clone(),
-            self.block_store.clone(),
-        )
-        .start(clean_interval);
-
+        let max_retries = self.max_retries;
+        let (transaction_service, jh_transaction_services) = self
+            .transaction_service_builder
+            .start(
+                postgres_send,
+                self.block_store.clone(),
+                max_retries,
+                clean_interval,
+            )
+            .await;
+        self.transaction_service = Some(transaction_service);
         let rpc = self.into_rpc();
 
         let (ws_server, http_server) = {
@@ -228,26 +200,11 @@ impl LiteBridge {
         });
 
         tokio::select! {
-            res = tpu_service => {
-                bail!("Tpu Services exited unexpectedly {res:?}");
-            },
             res = ws_server => {
                 bail!("WebSocket server exited unexpectedly {res:?}");
             },
             res = http_server => {
                 bail!("HTTP server exited unexpectedly {res:?}");
-            },
-            res = tx_sender => {
-                bail!("Tx Sender exited unexpectedly {res:?}");
-            },
-            res = finalized_block_listener => {
-                bail!("Finalized Block Listener exited unexpectedly {res:?}");
-            },
-            res = confirmed_block_listener => {
-                bail!("Confirmed Block Listener exited unexpectedly {res:?}");
-            },
-            res = processed_block_listener => {
-                bail!("Processed Block Listener exited unexpectedly {res:?}");
             },
             res = metrics_capture => {
                 bail!("Metrics Capture exited unexpectedly {res:?}");
@@ -255,15 +212,12 @@ impl LiteBridge {
             res = prometheus_sync => {
                 bail!("Prometheus Service exited unexpectedly {res:?}");
             },
-            res = cleaner => {
-                bail!("Cleaner Service exited unexpectedly {res:?}");
-            },
-            res = replay_service => {
-                bail!("Tx replay service exited unexpectedly {res:?}");
-            },
             res = postgres => {
                 bail!("Postgres service exited unexpectedly {res:?}");
             },
+            res = jh_transaction_services => {
+                bail!("Transaction service exited unexpectedly {res:?}");
+            }
         }
     }
 }
@@ -289,56 +243,22 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
-            Ok(tx) => tx,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+        let transaction_service = self
+            .transaction_service
+            .clone()
+            .expect("Transaction Service should have been initialized");
 
-        let sig = tx.get_signature();
-        let Some(BlockInformation { slot, .. }) = self
-            .block_store
-            .get_block_info(&tx.get_recent_blockhash().to_string())
-        else {
-            log::warn!("block");
-            return Err(jsonrpsee::core::Error::Custom("Blockhash not found in block store".to_string()));
-        };
-
-        let raw_tx_clone = raw_tx.clone();
-        if let Err(e) = self
-            .tx_send_channel
-            .as_ref()
-            .expect("Lite Bridge Not Executed")
-            .send((sig.to_string(), raw_tx, slot))
+        match transaction_service
+            .send_transaction(raw_tx, max_retries)
             .await
         {
-            error!(
-                "Internal error sending transaction on send channel error {}",
-                e
-            );
-        }
+            Ok(sig) => {
+                TXS_IN_CHANNEL.inc();
 
-        if let Some(tx_replay_sender) = &self.tx_replay_sender {
-            let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
-            let replay_at = Instant::now() + self.tx_replayer.retry_after;
-            // ignore error for replay service
-            if tx_replay_sender
-                .send(TransactionReplay {
-                    signature: sig.to_string(),
-                    tx: raw_tx_clone,
-                    replay_count: 0,
-                    max_replay,
-                    replay_at,
-                })
-                .is_ok()
-            {
-                MESSAGES_IN_REPLAY_QUEUE.inc();
+                Ok(sig)
             }
+            Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
         }
-        TXS_IN_CHANNEL.inc();
-
-        Ok(BinaryEncoding::Base58.encode(sig))
     }
 
     async fn get_latest_blockhash(
@@ -424,12 +344,7 @@ impl LiteRpcServer for LiteBridge {
 
         let sig_statuses = sigs
             .iter()
-            .map(|sig| {
-                self.tx_sender
-                    .txs_sent_store
-                    .get(sig)
-                    .and_then(|v| v.status.clone())
-            })
+            .map(|sig| self.tx_store.get(sig).and_then(|v| v.status.clone()))
             .collect();
 
         Ok(RpcResponse {
@@ -481,8 +396,7 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        self.tx_sender
-            .txs_sent_store
+        self.tx_store
             .insert(airdrop_sig.clone(), Default::default());
 
         Ok(airdrop_sig)
@@ -507,8 +421,12 @@ impl LiteRpcServer for LiteBridge {
         RPC_SIGNATURE_SUBSCRIBE.inc();
         let sink = pending.accept().await?;
 
-        self.block_listner
-            .signature_subscribe(signature, commitment_config, sink);
+        let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
+        self.block_listner.signature_subscribe(
+            signature,
+            commitment_config,
+            Arc::new(jsonrpsee_sink),
+        );
 
         Ok(())
     }

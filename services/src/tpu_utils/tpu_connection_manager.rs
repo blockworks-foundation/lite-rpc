@@ -1,11 +1,10 @@
-use crate::tx_sender::TxProps;
 use dashmap::DashMap;
 use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::{Connection, Endpoint};
 use solana_lite_rpc_core::{
     quic_connection_utils::QuicConnectionUtils, rotating_queue::RotatingQueue,
-    structures::identity_stakes::IdentityStakes,
+    structures::identity_stakes::IdentityStakes, tx_store::TxStore,
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
@@ -39,7 +38,7 @@ struct ActiveConnection {
     identity: Pubkey,
     tpu_address: SocketAddr,
     exit_signal: Arc<AtomicBool>,
-    txs_sent_store: Arc<DashMap<String, TxProps>>,
+    txs_sent_store: TxStore,
 }
 
 impl ActiveConnection {
@@ -47,7 +46,7 @@ impl ActiveConnection {
         endpoint: Endpoint,
         tpu_address: SocketAddr,
         identity: Pubkey,
-        txs_sent_store: Arc<DashMap<String, TxProps>>,
+        txs_sent_store: TxStore,
     ) -> Self {
         Self {
             endpoint,
@@ -62,10 +61,7 @@ impl ActiveConnection {
         NB_QUIC_CONNECTIONS.inc();
     }
 
-    fn check_for_confirmation(
-        txs_sent_store: &Arc<DashMap<String, TxProps>>,
-        signature: String,
-    ) -> bool {
+    fn check_for_confirmation(txs_sent_store: &TxStore, signature: String) -> bool {
         match txs_sent_store.get(&signature) {
             Some(props) => props.status.is_some(),
             None => false,
@@ -81,7 +77,7 @@ impl ActiveConnection {
         exit_signal: Arc<AtomicBool>,
         identity: Pubkey,
         identity_stakes: IdentityStakes,
-        txs_sent_store: Arc<DashMap<String, TxProps>>,
+        txs_sent_store: TxStore,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
@@ -255,7 +251,7 @@ impl TpuConnectionManager {
         transaction_sender: Arc<Sender<(String, Vec<u8>)>>,
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakes,
-        txs_sent_store: Arc<DashMap<String, TxProps>>,
+        txs_sent_store: TxStore,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
         for (identity, socket_addr) in &connections_to_keep {

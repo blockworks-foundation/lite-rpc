@@ -1,23 +1,22 @@
 use std::{
-    sync::Arc,
+    sync::{atomic::AtomicBool, Arc},
     time::{Duration, Instant},
 };
 
 use anyhow::bail;
 use chrono::Utc;
-use dashmap::DashMap;
 use log::{info, trace, warn};
 
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
     register_int_gauge, Histogram, IntCounter,
 };
-use solana_transaction_status::TransactionStatus;
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 use crate::tpu_utils::tpu_service::TpuService;
-use solana_lite_rpc_core::notifications::{
-    NotificationMsg, NotificationSender, TransactionNotification,
+use solana_lite_rpc_core::{
+    notifications::{NotificationMsg, NotificationSender, TransactionNotification},
+    tx_store::{TxProps, TxStore},
 };
 
 lazy_static::lazy_static! {
@@ -46,32 +45,13 @@ const MAX_BATCH_SIZE_IN_PER_INTERVAL: usize = 2000;
 #[derive(Clone)]
 pub struct TxSender {
     /// Tx(s) forwarded to tpu
-    pub txs_sent_store: Arc<DashMap<String, TxProps>>,
+    txs_sent_store: TxStore,
     /// TpuClient to call the tpu port
-    pub tpu_service: Arc<TpuService>,
-}
-
-/// Transaction Properties
-pub struct TxProps {
-    pub status: Option<TransactionStatus>,
-    /// Time at which transaction was forwarded
-    pub sent_at: Instant,
-}
-
-impl Default for TxProps {
-    fn default() -> Self {
-        Self {
-            status: Default::default(),
-            sent_at: Instant::now(),
-        }
-    }
+    tpu_service: TpuService,
 }
 
 impl TxSender {
-    pub fn new(
-        txs_sent_store: Arc<DashMap<String, TxProps>>,
-        tpu_service: Arc<TpuService>,
-    ) -> Self {
+    pub fn new(txs_sent_store: TxStore, tpu_service: TpuService) -> Self {
         Self {
             tpu_service,
             txs_sent_store,
@@ -83,7 +63,7 @@ impl TxSender {
         &self,
         sigs_and_slots: Vec<(String, u64)>,
         txs: Vec<WireTransaction>,
-        postgres: Option<NotificationSender>,
+        notifier: Option<NotificationSender>,
     ) {
         assert_eq!(sigs_and_slots.len(), txs.len());
 
@@ -121,14 +101,14 @@ impl TxSender {
             };
             quic_responses.push(quic_response);
         }
-        if let Some(postgres) = &postgres {
-            let postgres_msgs = sigs_and_slots
+        if let Some(notifier) = &notifier {
+            let notification_msgs = sigs_and_slots
                 .iter()
                 .enumerate()
                 .map(|(index, (sig, recent_slot))| TransactionNotification {
                     signature: sig.clone(),
-                    recent_slot: *recent_slot as i64,
-                    forwarded_slot: forwarded_slot as i64,
+                    recent_slot: *recent_slot,
+                    forwarded_slot,
                     forwarded_local_time,
                     processed_slot: None,
                     cu_consumed: None,
@@ -136,9 +116,8 @@ impl TxSender {
                     quic_response: quic_responses[index],
                 })
                 .collect();
-            postgres
-                .send(NotificationMsg::TxNotificationMsg(postgres_msgs))
-                .expect("Error writing to postgres service");
+            // ignore error on sent because the channel may be already closed
+            let _ = notifier.send(NotificationMsg::TxNotificationMsg(notification_msgs));
         }
         histo_timer.observe_duration();
         trace!(
@@ -152,7 +131,8 @@ impl TxSender {
     pub fn execute(
         self,
         mut recv: Receiver<(String, WireTransaction, u64)>,
-        postgres_send: Option<NotificationSender>,
+        notifier: Option<NotificationSender>,
+        exit_signal: Arc<AtomicBool>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             let tx_sender = self.clone();
@@ -160,6 +140,9 @@ impl TxSender {
                 let mut sigs_and_slots = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
                 let mut txs = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
                 let mut timeout_interval = INTERVAL_PER_BATCH_IN_MS;
+                if exit_signal.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
 
                 // In solana there in sig verify stage rate is limited to 2000 txs in 50ms
                 // taking this as reference
@@ -200,9 +183,10 @@ impl TxSender {
 
                 TX_BATCH_SIZES.set(txs.len() as i64);
                 tx_sender
-                    .forward_txs(sigs_and_slots, txs, postgres_send.clone())
+                    .forward_txs(sigs_and_slots, txs, notifier.clone())
                     .await;
             }
+            Ok(())
         })
     }
 

@@ -422,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "bench"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap 4.2.4",
@@ -2299,11 +2299,13 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "async-trait",
  "base64 0.21.0",
  "bench",
  "bincode",
  "bs58",
  "bytes",
+ "chrono",
  "clap 4.2.4",
  "const_env",
  "dashmap",
@@ -3962,6 +3964,7 @@ name = "solana-lite-rpc-core"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64 0.21.0",
  "bincode",
  "bs58",
@@ -3969,7 +3972,6 @@ dependencies = [
  "chrono",
  "dashmap",
  "futures",
- "jsonrpsee",
  "log",
  "quinn",
  "rustls 0.20.8",
@@ -4001,7 +4003,6 @@ dependencies = [
  "chrono",
  "dashmap",
  "futures",
- "jsonrpsee",
  "lazy_static",
  "log",
  "prometheus",

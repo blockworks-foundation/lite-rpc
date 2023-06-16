@@ -7,5 +7,7 @@ pub mod rotating_queue;
 pub mod solana_utils;
 pub mod structures;
 pub mod subscription_handler;
+pub mod subscription_sink;
+pub mod tx_store;
 
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;
