@@ -159,19 +159,22 @@ impl LiteBridge {
         };
 
         let metrics_capture = MetricsCapture::new(self.tx_store.clone()).capture();
-        let prometheus_sync = PrometheusSync.sync(prometheus_addr);
+        let prometheus_sync = PrometheusSync::sync(prometheus_addr);
 
-        let max_retries = self.max_retries;
+        // transaction services
         let (transaction_service, jh_transaction_services) = self
             .transaction_service_builder
+            .clone()
             .start(
                 postgres_send,
                 self.block_store.clone(),
-                max_retries,
+                self.max_retries,
                 clean_interval,
             )
             .await;
+
         self.transaction_service = Some(transaction_service);
+
         let rpc = self.into_rpc();
 
         let (ws_server, http_server) = {
@@ -229,7 +232,7 @@ impl LiteBridge {
                 bail!("Prometheus Service exited unexpectedly {res:?}");
             },
             res = postgres => {
-                TX_SERVICE_FAIL.inc();
+                POSTGRES_SERVICE_FAIL.inc();
                 bail!("Postgres service exited unexpectedly {res:?}");
             },
             res = jh_transaction_services => {

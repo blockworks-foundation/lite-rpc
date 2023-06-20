@@ -18,7 +18,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
 
-pub struct SolanaUtils {}
+pub struct SolanaUtils;
 
 impl SolanaUtils {
     pub async fn get_stakes_for_identity(
@@ -61,7 +61,7 @@ impl SolanaUtils {
     }
 
     pub async fn poll_slots(
-        rpc_client: Arc<RpcClient>,
+        rpc_client: &RpcClient,
         rpc_ws_address: &str,
         update_slot: impl Fn(u64),
     ) -> anyhow::Result<()> {

@@ -33,7 +33,7 @@ async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
 
 lazy_static::lazy_static! {
     static ref RESTARTS: IntCounter =
-    register_int_counter!(opts!("literpc_rpc_restarts", "Nutber of times lite rpc restarted")).unwrap();
+    register_int_counter!(opts!("literpc_rpc_restarts", "Number of times lite rpc restarted")).unwrap();
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
@@ -95,8 +95,6 @@ pub async fn main() -> anyhow::Result<()> {
 
                 log::error!("Services quit unexpectedly {res:?} restarting in {RESTART_DURATION:?}");
                 tokio::time::sleep(RESTART_DURATION).await;
-                log::error!("Restarting services");
-                RESTARTS.inc();
             }
             _ = ctrl_c_signal => {
                 info!("Received ctrl+c signal");
@@ -104,5 +102,8 @@ pub async fn main() -> anyhow::Result<()> {
                 break Ok(())
             }
         }
+
+        log::error!("Restarting services");
+        RESTARTS.inc();
     }
 }

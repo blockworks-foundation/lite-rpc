@@ -1,14 +1,13 @@
 use crate::tpu_utils::tpu_service::TpuService;
+use anyhow::bail;
 use log::error;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use solana_lite_rpc_core::tx_store::TxStore;
+use solana_lite_rpc_core::{tx_store::TxStore, AnyhowJoinHandle};
 use std::{
-    sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
-    task::JoinHandle,
     time::Instant,
 };
 
@@ -45,56 +44,44 @@ impl TransactionReplayer {
     pub fn start_service(
         &self,
         sender: UnboundedSender<TransactionReplay>,
-        reciever: UnboundedReceiver<TransactionReplay>,
-        exit_signal: Arc<AtomicBool>,
-    ) -> JoinHandle<anyhow::Result<()>> {
+        mut reciever: UnboundedReceiver<TransactionReplay>,
+    ) -> AnyhowJoinHandle {
         let tpu_service = self.tpu_service.clone();
         let tx_store = self.tx_store.clone();
         let retry_after = self.retry_after;
-        tokio::spawn(async move {
-            let mut reciever = reciever;
-            loop {
-                if exit_signal.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
-                let tx = reciever.recv().await;
-                match tx {
-                    Some(mut tx_replay) => {
-                        MESSAGES_IN_REPLAY_QUEUE.dec();
-                        if Instant::now() < tx_replay.replay_at {
-                            tokio::time::sleep_until(tx_replay.replay_at).await;
-                        }
-                        if let Some(tx) = tx_store.get(&tx_replay.signature) {
-                            if tx.status.is_some() {
-                                // transaction has been confirmed / no retry needed
-                                continue;
-                            }
-                        } else {
-                            // transaction timed out
-                            continue;
-                        }
-                        // ignore reset error
-                        let _ = tpu_service
-                            .send_transaction(tx_replay.signature.clone(), tx_replay.tx.clone());
 
-                        if tx_replay.replay_count < tx_replay.max_replay {
-                            tx_replay.replay_count += 1;
-                            tx_replay.replay_at = Instant::now() + retry_after;
-                            if let Err(e) = sender.send(tx_replay) {
-                                error!("error while scheduling replay ({})", e);
-                                continue;
-                            } else {
-                                MESSAGES_IN_REPLAY_QUEUE.inc();
-                            }
-                        }
+        tokio::spawn(async move {
+            while let Some(mut tx_replay) = reciever.recv().await {
+                MESSAGES_IN_REPLAY_QUEUE.dec();
+                if Instant::now() < tx_replay.replay_at {
+                    tokio::time::sleep_until(tx_replay.replay_at).await;
+                }
+                if let Some(tx) = tx_store.get(&tx_replay.signature) {
+                    if tx.status.is_some() {
+                        // transaction has been confirmed / no retry needed
+                        continue;
                     }
-                    None => {
-                        error!("transaction replay channel broken");
-                        break;
+                } else {
+                    // transaction timed out
+                    continue;
+                }
+                // ignore reset error
+                let _ =
+                    tpu_service.send_transaction(tx_replay.signature.clone(), tx_replay.tx.clone());
+
+                if tx_replay.replay_count < tx_replay.max_replay {
+                    tx_replay.replay_count += 1;
+                    tx_replay.replay_at = Instant::now() + retry_after;
+                    if let Err(e) = sender.send(tx_replay) {
+                        error!("error while scheduling replay ({})", e);
+                        continue;
+                    } else {
+                        MESSAGES_IN_REPLAY_QUEUE.inc();
                     }
                 }
             }
-            Ok(())
+
+            bail!("transaction replay channel broken");
         })
     }
 }
