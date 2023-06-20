@@ -450,7 +450,7 @@ impl BlockListener {
                 }
 
                 // sleep
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
             Ok(())
         })

@@ -30,6 +30,7 @@ const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and cont
 const CLUSTERINFO_REFRESH_TIME: u64 = 60 * 60; // stakes every 1hrs
 const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
+const MAX_NB_ERRORS: usize = 10;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -179,15 +180,27 @@ impl TpuService {
                 let _ = update_notifier.send(slot);
             }
         };
-
+        let mut nb_errror = 0;
         loop {
             if Self::check_exit_signal(&exit_signal) {
                 break;
             }
             // always loop update the current slots as it is central to working of TPU
-            let _ =
+            if let Err(e) =
                 SolanaUtils::poll_slots(self.rpc_client.clone(), &self.rpc_ws_address, update_slot)
-                    .await;
+                    .await
+            {
+                nb_errror += 1;
+                log::info!("Got error while polling slot {}", e);
+                if nb_errror > MAX_NB_ERRORS {
+                    error!(
+                        "Reached max amount of errors to fetch latest slot, exiting poll slot loop"
+                    );
+                    break;
+                }
+            } else {
+                nb_errror = 0;
+            }
         }
     }
 
