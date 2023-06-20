@@ -193,9 +193,7 @@ impl TpuService {
                 log::info!("Got error while polling slot {}", err);
             }
 
-            bail!(
-                "Reached max amount of errors to fetch latest slot, exiting poll slot loop"
-            )
+            bail!("Reached max amount of errors to fetch latest slot, exiting poll slot loop")
         })
     }
 

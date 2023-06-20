@@ -33,7 +33,8 @@ use solana_lite_rpc_core::{
         BlockNotification, NotificationMsg, NotificationSender, TransactionUpdateNotification,
     },
     subscription_handler::{SubscptionHanderSink, SubscriptionHandler},
-    tx_store::{TxProps, TxStore}, AnyhowJoinHandle,
+    tx_store::{TxProps, TxStore},
+    AnyhowJoinHandle,
 };
 
 lazy_static::lazy_static! {

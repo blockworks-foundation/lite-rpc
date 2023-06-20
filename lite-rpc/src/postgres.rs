@@ -6,9 +6,7 @@ use postgres_native_tls::MakeTlsConnector;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use std::{sync::Arc, time::Duration};
 
-use tokio::{
-    sync::{RwLock, RwLockReadGuard},
-};
+use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket};
 
 use native_tls::{Certificate, Identity, TlsConnector};

@@ -3,9 +3,7 @@ use anyhow::bail;
 use log::error;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::{tx_store::TxStore, AnyhowJoinHandle};
-use std::{
-    time::Duration,
-};
+use std::time::Duration;
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
     time::Instant,
