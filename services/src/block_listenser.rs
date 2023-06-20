@@ -421,7 +421,7 @@ impl BlockListener {
 
             let mut errors = 0;
 
-            while errors == 5 {
+            while errors <= 10 {
                 if let Err(err) = self
                     .block_processor
                     .poll_latest_block(CommitmentConfig::processed())
@@ -437,7 +437,7 @@ impl BlockListener {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
 
-            bail!("5 consecutive errors while polling processed blocks")
+            bail!("{errors} consecutive errors while polling processed blocks")
         })
     }
 
