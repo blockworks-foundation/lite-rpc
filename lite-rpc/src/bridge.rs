@@ -10,7 +10,7 @@ use solana_lite_rpc_services::{
     block_listenser::BlockListener,
     metrics_capture::MetricsCapture,
     prometheus_sync::PrometheusSync,
-    tpu_utils::tpu_service::TpuService,
+    tpu_utils::tpu_service::{TpuService, TpuServiceConfig},
     transaction_replayer::TransactionReplayer,
     transaction_service::{TransactionService, TransactionServiceBuilder},
     tx_sender::WireTransaction,
@@ -24,7 +24,7 @@ use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
     block_store::{BlockInformation, BlockStore},
     tx_store::{empty_tx_store, TxStore},
-    AnyhowJoinHandle,
+    AnyhowJoinHandle, quic_connection_utils::QuicConnectionParameters,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
@@ -98,10 +98,28 @@ impl LiteBridge {
 
         let tx_store = empty_tx_store();
 
-        let tpu_service = TpuService::new(
-            current_slot,
+        let tpu_config = TpuServiceConfig {
             fanout_slots,
+            number_of_leaders_to_cache: 1024,
+            clusterinfo_refresh_time: Duration::from_secs(60*60),
+            leader_schedule_update_frequency: Duration::from_secs(10),
+            maximum_transaction_in_queue: 20000,
+            maximum_number_of_errors: 10,
+            quic_connection_params : QuicConnectionParameters {
+                connection_timeout: Duration::from_secs(500),
+                connection_retry_count: 10,
+                finalize_timeout: Duration::from_millis(200),
+                max_number_of_connections: 10,
+                unistream_timeout: Duration::from_millis(500),
+                write_timeout: Duration::from_secs(1),
+                number_of_transactions_per_unistream: 10,
+            }
+        };
+
+        let tpu_service = TpuService::new(
+            tpu_config,
             Arc::new(identity),
+            current_slot,
             rpc_client.clone(),
             ws_addr,
             tx_store.clone(),

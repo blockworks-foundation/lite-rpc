@@ -5,7 +5,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 
 use solana_lite_rpc_core::{
     leader_schedule::LeaderSchedule, solana_utils::SolanaUtils,
-    structures::identity_stakes::IdentityStakes, tx_store::TxStore, AnyhowJoinHandle,
+    structures::identity_stakes::IdentityStakes, tx_store::TxStore, AnyhowJoinHandle, quic_connection_utils::QuicConnectionParameters,
 };
 
 use super::tpu_connection_manager::TpuConnectionManager;
@@ -26,11 +26,6 @@ use tokio::{
     time::{Duration, Instant},
 };
 
-const CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE: usize = 1024; // Save pubkey and contact info of next 1024 leaders in the queue
-const CLUSTERINFO_REFRESH_TIME: u64 = 60 * 60; // stakes every 1hrs
-const LEADER_SCHEDULE_UPDATE_INTERVAL: u64 = 10; // update leader schedule every 10s
-const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
-const MAX_NB_ERRORS: usize = 10;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -46,31 +41,42 @@ lazy_static::lazy_static! {
     register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
 }
 
+#[derive(Clone, Copy)]
+pub struct TpuServiceConfig {
+    pub fanout_slots: u64,
+    pub number_of_leaders_to_cache: usize,
+    pub clusterinfo_refresh_time: Duration,
+    pub leader_schedule_update_frequency: Duration,
+    pub maximum_transaction_in_queue: usize,
+    pub maximum_number_of_errors: usize,
+    pub quic_connection_params: QuicConnectionParameters,
+}
+
 #[derive(Clone)]
 pub struct TpuService {
     current_slot: Arc<AtomicU64>,
     estimated_slot: Arc<AtomicU64>,
-    fanout_slots: u64,
     rpc_client: Arc<RpcClient>,
     rpc_ws_address: String,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
-    identity: Arc<Keypair>,
     identity_stakes: Arc<RwLock<IdentityStakes>>,
     txs_sent_store: TxStore,
     leader_schedule: Arc<LeaderSchedule>,
+    config: TpuServiceConfig,
+    identity: Pubkey,
 }
 
 impl TpuService {
     pub async fn new(
-        current_slot: Slot,
-        fanout_slots: u64,
+        config: TpuServiceConfig,
         identity: Arc<Keypair>,
+        current_slot: Slot,
         rpc_client: Arc<RpcClient>,
         rpc_ws_address: String,
         txs_sent_store: TxStore,
     ) -> anyhow::Result<Self> {
-        let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
+        let (sender, _) = tokio::sync::broadcast::channel(config.maximum_transaction_in_queue);
         let (certificate, key) = new_self_signed_tls_certificate(
             identity.as_ref(),
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
@@ -78,20 +84,20 @@ impl TpuService {
         .expect("Failed to initialize QUIC client certificates");
 
         let tpu_connection_manager =
-            TpuConnectionManager::new(certificate, key, fanout_slots as usize);
+            TpuConnectionManager::new(certificate, key, config.fanout_slots as usize).await;
 
         Ok(Self {
             current_slot: Arc::new(AtomicU64::new(current_slot)),
             estimated_slot: Arc::new(AtomicU64::new(current_slot)),
-            leader_schedule: Arc::new(LeaderSchedule::new(CACHE_NEXT_SLOT_LEADERS_PUBKEY_SIZE)),
-            fanout_slots,
+            leader_schedule: Arc::new(LeaderSchedule::new(config.number_of_leaders_to_cache)),
             rpc_client,
             rpc_ws_address,
             broadcast_sender: Arc::new(sender),
             tpu_connection_manager: Arc::new(tpu_connection_manager),
-            identity,
             identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
             txs_sent_store,
+            identity: identity.pubkey(),
+            config,
         })
     }
 
@@ -102,7 +108,7 @@ impl TpuService {
             let mut lock = self.identity_stakes.write().await;
             *lock = SolanaUtils::get_stakes_for_identity(
                 self.rpc_client.clone(),
-                self.identity.pubkey(),
+                self.identity,
             )
             .await?;
         }
@@ -136,7 +142,7 @@ impl TpuService {
             current_slot
         };
 
-        let fanout = self.fanout_slots;
+        let fanout = self.config.fanout_slots;
         let last_slot = estimated_slot + fanout;
 
         let next_leaders = self.leader_schedule.get_leaders(load_slot, last_slot).await;
@@ -159,6 +165,7 @@ impl TpuService {
                 connections_to_keep,
                 *identity_stakes,
                 self.txs_sent_store.clone(),
+                self.config.quic_connection_params,
             )
             .await;
     }
@@ -191,6 +198,14 @@ impl TpuService {
 
                 nb_errror += 1;
                 log::info!("Got error while polling slot {}", err);
+                if nb_errror > self.config.maximum_number_of_errors {
+                    error!(
+                        "Reached max amount of errors to fetch latest slot, exiting poll slot loop"
+                    );
+                    break;
+                }
+            } else {
+                nb_errror = 0;
             }
 
             bail!("Reached max amount of errors to fetch latest slot, exiting poll slot loop")
@@ -209,10 +224,8 @@ impl TpuService {
         let this = self.clone();
         let update_leader_schedule_service = tokio::spawn(async move {
             let mut last_cluster_info_update = Instant::now();
-            let leader_schedule_update_interval =
-                Duration::from_secs(LEADER_SCHEDULE_UPDATE_INTERVAL);
-            let cluster_info_update_interval = Duration::from_secs(CLUSTERINFO_REFRESH_TIME);
-
+            let leader_schedule_update_interval = this.config.leader_schedule_update_frequency;
+            let cluster_info_update_interval = this.config.clusterinfo_refresh_time;
             loop {
                 tokio::time::sleep(leader_schedule_update_interval).await;
                 info!("update leader schedule and cluster nodes");
