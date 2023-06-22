@@ -7,19 +7,21 @@ use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
 use log::{error, info};
+use solana_client::{nonblocking::tpu_client::TpuClient, connection_cache::{self, ConnectionCache}, tpu_client::TpuClientConfig};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
-    slot_history::Slot,
+    slot_history::Slot, transaction::Transaction, message::Message, compute_budget, instruction::{Instruction, AccountMeta}, pubkey::Pubkey,
 };
-use std::sync::{
+use std::{sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
-};
+}, str::FromStr, net::{IpAddr, Ipv4Addr}};
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
+use solana_quic_client::{QuicConfig, QuicConnectionManager, QuicPool};
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
@@ -144,6 +146,9 @@ struct TxSendData {
     sent_slot: Slot,
 }
 
+pub type QuicTpuClient = TpuClient<QuicPool, QuicConnectionManager, QuicConfig>;
+pub type QuicConnectionCache = ConnectionCache;
+
 #[allow(clippy::too_many_arguments)]
 async fn bench(
     rpc_client: Arc<RpcClient>,
@@ -156,6 +161,31 @@ async fn bench(
     log_txs: bool,
 ) -> Metric {
     let map_of_txs = Arc::new(DashMap::new());
+    let identity = Keypair::from_bytes(&[141,179,120,222,239,132,255,144,140,56,166,225,180,229,14,145,191,161,206,42,157,56,201,93,215,41,118,192,192,20,130,214,130,62,99,54,224,161,27,84,137,174,81,66,73,59,26,72,112,3,10,223,126,173,83,209,219,147,71,192,124,225,182,12]).unwrap();
+    let connection_cache = ConnectionCache::new_with_client_options(
+        4,
+        None,
+        Some((&identity, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
+        None,
+    );
+    let quic_connection_cache =
+        if let ConnectionCache::Quic(connection_cache) = connection_cache {
+            Some(connection_cache)
+        } else {
+            None
+        };
+
+    let tpu_client = Arc::new(
+        TpuClient::new_with_connection_cache(
+            rpc_client.clone(),
+            "ws://34.127.23.120:8900",
+            solana_client::tpu_client::TpuClientConfig { fanout_slots: 16 },
+            quic_connection_cache.unwrap(),
+        )
+        .await
+        .unwrap(),
+    );
+
     // transaction sender task
     {
         let map_of_txs = map_of_txs.clone();
@@ -163,13 +193,27 @@ async fn bench(
         let current_slot = current_slot.clone();
         tokio::spawn(async move {
             let map_of_txs = map_of_txs.clone();
-            let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed));
+            let ix1 = compute_budget::ComputeBudgetInstruction::set_compute_unit_limit(1_000_000);
 
-            for rand_string in rand_strings {
+            let program_id = Pubkey::from_str("3D5RvD4dkri2m7M5n2WcJzPburUqJrjoTHSifxCFXQM5").unwrap();
+
+            let iters: u64 = 350;
+            let ix_data = iters.to_le_bytes();
+            let attacker = Instruction::new_with_bytes( program_id, ix_data.as_slice(), vec![ 
+                AccountMeta::new_readonly(Pubkey::from_str("6C3UV6UuMsJUg8M2LAk8aCznKn6xvgfrvJJ9tHvr6MkG").unwrap(), false),
+                AccountMeta::new_readonly(Pubkey::from_str("97Lr8PDnGCXuC3NDMTggmXCtNu2FugJSiRfheH4oNMqD").unwrap(), false),
+            ]);
+
+            let tpu_client = tpu_client.clone();
+
+            for i in 0..tx_count {
+                let ix2 = compute_budget::ComputeBudgetInstruction::set_compute_unit_price((i + 1) as u64);
                 let blockhash = { *block_hash.read().await };
-                let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
+                let message = Message::new( &[ix1.clone(), ix2, attacker.clone()], Some(&funded_payer.pubkey()));
+                let tx = Transaction::new(&[&funded_payer], message, blockhash);
                 let start_time = Instant::now();
-                if let Ok(signature) = rpc_client.send_transaction(&tx).await {
+                let signature = tx.signatures[0];
+                if tpu_client.send_transaction(&tx).await {
                     map_of_txs.insert(
                         signature,
                         TxSendData {

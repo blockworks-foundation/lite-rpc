@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, str::FromStr, sync::Arc};
 
 use dashmap::DashMap;
-use log::warn;
+use log::{warn, error};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::response::RpcContactInfo;
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
@@ -70,14 +70,20 @@ impl LeaderSchedule {
             let first_slot_to_fetch = queue_end_slot + 1;
             let leaders = rpc_client
                 .get_slot_leaders(first_slot_to_fetch, last_slot_needed - first_slot_to_fetch)
-                .await?;
+                .await;
+            if let Err(e) = &leaders {
+                error!("error loading leaders {}", e);
+            }
+            let leaders = leaders.unwrap();
 
             let mut leader_queue = self.leader_schedule.write().await;
             for i in first_slot_to_fetch..last_slot_needed {
                 let current_leader = (i - first_slot_to_fetch) as usize;
                 let leader = leaders[current_leader];
                 if !self.cluster_nodes.contains_key(&leader) {
-                    self.load_cluster_info(rpc_client.clone()).await?;
+                    if let Err(e) = self.load_cluster_info(rpc_client.clone()).await {
+                        error!("error loading cluster info {}", e);
+                    }
                 }
 
                 match self.cluster_nodes.get(&leader) {

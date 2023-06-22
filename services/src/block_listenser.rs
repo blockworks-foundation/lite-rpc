@@ -356,7 +356,7 @@ impl BlockListener {
 
                     if let Err(e) = block_schedule_queue_sx.send(slot).await {
                         error!("Error sending slot on {commitment_config:?} queue for block listner {e:?}");
-                        continue;
+                        break;
                     }
 
                     if commitment_config.is_finalized() {
@@ -400,7 +400,7 @@ impl BlockListener {
                     for slot in new_block_slots {
                         if let Err(e) = block_schedule_queue_sx.send(slot).await {
                             error!("Error sending slot on {commitment_config:?} queue for block listner {e:?}");
-                            continue;
+                            break;
                         }
 
                         if commitment_config.is_finalized() {

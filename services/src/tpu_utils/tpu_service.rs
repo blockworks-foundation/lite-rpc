@@ -209,6 +209,14 @@ impl TpuService {
     }
 
     pub async fn start(&self, exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
+        let this = self.clone();
+        let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
+        let exit_signal_l = exit_signal.clone();
+        let slot_sub_task: AnyhowJoinHandle = tokio::spawn(async move {
+            this.update_current_slot(slot_sender, exit_signal_l).await;
+            Ok(())
+        });
+        
         self.leader_schedule
             .load_cluster_info(self.rpc_client.clone())
             .await?;
@@ -243,14 +251,6 @@ impl TpuService {
                     }
                 }
             }
-        });
-
-        let this = self.clone();
-        let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
-        let exit_signal_l = exit_signal.clone();
-        let slot_sub_task: AnyhowJoinHandle = tokio::spawn(async move {
-            this.update_current_slot(slot_sender, exit_signal_l).await;
-            Ok(())
         });
 
         let estimated_slot = self.estimated_slot.clone();

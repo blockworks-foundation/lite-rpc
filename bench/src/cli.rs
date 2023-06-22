@@ -16,7 +16,7 @@ pub struct Args {
     #[arg(short = 'm', long, default_value_t = String::from("metrics.csv"))]
     pub metrics_file_name: String,
     /// Lite Rpc Address
-    #[arg(short = 'l', long, default_value_t = String::from("http://127.0.0.1:8890"))]
+    #[arg(short = 'l', long, default_value_t = String::from("http://34.127.23.120:8899"))]
     pub lite_rpc_addr: String,
     #[arg(short = 't', long, default_value_t = String::from("transactions.csv"))]
     pub transaction_save_file: String,
