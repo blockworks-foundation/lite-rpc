@@ -1,10 +1,13 @@
 use dashmap::DashMap;
 use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use quinn::{Endpoint};
+use quinn::Endpoint;
 use solana_lite_rpc_core::{
-    quic_connection_utils::{QuicConnectionUtils, QuicConnectionParameters}, rotating_queue::RotatingQueue,
-    structures::identity_stakes::IdentityStakes, tx_store::TxStore, quic_connection::{QuicConnectionPool},
+    quic_connection::QuicConnectionPool,
+    quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
+    rotating_queue::RotatingQueue,
+    structures::identity_stakes::IdentityStakes,
+    tx_store::TxStore,
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
@@ -83,13 +86,21 @@ impl ActiveConnection {
             identity_stakes.stakes,
             identity_stakes.total_stakes,
         ) as u64;
-        let number_of_transactions_per_unistream = self.connection_parameters.number_of_transactions_per_unistream;
+        let number_of_transactions_per_unistream = self
+            .connection_parameters
+            .number_of_transactions_per_unistream;
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
 
         let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
         let exit_signal = self.exit_signal.clone();
-        let connection_pool = QuicConnectionPool::new(identity, self.endpoints.clone(), addr, self.connection_parameters, exit_signal.clone());
-        
+        let connection_pool = QuicConnectionPool::new(
+            identity,
+            self.endpoints.clone(),
+            addr,
+            self.connection_parameters,
+            exit_signal.clone(),
+        );
+
         loop {
             // exit signal set
             if exit_signal.load(Ordering::Relaxed) {
@@ -140,10 +151,14 @@ impl ActiveConnection {
                         // add more connections to the pool
                         if connection_pool.len() < max_number_of_connections {
                             connection_pool.add_connection().await;
+                            NB_QUIC_CONNECTIONS.inc();
                         }
                     } else if txs.len() == 1 {
-                        // low traffic / reduce connection till minimum 2
-                        connection_pool.remove_connection(2).await;
+                        // low traffic / reduce connection till minimum 1
+                        if connection_pool.len() > 1 {
+                            connection_pool.remove_connection().await;
+                            NB_QUIC_CONNECTIONS.dec();
+                        }
                     }
 
                     let task_counter = task_counter.clone();
@@ -200,12 +215,17 @@ pub struct TpuConnectionManager {
 }
 
 impl TpuConnectionManager {
-    pub async fn new(certificate: rustls::Certificate, key: rustls::PrivateKey, fanout: usize) -> Self {
+    pub async fn new(
+        certificate: rustls::Certificate,
+        key: rustls::PrivateKey,
+        fanout: usize,
+    ) -> Self {
         let number_of_clients = fanout * 2;
         Self {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
-            }).await,
+            })
+            .await,
             identity_to_active_connection: Arc::new(DashMap::new()),
         }
     }

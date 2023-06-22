@@ -4,8 +4,9 @@ use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 use solana_lite_rpc_core::{
-    leader_schedule::LeaderSchedule, solana_utils::SolanaUtils,
-    structures::identity_stakes::IdentityStakes, tx_store::TxStore, AnyhowJoinHandle, quic_connection_utils::QuicConnectionParameters,
+    leader_schedule::LeaderSchedule, quic_connection_utils::QuicConnectionParameters,
+    solana_utils::SolanaUtils, structures::identity_stakes::IdentityStakes, tx_store::TxStore,
+    AnyhowJoinHandle,
 };
 
 use super::tpu_connection_manager::TpuConnectionManager;
@@ -25,7 +26,6 @@ use tokio::{
     sync::RwLock,
     time::{Duration, Instant},
 };
-
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -106,11 +106,8 @@ impl TpuService {
         // update stakes for the identity
         {
             let mut lock = self.identity_stakes.write().await;
-            *lock = SolanaUtils::get_stakes_for_identity(
-                self.rpc_client.clone(),
-                self.identity,
-            )
-            .await?;
+            *lock = SolanaUtils::get_stakes_for_identity(self.rpc_client.clone(), self.identity)
+                .await?;
         }
         Ok(())
     }
