@@ -4,7 +4,7 @@ use anyhow::bail;
 use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
-use log::info;
+use log::{error, info};
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::signature::Keypair;
@@ -120,7 +120,8 @@ pub async fn main() -> anyhow::Result<()> {
 
     tokio::select! {
         res = main => {
-            bail!("LiteRpc exited with result {res:?}")
+            error!("LiteRpc exited with result {res:?}");
+            bail!("LiteRpc quit with errors")
         }
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");
