@@ -12,26 +12,23 @@ use std::{
     },
     time::Duration,
 };
-use tokio::{time::timeout};
+use tokio::time::timeout;
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 
 pub enum QuicConnectionError {
     TimeOut,
-    ConnectionError {
-        retry: bool,
-    },
+    ConnectionError { retry: bool },
 }
 
-
 #[derive(Clone, Copy)]
-pub struct QuicConnectionParameters{
-    pub connection_timeout : Duration,
+pub struct QuicConnectionParameters {
+    pub connection_timeout: Duration,
     pub unistream_timeout: Duration,
     pub write_timeout: Duration,
     pub finalize_timeout: Duration,
     pub connection_retry_count: usize,
-    pub max_number_of_connections : usize,
+    pub max_number_of_connections: usize,
     pub number_of_transactions_per_unistream: usize,
 }
 
@@ -143,8 +140,11 @@ impl QuicConnectionUtils {
         identity: Pubkey,
         connection_params: QuicConnectionParameters,
     ) -> Result<(), QuicConnectionError> {
-        let write_timeout_res =
-            timeout(connection_params.write_timeout, send_stream.write_all(tx.as_slice())).await;
+        let write_timeout_res = timeout(
+            connection_params.write_timeout,
+            send_stream.write_all(tx.as_slice()),
+        )
+        .await;
         match write_timeout_res {
             Ok(write_res) => {
                 if let Err(e) = write_res {
@@ -153,16 +153,17 @@ impl QuicConnectionUtils {
                         identity,
                         e
                     );
-                    return Err(QuicConnectionError::ConnectionError {retry: true});
+                    return Err(QuicConnectionError::ConnectionError { retry: true });
                 }
             }
             Err(_) => {
                 warn!("timeout while writing transaction for {}", identity);
-                return Err(QuicConnectionError::TimeOut)
+                return Err(QuicConnectionError::TimeOut);
             }
         }
 
-        let finish_timeout_res = timeout(connection_params.finalize_timeout, send_stream.finish()).await;
+        let finish_timeout_res =
+            timeout(connection_params.finalize_timeout, send_stream.finish()).await;
         match finish_timeout_res {
             Ok(finish_res) => {
                 if let Err(e) = finish_res {
@@ -171,12 +172,12 @@ impl QuicConnectionUtils {
                         identity,
                         e
                     );
-                    return Err(QuicConnectionError::ConnectionError {retry: false});
+                    return Err(QuicConnectionError::ConnectionError { retry: false });
                 }
             }
             Err(_) => {
                 warn!("timeout while finishing transaction for {}", identity);
-                return Err(QuicConnectionError::TimeOut)
+                return Err(QuicConnectionError::TimeOut);
             }
         }
 
@@ -189,9 +190,7 @@ impl QuicConnectionUtils {
     ) -> Result<SendStream, QuicConnectionError> {
         match timeout(connection_timeout, connection.open_uni()).await {
             Ok(Ok(unistream)) => Ok(unistream),
-            Ok(Err(_)) => {
-                Err(QuicConnectionError::ConnectionError{retry: true})
-            }
+            Ok(Err(_)) => Err(QuicConnectionError::ConnectionError { retry: true }),
             Err(_) => Err(QuicConnectionError::TimeOut),
         }
     }

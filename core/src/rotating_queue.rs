@@ -1,6 +1,9 @@
 use std::{
     collections::VecDeque,
-    sync::{Arc, atomic::{AtomicU64, Ordering}},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 use tokio::sync::Mutex;
 
@@ -29,13 +32,11 @@ impl<T: Clone> RotatingQueue<T> {
         item
     }
 
-    pub fn new_empty() -> Self
-    {
-        let item = Self {
+    pub fn new_empty() -> Self {
+        Self {
             deque: Arc::new(Mutex::new(VecDeque::<T>::new())),
             count: Arc::new(AtomicU64::new(0)),
-        };
-        item
+        }
     }
 
     pub async fn get(&self) -> Option<T> {
@@ -53,10 +54,10 @@ impl<T: Clone> RotatingQueue<T> {
         let mut queue = self.deque.lock().await;
         queue.push_front(instance);
         self.count.fetch_add(1, Ordering::Relaxed);
-    } 
+    }
 
     pub async fn remove(&self) {
-        if self.len() > 0 {
+        if !self.is_empty() {
             let mut queue = self.deque.lock().await;
             queue.pop_front();
             self.count.fetch_sub(1, Ordering::Relaxed);
@@ -65,5 +66,9 @@ impl<T: Clone> RotatingQueue<T> {
 
     pub fn len(&self) -> usize {
         self.count.load(Ordering::Relaxed) as usize
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
