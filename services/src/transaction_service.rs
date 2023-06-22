@@ -49,7 +49,7 @@ impl TransactionServiceBuilder {
         }
     }
 
-    pub async fn start(
+    pub fn start(
         self,
         notifier: Option<NotificationSender>,
         block_store: BlockStore,
@@ -94,25 +94,25 @@ impl TransactionServiceBuilder {
 
                 tokio::select! {
                     res = tpu_service_fx => {
-                        bail!("{res:?}")
+                        bail!("Tpu Service {res:?}")
                     },
                     res = tx_sender_jh => {
-                        bail!("{res:?}")
+                        bail!("Tx Sender {res:?}")
                     },
                     res = finalized_block_listener => {
-                        bail!("{res:?}")
+                        bail!("Finalized Block Listener {res:?}")
                     },
                     res = confirmed_block_listener => {
-                        bail!("{res:?}")
+                        bail!("Confirmed Block Listener {res:?}")
                     },
                     res = processed_block_listener => {
-                        bail!("{res:?}")
+                        bail!("Processed Block Listener {res:?}")
                     },
                     res = replay_service => {
-                        bail!("{res:?}")
+                        bail!("Replay Service {res:?}")
                     },
                     res = cleaner => {
-                        bail!("{res:?}")
+                        bail!("Cleaner {res:?}")
                     },
                 }
             })

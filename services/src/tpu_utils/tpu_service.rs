@@ -163,7 +163,7 @@ impl TpuService {
             .await;
     }
 
-    async fn update_current_slot(
+    fn update_current_slot(
         &self,
         update_notifier: tokio::sync::mpsc::UnboundedSender<u64>,
     ) -> AnyhowJoinHandle {
@@ -256,13 +256,13 @@ impl TpuService {
 
         tokio::select! {
             res = update_leader_schedule_service => {
-                bail!("Leader update service exited unexpectedly {res:?}");
+                bail!("Leader update Service {res:?}");
             },
             res = slot_poll_service => {
-                bail!("Leader update service exited unexpectedly {res:?}");
+                bail!("Slot Poll Service {res:?}");
             },
             res = estimated_slot_service => {
-                bail!("Estimated slot calculation service exited unexpectedly {res:?}");
+                bail!("Estimated slot Service {res:?}");
             },
         }
     }

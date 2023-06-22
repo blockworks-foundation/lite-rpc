@@ -170,8 +170,7 @@ impl LiteBridge {
                 self.block_store.clone(),
                 self.max_retries,
                 clean_interval,
-            )
-            .await;
+            );
 
         self.transaction_service = Some(transaction_service);
 
@@ -217,27 +216,27 @@ impl LiteBridge {
         tokio::select! {
             res = ws_server => {
                 WS_SERVER_FAIL.inc();
-                bail!("WebSocket server exited unexpectedly {res:?}");
+                bail!("WebSocket server {res:?}");
             },
             res = http_server => {
                 HTTP_SERVER_FAIL.inc();
-                bail!("HTTP server exited unexpectedly {res:?}");
+                bail!("HTTP server {res:?}");
             },
             res = metrics_capture => {
                 METRICS_SERVICE_FAIL.inc();
-                bail!("Metrics Capture exited unexpectedly {res:?}");
+                bail!("Metrics Capture {res:?}");
             },
             res = prometheus_sync => {
                 PROMETHEUS_SERVER_FAIL.inc();
-                bail!("Prometheus Service exited unexpectedly {res:?}");
+                bail!("Prometheus Service {res:?}");
             },
             res = postgres => {
                 POSTGRES_SERVICE_FAIL.inc();
-                bail!("Postgres service exited unexpectedly {res:?}");
+                bail!("Postgres service {res:?}");
             },
             res = jh_transaction_services => {
                 TX_SERVICE_FAIL.inc();
-                bail!("Transaction service exited unexpectedly {res:?}");
+                bail!("Transaction service {res:?}");
             }
         }
     }

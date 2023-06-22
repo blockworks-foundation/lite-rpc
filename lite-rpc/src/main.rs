@@ -1,11 +1,16 @@
+pub mod rpc_tester;
+
 use std::time::Duration;
 
+use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_sdk::signature::Keypair;
 use std::env;
+
+use crate::rpc_tester::RpcTester;
 
 const RESTART_DURATION: Duration = Duration::from_secs(20);
 
@@ -65,7 +70,8 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         retry_after,
         maximum_retries_per_tx,
     )
-    .await?
+    .await
+    .context("Error building LiteBridge")?
     .start_services(
         lite_rpc_http_addr,
         lite_rpc_ws_addr,
@@ -97,6 +103,8 @@ pub async fn main() -> anyhow::Result<()> {
 
     let args = get_args();
 
+    let rpc_tester = RpcTester::from(&args).start();
+
     let main = tokio::spawn(async move {
         loop {
             let Err(err) = start_lite_rpc(args.clone()).await else {
@@ -116,6 +124,10 @@ pub async fn main() -> anyhow::Result<()> {
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
+        err = rpc_tester => {
+            // This should never happen
+            unreachable!("{err:?}")
+        }
         err = main => {
             // This should never happen
             unreachable!("{err:?}")
