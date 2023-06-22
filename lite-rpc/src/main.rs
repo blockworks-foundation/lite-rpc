@@ -1,12 +1,9 @@
 use std::time::Duration;
 
-use anyhow::bail;
 use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
-use log::{error, info};
 use prometheus::{opts, register_int_counter, IntCounter};
-use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::signature::Keypair;
 use std::env;
 
@@ -100,10 +97,10 @@ pub async fn main() -> anyhow::Result<()> {
 
     let args = get_args();
 
-    let main: AnyhowJoinHandle = tokio::spawn(async move {
+    let main = tokio::spawn(async move {
         loop {
-            let Err(err) = start_lite_rpc(args.clone()).await else{
-                bail!("LiteBridge services returned without error");
+            let Err(err) = start_lite_rpc(args.clone()).await else {
+                return anyhow::Error::msg("LiteBridge services returned without error");
             };
 
             // log and restart
@@ -119,12 +116,12 @@ pub async fn main() -> anyhow::Result<()> {
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
-        res = main => {
-            error!("LiteRpc exited with result {res:?}");
-            bail!("LiteRpc quit with errors")
+        err = main => {
+            // This should never happen
+            unreachable!("{err:?}")
         }
         _ = ctrl_c_signal => {
-            info!("Received ctrl+c signal");
+            log::info!("Received ctrl+c signal");
 
             Ok(())
         }
