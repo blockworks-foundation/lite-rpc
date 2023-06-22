@@ -3,6 +3,7 @@ members = [
     "core",
     "services",
     "lite-rpc",
+    "quic-forward-proxy",
     "bench"
 ]
 

@@ -1,37 +1,31 @@
 [package]
-name = "lite-rpc"
-version = "0.2.1"
+name = "solana-lite-rpc-quic-forward-proxy"
+version = "0.1.0"
 edition = "2021"
-description = "A lite version of solana rpc to send and confirm transactions"
+description = "A staked proxy for transaction forwarding to TPU nodes"
 rust-version = "1.67.1"
-default-run = "lite-rpc"
+#default-run = "lite-rpc"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 publish = false
 
 [dependencies]
 solana-sdk = { workspace = true }
-solana-rpc-client = { workspace = true }
-solana-rpc-client-api = { workspace = true }
-solana-transaction-status = { workspace = true }
-solana-version = { workspace = true }
+solana-streamer = { workspace = true }
+rustls = { workspace = true, features = ["dangerous_configuration"]}
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }
 bs58 = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
-futures = { workspace = true }
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 clap = { workspace = true }
 dashmap = { workspace = true }
-const_env = { workspace = true }
-jsonrpsee = { workspace = true }
 tracing-subscriber = { workspace = true }
 native-tls = { workspace = true }
-postgres-native-tls = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
 dotenv = { workspace = true }
@@ -39,12 +33,7 @@ async-channel = { workspace = true }
 quinn = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-services = { workspace = true }
-# TODO remove
-solana-lite-rpc-quic-forward-proxy = { path = "../quic-forward-proxy" }
 async-trait = { workspace = true }
-tokio = { version = "1.28.2", features = ["full", "fs"]}
-tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 chrono = { workspace = true }
-
-[dev-dependencies]
-bench = { path = "../bench" }
+tokio = { version = "1.28.2", features = ["full", "fs"]}
+rcgen = "0.9.3"
