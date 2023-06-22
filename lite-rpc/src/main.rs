@@ -7,6 +7,9 @@ use lite_rpc::{bridge::LiteBridge, cli::Args};
 use log::info;
 use solana_sdk::signature::Keypair;
 use std::env;
+use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
+use solana_lite_rpc_quic_forward_proxy::SelfSignedTlsConfigProvider;
+// use lite_rpc_quic_forward_proxy::tls_config::SelfSignedTlsConfigProvider;
 
 async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
     if let Ok(identity_env_var) = env::var("IDENTITY") {
@@ -64,6 +67,14 @@ pub async fn main() -> anyhow::Result<()> {
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 
+
+    let proxy_listener_addr = "127.0.0.1:11111".parse().unwrap();
+    let tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
+    let quicproxy_service = QuicForwardProxy::new(proxy_listener_addr, &tls_configuration)
+        .await?
+        .start_services();
+
+
     let services = LiteBridge::new(
         rpc_addr,
         ws_addr,
@@ -86,6 +97,9 @@ pub async fn main() -> anyhow::Result<()> {
     tokio::select! {
         res = services => {
             bail!("Services quit unexpectedly {res:?}");
+        },
+        res = quicproxy_service => {
+            bail!("Quic Proxy quit unexpectedly {res:?}");
         }
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");

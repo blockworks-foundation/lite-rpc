@@ -38,7 +38,10 @@ impl QuicConnectionUtils {
             .expect("Failed to set QUIC client certificates");
 
         crypto.enable_early_data = true;
-        crypto.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec()];
+        warn!("TEMP HACK TO ALLOW PROXY PROTOCOL");
+        const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
+
+        crypto.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec(), ALPN_TPU_FORWARDPROXY_PROTOCOL_ID.to_vec()];
 
         let mut config = ClientConfig::new(Arc::new(crypto));
         let mut transport_config = TransportConfig::default();
@@ -279,7 +282,7 @@ impl QuicConnectionUtils {
     }
 }
 
-struct SkipServerVerification;
+pub struct SkipServerVerification;
 
 impl SkipServerVerification {
     pub fn new() -> Arc<Self> {

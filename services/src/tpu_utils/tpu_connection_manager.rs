@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use log::{error, trace};
+use log::{error, info, trace, warn};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::{Connection, Endpoint};
 use solana_lite_rpc_core::{
@@ -18,6 +18,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
+use tokio::time::timeout;
 
 pub const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
 pub const CONNECTION_RETRY_COUNT: usize = 10;
@@ -169,6 +170,16 @@ impl ActiveConnection {
                         task_counter.fetch_add(1, Ordering::Relaxed);
                         NB_QUIC_TASKS.inc();
                         let connection = connection.unwrap();
+
+                        // SOS
+                        info!("Sending copy of transaction batch of {} to tpu with identity {} to quic proxy",
+                            txs.len(), identity);
+                        Self::send_copy_of_txs_to_quicproxy(
+                            &txs, endpoint.clone(),
+                            // proxy address
+                            "127.0.0.1:11111".parse().unwrap()).await.unwrap();
+
+
                         QuicConnectionUtils::send_transaction_batch(
                             connection,
                             txs,
@@ -196,6 +207,33 @@ impl ActiveConnection {
         drop(transaction_reciever);
         NB_QUIC_CONNECTIONS.dec();
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
+    }
+
+    async fn send_copy_of_txs_to_quicproxy(txs: &Vec<Vec<u8>>, endpoint: Endpoint, proxy_address: SocketAddr) -> anyhow::Result<()> {
+        let txs_copy = txs.clone();
+        let send_result = timeout(Duration::from_millis(500), Self::send_tx(endpoint, proxy_address, &txs_copy));
+
+        match send_result.await {
+            Ok(..) => {
+                info!("Successfully sent data to quic proxy");
+            }
+            Err(e) => {
+                warn!("Failed to send data to quic proxy: {:?}", e);
+            }
+        }
+        Ok(())
+    }
+
+    async fn send_tx(endpoint: Endpoint, proxy_address: SocketAddr, mut txs: &Vec<Vec<u8>>) -> anyhow::Result<()> {
+        let mut connecting = endpoint.connect(proxy_address, "localhost")?;
+        let connection = timeout(Duration::from_millis(500), connecting).await??;
+        let (mut send, mut recv) = connection.open_bi().await?;
+        for tx in txs {
+            send.write_all(tx).await?;
+        }
+        send.finish().await?;
+
+        Ok(())
     }
 
     pub fn start_listening(
