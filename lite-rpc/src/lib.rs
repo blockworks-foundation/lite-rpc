@@ -30,6 +30,6 @@ pub const MAX_RETRIES: usize = 40;
 pub const DEFAULT_RETRY_TIMEOUT: u64 = 2;
 
 #[from_env]
-pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 10 * 60 * 1000; // two minute
+pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 5 * 60 * 1000; // five minute
 pub const DEFAULT_TRANSACTION_CONFIRMATION_STATUS: TransactionConfirmationStatus =
     TransactionConfirmationStatus::Finalized;
