@@ -1,12 +1,8 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::time::Duration;
 
-use crate::block_listenser::BlockListener;
-use crate::tx_sender::TxSender;
+use crate::{block_listenser::BlockListener, tx_sender::TxSender};
 use log::info;
-use prometheus::core::GenericGauge;
-use prometheus::{opts, register_int_gauge};
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::block_store::BlockStore;
 use tokio::task::JoinHandle;
 
@@ -49,27 +45,19 @@ impl Cleaner {
         BLOCKS_IN_BLOCKSTORE.set(self.block_store.number_of_blocks_in_store() as i64);
     }
 
-    pub fn start(
-        self,
-        ttl_duration: Duration,
-        exit_signal: Arc<AtomicBool>,
-    ) -> JoinHandle<anyhow::Result<()>> {
+    pub fn start(self, ttl_duration: Duration) -> JoinHandle<anyhow::Result<()>> {
         let mut ttl = tokio::time::interval(ttl_duration);
 
         tokio::spawn(async move {
             info!("Cleaning memory");
 
             loop {
-                if exit_signal.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
                 ttl.tick().await;
 
                 self.clean_tx_sender(ttl_duration);
                 self.clean_block_listeners(ttl_duration);
                 self.clean_block_store(ttl_duration).await;
             }
-            Ok(())
         })
     }
 }

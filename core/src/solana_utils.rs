@@ -1,7 +1,7 @@
 use crate::structures::identity_stakes::IdentityStakes;
-use anyhow::Context;
+use anyhow::{bail, Context};
 use futures::StreamExt;
-use log::{info, warn};
+use log::info;
 use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
@@ -18,7 +18,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
 
-pub struct SolanaUtils {}
+pub struct SolanaUtils;
 
 impl SolanaUtils {
     pub async fn get_stakes_for_identity(
@@ -61,7 +61,7 @@ impl SolanaUtils {
     }
 
     pub async fn poll_slots(
-        rpc_client: Arc<RpcClient>,
+        rpc_client: &RpcClient,
         rpc_ws_address: &str,
         update_slot: impl Fn(u64),
     ) -> anyhow::Result<()> {
@@ -74,15 +74,15 @@ impl SolanaUtils {
                 commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
             })
             .await
-            .context("error getting slot")?;
+            .context("Error getting slot")?;
 
         update_slot(slot);
 
         let (mut client, unsub) =
             tokio::time::timeout(Duration::from_millis(1000), pubsub_client.slot_subscribe())
                 .await
-                .context("timedout subscribing to slots")?
-                .context("slot pub sub disconnected")?;
+                .context("Timeout subscribing to slots")?
+                .context("Slot pub sub disconnected")?;
 
         while let Ok(slot_info) =
             tokio::time::timeout(Duration::from_millis(2000), client.next()).await
@@ -92,10 +92,9 @@ impl SolanaUtils {
             }
         }
 
-        warn!("slot pub sub disconnected reconnecting");
         unsub();
 
-        Ok(())
+        bail!("Slot pub sub disconnected")
     }
 
     // Estimates the slots, either from polled slot or by forcefully updating after every 400ms

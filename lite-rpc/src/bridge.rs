@@ -57,6 +57,18 @@ lazy_static::lazy_static! {
     register_int_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
     static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
     register_int_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
+    static ref WS_SERVER_FAIL: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_ws_server_fail", "WebSocket server failed")).unwrap();
+    static ref METRICS_SERVICE_FAIL: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_metrics_service_fail", "Metrics service failed")).unwrap();
+    static ref HTTP_SERVER_FAIL: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_http_server_fail", "Http server failed")).unwrap();
+    static ref PROMETHEUS_SERVER_FAIL: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_prometheus_server_fail", "Prometheus server failed")).unwrap();
+    static ref POSTGRES_SERVICE_FAIL: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_postgres_service_fail", "Postgres service failed")).unwrap();
+    static ref TX_SERVICE_FAIL: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_tx_service_fail", "Tx service failed")).unwrap();
 }
 
 /// A bridge between clients and tpu
@@ -147,19 +159,21 @@ impl LiteBridge {
         };
 
         let metrics_capture = MetricsCapture::new(self.tx_store.clone()).capture();
-        let prometheus_sync = PrometheusSync.sync(prometheus_addr);
+        let prometheus_sync = PrometheusSync::sync(prometheus_addr);
 
-        let max_retries = self.max_retries;
+        // transaction services
         let (transaction_service, jh_transaction_services) = self
             .transaction_service_builder
+            .clone()
             .start(
                 postgres_send,
                 self.block_store.clone(),
-                max_retries,
+                self.max_retries,
                 clean_interval,
-            )
-            .await;
+            );
+
         self.transaction_service = Some(transaction_service);
+
         let rpc = self.into_rpc();
 
         let (ws_server, http_server) = {
@@ -201,22 +215,28 @@ impl LiteBridge {
 
         tokio::select! {
             res = ws_server => {
-                bail!("WebSocket server exited unexpectedly {res:?}");
+                WS_SERVER_FAIL.inc();
+                bail!("WebSocket server {res:?}");
             },
             res = http_server => {
-                bail!("HTTP server exited unexpectedly {res:?}");
+                HTTP_SERVER_FAIL.inc();
+                bail!("HTTP server {res:?}");
             },
             res = metrics_capture => {
-                bail!("Metrics Capture exited unexpectedly {res:?}");
+                METRICS_SERVICE_FAIL.inc();
+                bail!("Metrics Capture {res:?}");
             },
             res = prometheus_sync => {
-                bail!("Prometheus Service exited unexpectedly {res:?}");
+                PROMETHEUS_SERVER_FAIL.inc();
+                bail!("Prometheus Service {res:?}");
             },
             res = postgres => {
-                bail!("Postgres service exited unexpectedly {res:?}");
+                POSTGRES_SERVICE_FAIL.inc();
+                bail!("Postgres service {res:?}");
             },
             res = jh_transaction_services => {
-                bail!("Transaction service exited unexpectedly {res:?}");
+                TX_SERVICE_FAIL.inc();
+                bail!("Transaction service {res:?}");
             }
         }
     }

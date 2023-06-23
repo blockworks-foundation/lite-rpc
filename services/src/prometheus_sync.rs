@@ -2,10 +2,10 @@ use std::time::Duration;
 
 use log::error;
 use prometheus::{Encoder, TextEncoder};
+use solana_lite_rpc_core::AnyhowJoinHandle;
 use tokio::{
     io::AsyncWriteExt,
     net::{TcpListener, TcpStream, ToSocketAddrs},
-    task::JoinHandle,
 };
 
 pub struct PrometheusSync;
@@ -19,7 +19,7 @@ impl PrometheusSync {
         )
     }
 
-    async fn handle_stream(&self, stream: &mut TcpStream) -> anyhow::Result<()> {
+    async fn handle_stream(stream: &mut TcpStream) -> anyhow::Result<()> {
         let mut metrics_buffer = Vec::new();
         let encoder = TextEncoder::new();
 
@@ -39,8 +39,7 @@ impl PrometheusSync {
         Ok(())
     }
 
-    pub fn sync(self, addr: impl ToSocketAddrs + Send + 'static) -> JoinHandle<anyhow::Result<()>> {
-        #[allow(unreachable_code)]
+    pub fn sync(addr: impl ToSocketAddrs + Send + 'static) -> AnyhowJoinHandle {
         tokio::spawn(async move {
             let listener = TcpListener::bind(addr).await?;
 
@@ -51,10 +50,8 @@ impl PrometheusSync {
                     continue;
                 };
 
-                let _ = self.handle_stream(&mut stream).await;
+                let _ = Self::handle_stream(&mut stream).await;
             }
-
-            Ok(())
         })
     }
 }

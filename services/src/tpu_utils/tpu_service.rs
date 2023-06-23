@@ -17,7 +17,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
@@ -141,7 +141,7 @@ impl TpuService {
 
         let next_leaders = self.leader_schedule.get_leaders(load_slot, last_slot).await;
         let connections_to_keep = next_leaders
-            .iter()
+            .into_iter()
             .filter(|x| x.tpu.is_some())
             .map(|x| {
                 let mut addr = x.tpu.unwrap();
@@ -163,48 +163,42 @@ impl TpuService {
             .await;
     }
 
-    fn check_exit_signal(exit_signal: &Arc<AtomicBool>) -> bool {
-        exit_signal.load(Ordering::Relaxed)
-    }
-
-    async fn update_current_slot(
+    fn update_current_slot(
         &self,
         update_notifier: tokio::sync::mpsc::UnboundedSender<u64>,
-        exit_signal: Arc<AtomicBool>,
-    ) {
+    ) -> AnyhowJoinHandle {
         let current_slot = self.current_slot.clone();
-        let update_slot = |slot: u64| {
+        let rpc_client = self.rpc_client.clone();
+        let rpc_ws_address = self.rpc_ws_address.clone();
+
+        let update_slot = move |slot: u64| {
             if slot > current_slot.load(Ordering::Relaxed) {
                 current_slot.store(slot, Ordering::Relaxed);
                 CURRENT_SLOT.set(slot as i64);
                 let _ = update_notifier.send(slot);
             }
         };
-        let mut nb_errror = 0;
-        loop {
-            if Self::check_exit_signal(&exit_signal) {
-                break;
-            }
-            // always loop update the current slots as it is central to working of TPU
-            if let Err(e) =
-                SolanaUtils::poll_slots(self.rpc_client.clone(), &self.rpc_ws_address, update_slot)
-                    .await
-            {
+
+        tokio::spawn(async move {
+            let mut nb_errror = 0;
+
+            while nb_errror < MAX_NB_ERRORS {
+                // always loop update the current slots as it is central to working of TPU
+                let Err(err) = SolanaUtils::poll_slots(&rpc_client, &rpc_ws_address, &update_slot).await else {
+                    nb_errror = 0;
+                    continue;
+                };
+
                 nb_errror += 1;
-                log::info!("Got error while polling slot {}", e);
-                if nb_errror > MAX_NB_ERRORS {
-                    error!(
-                        "Reached max amount of errors to fetch latest slot, exiting poll slot loop"
-                    );
-                    break;
-                }
-            } else {
-                nb_errror = 0;
+                log::info!("Got error while polling slot {}", err);
             }
-        }
+
+            bail!("Reached max amount of errors to fetch latest slot, exiting poll slot loop")
+        })
     }
 
-    pub async fn start(&self, exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
+    pub async fn start(&self) -> anyhow::Result<()> {
+        // setup
         self.leader_schedule
             .load_cluster_info(self.rpc_client.clone())
             .await?;
@@ -213,25 +207,20 @@ impl TpuService {
         self.update_quic_connections().await;
 
         let this = self.clone();
-        let exit_signal_l = exit_signal.clone();
-        let jh_update_leaders = tokio::spawn(async move {
+        let update_leader_schedule_service = tokio::spawn(async move {
             let mut last_cluster_info_update = Instant::now();
             let leader_schedule_update_interval =
                 Duration::from_secs(LEADER_SCHEDULE_UPDATE_INTERVAL);
             let cluster_info_update_interval = Duration::from_secs(CLUSTERINFO_REFRESH_TIME);
-            loop {
-                if Self::check_exit_signal(&exit_signal_l) {
-                    break;
-                }
-                tokio::time::sleep(leader_schedule_update_interval).await;
-                if Self::check_exit_signal(&exit_signal_l) {
-                    break;
-                }
 
+            loop {
+                tokio::time::sleep(leader_schedule_update_interval).await;
                 info!("update leader schedule and cluster nodes");
+
                 if this.update_leader_schedule().await.is_err() {
                     error!("unable to update leader shedule");
                 }
+
                 if last_cluster_info_update.elapsed() > cluster_info_update_interval {
                     if this.update_current_stakes().await.is_err() {
                         error!("unable to update cluster infos");
@@ -242,47 +231,38 @@ impl TpuService {
             }
         });
 
-        let this = self.clone();
         let (slot_sender, slot_reciever) = tokio::sync::mpsc::unbounded_channel::<Slot>();
-        let exit_signal_l = exit_signal.clone();
-        let slot_sub_task: AnyhowJoinHandle = tokio::spawn(async move {
-            this.update_current_slot(slot_sender, exit_signal_l).await;
-            Ok(())
-        });
 
-        let estimated_slot = self.estimated_slot.clone();
-        let current_slot = self.current_slot.clone();
+        // Service to poll current slot from upstream rpc
+        let slot_poll_service = self.update_current_slot(slot_sender);
+
+        // Service to estimate slots
         let this = self.clone();
-        let exit_signal_l = exit_signal.clone();
-        let estimated_slot_calculation = tokio::spawn(async move {
+        let estimated_slot_service = tokio::spawn(async move {
             let mut slot_update_notifier = slot_reciever;
             loop {
-                if Self::check_exit_signal(&exit_signal_l) {
-                    break;
-                }
-
                 if SolanaUtils::slot_estimator(
                     &mut slot_update_notifier,
-                    current_slot.clone(),
-                    estimated_slot.clone(),
+                    this.current_slot.clone(),
+                    this.estimated_slot.clone(),
                 )
                 .await
                 {
-                    ESTIMATED_SLOT.set(estimated_slot.load(Ordering::Relaxed) as i64);
+                    ESTIMATED_SLOT.set(this.estimated_slot.load(Ordering::Relaxed) as i64);
                     this.update_quic_connections().await;
                 }
             }
         });
 
         tokio::select! {
-            res = jh_update_leaders => {
-                bail!("Leader update service exited unexpectedly {res:?}");
+            res = update_leader_schedule_service => {
+                bail!("Leader update Service {res:?}");
             },
-            res = slot_sub_task => {
-                bail!("Leader update service exited unexpectedly {res:?}");
+            res = slot_poll_service => {
+                bail!("Slot Poll Service {res:?}");
             },
-            res = estimated_slot_calculation => {
-                bail!("Estimated slot calculation service exited unexpectedly {res:?}");
+            res = estimated_slot_service => {
+                bail!("Estimated slot Service {res:?}");
             },
         }
     }
