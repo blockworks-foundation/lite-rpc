@@ -13,7 +13,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::{str::FromStr, time::Duration};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use lazy_static::lazy_static;
 use tokio::time::Instant;
 
