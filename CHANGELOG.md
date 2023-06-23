@@ -10,9 +10,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features:
 
-## [0.2.2]
+## [0.2.2] - 2023-06-23
 
-commit : b2a15ad913128e2266deed8b41a4c0c1c640aacc
+commit : 70eb250b103c64a0e5a3159c9493e87003d046a4
 
 - lite-rpc : Added restart logic.
 - metrics : added more counters for related to failure of services during restart.
