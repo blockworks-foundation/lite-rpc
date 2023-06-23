@@ -26,8 +26,8 @@ impl RpcTester {
     /// Starts a loop that checks if the rpc is responding every 5 seconds
     pub async fn start(self) -> ! {
         loop {
-            // sleep for 5 seconds
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            // sleep for 10 seconds
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
             // do a simple request to self for getVersion
             let Err(err) = self.0.get_version().await else {
                 RPC_RESPONDING.set(1.0);

@@ -192,7 +192,7 @@ impl LiteBridge {
 
         let rpc = self.into_rpc();
 
-        let (ws_server, http_server) = {
+        let (ws_server, http_server, stop_servers) = {
             let ws_server_handle = ServerBuilder::default()
                 .ws_only()
                 .build(ws_addr.clone())
@@ -204,6 +204,17 @@ impl LiteBridge {
                 .build(http_addr.clone())
                 .await?
                 .start(rpc)?;
+
+            let stop_servers = {
+                let ws_server_handle = ws_server_handle.clone();
+                let http_server_handle =  http_server_handle.clone();
+
+                move || {
+                    log::error!("Stopping servers");
+                    let _ = ws_server_handle.stop();
+                    let _ = http_server_handle.stop();
+                }
+            };
 
             let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("Websocket Server started at {ws_addr:?}");
@@ -219,7 +230,7 @@ impl LiteBridge {
                 bail!("HTTP server stopped");
             });
 
-            (ws_server, http_server)
+            (ws_server, http_server, stop_servers)
         };
 
         let postgres = tokio::spawn(async {
@@ -233,32 +244,35 @@ impl LiteBridge {
             res
         });
 
-        tokio::select! {
+        let err =  tokio::select! {
             res = ws_server => {
                 WS_SERVER_FAIL.inc();
-                bail!("WebSocket server {res:?}");
-            },
+                anyhow::Error::msg(format!("WebSocket server {res:?}"))
+            }, 
             res = http_server => {
                 HTTP_SERVER_FAIL.inc();
-                bail!("HTTP server {res:?}");
-            },
+                anyhow::Error::msg(format!("HTTP server {res:?}"))
+            }, 
             res = metrics_capture => {
                 METRICS_SERVICE_FAIL.inc();
-                bail!("Metrics Capture {res:?}");
-            },
+                anyhow::Error::msg(format!("Metrics Capture {res:?}"))
+            }, 
             res = prometheus_sync => {
                 PROMETHEUS_SERVER_FAIL.inc();
-                bail!("Prometheus Service {res:?}");
-            },
+                anyhow::Error::msg(format!("Prometheus Service {res:?}"))
+            }, 
             res = postgres => {
                 POSTGRES_SERVICE_FAIL.inc();
-                bail!("Postgres service {res:?}");
-            },
+                anyhow::Error::msg(format!("Postgres service {res:?}"))
+            }, 
             res = jh_transaction_services => {
                 TX_SERVICE_FAIL.inc();
-                bail!("Transaction service {res:?}");
-            }
-        }
+                anyhow::Error::msg(format!("Transaction service {res:?}"))
+            } 
+        };
+
+        stop_servers();
+        bail!("{err:?}")
     }
 }
 
