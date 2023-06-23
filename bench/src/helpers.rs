@@ -13,21 +13,30 @@ use solana_sdk::{
     transaction::Transaction,
 };
 use std::{str::FromStr, time::Duration};
+use std::path::{Path, PathBuf};
+use lazy_static::lazy_static;
 use tokio::time::Instant;
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 const WAIT_LIMIT_IN_SECONDS: u64 = 60;
 
+lazy_static! {
+    static ref USER_KEYPAIR: PathBuf = {
+        dirs::home_dir().unwrap()
+            .join(".config")
+            .join("solana")
+            .join("id.json")
+    };
+}
+
+
 pub struct BenchHelper;
 
 impl BenchHelper {
+
     pub async fn get_payer() -> anyhow::Result<Keypair> {
-        let mut config_dir = dirs::config_dir().context("Unable to get path to user config dir")?;
 
-        config_dir.push("solana");
-        config_dir.push("id.json");
-
-        let payer = tokio::fs::read_to_string(config_dir.to_str().unwrap())
+        let payer = tokio::fs::read_to_string(USER_KEYPAIR.as_path())
             .await
             .context("Error reading payer file")?;
         let payer: Vec<u8> = serde_json::from_str(&payer)?;
