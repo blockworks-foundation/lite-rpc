@@ -38,7 +38,7 @@ impl QuicTestClient {
         let test_client_service: AnyhowJoinHandle = tokio::spawn(async move {
             info!("Sample Quic Client starting ...");
 
-            let mut ticker = tokio::time::interval(Duration::from_secs(1));
+            let mut ticker = tokio::time::interval(Duration::from_secs(3));
             // TODO exit signal
             loop {
                 // create new connection everytime

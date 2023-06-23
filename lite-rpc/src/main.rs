@@ -9,6 +9,7 @@ use solana_sdk::signature::Keypair;
 use std::env;
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::SelfSignedTlsConfigProvider;
+use solana_lite_rpc_quic_forward_proxy::test_client::quic_test_client::QuicTestClient;
 // use lite_rpc_quic_forward_proxy::tls_config::SelfSignedTlsConfigProvider;
 
 async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
@@ -92,6 +93,12 @@ pub async fn main() -> anyhow::Result<()> {
         prometheus_addr,
     );
 
+    let proxy_addr = "127.0.0.1:11111".parse().unwrap();
+    let test_client = QuicTestClient::new_with_endpoint(
+        proxy_addr, &tls_configuration)
+        .await?
+        .start_services();
+
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
@@ -100,7 +107,10 @@ pub async fn main() -> anyhow::Result<()> {
         },
         res = quicproxy_service => {
             bail!("Quic Proxy quit unexpectedly {res:?}");
-        }
+        },
+        res = test_client => {
+            bail!("Test Client quit unexpectedly {res:?}");
+        },
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");
 

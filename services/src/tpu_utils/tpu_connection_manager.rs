@@ -34,7 +34,7 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
 }
 
-struct ActiveConnection {
+pub struct ActiveConnection {
     endpoint: Endpoint,
     identity: Pubkey,
     tpu_address: SocketAddr,

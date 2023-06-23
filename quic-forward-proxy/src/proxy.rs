@@ -13,6 +13,7 @@ use solana_sdk::transaction::VersionedTransaction;
 use tokio::net::ToSocketAddrs;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::ActiveConnection;
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 
 
@@ -115,6 +116,8 @@ async fn handle_connection2(connecting: Connecting) -> anyhow::Result<()> {
                 };
 
                 info!("transaction details: {} sigs", tx.signatures.len());
+
+                // ActiveConnection::new(e)new(tx).await;
 
                 // send_data(send).await;
                 Ok(())
