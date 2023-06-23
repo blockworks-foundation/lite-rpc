@@ -181,10 +181,8 @@ impl LiteBridge {
         let prometheus_sync = PrometheusSync::sync(prometheus_addr);
 
         // transaction services
-        let (transaction_service, jh_transaction_services) = self
-            .transaction_service_builder
-            .clone()
-            .start(
+        let (transaction_service, jh_transaction_services) =
+            self.transaction_service_builder.clone().start(
                 postgres_send,
                 self.block_store.clone(),
                 self.max_retries,

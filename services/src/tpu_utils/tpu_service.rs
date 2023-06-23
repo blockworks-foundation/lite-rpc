@@ -182,27 +182,19 @@ impl TpuService {
                 let _ = update_notifier.send(slot);
             }
         };
-
+        let max_nb_errors = self.config.maximum_number_of_errors;
         tokio::spawn(async move {
-            let mut nb_errror = 0;
+            let mut nb_error = 0;
 
-            while nb_errror < MAX_NB_ERRORS {
+            while nb_error < max_nb_errors {
                 // always loop update the current slots as it is central to working of TPU
                 let Err(err) = SolanaUtils::poll_slots(&rpc_client, &rpc_ws_address, &update_slot).await else {
-                    nb_errror = 0;
+                    nb_error = 0;
                     continue;
                 };
 
-                nb_errror += 1;
+                nb_error += 1;
                 log::info!("Got error while polling slot {}", err);
-                if nb_errror > self.config.maximum_number_of_errors {
-                    error!(
-                        "Reached max amount of errors to fetch latest slot, exiting poll slot loop"
-                    );
-                    break;
-                }
-            } else {
-                nb_errror = 0;
             }
 
             bail!("Reached max amount of errors to fetch latest slot, exiting poll slot loop")
