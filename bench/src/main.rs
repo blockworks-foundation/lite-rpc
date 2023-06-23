@@ -6,7 +6,7 @@ use bench::{
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
-use log::{error, info};
+use log::{error, info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
@@ -169,15 +169,20 @@ async fn bench(
                 let blockhash = { *block_hash.read().await };
                 let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
                 let start_time = Instant::now();
-                if let Ok(signature) = rpc_client.send_transaction(&tx).await {
-                    map_of_txs.insert(
-                        signature,
-                        TxSendData {
-                            sent_duration: start_time.elapsed(),
-                            sent_instant: Instant::now(),
-                            sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
-                        },
-                    );
+                match rpc_client.send_transaction(&tx).await {
+                    Ok(signature) => {
+                        map_of_txs.insert(
+                            signature,
+                            TxSendData {
+                                sent_duration: start_time.elapsed(),
+                                sent_instant: Instant::now(),
+                                sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        warn!("tx send failed with error {}", e);
+                    }
                 }
             }
         });
