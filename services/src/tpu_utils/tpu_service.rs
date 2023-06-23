@@ -57,7 +57,6 @@ pub struct TpuService {
     current_slot: Arc<AtomicU64>,
     estimated_slot: Arc<AtomicU64>,
     rpc_client: Arc<RpcClient>,
-    rpc_ws_address: String,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
     identity_stakes: Arc<RwLock<IdentityStakes>>,
@@ -73,7 +72,6 @@ impl TpuService {
         identity: Arc<Keypair>,
         current_slot: Slot,
         rpc_client: Arc<RpcClient>,
-        rpc_ws_address: String,
         txs_sent_store: TxStore,
     ) -> anyhow::Result<Self> {
         let (sender, _) = tokio::sync::broadcast::channel(config.maximum_transaction_in_queue);
@@ -91,7 +89,6 @@ impl TpuService {
             estimated_slot: Arc::new(AtomicU64::new(current_slot)),
             leader_schedule: Arc::new(LeaderSchedule::new(config.number_of_leaders_to_cache)),
             rpc_client,
-            rpc_ws_address,
             broadcast_sender: Arc::new(sender),
             tpu_connection_manager: Arc::new(tpu_connection_manager),
             identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
@@ -173,7 +170,6 @@ impl TpuService {
     ) -> AnyhowJoinHandle {
         let current_slot = self.current_slot.clone();
         let rpc_client = self.rpc_client.clone();
-        let rpc_ws_address = self.rpc_ws_address.clone();
 
         let update_slot = move |slot: u64| {
             if slot > current_slot.load(Ordering::Relaxed) {
@@ -188,7 +184,7 @@ impl TpuService {
 
             while nb_error < max_nb_errors {
                 // always loop update the current slots as it is central to working of TPU
-                let Err(err) = SolanaUtils::poll_slots(&rpc_client, &rpc_ws_address, &update_slot).await else {
+                let Err(err) = SolanaUtils::poll_slots(&rpc_client, &update_slot).await else {
                     nb_error = 0;
                     continue;
                 };

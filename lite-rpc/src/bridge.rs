@@ -88,7 +88,7 @@ pub struct LiteBridge {
 impl LiteBridge {
     pub async fn new(
         rpc_url: String,
-        ws_addr: String,
+        _ws_addr: String,
         fanout_slots: u64,
         identity: Keypair,
         retry_after: Duration,
@@ -122,7 +122,6 @@ impl LiteBridge {
             Arc::new(identity),
             current_slot,
             rpc_client.clone(),
-            ws_addr,
             tx_store.clone(),
         )
         .await?;
