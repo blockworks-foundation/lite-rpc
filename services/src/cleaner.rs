@@ -45,7 +45,11 @@ impl Cleaner {
         BLOCKS_IN_BLOCKSTORE.set(self.block_store.number_of_blocks_in_store() as i64);
     }
 
-    pub fn start(self, ttl_duration: Duration) -> JoinHandle<anyhow::Result<()>> {
+    pub fn start(
+        self,
+        ttl_transactions: Duration,
+        ttl_duration: Duration,
+    ) -> JoinHandle<anyhow::Result<()>> {
         let mut ttl = tokio::time::interval(ttl_duration);
 
         tokio::spawn(async move {
@@ -54,7 +58,7 @@ impl Cleaner {
             loop {
                 ttl.tick().await;
 
-                self.clean_tx_sender(ttl_duration);
+                self.clean_tx_sender(ttl_transactions);
                 self.clean_block_listeners(ttl_duration);
                 self.clean_block_store(ttl_duration).await;
             }

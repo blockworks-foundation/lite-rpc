@@ -18,7 +18,7 @@ pub const DEFAULT_LITE_RPC_ADDR: &str = "http://0.0.0.0:8890";
 pub const DEFAULT_WS_ADDR: &str = "ws://0.0.0.0:8900";
 
 #[from_env]
-pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 40_000;
+pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 200_000;
 
 /// 25 slots in 10s send to little more leaders
 #[from_env]
@@ -30,6 +30,6 @@ pub const MAX_RETRIES: usize = 40;
 pub const DEFAULT_RETRY_TIMEOUT: u64 = 2;
 
 #[from_env]
-pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 5 * 60 * 1000; // five minute
+pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 10 * 60 * 1000; // two minute
 pub const DEFAULT_TRANSACTION_CONFIRMATION_STATUS: TransactionConfirmationStatus =
     TransactionConfirmationStatus::Finalized;
