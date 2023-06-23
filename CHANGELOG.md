@@ -12,7 +12,7 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ## [0.2.2]
 
-commit : 
+commit : b2a15ad913128e2266deed8b41a4c0c1c640aacc
 
 - lite-rpc : Added restart logic.
 - metrics : added more counters for related to failure of services during restart.
