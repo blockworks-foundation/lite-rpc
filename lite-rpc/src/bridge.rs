@@ -19,7 +19,7 @@ use solana_lite_rpc_services::{
 
 use anyhow::bail;
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
-use log::info;
+use log::{error, info};
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
     block_store::{BlockInformation, BlockStore},
@@ -209,12 +209,14 @@ impl LiteBridge {
             let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("Websocket Server started at {ws_addr:?}");
                 ws_server_handle.stopped().await;
+                error!("Websocket server stopped");
                 bail!("Websocket server stopped");
             });
 
             let http_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("HTTP Server started at {http_addr:?}");
                 http_server_handle.stopped().await;
+                error!("HTTP server stopped");
                 bail!("HTTP server stopped");
             });
 
@@ -227,7 +229,9 @@ impl LiteBridge {
                 unreachable!();
             };
 
-            postgres.await
+            let res = postgres.await;
+            error!("postgres server stopped");
+            res
         });
 
         tokio::select! {

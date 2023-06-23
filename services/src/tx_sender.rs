@@ -159,6 +159,7 @@ impl TxSender {
                                     .max(1);
                             }
                             None => {
+                                log::error!("Channel Disconnected");
                                 bail!("Channel Disconnected");
                             }
                         },

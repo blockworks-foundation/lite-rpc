@@ -354,7 +354,7 @@ impl BlockListener {
                         BLOCKS_IN_CONFIRMED_QUEUE.inc();
                     }
                 }
-
+                error!("Slot retry task exit");
                 bail!("Slot retry task exit")
             })
         };
@@ -404,12 +404,15 @@ impl BlockListener {
 
         tokio::select! {
             res = get_slot_task => {
+                error!("Get slot task exited unexpectedly {res:?}");
                 bail!("Get slot task exited unexpectedly {res:?}")
             }
             res = slot_retry_task => {
+                error!("Slot retry task exited unexpectedly {res:?}");
                 bail!("Slot retry task exited unexpectedly {res:?}")
             },
             res = futures::future::try_join_all(slot_indexer_tasks) => {
+                error!("Slot indexer exited unexpectedly {res:?}");
                 bail!("Slot indexer exited unexpectedly {res:?}")
             },
         }
@@ -437,7 +440,7 @@ impl BlockListener {
                 // sleep
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
-
+            error!("{errors} consecutive errors while polling processed blocks");
             bail!("{errors} consecutive errors while polling processed blocks")
         })
     }
