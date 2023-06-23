@@ -1,10 +1,13 @@
 use dashmap::DashMap;
 use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use quinn::{Connection, Endpoint};
+use quinn::Endpoint;
 use solana_lite_rpc_core::{
-    quic_connection_utils::QuicConnectionUtils, rotating_queue::RotatingQueue,
-    structures::identity_stakes::IdentityStakes, tx_store::TxStore,
+    quic_connection::QuicConnectionPool,
+    quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
+    rotating_queue::RotatingQueue,
+    structures::identity_stakes::IdentityStakes,
+    tx_store::TxStore,
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
@@ -15,12 +18,8 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
-    time::Duration,
 };
-use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
-
-pub const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
-pub const CONNECTION_RETRY_COUNT: usize = 10;
+use tokio::sync::{broadcast::Receiver, broadcast::Sender};
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
@@ -33,32 +32,32 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
 }
 
+#[derive(Clone)]
 struct ActiveConnection {
-    endpoint: Endpoint,
+    endpoints: RotatingQueue<Endpoint>,
     identity: Pubkey,
     tpu_address: SocketAddr,
     exit_signal: Arc<AtomicBool>,
     txs_sent_store: TxStore,
+    connection_parameters: QuicConnectionParameters,
 }
 
 impl ActiveConnection {
     pub fn new(
-        endpoint: Endpoint,
+        endpoints: RotatingQueue<Endpoint>,
         tpu_address: SocketAddr,
         identity: Pubkey,
         txs_sent_store: TxStore,
+        connection_parameters: QuicConnectionParameters,
     ) -> Self {
         Self {
-            endpoint,
+            endpoints,
             tpu_address,
             identity,
             exit_signal: Arc::new(AtomicBool::new(false)),
             txs_sent_store,
+            connection_parameters,
         }
-    }
-
-    fn on_connect() {
-        NB_QUIC_CONNECTIONS.inc();
     }
 
     fn check_for_confirmation(txs_sent_store: &TxStore, signature: String) -> bool {
@@ -70,29 +69,37 @@ impl ActiveConnection {
 
     #[allow(clippy::too_many_arguments)]
     async fn listen(
+        &self,
         transaction_reciever: Receiver<(String, Vec<u8>)>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
-        endpoint: Endpoint,
         addr: SocketAddr,
-        exit_signal: Arc<AtomicBool>,
-        identity: Pubkey,
         identity_stakes: IdentityStakes,
         txs_sent_store: TxStore,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
         let mut exit_oneshot_channel = exit_oneshot_channel;
+        let identity = self.identity;
 
         let max_uni_stream_connections: u64 = compute_max_allowed_uni_streams(
             identity_stakes.peer_type,
             identity_stakes.stakes,
             identity_stakes.total_stakes,
         ) as u64;
-        let number_of_transactions_per_unistream = 5;
+        let number_of_transactions_per_unistream = self
+            .connection_parameters
+            .number_of_transactions_per_unistream;
+        let max_number_of_connections = self.connection_parameters.max_number_of_connections;
 
         let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-        let mut connection: Option<Arc<RwLock<Connection>>> = None;
-        let last_stable_id: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+        let exit_signal = self.exit_signal.clone();
+        let connection_pool = QuicConnectionPool::new(
+            identity,
+            self.endpoints.clone(),
+            addr,
+            self.connection_parameters,
+            exit_signal.clone(),
+        );
 
         loop {
             // exit signal set
@@ -139,51 +146,28 @@ impl ActiveConnection {
                         }
                     }
 
-                    if connection.is_none() {
-                        // initial connection
-                        let conn = QuicConnectionUtils::connect(
-                            identity,
-                            false,
-                            endpoint.clone(),
-                            addr,
-                            QUIC_CONNECTION_TIMEOUT,
-                            CONNECTION_RETRY_COUNT,
-                            exit_signal.clone(),
-                            Self::on_connect).await;
-
-                        if let Some(conn) = conn {
-                            // could connect
-                            connection = Some(Arc::new(RwLock::new(conn)));
-                        } else {
-                            break;
+                    if txs.len() >= number_of_transactions_per_unistream - 1 {
+                        // queue getting full and a connection poll is getting slower
+                        // add more connections to the pool
+                        if connection_pool.len() < max_number_of_connections {
+                            connection_pool.add_connection().await;
+                            NB_QUIC_CONNECTIONS.inc();
+                        }
+                    } else if txs.len() == 1 {
+                        // low traffic / reduce connection till minimum 1
+                        if connection_pool.len() > 1 {
+                            connection_pool.remove_connection().await;
+                            NB_QUIC_CONNECTIONS.dec();
                         }
                     }
 
                     let task_counter = task_counter.clone();
-                    let endpoint = endpoint.clone();
-                    let exit_signal = exit_signal.clone();
-                    let connection = connection.clone();
-                    let last_stable_id = last_stable_id.clone();
+                    let connection_pool = connection_pool.clone();
 
                     tokio::spawn(async move {
                         task_counter.fetch_add(1, Ordering::Relaxed);
                         NB_QUIC_TASKS.inc();
-                        let connection = connection.unwrap();
-                        QuicConnectionUtils::send_transaction_batch(
-                            connection,
-                            txs,
-                            identity,
-                            endpoint,
-                            addr,
-                            exit_signal,
-                            last_stable_id,
-                            QUIC_CONNECTION_TIMEOUT,
-                            CONNECTION_RETRY_COUNT,
-                            || {
-                                // do nothing as we are using the same connection
-                            }
-                        ).await;
-
+                        connection_pool.send_transaction_batch(txs).await;
                         NB_QUIC_TASKS.dec();
                         task_counter.fetch_sub(1, Ordering::Relaxed);
                     });
@@ -204,19 +188,14 @@ impl ActiveConnection {
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         identity_stakes: IdentityStakes,
     ) {
-        let endpoint = self.endpoint.clone();
         let addr = self.tpu_address;
-        let exit_signal = self.exit_signal.clone();
-        let identity = self.identity;
         let txs_sent_store = self.txs_sent_store.clone();
+        let this = self.clone();
         tokio::spawn(async move {
-            Self::listen(
+            this.listen(
                 transaction_reciever,
                 exit_oneshot_channel,
-                endpoint,
                 addr,
-                exit_signal,
-                identity,
                 identity_stakes,
                 txs_sent_store,
             )
@@ -236,12 +215,17 @@ pub struct TpuConnectionManager {
 }
 
 impl TpuConnectionManager {
-    pub fn new(certificate: rustls::Certificate, key: rustls::PrivateKey, fanout: usize) -> Self {
-        let number_of_clients = if fanout > 5 { fanout / 4 } else { 1 };
+    pub async fn new(
+        certificate: rustls::Certificate,
+        key: rustls::PrivateKey,
+        fanout: usize,
+    ) -> Self {
+        let number_of_clients = fanout * 2;
         Self {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
-            }),
+            })
+            .await,
             identity_to_active_connection: Arc::new(DashMap::new()),
         }
     }
@@ -252,17 +236,18 @@ impl TpuConnectionManager {
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakes,
         txs_sent_store: TxStore,
+        connection_parameters: QuicConnectionParameters,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
         for (identity, socket_addr) in &connections_to_keep {
             if self.identity_to_active_connection.get(identity).is_none() {
                 trace!("added a connection for {}, {}", identity, socket_addr);
-                let endpoint = self.endpoints.get();
                 let active_connection = ActiveConnection::new(
-                    endpoint,
+                    self.endpoints.clone(),
                     *socket_addr,
                     *identity,
                     txs_sent_store.clone(),
+                    connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
                 let (sx, rx) = tokio::sync::mpsc::channel(1);

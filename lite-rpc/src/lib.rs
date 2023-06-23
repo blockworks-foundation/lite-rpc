@@ -18,7 +18,7 @@ pub const DEFAULT_LITE_RPC_ADDR: &str = "http://0.0.0.0:8890";
 pub const DEFAULT_WS_ADDR: &str = "ws://0.0.0.0:8900";
 
 #[from_env]
-pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 40_000;
+pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 200_000;
 
 /// 25 slots in 10s send to little more leaders
 #[from_env]

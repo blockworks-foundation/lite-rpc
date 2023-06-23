@@ -89,8 +89,10 @@ impl TransactionServiceBuilder {
 
                 let processed_block_listener = block_listner.clone().listen_processed();
 
+                // transactions get invalid in around 1 mins, because the block hash expires in 150 blocks so 150 * 400ms = 60s
+                // Setting it to two to give some margin of error / as not all the blocks are filled.
                 let cleaner = Cleaner::new(tx_sender.clone(), block_listner.clone(), block_store_t)
-                    .start(clean_interval);
+                    .start(Duration::from_secs(120), clean_interval);
 
                 tokio::select! {
                     res = tpu_service_fx => {

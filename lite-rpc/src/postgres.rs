@@ -200,7 +200,6 @@ impl PostgresSession {
                 log::error!("Connection to Postgres broke {err:?}");
                 return;
             }
-
             unreachable!("Postgres thread returned")
         });
 
@@ -462,6 +461,7 @@ impl Postgres {
                         }
                         Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
                         Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            log::error!("Postgres channel broke");
                             bail!("Postgres channel broke")
                         }
                     }

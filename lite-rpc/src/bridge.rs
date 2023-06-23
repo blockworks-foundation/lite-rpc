@@ -10,7 +10,7 @@ use solana_lite_rpc_services::{
     block_listenser::BlockListener,
     metrics_capture::MetricsCapture,
     prometheus_sync::PrometheusSync,
-    tpu_utils::tpu_service::TpuService,
+    tpu_utils::tpu_service::{TpuService, TpuServiceConfig},
     transaction_replayer::TransactionReplayer,
     transaction_service::{TransactionService, TransactionServiceBuilder},
     tx_sender::WireTransaction,
@@ -19,10 +19,11 @@ use solana_lite_rpc_services::{
 
 use anyhow::bail;
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
-use log::info;
+use log::{error, info};
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
     block_store::{BlockInformation, BlockStore},
+    quic_connection_utils::QuicConnectionParameters,
     tx_store::{empty_tx_store, TxStore},
     AnyhowJoinHandle,
 };
@@ -98,10 +99,28 @@ impl LiteBridge {
 
         let tx_store = empty_tx_store();
 
-        let tpu_service = TpuService::new(
-            current_slot,
+        let tpu_config = TpuServiceConfig {
             fanout_slots,
+            number_of_leaders_to_cache: 1024,
+            clusterinfo_refresh_time: Duration::from_secs(60 * 60),
+            leader_schedule_update_frequency: Duration::from_secs(10),
+            maximum_transaction_in_queue: 20000,
+            maximum_number_of_errors: 10,
+            quic_connection_params: QuicConnectionParameters {
+                connection_timeout: Duration::from_secs(1),
+                connection_retry_count: 10,
+                finalize_timeout: Duration::from_millis(200),
+                max_number_of_connections: 10,
+                unistream_timeout: Duration::from_millis(500),
+                write_timeout: Duration::from_secs(1),
+                number_of_transactions_per_unistream: 10,
+            },
+        };
+
+        let tpu_service = TpuService::new(
+            tpu_config,
             Arc::new(identity),
+            current_slot,
             rpc_client.clone(),
             ws_addr,
             tx_store.clone(),
@@ -162,10 +181,8 @@ impl LiteBridge {
         let prometheus_sync = PrometheusSync::sync(prometheus_addr);
 
         // transaction services
-        let (transaction_service, jh_transaction_services) = self
-            .transaction_service_builder
-            .clone()
-            .start(
+        let (transaction_service, jh_transaction_services) =
+            self.transaction_service_builder.clone().start(
                 postgres_send,
                 self.block_store.clone(),
                 self.max_retries,
@@ -192,12 +209,14 @@ impl LiteBridge {
             let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("Websocket Server started at {ws_addr:?}");
                 ws_server_handle.stopped().await;
+                error!("Websocket server stopped");
                 bail!("Websocket server stopped");
             });
 
             let http_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("HTTP Server started at {http_addr:?}");
                 http_server_handle.stopped().await;
+                error!("HTTP server stopped");
                 bail!("HTTP server stopped");
             });
 
@@ -210,7 +229,9 @@ impl LiteBridge {
                 unreachable!();
             };
 
-            postgres.await
+            let res = postgres.await;
+            error!("postgres server stopped");
+            res
         });
 
         tokio::select! {

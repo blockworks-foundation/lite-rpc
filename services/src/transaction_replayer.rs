@@ -78,7 +78,7 @@ impl TransactionReplayer {
                     }
                 }
             }
-
+            error!("transaction replay channel broken");
             bail!("transaction replay channel broken");
         })
     }
