@@ -37,3 +37,6 @@ async-trait = { workspace = true }
 chrono = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
 rcgen = "0.9.3"
+
+[dev-dependencies]
+spl-memo = "3.0.1"
