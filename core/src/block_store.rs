@@ -1,5 +1,4 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
@@ -7,13 +6,15 @@ use dashmap::DashMap;
 
 use log::info;
 use serde_json::json;
-use solana_client::rpc_request::RpcRequest;
-use solana_client::rpc_response::{Response, RpcBlockhash};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcBlockConfig};
+use solana_client::{
+    nonblocking::rpc_client::RpcClient,
+    rpc_config::RpcBlockConfig,
+    rpc_request::RpcRequest,
+    rpc_response::{Response, RpcBlockhash},
+};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::TransactionDetails;
-use tokio::sync::RwLock;
-use tokio::time::Instant;
+use tokio::{sync::RwLock, time::Instant};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockInformation {

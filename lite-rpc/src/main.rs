@@ -6,7 +6,7 @@ use anyhow::{bail, Context};
 use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
-use prometheus::{opts, register_int_counter, IntCounter};
+
 use solana_sdk::signature::Keypair;
 use std::env;
 
@@ -33,11 +33,6 @@ async fn get_identity_keypair(identity_from_cli: &str) -> Keypair {
         let identity_bytes: Vec<u8> = serde_json::from_str(&identity_file).unwrap();
         Keypair::from_bytes(identity_bytes.as_slice()).unwrap()
     }
-}
-
-lazy_static::lazy_static! {
-    static ref RESTARTS: IntCounter =
-    register_int_counter!(opts!("literpc_rpc_restarts", "Number of times lite rpc restarted")).unwrap();
 }
 
 pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
