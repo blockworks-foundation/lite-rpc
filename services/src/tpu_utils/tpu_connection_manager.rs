@@ -18,12 +18,14 @@ use std::{
     time::Duration,
 };
 use anyhow::bail;
+use itertools::Itertools;
+use solana_client::client_error::reqwest::header::WARNING;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::time::timeout;
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
 
-pub const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
+pub const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 pub const CONNECTION_RETRY_COUNT: usize = 10;
 
 lazy_static::lazy_static! {
@@ -174,32 +176,36 @@ impl ActiveConnection {
                         NB_QUIC_TASKS.inc();
                         let connection = connection.unwrap();
 
-                        // TODO split to new service
-                        // SOS
-                        info!("Sending copy of transaction batch of {} to tpu with identity {} to quic proxy",
-                            txs.len(), identity);
-                        Self::send_copy_of_txs_to_quicproxy(
-                            &txs, endpoint.clone(),
-                            // proxy address
-                            "127.0.0.1:11111".parse().unwrap(),
-                            tpu_address,
-                            identity.clone()).await.unwrap();
+                        if true {
+                            // TODO split to new service
+                            // SOS
+                            info!("Sending copy of transaction batch of {} to tpu with identity {} to quic proxy",
+                                txs.len(), identity);
+                            Self::send_copy_of_txs_to_quicproxy(
+                                &txs, endpoint.clone(),
+                                // proxy address
+                                "127.0.0.1:11111".parse().unwrap(),
+                                tpu_address,
+                                identity.clone()).await.unwrap();
+                        }
 
 
-                        QuicConnectionUtils::send_transaction_batch(
-                            connection,
-                            txs,
-                            identity,
-                            endpoint,
-                            tpu_address,
-                            exit_signal,
-                            last_stable_id,
-                            QUIC_CONNECTION_TIMEOUT,
-                            CONNECTION_RETRY_COUNT,
-                            || {
-                                // do nothing as we are using the same connection
-                            }
-                        ).await;
+                        if false {
+                            QuicConnectionUtils::send_transaction_batch(
+                                connection,
+                                txs,
+                                identity,
+                                endpoint,
+                                tpu_address,
+                                exit_signal,
+                                last_stable_id,
+                                QUIC_CONNECTION_TIMEOUT,
+                                CONNECTION_RETRY_COUNT,
+                                || {
+                                    // do nothing as we are using the same connection
+                                }
+                            ).await;
+                        }
 
                         NB_QUIC_TASKS.dec();
                         task_counter.fetch_sub(1, Ordering::Relaxed);
@@ -218,6 +224,9 @@ impl ActiveConnection {
     async fn send_copy_of_txs_to_quicproxy(raw_tx_batch: &Vec<Vec<u8>>, endpoint: Endpoint,
                                            proxy_address: SocketAddr, tpu_target_address: SocketAddr,
         identity: Pubkey) -> anyhow::Result<()> {
+
+        info!("sending vecvec: {}", raw_tx_batch.iter().map(|tx| tx.len()).into_iter().join(","));
+
         let raw_tx_batch_copy = raw_tx_batch.clone();
 
         let mut txs = vec![];
@@ -236,7 +245,7 @@ impl ActiveConnection {
 
         let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
 
-        let send_result = timeout(Duration::from_millis(500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw));
+        let send_result = timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw));
 
         match send_result.await {
             Ok(..) => {

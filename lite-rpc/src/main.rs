@@ -7,6 +7,8 @@ use lite_rpc::{bridge::LiteBridge, cli::Args};
 use log::info;
 use solana_sdk::signature::Keypair;
 use std::env;
+use std::sync::Arc;
+use tokio::time::timeout;
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::SelfSignedTlsConfigProvider;
 use solana_lite_rpc_quic_forward_proxy::test_client::quic_test_client::QuicTestClient;
@@ -55,7 +57,7 @@ pub async fn main() -> anyhow::Result<()> {
 
     dotenv().ok();
 
-    let identity = get_identity_keypair(&identity_keypair).await;
+    let validator_identity = Arc::new(get_identity_keypair(&identity_keypair).await);
 
     let clean_interval_ms = Duration::from_millis(clean_interval_ms);
 
@@ -68,19 +70,17 @@ pub async fn main() -> anyhow::Result<()> {
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 
-
     let proxy_listener_addr = "127.0.0.1:11111".parse().unwrap();
     let tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
-    let quicproxy_service = QuicForwardProxy::new(proxy_listener_addr, &tls_configuration)
+    let quicproxy_service = QuicForwardProxy::new(proxy_listener_addr, &tls_configuration, validator_identity.clone())
         .await?
         .start_services();
-
 
     let services = LiteBridge::new(
         rpc_addr,
         ws_addr,
         fanout_size,
-        identity,
+        validator_identity.clone(),
         retry_after,
         maximum_retries_per_tx,
     )
@@ -93,11 +93,11 @@ pub async fn main() -> anyhow::Result<()> {
         prometheus_addr,
     );
 
-    let proxy_addr = "127.0.0.1:11111".parse().unwrap();
-    let test_client = QuicTestClient::new_with_endpoint(
-        proxy_addr, &tls_configuration)
-        .await?
-        .start_services();
+    // let proxy_addr = "127.0.0.1:11111".parse().unwrap();
+    // let test_client = QuicTestClient::new_with_endpoint(
+    //     proxy_addr, &tls_configuration)
+    //     .await?
+    //     .start_services();
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
@@ -108,9 +108,9 @@ pub async fn main() -> anyhow::Result<()> {
         res = quicproxy_service => {
             bail!("Quic Proxy quit unexpectedly {res:?}");
         },
-        res = test_client => {
-            bail!("Test Client quit unexpectedly {res:?}");
-        },
+        // res = test_client => {
+        //     bail!("Test Client quit unexpectedly {res:?}");
+        // },
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");
 

@@ -77,7 +77,7 @@ impl LiteBridge {
         rpc_url: String,
         ws_addr: String,
         fanout_slots: u64,
-        identity: Keypair,
+        validator_identity: Arc<Keypair>,
         retry_after: Duration,
         max_retries: usize,
     ) -> anyhow::Result<Self> {
@@ -89,7 +89,7 @@ impl LiteBridge {
         let tpu_service = TpuService::new(
             current_slot,
             fanout_slots,
-            Arc::new(identity),
+            validator_identity,
             rpc_client.clone(),
             ws_addr,
             tx_store.clone(),
@@ -253,7 +253,6 @@ impl LiteRpcServer for LiteBridge {
             .await
         {
             Ok(sig) => {
-                println!("sig: {}", sig);
                 TXS_IN_CHANNEL.inc();
 
                 Ok(sig)

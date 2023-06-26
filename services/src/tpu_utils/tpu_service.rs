@@ -65,14 +65,14 @@ impl TpuService {
     pub async fn new(
         current_slot: Slot,
         fanout_slots: u64,
-        identity: Arc<Keypair>,
+        validator_identity: Arc<Keypair>,
         rpc_client: Arc<RpcClient>,
         rpc_ws_address: String,
         txs_sent_store: TxStore,
     ) -> anyhow::Result<Self> {
         let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let (certificate, key) = new_self_signed_tls_certificate(
-            identity.as_ref(),
+            validator_identity.as_ref(),
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         )
         .expect("Failed to initialize QUIC client certificates");
@@ -89,7 +89,7 @@ impl TpuService {
             rpc_ws_address,
             broadcast_sender: Arc::new(sender),
             tpu_connection_manager: Arc::new(tpu_connection_manager),
-            identity,
+            identity: validator_identity,
             identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
             txs_sent_store,
         })

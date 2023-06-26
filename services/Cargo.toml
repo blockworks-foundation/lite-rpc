@@ -27,6 +27,7 @@ thiserror = { workspace = true }
 futures = { workspace = true }
 bytes = { workspace = true }
 anyhow = { workspace = true }
+itertools = { workspace = true }
 log = { workspace = true }
 dashmap = { workspace = true }
 prometheus = { workspace = true }

@@ -106,8 +106,9 @@ fn build_memo_tx_raw() -> Vec<u8> {
     let tx = Transaction::new_with_payer(&[memo_ix], Some(&payer_pubkey));
 
     let wire_data = serialize_tpu_forwarding_request(
-        "127.0.0.1:5454".parse().unwrap(),
-        Pubkey::from_str("Bm8rtweCQ19ksNebrLY92H7x4bCaeDJSSmEeWqkdCeop").unwrap(),
+        // FIXME hardcoded to local test-validator
+        "127.0.0.1:1027".parse().unwrap(),
+        Pubkey::from_str("EPLzGRhibYmZ7qysF9BiPmSTRaL8GiLhrQdFTfL8h2fy").unwrap(),
         vec![tx.into()]);
 
     println!("wire_data: {:02X?}", wire_data);

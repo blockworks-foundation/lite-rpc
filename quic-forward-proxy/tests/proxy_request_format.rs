@@ -3,6 +3,7 @@ use std::str::FromStr;
 use anyhow::Context;
 use bincode::DefaultOptions;
 use log::info;
+use serde::Serialize;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use spl_memo::solana_program::message::VersionedMessage;
@@ -19,36 +20,19 @@ fn roundtrip() {
 
     let tx = Transaction::new_with_payer(&[memo_ix], Some(&payer_pubkey));
 
-    let wire_data = serialize_tpu_forwarding_request(
+    let wire_data = TpuForwardingRequest::new(
         "127.0.0.1:5454".parse().unwrap(),
         Pubkey::from_str("Bm8rtweCQ19ksNebrLY92H7x4bCaeDJSSmEeWqkdCeop").unwrap(),
-        vec![tx.into()]);
+        vec![tx.into()]
+    ).serialize_wire_format();
 
     println!("wire_data: {:02X?}", wire_data);
 
-    let request = deserialize_tpu_forwarding_request(&wire_data);
+    let request = TpuForwardingRequest::deserialize_from_raw_request(&wire_data);
 
     assert_eq!(request.get_tpu_socket_addr().is_ipv4(), true);
     assert_eq!(request.get_transactions().len(), 1);
 
 }
 
-fn serialize_tpu_forwarding_request(
-    tpu_socket_addr: SocketAddr,
-    tpu_identity: Pubkey,
-    transactions: Vec<VersionedTransaction>) -> Vec<u8> {
-
-    let request = TpuForwardingRequest::new(tpu_socket_addr, tpu_identity, transactions);
-
-    bincode::serialize(&request).expect("Expect to serialize transactions")
-}
-
-// TODO reame
-fn deserialize_tpu_forwarding_request(raw_proxy_request: &Vec<u8>) -> TpuForwardingRequest {
-    let request = bincode::deserialize::<TpuForwardingRequest>(&raw_proxy_request)
-        .context("deserialize proxy request")
-        .unwrap();
-
-    request
-}
 

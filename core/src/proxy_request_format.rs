@@ -6,14 +6,15 @@ use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction::VersionedTransaction;
 
-// TODO define a proper discriminator
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum TpuForwardingRequest {
-    V1(TpuForwardingRequestV1),
-}
+///
+/// lite-rpc to proxy wire format
+/// compat info: non-public format ATM
+/// initial version
+const FORMAT_VERSION1: u16 = 2301;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TpuForwardingRequestV1 {
+pub struct TpuForwardingRequest {
+    format_version: u16,
     tpu_socket_addr: SocketAddr, // TODO is that correct
     identity_tpunode: Pubkey,
     transactions: Vec<VersionedTransaction>,
@@ -21,7 +22,7 @@ pub struct TpuForwardingRequestV1 {
 
 impl Display for TpuForwardingRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "TpuForwardingRequest for tpu target {} with indentity {}",
+        write!(f, "TpuForwardingRequest for tpu target {} with identity {}",
                &self.get_tpu_socket_addr(), &self.get_identity_tpunode())
     }
 }
@@ -29,33 +30,40 @@ impl Display for TpuForwardingRequest {
 impl TpuForwardingRequest {
     pub fn new(tpu_socket_addr: SocketAddr, identity_tpunode: Pubkey,
                transactions: Vec<VersionedTransaction>) -> Self {
-        TpuForwardingRequest::V1(
-            TpuForwardingRequestV1 {
-                tpu_socket_addr,
-                identity_tpunode,
-                transactions,
-            })
+        TpuForwardingRequest {
+            format_version: FORMAT_VERSION1,
+            tpu_socket_addr,
+            identity_tpunode,
+            transactions,
+        }
+    }
+
+    pub fn serialize_wire_format(
+        &self) -> Vec<u8> {
+        bincode::serialize(&self).expect("Expect to serialize transactions")
+    }
+
+    // TODO reame
+    pub fn deserialize_from_raw_request(raw_proxy_request: &Vec<u8>) -> TpuForwardingRequest {
+        let request = bincode::deserialize::<TpuForwardingRequest>(&raw_proxy_request)
+            .context("deserialize proxy request")
+            .unwrap();
+
+        assert_eq!(request.format_version, 2301);
+
+        request
     }
 
     pub fn get_tpu_socket_addr(&self) -> SocketAddr {
-        match self {
-            TpuForwardingRequest::V1(request) => request.tpu_socket_addr,
-            _ => panic!("format version error"),
-        }
+        self.tpu_socket_addr
     }
 
     pub fn get_identity_tpunode(&self) -> Pubkey {
-        match self {
-            TpuForwardingRequest::V1(request) => request.identity_tpunode,
-            _ => panic!("format version error"),
-        }
+        self.identity_tpunode
     }
 
     pub fn get_transactions(&self) -> Vec<VersionedTransaction> {
-        match self {
-            TpuForwardingRequest::V1(request) => request.transactions.clone(),
-            _ => panic!("format version error"),
-        }
+        self.transactions.clone()
     }
 }
 

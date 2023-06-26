@@ -1,4 +1,4 @@
-use log::{trace, warn};
+use log::{info, trace, warn};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig,
@@ -13,6 +13,7 @@ use std::{
     },
     time::Duration,
 };
+use anyhow::bail;
 use tokio::{sync::RwLock, time::timeout};
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
@@ -38,7 +39,7 @@ impl QuicConnectionUtils {
             .expect("Failed to set QUIC client certificates");
 
         crypto.enable_early_data = true;
-        warn!("TEMP HACK TO ALLOW PROXY PROTOCOL");
+        // FIXME TEMP HACK TO ALLOW PROXY PROTOCOL
         const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
 
         crypto.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec(), ALPN_TPU_FORWARDPROXY_PROTOCOL_ID.to_vec()];
@@ -46,7 +47,8 @@ impl QuicConnectionUtils {
         let mut config = ClientConfig::new(Arc::new(crypto));
         let mut transport_config = TransportConfig::default();
 
-        let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
+        // TODO check timing
+        let timeout = IdleTimeout::try_from(Duration::from_secs(5)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
         config.transport_config(Arc::new(transport_config));
@@ -114,7 +116,7 @@ impl QuicConnectionUtils {
                     return Some(conn);
                 }
                 Err(e) => {
-                    trace!("Could not connect to {} because of error {}", identity, e);
+                    warn!("Could not connect to tpu {}/{}, error: {}", tpu_address, identity, e);
                     if exit_signal.load(Ordering::Relaxed) {
                         break;
                     }
@@ -195,13 +197,14 @@ impl QuicConnectionUtils {
         txs: Vec<Vec<u8>>,
         identity: Pubkey,
         endpoint: Endpoint,
-        socket_addr: SocketAddr,
+        tpu_address: SocketAddr,
         exit_signal: Arc<AtomicBool>,
         last_stable_id: Arc<AtomicU64>,
         connection_timeout: Duration,
         connection_retry_count: usize,
         on_connect: fn(),
     ) {
+        info!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
         let mut queue = VecDeque::new();
         for tx in txs {
             queue.push_back(tx);
@@ -228,7 +231,7 @@ impl QuicConnectionUtils {
                             identity,
                             true,
                             endpoint.clone(),
-                            socket_addr,
+                            tpu_address,
                             connection_timeout,
                             connection_retry_count,
                             exit_signal.clone(),
