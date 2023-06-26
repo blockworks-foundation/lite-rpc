@@ -58,18 +58,6 @@ lazy_static::lazy_static! {
     register_int_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
     static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
     register_int_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
-    static ref WS_SERVER_FAIL: IntCounter =
-    register_int_counter!(opts!("literpc_rpc_ws_server_fail", "WebSocket server failed")).unwrap();
-    static ref METRICS_SERVICE_FAIL: IntCounter =
-    register_int_counter!(opts!("literpc_rpc_metrics_service_fail", "Metrics service failed")).unwrap();
-    static ref HTTP_SERVER_FAIL: IntCounter =
-    register_int_counter!(opts!("literpc_rpc_http_server_fail", "Http server failed")).unwrap();
-    static ref PROMETHEUS_SERVER_FAIL: IntCounter =
-    register_int_counter!(opts!("literpc_rpc_prometheus_server_fail", "Prometheus server failed")).unwrap();
-    static ref POSTGRES_SERVICE_FAIL: IntCounter =
-    register_int_counter!(opts!("literpc_rpc_postgres_service_fail", "Postgres service failed")).unwrap();
-    static ref TX_SERVICE_FAIL: IntCounter =
-    register_int_counter!(opts!("literpc_rpc_tx_service_fail", "Tx service failed")).unwrap();
 }
 
 /// A bridge between clients and tpu
@@ -235,27 +223,21 @@ impl LiteBridge {
 
         tokio::select! {
             res = ws_server => {
-                WS_SERVER_FAIL.inc();
                 bail!("WebSocket server {res:?}");
             },
             res = http_server => {
-                HTTP_SERVER_FAIL.inc();
                 bail!("HTTP server {res:?}");
             },
             res = metrics_capture => {
-                METRICS_SERVICE_FAIL.inc();
                 bail!("Metrics Capture {res:?}");
             },
             res = prometheus_sync => {
-                PROMETHEUS_SERVER_FAIL.inc();
                 bail!("Prometheus Service {res:?}");
             },
             res = postgres => {
-                POSTGRES_SERVICE_FAIL.inc();
                 bail!("Postgres service {res:?}");
             },
             res = jh_transaction_services => {
-                TX_SERVICE_FAIL.inc();
                 bail!("Transaction service {res:?}");
             }
         }
