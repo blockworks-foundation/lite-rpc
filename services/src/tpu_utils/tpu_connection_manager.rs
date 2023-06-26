@@ -251,7 +251,7 @@ impl ActiveConnection {
     async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
         let mut connecting = endpoint.connect(proxy_address, "localhost")?;
         let connection = timeout(Duration::from_millis(500), connecting).await??;
-        let (mut send, mut recv) = connection.open_bi().await?;
+        let mut send = connection.open_uni().await?;
 
         send.write_all(proxy_request_raw).await?;
 

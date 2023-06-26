@@ -51,7 +51,7 @@ impl QuicTestClient {
                 let connection = tokio::time::timeout(connection_timeout, connecting).await??;
 
                 for si in 0..5 {
-                    let (mut send, mut recv)  = connection.open_bi().await?;
+                    let mut send = connection.open_uni().await?;
 
                     let raw = build_memo_tx_raw();
                     info!("raw: {:02X?}", raw);

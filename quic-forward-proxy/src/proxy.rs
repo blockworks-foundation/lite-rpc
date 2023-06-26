@@ -93,8 +93,8 @@ async fn handle_connection2(connecting: Connecting) -> anyhow::Result<()> {
     info!("established");
     async {
         loop {
-            let stream = connection.accept_bi().await;
-            let (mut send, recv) = match stream {
+            let stream = connection.accept_uni().await;
+            let mut recv = match stream {
                 Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
                     info!("connection closed");
                     return Ok(());
