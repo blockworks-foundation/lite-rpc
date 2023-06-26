@@ -253,6 +253,7 @@ impl LiteRpcServer for LiteBridge {
             .await
         {
             Ok(sig) => {
+                println!("sig: {}", sig);
                 TXS_IN_CHANNEL.inc();
 
                 Ok(sig)

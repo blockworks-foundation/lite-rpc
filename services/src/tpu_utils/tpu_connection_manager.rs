@@ -17,8 +17,11 @@ use std::{
     },
     time::Duration,
 };
+use anyhow::bail;
+use solana_sdk::transaction::VersionedTransaction;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::time::timeout;
+use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
 
 pub const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
 pub const CONNECTION_RETRY_COUNT: usize = 10;
@@ -74,7 +77,7 @@ impl ActiveConnection {
         transaction_reciever: Receiver<(String, Vec<u8>)>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         endpoint: Endpoint,
-        addr: SocketAddr,
+        tpu_address: SocketAddr,
         exit_signal: Arc<AtomicBool>,
         identity: Pubkey,
         identity_stakes: IdentityStakes,
@@ -146,7 +149,7 @@ impl ActiveConnection {
                             identity,
                             false,
                             endpoint.clone(),
-                            addr,
+                            tpu_address,
                             QUIC_CONNECTION_TIMEOUT,
                             CONNECTION_RETRY_COUNT,
                             exit_signal.clone(),
@@ -177,7 +180,9 @@ impl ActiveConnection {
                         Self::send_copy_of_txs_to_quicproxy(
                             &txs, endpoint.clone(),
                             // proxy address
-                            "127.0.0.1:11111".parse().unwrap()).await.unwrap();
+                            "127.0.0.1:11111".parse().unwrap(),
+                            tpu_address,
+                            identity.clone()).await.unwrap();
 
 
                         QuicConnectionUtils::send_transaction_batch(
@@ -185,7 +190,7 @@ impl ActiveConnection {
                             txs,
                             identity,
                             endpoint,
-                            addr,
+                            tpu_address,
                             exit_signal,
                             last_stable_id,
                             QUIC_CONNECTION_TIMEOUT,
@@ -209,9 +214,28 @@ impl ActiveConnection {
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
     }
 
-    async fn send_copy_of_txs_to_quicproxy(txs: &Vec<Vec<u8>>, endpoint: Endpoint, proxy_address: SocketAddr) -> anyhow::Result<()> {
-        let txs_copy = txs.clone();
-        let send_result = timeout(Duration::from_millis(500), Self::send_tx(endpoint, proxy_address, &txs_copy));
+    async fn send_copy_of_txs_to_quicproxy(raw_tx_batch: &Vec<Vec<u8>>, endpoint: Endpoint,
+                                           proxy_address: SocketAddr, tpu_target_address: SocketAddr,
+        identity: Pubkey) -> anyhow::Result<()> {
+        let raw_tx_batch_copy = raw_tx_batch.clone();
+
+        let mut txs = vec![];
+
+        for raw_tx in raw_tx_batch_copy {
+            let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
+                Ok(tx) => tx,
+                Err(err) => {
+                    bail!(err.to_string());
+                }
+            };
+            txs.push(tx);
+        }
+
+        let forwarding_request = TpuForwardingRequest::new(tpu_target_address, identity, txs);
+
+        let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
+
+        let send_result = timeout(Duration::from_millis(500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw));
 
         match send_result.await {
             Ok(..) => {
@@ -224,13 +248,13 @@ impl ActiveConnection {
         Ok(())
     }
 
-    async fn send_tx(endpoint: Endpoint, proxy_address: SocketAddr, mut txs: &Vec<Vec<u8>>) -> anyhow::Result<()> {
+    async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
         let mut connecting = endpoint.connect(proxy_address, "localhost")?;
         let connection = timeout(Duration::from_millis(500), connecting).await??;
         let (mut send, mut recv) = connection.open_bi().await?;
-        for tx in txs {
-            send.write_all(tx).await?;
-        }
+
+        send.write_all(proxy_request_raw).await?;
+
         send.finish().await?;
 
         Ok(())
@@ -243,7 +267,7 @@ impl ActiveConnection {
         identity_stakes: IdentityStakes,
     ) {
         let endpoint = self.endpoint.clone();
-        let addr = self.tpu_address;
+        let tpu_address = self.tpu_address;
         let exit_signal = self.exit_signal.clone();
         let identity = self.identity;
         let txs_sent_store = self.txs_sent_store.clone();
@@ -252,7 +276,7 @@ impl ActiveConnection {
                 transaction_reciever,
                 exit_oneshot_channel,
                 endpoint,
-                addr,
+                tpu_address,
                 exit_signal,
                 identity,
                 identity_stakes,

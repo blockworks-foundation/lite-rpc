@@ -96,7 +96,7 @@ impl QuicConnectionUtils {
         identity: Pubkey,
         already_connected: bool,
         endpoint: Endpoint,
-        addr: SocketAddr,
+        tpu_address: SocketAddr,
         connection_timeout: Duration,
         connection_retry_count: usize,
         exit_signal: Arc<AtomicBool>,
@@ -104,9 +104,9 @@ impl QuicConnectionUtils {
     ) -> Option<Connection> {
         for _ in 0..connection_retry_count {
             let conn = if already_connected {
-                Self::make_connection_0rtt(endpoint.clone(), addr, connection_timeout).await
+                Self::make_connection_0rtt(endpoint.clone(), tpu_address, connection_timeout).await
             } else {
-                Self::make_connection(endpoint.clone(), addr, connection_timeout).await
+                Self::make_connection(endpoint.clone(), tpu_address, connection_timeout).await
             };
             match conn {
                 Ok(conn) => {

@@ -9,5 +9,6 @@ pub mod structures;
 pub mod subscription_handler;
 pub mod subscription_sink;
 pub mod tx_store;
+pub mod proxy_request_format;
 
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;

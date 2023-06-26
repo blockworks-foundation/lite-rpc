@@ -15,6 +15,7 @@ use solana_sdk::transaction::VersionedTransaction;
 use tokio::net::ToSocketAddrs;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::ActiveConnection;
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 
@@ -105,24 +106,26 @@ async fn handle_connection2(connecting: Connecting) -> anyhow::Result<()> {
                 Ok(s) => s,
             };
             tokio::spawn(async move {
-                let raw_tx = recv.read_to_end(100000).await
+                let raw_request = recv.read_to_end(100000).await
                     .unwrap();
                 // let str = std::str::from_utf8(&result).unwrap();
-                info!("read raw_tx {:02X?}", raw_tx);
+                info!("read proxy_request {:02X?}", raw_request);
 
-                let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
-                    Ok(tx) => tx,
+                let proxy_request = match bincode::deserialize::<TpuForwardingRequest>(&raw_request) {
+                    Ok(raw_request) => raw_request,
                     Err(err) => {
-                        bail!(err.to_string());
+                        warn!("failed to deserialize proxy request: {:?}", err);
+                        // bail!(err.to_string());
+                        return;
                     }
                 };
 
-                info!("transaction details: {} sigs", tx.signatures.len());
+                info!("transaction details: {} sigs", proxy_request.get_transactions().len());
 
                 // ActiveConnection::new(e)new(tx).await;
 
                 // send_data(send).await;
-                Ok(())
+                // Ok(())
             });
             // info!("stream okey {:?}", stream);
             // let fut = handle_request2(stream).await;
@@ -133,7 +136,7 @@ async fn handle_connection2(connecting: Connecting) -> anyhow::Result<()> {
             //         }
             //     }
             // );
-        }
+        } // -- loop
     }
         .await?;
     Ok(())
