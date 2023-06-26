@@ -109,7 +109,7 @@ async fn handle_connection2(connecting: Connecting) -> anyhow::Result<()> {
                 let raw_request = recv.read_to_end(100000).await
                     .unwrap();
                 // let str = std::str::from_utf8(&result).unwrap();
-                info!("read proxy_request {:02X?}", raw_request);
+                info!("read proxy_request {} bytes", raw_request.len());
 
                 let proxy_request = match bincode::deserialize::<TpuForwardingRequest>(&raw_request) {
                     Ok(raw_request) => raw_request,
@@ -120,7 +120,7 @@ async fn handle_connection2(connecting: Connecting) -> anyhow::Result<()> {
                     }
                 };
 
-                info!("transaction details: {} sigs", proxy_request.get_transactions().len());
+                info!("proxy request details: {}", proxy_request);
 
                 // ActiveConnection::new(e)new(tx).await;
 

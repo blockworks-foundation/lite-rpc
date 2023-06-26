@@ -1,10 +1,13 @@
-
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::str::FromStr;
+use anyhow::Context;
+use bincode::DefaultOptions;
 use log::info;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::transaction::Transaction;
+use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use spl_memo::solana_program::message::VersionedMessage;
-use crate::proxy_request_format::*;
+use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
+use solana_lite_rpc_core::proxy_request_format::*;
 
 #[test]
 fn roundtrip() {
@@ -25,8 +28,27 @@ fn roundtrip() {
 
     let request = deserialize_tpu_forwarding_request(&wire_data);
 
-    let TpuForwardingRequest::V1(req1) = request;
-
-    assert_eq!(req1.transactions.len(), 1);
+    assert_eq!(request.get_tpu_socket_addr().is_ipv4(), true);
+    assert_eq!(request.get_transactions().len(), 1);
 
 }
+
+fn serialize_tpu_forwarding_request(
+    tpu_socket_addr: SocketAddr,
+    tpu_identity: Pubkey,
+    transactions: Vec<VersionedTransaction>) -> Vec<u8> {
+
+    let request = TpuForwardingRequest::new(tpu_socket_addr, tpu_identity, transactions);
+
+    bincode::serialize(&request).expect("Expect to serialize transactions")
+}
+
+// TODO reame
+fn deserialize_tpu_forwarding_request(raw_proxy_request: &Vec<u8>) -> TpuForwardingRequest {
+    let request = bincode::deserialize::<TpuForwardingRequest>(&raw_proxy_request)
+        .context("deserialize proxy request")
+        .unwrap();
+
+    request
+}
+

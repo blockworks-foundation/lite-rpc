@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use anyhow::bail;
 use bytes::BufMut;
-use log::info;
+use log::{info, trace};
 use quinn::{Endpoint, VarInt};
 use rustls::ClientConfig;
 use solana_sdk::pubkey::Pubkey;
@@ -54,8 +54,9 @@ impl QuicTestClient {
                     let mut send = connection.open_uni().await?;
 
                     let raw = build_memo_tx_raw();
-                    info!("raw: {:02X?}", raw);
+                    trace!("raw: {:02X?}", raw);
                     // send.write_all(format!("SAMPLE DATA on stream {}", si).as_bytes()).await?;
+                    send.write_all(&raw).await?;
 
                     // shutdown stream
                     send.finish().await?;

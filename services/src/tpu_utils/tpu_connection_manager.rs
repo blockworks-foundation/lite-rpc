@@ -174,6 +174,7 @@ impl ActiveConnection {
                         NB_QUIC_TASKS.inc();
                         let connection = connection.unwrap();
 
+                        // TODO split to new service
                         // SOS
                         info!("Sending copy of transaction batch of {} to tpu with identity {} to quic proxy",
                             txs.len(), identity);
@@ -249,6 +250,8 @@ impl ActiveConnection {
     }
 
     async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
+        info!("sending {} bytes to proxy", proxy_request_raw.len());
+
         let mut connecting = endpoint.connect(proxy_address, "localhost")?;
         let connection = timeout(Duration::from_millis(500), connecting).await??;
         let mut send = connection.open_uni().await?;
