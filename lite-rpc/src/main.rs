@@ -2,7 +2,7 @@ pub mod rpc_tester;
 
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
@@ -11,8 +11,6 @@ use solana_sdk::signature::Keypair;
 use std::env;
 
 use crate::rpc_tester::RpcTester;
-
-const RESTART_DURATION: Duration = Duration::from_secs(20);
 
 async fn get_identity_keypair(identity_from_cli: &str) -> Keypair {
     if let Ok(identity_env_var) = env::var("IDENTITY") {
@@ -103,34 +101,20 @@ pub async fn main() -> anyhow::Result<()> {
 
     let args = get_args();
 
+    let ctrl_c_signal = tokio::signal::ctrl_c();
     let rpc_tester = RpcTester::from(&args).start();
 
-    let main = tokio::spawn(async move {
-        loop {
-            let Err(err) = start_lite_rpc(args.clone()).await else {
-                return anyhow::Error::msg("LiteBridge services returned without error");
-            };
-
-            // log and restart
-            log::error!("Services quit unexpectedly {err:?} restarting in {RESTART_DURATION:?}");
-            tokio::time::sleep(RESTART_DURATION).await;
-
-            // increment restart
-            log::error!("Restarting services");
-            RESTARTS.inc();
-        }
-    });
-
-    let ctrl_c_signal = tokio::signal::ctrl_c();
+    let main = start_lite_rpc(args.clone());
 
     tokio::select! {
         err = rpc_tester => {
             // This should never happen
             unreachable!("{err:?}")
         }
-        err = main => {
+        res = main => {
             // This should never happen
-            unreachable!("{err:?}")
+            log::error!("Services quit unexpectedly {res:?}");
+            bail!("")
         }
         _ = ctrl_c_signal => {
             log::info!("Received ctrl+c signal");
