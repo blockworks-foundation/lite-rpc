@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::time::Duration;
 use anyhow::{anyhow, bail};
-use itertools::Itertools;
-use log::{error, info, warn};
-use quinn::{Connecting, Connection, Endpoint, SendStream, ServerConfig};
+use itertools::{any, Itertools};
+use log::{debug, error, info, trace, warn};
+use quinn::{Connecting, Connection, Endpoint, SendStream, ServerConfig, VarInt};
 use rcgen::generate_simple_self_signed;
 use rustls::{Certificate, PrivateKey};
 use rustls::server::ResolvesServerCert;
@@ -59,26 +59,14 @@ impl QuicForwardProxy {
             let identity_keypair = Keypair::new(); // TODO
 
             while let Some(conn) = endpoint.accept().await {
-                info!("connection incoming");
-                let fut = handle_connection2(conn, exit_signal.clone(), self.validator_identity.clone());
+                trace!("connection incoming");
+                let fut = handle_connection(conn, exit_signal.clone(), self.validator_identity.clone());
                 tokio::spawn(async move {
                     if let Err(e) = fut.await {
                         error!("connection failed: {reason}", reason = e.to_string())
                     }
                 });
             }
-
-            // while let Some(conn) = endpoint.accept().await {
-            //     info!("connection incoming");
-            //     // let fut = handle_connection(conn);
-            //     tokio::spawn(async move {
-            //         info!("start thread");
-            //         handle_connection2(conn).await.unwrap();
-            //         // if let Err(e) = fut.await {
-            //         //     error!("connection failed: {reason}", reason = e.to_string())
-            //         // }
-            //     });
-            // }
 
             bail!("TPU Quic Proxy server stopped");
         });
@@ -93,52 +81,45 @@ impl QuicForwardProxy {
 }
 
 
-// meins
-async fn handle_connection2(connecting: Connecting, exit_signal: Arc<AtomicBool>, validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
+async fn handle_connection(connecting: Connecting, exit_signal: Arc<AtomicBool>, validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
     let connection = connecting.await?;
-    info!("inbound connection established, remote {connection}", connection = connection.remote_address());
+    debug!("inbound connection established, remote {connection}", connection = connection.remote_address());
     async {
         loop {
-            let stream = connection.accept_uni().await;
-            let mut recv = match stream {
-                Err(quinn::ConnectionError::ApplicationClosed { .. }) => {
-                    info!("connection closed");
+            let maybe_stream = connection.accept_uni().await;
+            let mut recv_stream = match maybe_stream {
+                Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
+                    debug!("connection closed by peer - reason: {:?}", reason);
+                    if reason.error_code != VarInt::from_u32(0) {
+                        return Err(anyhow!("connection closed by peer with unexpected reason: {:?}", reason));
+                    }
+                    debug!("connection gracefully closed by peer");
                     return Ok(());
-                }
+                },
                 Err(e) => {
-                    warn!("connection failed: {}", e);
-                    return Err(anyhow::Error::msg("connection failed"));
+                    error!("failed to accept stream: {}", e);
+                    return Err(anyhow::Error::msg("error accepting stream"));
                 }
                 Ok(s) => s,
             };
             let exit_signal_copy = exit_signal.clone();
             let validator_identity_copy = validator_identity.clone();
             tokio::spawn(async move {
-                let raw_request = recv.read_to_end(10_000_000).await
+                let raw_request = recv_stream.read_to_end(10_000_000).await
                     .unwrap();
-                // let str = std::str::from_utf8(&result).unwrap();
-                info!("read proxy_request {} bytes", raw_request.len());
+                debug!("read proxy_request {} bytes", raw_request.len());
 
                 let proxy_request = TpuForwardingRequest::deserialize_from_raw_request(&raw_request);
 
-                info!("proxy request details: {}", proxy_request);
+                debug!("proxy request details: {}", proxy_request);
                 let tpu_identity = proxy_request.get_identity_tpunode();
                 let tpu_addr = proxy_request.get_tpu_socket_addr();
                 let txs = proxy_request.get_transactions();
 
                 send_txs_to_tpu(exit_signal_copy, validator_identity_copy, tpu_identity, tpu_addr, &txs).await;
 
-                // Ok(())
             });
-            // info!("stream okey {:?}", stream);
-            // let fut = handle_request2(stream).await;
-            // tokio::spawn(
-            //     async move {
-            //         if let Err(e) = fut.await {
-            //             error!("failed: {reason}", reason = e.to_string());
-            //         }
-            //     }
-            // );
+
         } // -- loop
     }
         .await?;
@@ -175,6 +156,10 @@ async fn send_txs_to_tpu(exit_signal: Arc<AtomicBool>, validator_identity: Arc<K
     let endpoint = QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone());
     let last_stable_id: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
+    let txs_raw = serialize_to_vecvec(&txs);
+
+    info!("received vecvec: {}", txs_raw.iter().map(|tx| tx.len().to_string()).into_iter().join(","));
+
     let connection =
         Arc::new(RwLock::new(
             QuicConnectionUtils::connect(
@@ -189,12 +174,6 @@ async fn send_txs_to_tpu(exit_signal: Arc<AtomicBool>, validator_identity: Arc<K
                     // do nothing
                 },
             ).await.unwrap()));
-
-
-    let txs_raw = serialize_to_vecvec(&txs);
-
-    info!("received vecvec: {}", txs_raw.iter().map(|tx| tx.len().to_string()).into_iter().join(","));
-
 
     QuicConnectionUtils::send_transaction_batch(
         connection.clone(),
@@ -223,34 +202,3 @@ fn serialize_to_vecvec(transactions: &Vec<VersionedTransaction>) -> Vec<Vec<u8>>
         tx_raw
     }).collect_vec()
 }
-
-// async fn send_transactions_with_retry(
-//     conn: Connection,
-//     identity: Pubkey, txs: &Vec<VersionedTransaction>) {
-//     let mut retry = false;
-//     for tx in txs {
-//         let (stream, retry_conn) =
-//             Self::open_unistream(conn.clone(), last_stable_id.clone(), connection_timeout)
-//                 .await;
-//         if let Some(send_stream) = stream {
-//             let tx_raw = bincode::serialize(tx).unwrap();
-//
-//             retry = QuicConnectionUtils::write_all(
-//                 send_stream,
-//                 &tx_raw,
-//                 identity,
-//                 last_stable_id.clone(),
-//                 conn.stable_id() as u64,
-//                 connection_timeout,
-//             )
-//                 .await;
-//         } else {
-//             retry = retry_conn;
-//         }
-//         if retry {
-//             queue.push_back(tx);
-//             break;
-//         }
-//     }
-//
-// }
