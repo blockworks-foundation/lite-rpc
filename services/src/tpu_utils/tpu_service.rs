@@ -46,18 +46,30 @@ lazy_static::lazy_static! {
     register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
 }
 
+/// service (singleton)
 #[derive(Clone)]
 pub struct TpuService {
+    /// out
     current_slot: Arc<AtomicU64>,
+    /// out
     estimated_slot: Arc<AtomicU64>,
+    /// in
     fanout_slots: u64,
+    /// in
     rpc_client: Arc<RpcClient>,
+    /// in
     rpc_ws_address: String,
+    /// in
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
+    /// in
     tpu_connection_manager: Arc<TpuConnectionManager>,
+    /// in
     identity: Arc<Keypair>,
+    /// out
     identity_stakes: Arc<RwLock<IdentityStakes>>,
+    /// in
     txs_sent_store: TxStore,
+    /// out
     leader_schedule: Arc<LeaderSchedule>,
 }
 

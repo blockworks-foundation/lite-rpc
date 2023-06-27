@@ -4,7 +4,9 @@ use anyhow::Context;
 use bincode::DefaultOptions;
 use log::info;
 use serde::Serialize;
+use solana_sdk::hash::{Hash, Hasher};
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::{Keypair, Signer};
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use spl_memo::solana_program::message::VersionedMessage;
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
@@ -13,10 +15,10 @@ use solana_lite_rpc_core::proxy_request_format::*;
 #[test]
 fn roundtrip() {
 
-    let payer_pubkey = Pubkey::new_unique();
-    let signer_pubkey = Pubkey::new_unique();
+    let payer = Keypair::from_base58_string("rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr");
+    let payer_pubkey = payer.pubkey();
 
-    let memo_ix = spl_memo::build_memo("Hello world".as_bytes(), &[&signer_pubkey]);
+    let memo_ix = spl_memo::build_memo("Hello world".as_bytes(), &[&payer_pubkey]);
 
     let tx = Transaction::new_with_payer(&[memo_ix], Some(&payer_pubkey));
 
