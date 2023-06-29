@@ -37,3 +37,5 @@ quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
