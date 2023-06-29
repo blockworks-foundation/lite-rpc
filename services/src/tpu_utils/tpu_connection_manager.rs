@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use log::{error, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::{Connection, Endpoint};
 use solana_lite_rpc_core::{
@@ -85,6 +85,7 @@ impl ActiveConnection {
         identity_stakes: IdentityStakes,
         txs_sent_store: TxStore,
     ) {
+        debug!("listen with active connection for identity {} to tpu address {}", identity, tpu_address);
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
         let mut exit_oneshot_channel = exit_oneshot_channel;
@@ -176,7 +177,7 @@ impl ActiveConnection {
                         NB_QUIC_TASKS.inc();
                         let connection = connection.unwrap();
 
-                        if true {
+                        if false {
                             // TODO split to new service
                             // SOS
                             info!("Sending copy of transaction batch of {} to tpu with identity {} to quic proxy",
@@ -190,7 +191,7 @@ impl ActiveConnection {
                         }
 
 
-                        if false {
+                        if true {
                             QuicConnectionUtils::send_transaction_batch(
                                 connection,
                                 txs,
@@ -377,14 +378,18 @@ impl TpuConnectionManager {
 
 mod test {
     use std::collections::HashMap;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use std::sync::Arc;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+    use std::str::FromStr;
+    use std::sync::{Arc, RwLock};
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
     use futures::future::join_all;
-    use log::info;
+    use log::{debug, info};
     use solana_sdk::pubkey::Pubkey;
     use solana_sdk::signature::Keypair;
     use solana_streamer::nonblocking::quic::ConnectionPeerType;
+    use solana_streamer::quic::StreamStats;
+    use solana_streamer::streamer::StakedNodes;
     use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
     use tokio::runtime::Runtime;
     use tokio::{join, spawn};
@@ -402,12 +407,12 @@ mod test {
         tracing_subscriber::fmt::fmt()
             .with_max_level(tracing::Level::TRACE).init();
 
-        let txs_sent_store = empty_tx_store();
         let validator_identity = Arc::new(Keypair::new());
         let fanout_slots = 4;
 
         // (String, Vec<u8>) (signature, transaction)
-        let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
+        // _keeper is used to prevent the ref-count base closing to kick in
+        let (sender, _keeper) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let broadcast_sender = Arc::new(sender);
         let (certificate, key) = new_self_signed_tls_certificate(
             validator_identity.as_ref(),
@@ -418,7 +423,17 @@ mod test {
         let tpu_connection_manager =
             TpuConnectionManager::new(certificate, key, fanout_slots as usize);
 
+        // this effectively controls how many connections we will have
         let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
+        connections_to_keep.insert(
+            Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ").unwrap(),
+            "127.0.0.1:20001".parse().unwrap(),
+        );
+
+        connections_to_keep.insert(
+            Pubkey::from_str("1111111k4AYMctpyJakWNvGcte6tR8BLyZw54R8qu").unwrap(),
+            "127.0.0.1:20002".parse().unwrap(),
+        );
 
         // get information about the optional validator identity stake
         // populated from get_stakes_for_identity()
@@ -430,21 +445,21 @@ mod test {
             total_stakes: 100,
         };
 
-        let receiver2 = broadcast_sender.subscribe();
-
         tpu_connection_manager
             .update_connections(
                 broadcast_sender.clone(),
                 connections_to_keep,
                 identity_stakes,
-                txs_sent_store.clone(),
+                // note: tx_store is useless in this scenario as it is never changed; it's only used to check for duplicates
+                empty_tx_store().clone(),
             )
             .await;
 
-
         broadcast_sender.send(("sig01".to_string(), vec![1,2,3,4]))?;
 
-        println!("remaining: {}", broadcast_sender.len());
+        sleep(Duration::from_millis(100)).await;
+
+        debug!("remaining: {}", broadcast_sender.len());
 
         Ok(())
     }
@@ -504,6 +519,57 @@ mod test {
         tx.send(20).unwrap();
 
         join!(jh1, jh2);
+    }
+
+    #[tokio::test]
+    // taken from solana -> test_nonblocking_quic_client_multiple_writes
+    async fn streamer() {
+        tracing_subscriber::fmt::fmt()
+            .with_max_level(tracing::Level::TRACE).init();
+
+        let (sender, _receiver) = crossbeam_channel::unbounded();
+        let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
+        let (s, exit, keypair, ip, stats) = server_args();
+        let (_, t) = solana_streamer::nonblocking::quic::spawn_server(
+            s.try_clone().unwrap(),
+            &keypair,
+            ip,
+            sender,
+            exit.clone(),
+            1,
+            staked_nodes,
+            10,
+            10,
+            stats,
+            1000,
+        )
+            .unwrap();
+
+        let addr = s.local_addr().unwrap().ip();
+        let port = s.local_addr().unwrap().port();
+        let tpu_addr = SocketAddr::new(addr, port);
+
+        sleep(Duration::from_millis(500)).await;
+
+        exit.store(true, Ordering::Relaxed);
+        t.await.unwrap();
+
+    }
+
+    fn server_args() -> (
+        UdpSocket,
+        Arc<AtomicBool>,
+        Keypair,
+        IpAddr,
+        Arc<StreamStats>,
+    ) {
+        (
+            UdpSocket::bind("127.0.0.1:0").unwrap(),
+            Arc::new(AtomicBool::new(false)),
+            Keypair::new(),
+            "127.0.0.1".parse().unwrap(),
+            Arc::new(StreamStats::default()),
+        )
     }
 
 }

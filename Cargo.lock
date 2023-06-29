@@ -4050,6 +4050,7 @@ dependencies = [
  "bs58",
  "bytes",
  "chrono",
+ "crossbeam-channel",
  "dashmap",
  "futures",
  "itertools",
