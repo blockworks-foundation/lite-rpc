@@ -1,6 +1,7 @@
 pub mod quic_util;
 pub mod tls_config_provicer;
 pub mod proxy;
+pub mod tpu_quic_connection;
 pub mod test_client;
 pub mod cli;
 

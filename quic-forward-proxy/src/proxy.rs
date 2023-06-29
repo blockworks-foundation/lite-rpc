@@ -2,6 +2,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::thread::sleep;
 use std::time::Duration;
 use anyhow::{anyhow, bail};
 use itertools::{any, Itertools};
@@ -19,9 +20,11 @@ use tokio::net::ToSocketAddrs;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::RwLock;
+use solana_lite_rpc_core::leader_schedule::LeaderSchedule;
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionUtils;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::{ActiveConnection, CONNECTION_RETRY_COUNT, QUIC_CONNECTION_TIMEOUT};
+use crate::tpu_quic_connection::TpuQuicConnection;
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 
 
@@ -61,17 +64,8 @@ impl QuicForwardProxy {
             while let Some(conn) = endpoint.accept().await {
                 trace!("connection incoming");
 
-                let (certificate, key) = new_self_signed_tls_certificate(
-                    self.validator_identity.as_ref(),
-                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-                )
-                    .expect("Failed to initialize QUIC client certificates");
-
-                let endpoint_outbound = QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone());
-
-                let active_tpu_connection = ActiveTpuConnection {
-                    endpoint: endpoint_outbound.clone(),
-                };
+                let active_tpu_connection =
+                    TpuQuicConnection::new_with_validator_identity(self.validator_identity.as_ref());
 
                 let fut = handle_connection(conn, active_tpu_connection, exit_signal.clone(), self.validator_identity.clone());
                 tokio::spawn(async move {
@@ -93,61 +87,8 @@ impl QuicForwardProxy {
 
 }
 
-#[derive(Clone)]
-struct ActiveTpuConnection {
-    endpoint: Endpoint,
-}
 
-impl ActiveTpuConnection {
-
-    pub async fn send_txs_to_tpu(&self, exit_signal: Arc<AtomicBool>, validator_identity: Arc<Keypair>, tpu_identity: Pubkey, tpu_addr: SocketAddr, txs: &Vec<VersionedTransaction>) {
-
-        let last_stable_id: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-
-        let txs_raw = serialize_to_vecvec(&txs);
-
-        info!("received vecvec: {}", txs_raw.iter().map(|tx| tx.len().to_string()).into_iter().join(","));
-
-        let connection =
-            Arc::new(RwLock::new(
-                QuicConnectionUtils::connect(
-                    tpu_identity,
-                    false,
-                    self.endpoint.clone(),
-                    tpu_addr,
-                    QUIC_CONNECTION_TIMEOUT,
-                    CONNECTION_RETRY_COUNT,
-                    exit_signal.clone(),
-                    || {
-                        // do nothing
-                    },
-                ).await.unwrap()));
-
-        QuicConnectionUtils::send_transaction_batch(
-            connection.clone(),
-            txs_raw,
-            tpu_identity,
-            self.endpoint.clone(),
-            tpu_addr,
-            exit_signal.clone(),
-            last_stable_id,
-            QUIC_CONNECTION_TIMEOUT,
-            CONNECTION_RETRY_COUNT,
-            || {
-                // do nothing
-            }
-        ).await;
-
-        {
-            let conn = connection.clone();
-            conn.write().await.close(0u32.into(), b"done");
-        }
-    }
-
-}
-
-
-async fn handle_connection(connecting: Connecting, active_tpu_connection: ActiveTpuConnection, exit_signal: Arc<AtomicBool>, validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
+async fn handle_connection(connecting: Connecting, active_tpu_connection: TpuQuicConnection, exit_signal: Arc<AtomicBool>, validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
     let connection = connecting.await?;
     debug!("inbound connection established, remote {connection}", connection = connection.remote_address());
     loop {
@@ -171,7 +112,7 @@ async fn handle_connection(connecting: Connecting, active_tpu_connection: Active
         let exit_signal_copy = exit_signal.clone();
         let validator_identity_copy = validator_identity.clone();
         tokio::spawn(async move {
-            let raw_request = recv_stream.read_to_end(10_000_000).await
+            let raw_request = recv_stream.read_to_end(10_000_000).await // TODO extract to const
                 .unwrap();
             debug!("read proxy_request {} bytes", raw_request.len());
 
@@ -179,19 +120,12 @@ async fn handle_connection(connecting: Connecting, active_tpu_connection: Active
 
             debug!("proxy request details: {}", proxy_request);
             let tpu_identity = proxy_request.get_identity_tpunode();
-            let tpu_addr = proxy_request.get_tpu_socket_addr();
+            let tpu_address = proxy_request.get_tpu_socket_addr();
             let txs = proxy_request.get_transactions();
 
-            active_tpu_connection_copy.send_txs_to_tpu(exit_signal_copy, validator_identity_copy, tpu_identity, tpu_addr, &txs).await;
+            active_tpu_connection_copy.send_txs_to_tpu(exit_signal_copy, validator_identity_copy, tpu_identity, tpu_address, &txs).await;
 
         });
 
     } // -- loop
-}
-
-fn serialize_to_vecvec(transactions: &Vec<VersionedTransaction>) -> Vec<Vec<u8>> {
-    transactions.iter().map(|tx| {
-        let tx_raw = bincode::serialize(tx).unwrap();
-        tx_raw
-    }).collect_vec()
 }

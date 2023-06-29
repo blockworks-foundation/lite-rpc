@@ -187,6 +187,7 @@ impl QuicConnectionUtils {
                 last_stable_id.store(connection.stable_id() as u64, Ordering::Relaxed);
                 (None, true)
             }
+            // timeout
             Err(_) => (None, false),
         }
     }

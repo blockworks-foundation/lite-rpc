@@ -14,6 +14,7 @@ use solana_lite_rpc_quic_forward_proxy::SelfSignedTlsConfigProvider;
 use solana_lite_rpc_quic_forward_proxy::test_client::quic_test_client::QuicTestClient;
 // use lite_rpc_quic_forward_proxy::tls_config::SelfSignedTlsConfigProvider;
 
+// note: copy of this method is used in quic-forward-proxy
 async fn get_identity_keypair(identity_from_cli: &String) -> Keypair {
     if let Ok(identity_env_var) = env::var("IDENTITY") {
         if let Ok(identity_bytes) = serde_json::from_str::<Vec<u8>>(identity_env_var.as_str()) {

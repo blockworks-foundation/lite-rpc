@@ -87,7 +87,7 @@ impl TpuService {
             validator_identity.as_ref(),
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         )
-        .expect("Failed to initialize QUIC client certificates");
+        .expect("Failed to initialize QUIC connection certificates");
 
         let tpu_connection_manager =
             TpuConnectionManager::new(certificate, key, fanout_slots as usize);

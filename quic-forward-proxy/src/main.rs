@@ -10,6 +10,7 @@ use crate::test_client::quic_test_client::QuicTestClient;
 use crate::tls_config_provicer::SelfSignedTlsConfigProvider;
 
 mod proxy;
+mod tpu_quic_connection;
 mod test_client;
 mod quic_util;
 mod tls_config_provicer;
