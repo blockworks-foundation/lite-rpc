@@ -523,30 +523,36 @@ mod test {
 
     #[tokio::test]
     // taken from solana -> test_nonblocking_quic_client_multiple_writes
-    async fn streamer() {
+    async fn solana_quic_streamer_start() {
         tracing_subscriber::fmt::fmt()
             .with_max_level(tracing::Level::TRACE).init();
 
         let (sender, _receiver) = crossbeam_channel::unbounded();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-        let (s, exit, keypair, ip, stats) = server_args();
+        let sock = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let exit = Arc::new(AtomicBool::new(false));
+        // keypair to derive the server tls certificate
+        let keypair = Keypair::new();
+        // gossip_host is used in the server certificate
+        let gossip_host =  "127.0.0.1".parse().unwrap();
+        let stats = Arc::new(StreamStats::default());
         let (_, t) = solana_streamer::nonblocking::quic::spawn_server(
-            s.try_clone().unwrap(),
+            sock.try_clone().unwrap(),
             &keypair,
-            ip,
+            gossip_host,
             sender,
             exit.clone(),
             1,
             staked_nodes,
             10,
             10,
-            stats,
+            stats.clone(),
             1000,
         )
             .unwrap();
 
-        let addr = s.local_addr().unwrap().ip();
-        let port = s.local_addr().unwrap().port();
+        let addr = sock.local_addr().unwrap().ip();
+        let port = sock.local_addr().unwrap().port();
         let tpu_addr = SocketAddr::new(addr, port);
 
         sleep(Duration::from_millis(500)).await;
@@ -554,22 +560,6 @@ mod test {
         exit.store(true, Ordering::Relaxed);
         t.await.unwrap();
 
+        stats.report();
     }
-
-    fn server_args() -> (
-        UdpSocket,
-        Arc<AtomicBool>,
-        Keypair,
-        IpAddr,
-        Arc<StreamStats>,
-    ) {
-        (
-            UdpSocket::bind("127.0.0.1:0").unwrap(),
-            Arc::new(AtomicBool::new(false)),
-            Keypair::new(),
-            "127.0.0.1".parse().unwrap(),
-            Arc::new(StreamStats::default()),
-        )
-    }
-
 }
