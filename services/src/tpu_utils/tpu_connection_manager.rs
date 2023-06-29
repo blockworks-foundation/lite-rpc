@@ -284,3 +284,65 @@ impl TpuConnectionManager {
         }
     }
 }
+
+
+mod test {
+    use std::collections::HashMap;
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::sync::Arc;
+    use solana_sdk::pubkey::Pubkey;
+    use solana_sdk::signature::Keypair;
+    use solana_streamer::nonblocking::quic::ConnectionPeerType;
+    use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+    use tokio::runtime::Runtime;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
+    use solana_lite_rpc_core::tx_store::empty_tx_store;
+    use crate::tpu_utils::tpu_connection_manager::TpuConnectionManager;
+
+    #[tokio::test]
+    async fn test() {
+        tracing_subscriber::fmt::fmt()
+            .with_max_level(tracing::Level::TRACE).init();
+
+        const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
+        let txs_sent_store = empty_tx_store();
+        let validator_identity = Arc::new(Keypair::new());
+        let fanout_slots = 4;
+
+        let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
+        let broadcast_sender = Arc::new(sender);
+        let (certificate, key) = new_self_signed_tls_certificate(
+            validator_identity.as_ref(),
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+        )
+            .expect("Failed to initialize QUIC connection certificates");
+
+        let tpu_connection_manager =
+            TpuConnectionManager::new(certificate, key, fanout_slots as usize);
+
+        let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
+
+        // get information about the optional validator identity stake
+        // populated from get_stakes_for_identity()
+        let identity_stakes = IdentityStakes {
+            peer_type: ConnectionPeerType::Staked,
+            stakes: 30, // stake of lite-rpc
+            min_stakes: 0,
+            max_stakes: 40,
+            total_stakes: 100,
+        };
+
+        tpu_connection_manager
+            .update_connections(
+                broadcast_sender.clone(),
+                connections_to_keep,
+                identity_stakes,
+                txs_sent_store.clone(),
+            )
+            .await;
+
+
+    }
+
+}

@@ -4023,6 +4023,8 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
