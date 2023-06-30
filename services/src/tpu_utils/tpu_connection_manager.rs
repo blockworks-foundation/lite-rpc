@@ -387,6 +387,7 @@ mod test {
     use std::time::Duration;
     use futures::future::join_all;
     use log::{debug, info};
+    use quinn::TokioRuntime;
     use solana_rpc_client::rpc_client::SerializableTransaction;
     use solana_sdk::hash::Hash;
     use solana_sdk::instruction::Instruction;
@@ -399,7 +400,7 @@ mod test {
     use solana_streamer::quic::StreamStats;
     use solana_streamer::streamer::StakedNodes;
     use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
-    use tokio::runtime::Runtime;
+    use tokio::runtime::{Builder, Runtime};
     use tokio::{join, spawn};
     use tokio::sync::broadcast;
     use tokio::sync::broadcast::error::SendError;
@@ -413,29 +414,61 @@ mod test {
     const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
 
     // TODO tweak tokio / two runtime
-    #[tokio::test]
-    async fn wireup_and_send_txs_via_channel() -> anyhow::Result<()> {
+    #[test]
+    fn wireup_and_send_txs_via_channel() -> anyhow::Result<()> {
         tracing_subscriber::fmt::fmt()
             .with_max_level(tracing::Level::TRACE).init();
 
-        let literpc_validator_stake_identity = Arc::new(Keypair::new());
+        // solana quic streamer - see quic.rs -> rt()
+        const NUM_QUIC_STREAMER_WORKER_THREADS: usize = 1;
+        let runtime1 = Builder::new_multi_thread()
+            .worker_threads(NUM_QUIC_STREAMER_WORKER_THREADS)
+            .thread_name("quic-server")
+            .enable_all()
+            .build()
+            .expect("failed to build tokio runtime for testing quic server");
 
-        /// setup solana Quic streamer
-        // see log "Start quic server on UdpSocket { addr: 127.0.0.1:xxxxx, fd: 10 }"
-        let mut solana_quic_streamer = SolanaQuicStreamer::new_start_listening();
-        let streamer_staked_nodes = solana_quic_streamer.get_staked_nodes();
-
-        {
-            let mut lock = streamer_staked_nodes.write().unwrap();
-            lock.pubkey_stake_map.insert(
-                literpc_validator_stake_identity.pubkey(), 30);
-        }
-
-        ///
-        /// setup tpu lite-rpc infrastructure
-        ///
+        // lite-rpc
+        let runtime2 = tokio::runtime::Builder::new_multi_thread()
+            // see lite-rpc -> main.rs
+            .worker_threads(16)
+            .enable_all()
+            .build()
+            .expect("failed to build tokio runtime for lite-rpc");
 
 
+        let udp_listen_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let listen_addr = udp_listen_socket.local_addr()?;
+        let literpc_validator_identity = Arc::new(Keypair::new());
+
+        runtime1.block_on(async {
+
+            /// setup solana Quic streamer
+            // see log "Start quic server on UdpSocket { addr: 127.0.0.1:xxxxx, fd: 10 }"
+
+            let mut solana_quic_streamer = SolanaQuicStreamer::new_start_listening(udp_listen_socket);
+
+            if STAKE_CONNECTION {
+                solana_quic_streamer.add_stake_for_identity(
+                    literpc_validator_identity.as_ref(),
+                    30,
+                );
+            }
+
+
+        });
+
+        runtime2.block_on(start_literpc_client(listen_addr, literpc_validator_identity))?;
+
+        // shutdown streamer
+        // solana_quic_streamer.shutdown().await;
+
+        Ok(())
+    }
+
+    const STAKE_CONNECTION: bool = true;
+
+    async fn start_literpc_client(listen_addrs: SocketAddr, literpc_validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
         let fanout_slots = 4;
 
         // (String, Vec<u8>) (signature, transaction)
@@ -443,7 +476,7 @@ mod test {
         let (sender, _keeper) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let broadcast_sender = Arc::new(sender);
         let (certificate, key) = new_self_signed_tls_certificate(
-            literpc_validator_stake_identity.as_ref(),
+            literpc_validator_identity.as_ref(),
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         )
             .expect("Failed to initialize QUIC connection certificates");
@@ -465,15 +498,15 @@ mod test {
 
         // this is the real streamer
         connections_to_keep.insert(
-            literpc_validator_stake_identity.pubkey(),
-            solana_quic_streamer.get_socket_addr(),
+            literpc_validator_identity.pubkey(),
+            listen_addrs,
         );
 
         // get information about the optional validator identity stake
         // populated from get_stakes_for_identity()
         let identity_stakes = IdentityStakes {
             peer_type: ConnectionPeerType::Staked,
-            stakes: 30, // stake of lite-rpc
+            stakes: if STAKE_CONNECTION { 30 } else { 0 }, // stake of lite-rpc
             min_stakes: 0,
             max_stakes: 40,
             total_stakes: 100,
@@ -500,10 +533,6 @@ mod test {
         sleep(Duration::from_millis(100)).await;
 
         debug!("remaining: {}", broadcast_sender.len());
-
-        // shutdown streamer
-        solana_quic_streamer.shutdown().await;
-
         Ok(())
     }
 
@@ -623,8 +652,10 @@ mod test {
         pub fn get_socket_addr(&self) -> SocketAddr {
             self.sock.local_addr().unwrap()
         }
-        pub fn get_staked_nodes(&self) -> Arc<RwLock<StakedNodes>> {
-            self.staked_nodes.clone()
+        pub fn add_stake_for_identity(&self, identity: &Keypair, stake: u64) {
+            let mut lock = self.staked_nodes.write().unwrap();
+            let prev = lock.pubkey_stake_map.insert(identity.pubkey(), stake);
+            assert!(prev.is_none(), "identity {} already staked", identity.pubkey());
         }
     }
 
@@ -637,10 +668,9 @@ mod test {
     }
 
     impl SolanaQuicStreamer {
-        fn new_start_listening() -> Self {
+        fn new_start_listening(udp_socket: UdpSocket) -> Self {
             let (sender, _receiver) = crossbeam_channel::unbounded();
             let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-            let sock = UdpSocket::bind("127.0.0.1:0").unwrap();
             let exit = Arc::new(AtomicBool::new(false));
             // keypair to derive the server tls certificate
             let keypair = Keypair::new();
@@ -648,7 +678,7 @@ mod test {
             let gossip_host = "127.0.0.1".parse().unwrap();
             let stats = Arc::new(StreamStats::default());
             let (_, jh) = solana_streamer::nonblocking::quic::spawn_server(
-                sock.try_clone().unwrap(),
+                udp_socket.try_clone().unwrap(),
                 &keypair,
                 gossip_host,
                 sender,
@@ -662,12 +692,12 @@ mod test {
             )
                 .unwrap();
 
-            let addr = sock.local_addr().unwrap().ip();
-            let port = sock.local_addr().unwrap().port();
+            let addr = udp_socket.local_addr().unwrap().ip();
+            let port = udp_socket.local_addr().unwrap().port();
             let tpu_addr = SocketAddr::new(addr, port);
 
             Self {
-                sock,
+                sock: udp_socket,
                 exit,
                 join_handler: jh,
                 stats,
@@ -681,6 +711,7 @@ mod test {
 
     pub fn build_raw_sample_tx() -> (String, Vec<u8>) {
 
+        // FIXME
         let payer_keypair = keypair::read_keypair_file(
             Path::new("/Users/stefan/mango/solana-wallet/solana-testnet-stefantest.json")
         ).unwrap();
