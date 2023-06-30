@@ -32,7 +32,7 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::SendError;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, sleep};
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{fmt, filter::LevelFilter};
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_core::tx_store::empty_tx_store;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
@@ -41,12 +41,13 @@ use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionMa
 const SAMPLE_TX_COUNT: u32 = 10;
 
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
-const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
+const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 2; // prod=8
 
 #[test]
 pub fn wireup_and_send_txs_via_channel() {
     tracing_subscriber::fmt::fmt()
-        .with_max_level(tracing::Level::TRACE).init();
+        .with_max_level(LevelFilter::DEBUG)
+        .init();
 
     // solana quic streamer - see quic.rs -> rt()
     const NUM_QUIC_STREAMER_WORKER_THREADS: usize = 1;
@@ -60,7 +61,7 @@ pub fn wireup_and_send_txs_via_channel() {
     // lite-rpc
     let runtime2 = tokio::runtime::Builder::new_multi_thread()
         // see lite-rpc -> main.rs
-        .worker_threads(16)
+        .worker_threads(16) // TODO revert to the config before the deadlock fix
         .enable_all()
         .build()
         .expect("failed to build tokio runtime for lite-rpc");
@@ -107,11 +108,9 @@ pub fn wireup_and_send_txs_via_channel() {
         while packet_count != SAMPLE_TX_COUNT {
             match inbound_packets_receiver.recv() {
                 Ok(packet_batch) => {
-                    info!("received packets: {}", packet_batch.len());
                     packet_count = packet_count + packet_batch.len() as u32;
 
                     for packet in packet_batch.iter() {
-                        info!("packet: {:?}", packet);
                         let tx = packet.deserialize_slice::<VersionedTransaction, _>(..).unwrap();
                         debug!("read transaction from quic streaming server: {:?}", tx.get_signature());
                         // for ix in tx.message.instructions() {
@@ -119,6 +118,7 @@ pub fn wireup_and_send_txs_via_channel() {
                         // }
                     }
 
+                    info!("received packets so far: {}", packet_count);
                     if packet_count == SAMPLE_TX_COUNT {
                         break;
                     }
