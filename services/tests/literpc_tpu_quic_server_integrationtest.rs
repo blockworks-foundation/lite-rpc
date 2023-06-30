@@ -38,7 +38,7 @@ use solana_lite_rpc_core::tx_store::empty_tx_store;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
 
 
-const SAMPLE_TX_COUNT: u32 = 2;
+const SAMPLE_TX_COUNT: u32 = 10;
 
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
 const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
@@ -145,7 +145,7 @@ pub fn wireup_and_send_txs_via_channel() {
 const STAKE_CONNECTION: bool = true;
 
 async fn start_literpc_client(streamer_listen_addrs: SocketAddr, literpc_validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
-    let fanout_slots = 1; // TODO change
+    let fanout_slots = 4;
 
     // (String, Vec<u8>) (signature, transaction)
     let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
@@ -159,17 +159,20 @@ async fn start_literpc_client(streamer_listen_addrs: SocketAddr, literpc_validat
     let tpu_connection_manager =
         TpuConnectionManager::new(certificate, key, fanout_slots as usize);
 
+
     // this effectively controls how many connections we will have
     let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
-    // connections_to_keep.insert(
-    //     Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ")?,
-    //     "127.0.0.1:20001".parse()?,
-    // );
+    let addr1 = UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    connections_to_keep.insert(
+        Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ")?,
+        addr1,
+    );
 
-    // connections_to_keep.insert(
-    //     Pubkey::from_str("1111111k4AYMctpyJakWNvGcte6tR8BLyZw54R8qu")?,
-    //     "127.0.0.1:20002".parse()?,
-    // );
+    let addr2 = UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    connections_to_keep.insert(
+        Pubkey::from_str("1111111k4AYMctpyJakWNvGcte6tR8BLyZw54R8qu")?,
+        addr2,
+    );
 
     // this is the real streamer
     connections_to_keep.insert(
