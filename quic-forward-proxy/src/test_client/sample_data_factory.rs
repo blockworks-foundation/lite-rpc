@@ -30,7 +30,7 @@ fn build_sample_tx(payer_keypair: &Keypair) -> VersionedTransaction {
 }
 
 // from bench helpers
-pub fn create_memo_tx(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
+fn create_memo_tx(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
     let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
 
     let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
