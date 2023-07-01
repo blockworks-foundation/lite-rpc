@@ -46,15 +46,7 @@ const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 2; // prod=8
 
 #[test]
 pub fn wireup_and_send_txs_via_channel() {
-    let env_filter = if SAMPLE_TX_COUNT < 100 {
-        "trace,rustls=info"
-    } else {
-        "trace,rustls=info,quinn_proto=debug"
-    };
-    tracing_subscriber::fmt::fmt()
-        // .with_max_level(LevelFilter::DEBUG)
-        .with_env_filter(env_filter)
-        .init();
+    configure_logging();
 
     // solana quic streamer - see quic.rs -> rt()
     const NUM_QUIC_STREAMER_WORKER_THREADS: usize = 1;
@@ -119,38 +111,33 @@ pub fn wireup_and_send_txs_via_channel() {
         let mut packet_count2 = 0;
         const WARMUP_TX_COUNT: u32 = SAMPLE_TX_COUNT / 2;
         while packet_count != SAMPLE_TX_COUNT {
-            match inbound_packets_receiver.recv() {
-                Ok(packet_batch) => {
-                    if packet_count == 0 {
-                        info!("time to first packet {}ms", time_to_first.elapsed().as_millis());
-                    }
+            let packet_batch = inbound_packets_receiver.recv().expect("receive must succeed");
 
-                    packet_count = packet_count + packet_batch.len() as u32;
-                    if timer2.is_some() {
-                        packet_count2 = packet_count2 + packet_batch.len() as u32;
-                    }
-
-                    for packet in packet_batch.iter() {
-                        let tx = packet.deserialize_slice::<VersionedTransaction, _>(..).unwrap();
-                        // debug!("read transaction from quic streaming server: {:?}", tx.get_signature());
-                        // for ix in tx.message.instructions() {
-                        //     info!("instruction: {:?}", ix.data);
-                        // }
-                    }
-
-                    if packet_count == WARMUP_TX_COUNT {
-                        timer2 = Some(Instant::now());
-                    }
-                    // info!("received packets so far: {}", packet_count);
-                    if packet_count == SAMPLE_TX_COUNT {
-                        break;
-                    }
-                }
-                Err(err) => {
-                    panic!("Error polling quic streaming channel: {}", err);
-                }
+            if packet_count == 0 {
+                info!("time to first packet {}ms", time_to_first.elapsed().as_millis());
             }
-        }
+
+            packet_count = packet_count + packet_batch.len() as u32;
+            if timer2.is_some() {
+                packet_count2 = packet_count2 + packet_batch.len() as u32;
+            }
+
+            for packet in packet_batch.iter() {
+                let tx = packet.deserialize_slice::<VersionedTransaction, _>(..).unwrap();
+                // debug!("read transaction from quic streaming server: {:?}", tx.get_signature());
+                // for ix in tx.message.instructions() {
+                //     info!("instruction: {:?}", ix.data);
+                // }
+            }
+
+            if packet_count == WARMUP_TX_COUNT {
+                timer2 = Some(Instant::now());
+            }
+            // info!("received packets so far: {}", packet_count);
+            if packet_count == SAMPLE_TX_COUNT {
+                break;
+            }
+        } // -- while not all packets received - by count
 
         let total_duration = timer.elapsed();
         let half_duration = timer2.unwrap().elapsed();
@@ -173,6 +160,18 @@ pub fn wireup_and_send_txs_via_channel() {
 
     packet_consumer_jh.join().unwrap();
 
+}
+
+fn configure_logging() {
+    let env_filter = if SAMPLE_TX_COUNT < 100 {
+        "trace,rustls=info,quinn_proto=debug"
+    } else {
+        "trace,quinn_proto=info,rustls=info,solana_streamer=debug"
+    };
+    tracing_subscriber::fmt::fmt()
+        // .with_max_level(LevelFilter::DEBUG)
+        .with_env_filter(env_filter)
+        .init();
 }
 
 const STAKE_CONNECTION: bool = true;
