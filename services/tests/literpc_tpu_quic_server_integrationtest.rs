@@ -44,11 +44,11 @@ const SAMPLE_TX_COUNT: u32 = 1000;
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
 const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 2; // prod=8
 
-#[test]
+#[test] // note: tokio runtimes get created as part of the integration test
 pub fn wireup_and_send_txs_via_channel() {
     configure_logging();
 
-    // solana quic streamer - see quic.rs -> rt()
+    // value from solana - see quic streamer - see quic.rs -> rt()
     const NUM_QUIC_STREAMER_WORKER_THREADS: usize = 1;
     let runtime1 = Builder::new_multi_thread()
         .worker_threads(1)
@@ -60,10 +60,10 @@ pub fn wireup_and_send_txs_via_channel() {
     // lite-rpc
     let runtime2 = tokio::runtime::Builder::new_multi_thread()
         // see lite-rpc -> main.rs
-        .worker_threads(16) // TODO revert to the config before the deadlock fix
+        .worker_threads(16) // note: this value has changed with the "deadlock fix" - TODO experiment with it
         .enable_all()
         .build()
-        .expect("failed to build tokio runtime for lite-rpc");
+        .expect("failed to build tokio runtime for lite-rpc-tpu-client");
 
 
     let literpc_validator_identity = Arc::new(Keypair::new());
@@ -76,7 +76,6 @@ pub fn wireup_and_send_txs_via_channel() {
 
         /// setup solana Quic streamer
         // see log "Start quic server on UdpSocket { addr: 127.0.0.1:xxxxx, fd: 10 }"
-
 
         let staked_nodes = StakedNodes {
             total_stake: 100,
@@ -92,8 +91,8 @@ pub fn wireup_and_send_txs_via_channel() {
                 } else { HashMap::default() }
         };
 
-
-        let mut solana_quic_streamer = SolanaQuicStreamer::new_start_listening(udp_listen_socket, inbound_packets_sender, staked_nodes);
+        let _solana_quic_streamer = SolanaQuicStreamer::new_start_listening(
+            udp_listen_socket, inbound_packets_sender, staked_nodes);
 
     });
 
@@ -111,7 +110,7 @@ pub fn wireup_and_send_txs_via_channel() {
         let mut packet_count2 = 0;
         const WARMUP_TX_COUNT: u32 = SAMPLE_TX_COUNT / 2;
         while packet_count != SAMPLE_TX_COUNT {
-            let packet_batch = inbound_packets_receiver.recv().expect("receive must succeed");
+            let packet_batch: PacketBatch = inbound_packets_receiver.recv().expect("receive must succeed");
 
             if packet_count == 0 {
                 info!("time to first packet {}ms", time_to_first.elapsed().as_millis());
@@ -150,7 +149,7 @@ pub fn wireup_and_send_txs_via_channel() {
         );
 
         info!("got all expected packets - shutting down tokio runtime with lite-rpc client");
-        runtime2.shutdown_timeout(Duration::from_millis(100));
+        runtime2.shutdown_timeout(Duration::from_millis(1000));
     });
 
 
