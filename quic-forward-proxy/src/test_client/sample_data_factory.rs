@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::str::FromStr;
+use log::warn;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::message::Message;
@@ -12,10 +13,8 @@ const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
 pub fn build_raw_sample_tx() -> Vec<u8> {
 
-    let payer_keypair = keypair::read_keypair_file(
-        Path::new("/Users/stefan/mango/solana-wallet/solana-testnet-stefantest.json")
-    ).unwrap();
-
+    warn!("Use synthetic keypair for payer!");
+    let payer_keypair = Keypair::from_base58_string("rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr");
 
     let tx = build_sample_tx(&payer_keypair);
 

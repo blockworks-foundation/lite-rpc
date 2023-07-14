@@ -23,6 +23,7 @@ use solana_client::client_error::reqwest::header::WARNING;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::time::timeout;
+use tracing::field::debug;
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
 
 pub const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -85,7 +86,7 @@ impl ActiveConnection {
         identity_stakes: IdentityStakes,
         txs_sent_store: TxStore,
     ) {
-        debug!("listen with active connection for identity {} to tpu address {}", identity, tpu_address);
+        debug!("outbound active connection for identity {} to tpu address {}", identity, tpu_address);
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
         let mut exit_oneshot_channel = exit_oneshot_channel;
@@ -119,8 +120,10 @@ impl ActiveConnection {
                         break;
                     }
 
+
                     let first_tx: Vec<u8> = match tx {
                         Ok((sig, tx)) => {
+                            debug!("handle first transaction {} in active connection to {}", sig, tpu_address);
                             if Self::check_for_confirmation(&txs_sent_store, sig) {
                                 // transaction is already confirmed/ no need to send
                                 continue;
@@ -139,12 +142,16 @@ impl ActiveConnection {
                     let mut txs = vec![first_tx];
                     for _ in 1..number_of_transactions_per_unistream {
                         if let Ok((signature, tx)) = transaction_reciever.try_recv() {
+                            debug!("handle more transaction {} in active connection to {}", signature, tpu_address);
+
                             if Self::check_for_confirmation(&txs_sent_store, signature) {
                                 continue;
                             }
                             txs.push(tx);
                         }
                     }
+
+                    debug!("current active connection {:?}", connection);
 
                     if connection.is_none() {
                         // initial connection
@@ -157,6 +164,7 @@ impl ActiveConnection {
                             CONNECTION_RETRY_COUNT,
                             exit_signal.clone(),
                             Self::on_connect).await;
+                        debug!("no connection - create one: {:?}", conn);
 
                         if let Some(conn) = conn {
                             // could connect
