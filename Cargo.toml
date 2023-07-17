@@ -37,7 +37,6 @@ clap = { version = "4.2.4", features = ["derive"] }
 dashmap = "5.4.0"
 const_env = "0.1.2"
 jsonrpsee = { version = "0.17.0", features = ["macros", "full"] }
-tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 chrono = "0.4.24"
 native-tls = "0.2.11"

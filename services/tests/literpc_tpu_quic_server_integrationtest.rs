@@ -11,7 +11,6 @@ use anyhow::bail;
 use countmap::CountMap;
 use crossbeam_channel::{Receiver, RecvError, Sender};
 use futures::future::join_all;
-use itertools::join;
 use log::{debug, error, info, trace};
 use quinn::TokioRuntime;
 use serde::de::Unexpected::Option;
@@ -35,12 +34,13 @@ use tokio::sync::broadcast::error::SendError;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, sleep};
 use tracing_subscriber::{fmt, filter::LevelFilter};
+use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_core::tx_store::empty_tx_store;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
 
 // note: logging will be auto-adjusted
-const SAMPLE_TX_COUNT: u32 = 1000;
+const SAMPLE_TX_COUNT: u32 = 20;
 
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
 const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 2; // prod=8
@@ -113,6 +113,7 @@ pub fn wireup_and_send_txs_via_channel() {
         const WARMUP_TX_COUNT: u32 = SAMPLE_TX_COUNT / 2;
         while packet_count != SAMPLE_TX_COUNT {
             let packet_batch: PacketBatch = inbound_packets_receiver.recv().expect("receive must succeed");
+            println!("packets: {}", packet_batch.len());
 
             if packet_count == 0 {
                 info!("time to first packet {}ms", time_to_first.elapsed().as_millis());
@@ -172,7 +173,7 @@ fn configure_logging() {
     let env_filter = if SAMPLE_TX_COUNT < 100 {
         "trace,rustls=info,quinn_proto=debug"
     } else {
-        "trace,quinn_proto=info,rustls=info,solana_streamer=debug"
+        "debug,quinn_proto=info,rustls=info,solana_streamer=debug"
     };
     tracing_subscriber::fmt::fmt()
         // .with_max_level(LevelFilter::DEBUG)
@@ -182,7 +183,19 @@ fn configure_logging() {
 
 const STAKE_CONNECTION: bool = true;
 
+const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameters {
+    connection_timeout: Duration::from_secs(1),
+    connection_retry_count: 10,
+    finalize_timeout: Duration::from_millis(200),
+    max_number_of_connections: 10,
+    unistream_timeout: Duration::from_millis(500),
+    write_timeout: Duration::from_secs(1),
+    number_of_transactions_per_unistream: 10,
+};
+
 async fn start_literpc_client(streamer_listen_addrs: SocketAddr, literpc_validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
+    info!("Start lite-rpc test client ...");
+
     let fanout_slots = 4;
 
     // (String, Vec<u8>) (signature, transaction)
@@ -195,22 +208,23 @@ async fn start_literpc_client(streamer_listen_addrs: SocketAddr, literpc_validat
         .expect("Failed to initialize QUIC connection certificates");
 
     let tpu_connection_manager =
-        TpuConnectionManager::new(certificate, key, fanout_slots as usize);
+        TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
 
 
     // this effectively controls how many connections we will have
     let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
-    let addr1 = UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
-    connections_to_keep.insert(
-        Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ")?,
-        addr1,
-    );
-
-    let addr2 = UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
-    connections_to_keep.insert(
-        Pubkey::from_str("1111111k4AYMctpyJakWNvGcte6tR8BLyZw54R8qu")?,
-        addr2,
-    );
+    // TODO comment in
+    // let addr1 = UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    // connections_to_keep.insert(
+    //     Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ")?,
+    //     addr1,
+    // );
+    //
+    // let addr2 = UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    // connections_to_keep.insert(
+    //     Pubkey::from_str("1111111k4AYMctpyJakWNvGcte6tR8BLyZw54R8qu")?,
+    //     addr2,
+    // );
 
     // this is the real streamer
     connections_to_keep.insert(
@@ -237,8 +251,8 @@ async fn start_literpc_client(streamer_listen_addrs: SocketAddr, literpc_validat
             identity_stakes,
             // note: tx_store is useless in this scenario as it is never changed; it's only used to check for duplicates
             empty_tx_store().clone(),
-        )
-        .await;
+            QUIC_CONNECTION_PARAMS,
+        ).await;
 
     // TODO this is a race
     sleep(Duration::from_millis(1500)).await;
