@@ -14,6 +14,7 @@ use std::{
     time::Duration,
 };
 use anyhow::bail;
+use solana_sdk::transaction::VersionedTransaction;
 use tokio::{sync::RwLock, time::timeout};
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
@@ -205,11 +206,13 @@ impl QuicConnectionUtils {
         connection_retry_count: usize,
         on_connect: fn(),
     ) {
-        info!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
+        info!("sending transaction batch of size {} to address {}", txs.len(), tpu_address);
         let mut queue = VecDeque::new();
         for tx in txs {
             queue.push_back(tx);
         }
+
+        debug!("batchsend - trying with connection {:?}", connection.read().await);
         for _ in 0..connection_retry_count {
             if queue.is_empty() || exit_signal.load(Ordering::Relaxed) {
                 // return
@@ -222,6 +225,7 @@ impl QuicConnectionUtils {
                 if conn.stable_id() == last_stable_id {
                     let current_stable_id = conn.stable_id();
                     // problematic connection
+                    info!("reset connection to {}", tpu_address);
                     drop(conn);
                     let mut conn = connection.write().await;
                     // check may be already written by another thread
@@ -262,6 +266,8 @@ impl QuicConnectionUtils {
                         return;
                     }
 
+                    let debug_tx: VersionedTransaction = bincode::deserialize::<VersionedTransaction>(&tx).unwrap();
+                    debug!("sending tx {} to quic stream", debug_tx.signatures[0]);
                     retry = Self::write_all(
                         send_stream,
                         &tx,

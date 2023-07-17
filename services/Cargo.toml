@@ -43,4 +43,5 @@ tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 [dev-dependencies]
 # note: version 0.5.6 has a known bug
 crossbeam-channel = "0.5.6"
+countmap = "0.2.0"
 
