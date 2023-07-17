@@ -1,4 +1,4 @@
-use log::{info, trace, warn};
+use log::{debug, info, trace, warn};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig,

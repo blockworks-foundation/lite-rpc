@@ -109,6 +109,7 @@ pub fn wireup_and_send_txs_via_channel() {
         // second half
         let mut timer2 = None;
         let mut packet_count2 = 0;
+        let mut count_map: CountMap<Signature> = CountMap::with_capacity(SAMPLE_TX_COUNT as usize);
         const WARMUP_TX_COUNT: u32 = SAMPLE_TX_COUNT / 2;
         while packet_count != SAMPLE_TX_COUNT {
             let packet_batch: PacketBatch = inbound_packets_receiver.recv().expect("receive must succeed");
@@ -155,7 +156,7 @@ pub fn wireup_and_send_txs_via_channel() {
         assert_eq!(count_map.len() as u32, SAMPLE_TX_COUNT, "count_map size should be equal to SAMPLE_TX_COUNT");
         assert!(count_map.values().all(|cnt| *cnt == 1), "all transactions should be unique");
 
-        runtime_literpc.shutdown_timeout(Duration::from_millis(1000));
+        runtime2.shutdown_timeout(Duration::from_millis(1000));
     });
 
 
