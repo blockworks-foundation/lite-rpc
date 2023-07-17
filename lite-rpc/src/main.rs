@@ -41,7 +41,6 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         ws_addr,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
-        clean_interval_ms,
         fanout_size,
         enable_postgres,
         prometheus_addr,
@@ -53,7 +52,6 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     let identity = get_identity_keypair(&identity_keypair).await;
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
-    let clean_interval_ms = Duration::from_millis(clean_interval_ms);
 
     LiteBridge::new(
         rpc_addr,
@@ -68,7 +66,6 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     .start_services(
         lite_rpc_http_addr,
         lite_rpc_ws_addr,
-        clean_interval_ms,
         enable_postgres,
         prometheus_addr,
     )
