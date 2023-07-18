@@ -105,6 +105,7 @@ pub fn wireup_and_send_txs_via_channel() {
         info!("start pulling packets...");
         let mut packet_count = 0;
         let time_to_first = Instant::now();
+        let mut latest_tx = Instant::now();
         let timer = Instant::now();
         // second half
         let mut timer2 = None;
@@ -112,8 +113,8 @@ pub fn wireup_and_send_txs_via_channel() {
         let mut count_map: CountMap<Signature> = CountMap::with_capacity(SAMPLE_TX_COUNT as usize);
         const WARMUP_TX_COUNT: u32 = SAMPLE_TX_COUNT / 2;
         while packet_count < SAMPLE_TX_COUNT {
-            if timer.elapsed() > Duration::from_secs(5) {
-                warn!("timeout waiting for packet from quic streamer");
+            if latest_tx.elapsed() > Duration::from_secs(5) {
+                warn!("abort after timeout waiting for packet from quic streamer");
                 break;
             }
 
@@ -124,6 +125,9 @@ pub fn wireup_and_send_txs_via_channel() {
                     continue;
                 }
             };
+
+            // reset timer
+            latest_tx = Instant::now();
 
             if packet_count == 0 {
                 info!("time to first packet {}ms", time_to_first.elapsed().as_millis());
