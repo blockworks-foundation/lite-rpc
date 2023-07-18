@@ -3,7 +3,6 @@ use log::{info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{
-    borsh::try_from_slice_unchecked,
     clock::MAX_RECENT_BLOCKHASHES,
     commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
@@ -18,29 +17,17 @@ use std::sync::Arc;
 
 use crate::block_store::{BlockInformation, BlockStore};
 
-#[derive(Clone)]
-pub struct BlockProcessor {
-    rpc_client: Arc<RpcClient>,
-    block_store: Option<BlockStore>,
-}
-
 #[derive(Default)]
-pub struct BlockProcessorResult {
-    pub invalid_block: bool,
-    pub transaction_infos: Vec<TransactionInfo>,
+pub struct ProcessedBlock {
+    pub txs: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
     pub blockhash: String,
     pub parent_slot: Slot,
     pub block_time: u64,
 }
 
-impl BlockProcessorResult {
-    pub fn invalid() -> Self {
-        Self {
-            invalid_block: true,
-            ..Default::default()
-        }
-    }
+pub enum BlockProcessorError {
+    Incomplete,
 }
 
 pub struct TransactionInfo {
@@ -50,6 +37,12 @@ pub struct TransactionInfo {
     pub cu_requested: Option<u32>,
     pub prioritization_fees: Option<u64>,
     pub cu_consumed: Option<u64>,
+}
+
+#[derive(Clone)]
+pub struct BlockProcessor {
+    rpc_client: Arc<RpcClient>,
+    block_store: Option<BlockStore>,
 }
 
 impl BlockProcessor {
@@ -64,7 +57,7 @@ impl BlockProcessor {
         &self,
         slot: Slot,
         commitment_config: CommitmentConfig,
-    ) -> anyhow::Result<BlockProcessorResult> {
+    ) -> anyhow::Result<Result<ProcessedBlock, BlockProcessorError>> {
         let block = self
             .rpc_client
             .get_block_with_config(
@@ -81,11 +74,11 @@ impl BlockProcessor {
             .context("failed to get block")?;
 
         let Some(block_height) = block.block_height else {
-            return Ok(BlockProcessorResult::invalid());
+            return Ok(Err(BlockProcessorError::Incomplete));
         };
 
-        let Some(transactions) = block.transactions else {
-            return Ok(BlockProcessorResult::invalid());
+        let Some(txs) = block.transactions else {
+            return Ok(Err(BlockProcessorError::Incomplete));
          };
 
         let blockhash = block.blockhash;
@@ -107,21 +100,17 @@ impl BlockProcessor {
                 .await;
         }
 
-        let mut transaction_infos = vec![];
-        transaction_infos.reserve(transactions.len());
-        for tx in transactions {
+        let txs = txs.into_iter().filter_map(|tx| {
             let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
-                info!("tx with no meta");
-                continue;
+                log::info!("Tx with no meta");
+                return None;
             };
 
-            let tx = match tx.transaction.decode() {
-                Some(tx) => tx,
-                None => {
-                    warn!("transaction could not be decoded");
-                    continue;
-                }
+            let Some(tx) = tx.transaction.decode() else {
+                log::info!("Tx could not be decoded");
+                return None;
             };
+
             let signature = tx.signatures[0].to_string();
             let cu_consumed = match compute_units_consumed {
                 OptionSerializer::Some(cu_consumed) => Some(cu_consumed),
@@ -166,6 +155,7 @@ impl BlockProcessor {
                         return Some(price);
                     }
                 }
+
                 None
             });
 
@@ -176,15 +166,15 @@ impl BlockProcessor {
                 }
             };
 
-            transaction_infos.push(TransactionInfo {
+            Some(TransactionInfo {
                 signature,
                 err,
                 status,
                 cu_requested,
                 prioritization_fees,
                 cu_consumed,
-            });
-        }
+            })
+        }).collect();
 
         let leader_id = if let Some(rewards) = block.rewards {
             rewards
@@ -197,14 +187,13 @@ impl BlockProcessor {
 
         let block_time = block.block_time.unwrap_or(0) as u64;
 
-        Ok(BlockProcessorResult {
-            invalid_block: false,
-            transaction_infos,
+        Ok(Ok(ProcessedBlock {
+            txs,
             leader_id,
             blockhash,
             parent_slot,
             block_time,
-        })
+        }))
     }
 
     pub async fn poll_latest_block(

@@ -1,9 +1,11 @@
-use std::sync::Arc;
+use std::sync::{atomic::Ordering, Arc};
 
+use crate::AtomicSlot;
 use dashmap::DashMap;
 use solana_transaction_status::TransactionStatus;
-/// Transaction Properties
+use tokio::time::Instant;
 
+#[derive(Debug, Clone)]
 pub struct TxProps {
     pub status: Option<TransactionStatus>,
     pub last_valid_blockheight: u64,
@@ -18,8 +20,14 @@ impl TxProps {
     }
 }
 
-pub type TxStore = Arc<DashMap<String, TxProps>>;
+#[derive(Default, Debug, Clone)]
+pub struct TxStore {
+    txs: Arc<DashMap<String, TxProps>>,
+    current_slot: AtomicSlot,
+}
 
-pub fn empty_tx_store() -> TxStore {
-    Arc::new(DashMap::new())
+impl TxStore {
+    pub fn current_slot(&self) -> u64 {
+        self.current_slot.load(Ordering::Relaxed)
+    }
 }

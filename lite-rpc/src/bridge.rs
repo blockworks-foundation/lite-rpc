@@ -195,14 +195,12 @@ impl LiteBridge {
             let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("Websocket Server started at {ws_addr:?}");
                 ws_server_handle.stopped().await;
-                error!("Websocket server stopped");
                 bail!("Websocket server stopped");
             });
 
             let http_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("HTTP Server started at {http_addr:?}");
                 http_server_handle.stopped().await;
-                error!("HTTP server stopped");
                 bail!("HTTP server stopped");
             });
 

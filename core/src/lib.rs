@@ -1,3 +1,5 @@
+use std::sync::{atomic::AtomicU64, Arc};
+
 pub mod block_processor;
 pub mod block_store;
 pub mod leader_schedule;
@@ -12,3 +14,4 @@ pub mod subscription_sink;
 pub mod tx_store;
 
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;
+pub type AtomicSlot = Arc<AtomicU64>;

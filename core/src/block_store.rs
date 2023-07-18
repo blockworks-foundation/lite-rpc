@@ -25,7 +25,7 @@ pub struct BlockInformation {
     pub processed_local_time: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BlockStore {
     blocks: Arc<DashMap<String, BlockInformation>>,
     latest_processed_block: Arc<RwLock<(String, BlockInformation)>>,

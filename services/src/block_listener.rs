@@ -152,10 +152,10 @@ impl BlockListener {
             .process(slot, commitment_config)
             .await?;
 
-        if block_processor_result.invalid_block {
+        let Ok(block_processor_result) =  block_processor_result else  {
             Self::increment_invalid_block_metric(commitment_config);
             bail!("Invalid block");
-        }
+        };
 
         timer.observe_duration();
         let mut transactions_processed = 0;
