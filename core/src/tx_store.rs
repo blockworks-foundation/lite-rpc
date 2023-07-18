@@ -2,20 +2,18 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use solana_transaction_status::TransactionStatus;
-use tokio::time::Instant;
 /// Transaction Properties
 
 pub struct TxProps {
     pub status: Option<TransactionStatus>,
-    /// Time at which transaction was forwarded
-    pub sent_at: Instant,
+    pub last_valid_blockheight: u64,
 }
 
-impl Default for TxProps {
-    fn default() -> Self {
+impl TxProps {
+    pub fn new(last_valid_blockheight: u64) -> Self {
         Self {
             status: Default::default(),
-            sent_at: Instant::now(),
+            last_valid_blockheight,
         }
     }
 }

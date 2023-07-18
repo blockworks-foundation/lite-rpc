@@ -8,6 +8,7 @@ use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
     register_int_gauge, Histogram, IntCounter,
 };
+use solana_sdk::slot_history::Slot;
 use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 use crate::tpu_utils::tpu_service::TpuService;
@@ -33,6 +34,14 @@ lazy_static::lazy_static! {
 }
 
 pub type WireTransaction = Vec<u8>;
+
+#[derive(Clone, Debug)]
+pub struct TransactionInfo {
+    pub signature: String,
+    pub slot: Slot,
+    pub transaction: WireTransaction,
+    pub last_valid_block_height: u64,
+}
 // making 250 as sleep time will effectively make lite rpc send
 // (1000/250) * 5 * 512 = 10240 tps
 const INTERVAL_PER_BATCH_IN_MS: u64 = 50;
@@ -58,13 +67,10 @@ impl TxSender {
     /// retry enqued_tx(s)
     async fn forward_txs(
         &self,
-        sigs_and_slots: Vec<(String, u64)>,
-        txs: Vec<WireTransaction>,
+        transaction_infos: Vec<TransactionInfo>,
         notifier: Option<NotificationSender>,
     ) {
-        assert_eq!(sigs_and_slots.len(), txs.len());
-
-        if sigs_and_slots.is_empty() {
+        if transaction_infos.is_empty() {
             return;
         }
 
@@ -74,18 +80,30 @@ impl TxSender {
         let tpu_client = self.tpu_service.clone();
         let txs_sent = self.txs_sent_store.clone();
 
-        for (sig, _) in &sigs_and_slots {
-            trace!("sending transaction {}", sig);
-            txs_sent.insert(sig.to_owned(), TxProps::default());
+        for transaction_info in &transaction_infos {
+            trace!("sending transaction {}", transaction_info.signature);
+            txs_sent.insert(
+                transaction_info.signature.clone(),
+                TxProps {
+                    status: None,
+                    last_valid_blockheight: transaction_info.last_valid_block_height,
+                },
+            );
         }
 
         let forwarded_slot = tpu_client.get_estimated_slot();
         let forwarded_local_time = Utc::now();
 
         let mut quic_responses = vec![];
-        for (tx, (signature, _)) in txs.iter().zip(sigs_and_slots.clone()) {
-            txs_sent.insert(signature.to_owned(), TxProps::default());
-            let quic_response = match tpu_client.send_transaction(signature.clone(), tx.clone()) {
+        for transaction_info in transaction_infos.iter() {
+            txs_sent.insert(
+                transaction_info.signature.clone(),
+                TxProps::new(transaction_info.last_valid_block_height),
+            );
+            let quic_response = match tpu_client.send_transaction(
+                transaction_info.signature.clone(),
+                transaction_info.transaction.clone(),
+            ) {
                 Ok(_) => {
                     TXS_SENT.inc_by(1);
                     1
@@ -99,12 +117,12 @@ impl TxSender {
             quic_responses.push(quic_response);
         }
         if let Some(notifier) = &notifier {
-            let notification_msgs = sigs_and_slots
+            let notification_msgs = transaction_infos
                 .iter()
                 .enumerate()
-                .map(|(index, (sig, recent_slot))| TransactionNotification {
-                    signature: sig.clone(),
-                    recent_slot: *recent_slot,
+                .map(|(index, transaction_info)| TransactionNotification {
+                    signature: transaction_info.signature.clone(),
+                    recent_slot: transaction_info.slot,
                     forwarded_slot,
                     forwarded_local_time,
                     processed_slot: None,
@@ -120,39 +138,40 @@ impl TxSender {
         trace!(
             "It took {} ms to send a batch of {} transaction(s)",
             start.elapsed().as_millis(),
-            sigs_and_slots.len()
+            transaction_infos.len()
         );
     }
 
     /// retry and confirm transactions every 2ms (avg time to confirm tx)
     pub fn execute(
         self,
-        mut recv: Receiver<(String, WireTransaction, u64)>,
+        mut recv: Receiver<TransactionInfo>,
         notifier: Option<NotificationSender>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             loop {
-                let mut sigs_and_slots = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
-                let mut txs = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
+                let mut transaction_infos = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
                 let mut timeout_interval = INTERVAL_PER_BATCH_IN_MS;
 
                 // In solana there in sig verify stage rate is limited to 2000 txs in 50ms
                 // taking this as reference
-                while txs.len() <= MAX_BATCH_SIZE_IN_PER_INTERVAL {
+                while transaction_infos.len() <= MAX_BATCH_SIZE_IN_PER_INTERVAL {
                     let instance = tokio::time::Instant::now();
                     match tokio::time::timeout(Duration::from_millis(timeout_interval), recv.recv())
                         .await
                     {
                         Ok(value) => match value {
-                            Some((sig, tx, slot)) => {
+                            Some(transaction_info) => {
                                 TXS_IN_CHANNEL.dec();
 
                                 // duplicate transaction
-                                if self.txs_sent_store.contains_key(&sig) {
+                                if self
+                                    .txs_sent_store
+                                    .contains_key(&transaction_info.signature)
+                                {
                                     continue;
                                 }
-                                sigs_and_slots.push((sig, slot));
-                                txs.push(tx);
+                                transaction_infos.push(transaction_info);
                                 // update the timeout inteval
                                 timeout_interval = timeout_interval
                                     .saturating_sub(instance.elapsed().as_millis() as u64)
@@ -169,24 +188,21 @@ impl TxSender {
                     }
                 }
 
-                assert_eq!(sigs_and_slots.len(), txs.len());
-
-                if sigs_and_slots.is_empty() {
+                if transaction_infos.is_empty() {
                     continue;
                 }
 
-                TX_BATCH_SIZES.set(txs.len() as i64);
+                TX_BATCH_SIZES.set(transaction_infos.len() as i64);
 
-                self.forward_txs(sigs_and_slots, txs, notifier.clone())
-                    .await;
+                self.forward_txs(transaction_infos, notifier.clone()).await;
             }
         })
     }
 
-    pub fn cleanup(&self, ttl_duration: Duration) {
+    pub fn cleanup(&self, current_finalized_blochash: u64) {
         let length_before = self.txs_sent_store.len();
         self.txs_sent_store.retain(|_k, v| {
-            let retain = v.sent_at.elapsed() < ttl_duration;
+            let retain = v.last_valid_blockheight >= current_finalized_blochash;
             if !retain && v.status.is_none() {
                 TX_TIMED_OUT.inc();
             }

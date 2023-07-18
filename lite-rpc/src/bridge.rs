@@ -150,7 +150,6 @@ impl LiteBridge {
         mut self,
         http_addr: T,
         ws_addr: T,
-        clean_interval: Duration,
         enable_postgres: bool,
         prometheus_addr: T,
     ) -> anyhow::Result<()> {
@@ -168,13 +167,10 @@ impl LiteBridge {
         let prometheus_sync = PrometheusSync::sync(prometheus_addr);
 
         // transaction services
-        let (transaction_service, jh_transaction_services) =
-            self.transaction_service_builder.clone().start(
-                postgres_send,
-                self.block_store.clone(),
-                self.max_retries,
-                clean_interval,
-            );
+        let (transaction_service, jh_transaction_services) = self
+            .transaction_service_builder
+            .clone()
+            .start(postgres_send, self.block_store.clone(), self.max_retries);
 
         self.transaction_service = Some(transaction_service);
 
@@ -417,10 +413,19 @@ impl LiteRpcServer for LiteBridge {
                 return Err(jsonrpsee::core::Error::Custom(err.to_string()));
             }
         };
-
-        self.tx_store
-            .insert(airdrop_sig.clone(), Default::default());
-
+        if let Ok((_, block_height)) = self
+            .rpc_client
+            .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+            .await
+        {
+            self.tx_store.insert(
+                airdrop_sig.clone(),
+                solana_lite_rpc_core::tx_store::TxProps {
+                    status: None,
+                    last_valid_blockheight: block_height,
+                },
+            );
+        }
         Ok(airdrop_sig)
     }
 

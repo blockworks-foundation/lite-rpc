@@ -8,7 +8,7 @@ use crate::{
     cleaner::Cleaner,
     tpu_utils::tpu_service::TpuService,
     transaction_replayer::{TransactionReplay, TransactionReplayer, MESSAGES_IN_REPLAY_QUEUE},
-    tx_sender::{TxSender, WireTransaction},
+    tx_sender::{TransactionInfo, TxSender},
 };
 use anyhow::bail;
 use solana_lite_rpc_core::{
@@ -54,7 +54,6 @@ impl TransactionServiceBuilder {
         notifier: Option<NotificationSender>,
         block_store: BlockStore,
         max_retries: usize,
-        clean_interval: Duration,
     ) -> (TransactionService, AnyhowJoinHandle) {
         let (transaction_channel, tx_recv) = mpsc::channel(self.max_nb_txs_in_queue);
         let (replay_channel, replay_reciever) = tokio::sync::mpsc::unbounded_channel();
@@ -92,7 +91,7 @@ impl TransactionServiceBuilder {
                 // transactions get invalid in around 1 mins, because the block hash expires in 150 blocks so 150 * 400ms = 60s
                 // Setting it to two to give some margin of error / as not all the blocks are filled.
                 let cleaner = Cleaner::new(tx_sender.clone(), block_listner.clone(), block_store_t)
-                    .start(Duration::from_secs(120), clean_interval);
+                    .start(Duration::from_secs(120));
 
                 tokio::select! {
                     res = tpu_service_fx => {
@@ -135,7 +134,7 @@ impl TransactionServiceBuilder {
 
 #[derive(Clone)]
 pub struct TransactionService {
-    pub transaction_channel: Sender<(String, WireTransaction, u64)>,
+    pub transaction_channel: Sender<TransactionInfo>,
     pub replay_channel: UnboundedSender<TransactionReplay>,
     pub block_store: BlockStore,
     pub max_retries: usize,
@@ -156,7 +155,7 @@ impl TransactionService {
         };
         let signature = tx.signatures[0];
 
-        let Some(BlockInformation { slot, .. }) = self
+        let Some(BlockInformation { slot, last_valid_blockheight, .. }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {
@@ -167,7 +166,12 @@ impl TransactionService {
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         if let Err(e) = self
             .transaction_channel
-            .send((signature.to_string(), raw_tx, slot))
+            .send(TransactionInfo {
+                signature: signature.to_string(),
+                last_valid_block_height: last_valid_blockheight,
+                slot,
+                transaction: raw_tx,
+            })
             .await
         {
             bail!(
