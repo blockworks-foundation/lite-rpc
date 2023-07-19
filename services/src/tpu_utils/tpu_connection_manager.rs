@@ -146,19 +146,11 @@ impl ActiveConnection {
                         }
                     }
 
-                    if txs.len() >= number_of_transactions_per_unistream - 1 {
-                        // queue getting full and a connection poll is getting slower
-                        // add more connections to the pool
-                        if connection_pool.len() < max_number_of_connections {
-                            connection_pool.add_connection().await;
-                            NB_QUIC_CONNECTIONS.inc();
-                        }
-                    } else if txs.len() == 1 {
-                        // low traffic / reduce connection till minimum 1
-                        if connection_pool.len() > 1 {
-                            connection_pool.remove_connection().await;
-                            NB_QUIC_CONNECTIONS.dec();
-                        }
+                    // queue getting full and a connection poll is getting slower
+                    // add more connections to the pool
+                    if connection_pool.len() < max_number_of_connections {
+                        connection_pool.add_connection().await;
+                        NB_QUIC_CONNECTIONS.inc();
                     }
 
                     let task_counter = task_counter.clone();

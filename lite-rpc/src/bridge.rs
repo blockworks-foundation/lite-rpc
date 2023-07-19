@@ -104,7 +104,7 @@ impl LiteBridge {
                 max_number_of_connections: 10,
                 unistream_timeout: Duration::from_millis(500),
                 write_timeout: Duration::from_secs(1),
-                number_of_transactions_per_unistream: 10,
+                number_of_transactions_per_unistream: 8,
             },
         };
 
