@@ -14,6 +14,7 @@ use solana_transaction_status::{
     UiTransactionStatusMeta,
 };
 use std::sync::Arc;
+use anyhow::Context;
 
 use crate::block_store::{BlockInformation, BlockStore};
 
@@ -76,7 +77,8 @@ impl BlockProcessor {
                     rewards: Some(true),
                 },
             )
-            .await?;
+            .await
+            .context("failed to get block")?;
 
         let Some(block_height) = block.block_height else {
             return Ok(BlockProcessorResult::invalid());

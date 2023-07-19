@@ -1,4 +1,5 @@
 use std::{collections::VecDeque, str::FromStr, sync::Arc};
+use anyhow::Context;
 
 use dashmap::DashMap;
 use log::warn;
@@ -36,7 +37,8 @@ impl LeaderSchedule {
     }
 
     pub async fn load_cluster_info(&self, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
-        let cluster_nodes = rpc_client.get_cluster_nodes().await?;
+        let cluster_nodes = rpc_client.get_cluster_nodes().await
+            .context("failed to get cluster nodes")?;
         cluster_nodes.iter().for_each(|x| {
             if let Ok(pubkey) = Pubkey::from_str(x.pubkey.as_str()) {
                 self.cluster_nodes.insert(pubkey, Arc::new(x.clone()));
@@ -70,14 +72,16 @@ impl LeaderSchedule {
             let first_slot_to_fetch = queue_end_slot + 1;
             let leaders = rpc_client
                 .get_slot_leaders(first_slot_to_fetch, last_slot_needed - first_slot_to_fetch)
-                .await?;
+                .await
+                .context("failed to get slot leaders")?;
 
             let mut leader_queue = self.leader_schedule.write().await;
             for i in first_slot_to_fetch..last_slot_needed {
                 let current_leader = (i - first_slot_to_fetch) as usize;
                 let leader = leaders[current_leader];
                 if !self.cluster_nodes.contains_key(&leader) {
-                    self.load_cluster_info(rpc_client.clone()).await?;
+                    self.load_cluster_info(rpc_client.clone()).await
+                        .context("failed to load cluster info")?;
                 }
 
                 match self.cluster_nodes.get(&leader) {

@@ -68,7 +68,8 @@ impl BlockStore {
                 RpcRequest::GetLatestBlockhash,
                 json!([commitment_config]),
             )
-            .await?;
+            .await
+            .context("failed to poll latest blockhash")?;
 
         let processed_blockhash = response.value.blockhash;
         let processed_block = BlockInformation {
@@ -91,7 +92,8 @@ impl BlockStore {
     ) -> anyhow::Result<(String, BlockInformation)> {
         let slot = rpc_client
             .get_slot_with_commitment(commitment_config)
-            .await?;
+            .await
+            .context("failed to fetch latest slot")?;
 
         let block = rpc_client
             .get_block_with_config(
@@ -104,7 +106,8 @@ impl BlockStore {
                     max_supported_transaction_version: Some(0),
                 },
             )
-            .await?;
+            .await
+            .context("failed to fetch latest blockhash")?;
 
         let latest_block_hash = block.blockhash;
         let block_height = block
