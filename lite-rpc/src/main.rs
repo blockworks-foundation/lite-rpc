@@ -9,6 +9,7 @@ use lite_rpc::{bridge::LiteBridge, cli::Args};
 
 use solana_sdk::signature::Keypair;
 use std::env;
+use log::info;
 
 use crate::rpc_tester::RpcTester;
 
@@ -48,6 +49,12 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         maximum_retries_per_tx,
         transaction_retry_after_secs,
     } = args;
+
+    info!("lite rpc will connect to upstream Full-RPC node / validator on RPC url {} and WebSocket {}",
+        rpc_addr, ws_addr);
+
+    info!("lite rpc will listen on HTTP {} and WebSocket {}", lite_rpc_http_addr, lite_rpc_ws_addr);
+
 
     let identity = get_identity_keypair(&identity_keypair).await;
 
