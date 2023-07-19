@@ -1,5 +1,5 @@
-use std::{collections::VecDeque, str::FromStr, sync::Arc};
 use anyhow::Context;
+use std::{collections::VecDeque, str::FromStr, sync::Arc};
 
 use dashmap::DashMap;
 use log::warn;
@@ -37,7 +37,9 @@ impl LeaderSchedule {
     }
 
     pub async fn load_cluster_info(&self, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
-        let cluster_nodes = rpc_client.get_cluster_nodes().await
+        let cluster_nodes = rpc_client
+            .get_cluster_nodes()
+            .await
             .context("failed to get cluster nodes")?;
         cluster_nodes.iter().for_each(|x| {
             if let Ok(pubkey) = Pubkey::from_str(x.pubkey.as_str()) {
@@ -80,7 +82,8 @@ impl LeaderSchedule {
                 let current_leader = (i - first_slot_to_fetch) as usize;
                 let leader = leaders[current_leader];
                 if !self.cluster_nodes.contains_key(&leader) {
-                    self.load_cluster_info(rpc_client.clone()).await
+                    self.load_cluster_info(rpc_client.clone())
+                        .await
                         .context("failed to load cluster info")?;
                 }
 

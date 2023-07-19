@@ -238,7 +238,10 @@ impl BlockListener {
             // TODO insert if not exists leader_id into accountaddrs
 
             // fetch cluster time from rpc
-            let block_time = self.rpc_client.get_block_time(slot).await
+            let block_time = self
+                .rpc_client
+                .get_block_time(slot)
+                .await
                 .context("failed to get block time")?;
 
             // fetch local time from blockstore

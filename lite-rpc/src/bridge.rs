@@ -83,7 +83,9 @@ impl LiteBridge {
         max_retries: usize,
     ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
-        let current_slot = rpc_client.get_slot().await
+        let current_slot = rpc_client
+            .get_slot()
+            .await
             .context("failed to get initial slot")?;
 
         let tx_store = empty_tx_store();

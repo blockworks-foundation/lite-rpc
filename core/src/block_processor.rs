@@ -1,3 +1,4 @@
+use anyhow::Context;
 use log::{info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
@@ -14,7 +15,6 @@ use solana_transaction_status::{
     UiTransactionStatusMeta,
 };
 use std::sync::Arc;
-use anyhow::Context;
 
 use crate::block_store::{BlockInformation, BlockStore};
 
