@@ -1,4 +1,4 @@
-use anyhow::bail;
+use anyhow::{bail, Context};
 use log::{error, info};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -202,7 +202,8 @@ impl TpuService {
         // setup
         self.leader_schedule
             .load_cluster_info(self.rpc_client.clone())
-            .await?;
+            .await
+            .context("failed to load initial cluster info")?;
         self.update_current_stakes().await?;
         self.update_leader_schedule().await?;
         self.update_quic_connections().await;

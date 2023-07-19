@@ -17,7 +17,7 @@ use solana_lite_rpc_services::{
     tx_sender::{TxSender, TXS_IN_CHANNEL},
 };
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
 use log::{error, info};
 use prometheus::{opts, register_int_counter, IntCounter};
@@ -83,7 +83,10 @@ impl LiteBridge {
         max_retries: usize,
     ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
-        let current_slot = rpc_client.get_slot().await?;
+        let current_slot = rpc_client
+            .get_slot()
+            .await
+            .context("failed to get initial slot")?;
 
         let tx_store = empty_tx_store();
 
@@ -331,6 +334,7 @@ impl LiteRpcServer for LiteBridge {
             .rpc_client
             .is_blockhash_valid(&blockhash, commitment)
             .await
+            .context("failed to get blockhash validity")
         {
             Ok(is_valid) => is_valid,
             Err(err) => {
@@ -407,6 +411,7 @@ impl LiteRpcServer for LiteBridge {
             .rpc_client
             .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
             .await
+            .context("failed to request airdrop")
         {
             Ok(airdrop_sig) => airdrop_sig.to_string(),
             Err(err) => {
@@ -417,6 +422,7 @@ impl LiteRpcServer for LiteBridge {
             .rpc_client
             .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
             .await
+            .context("failed to get latest blockhash")
         {
             self.tx_store.insert(
                 airdrop_sig.clone(),

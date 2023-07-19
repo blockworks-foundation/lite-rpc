@@ -1,3 +1,4 @@
+use anyhow::Context;
 use log::{info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
@@ -76,7 +77,8 @@ impl BlockProcessor {
                     rewards: Some(true),
                 },
             )
-            .await?;
+            .await
+            .context("failed to get block")?;
 
         let Some(block_height) = block.block_height else {
             return Ok(BlockProcessorResult::invalid());
