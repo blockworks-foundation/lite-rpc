@@ -16,7 +16,7 @@ const FORMAT_VERSION1: u16 = 2301;
 pub struct TpuForwardingRequest {
     format_version: u16,
     tpu_socket_addr: SocketAddr, // TODO is that correct
-    identity_tpunode: Pubkey,
+    identity_tpunode: Pubkey, // note: this is only used fro
     transactions: Vec<VersionedTransaction>,
 }
 

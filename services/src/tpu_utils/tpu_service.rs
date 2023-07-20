@@ -26,7 +26,9 @@ use tokio::{
     sync::RwLock,
     time::{Duration, Instant},
 };
+use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
+use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -60,12 +62,18 @@ pub struct TpuService {
     estimated_slot: Arc<AtomicU64>,
     rpc_client: Arc<RpcClient>,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
-    tpu_connection_manager: Arc<TpuConnectionManager>,
+    connection_manager: ConnectionManager,
     identity_stakes: Arc<RwLock<IdentityStakes>>,
     txs_sent_store: TxStore,
     leader_schedule: Arc<LeaderSchedule>,
     config: TpuServiceConfig,
     identity: Pubkey,
+}
+
+#[derive(Clone)]
+enum ConnectionManager {
+    DirectTpu { tpu_connection_manager: Arc<TpuConnectionManager> },
+    QuicProxy { quic_proxy_connection_manager: Arc<QuicProxyConnectionManager> },
 }
 
 impl TpuService {
@@ -83,9 +91,25 @@ impl TpuService {
         )
         .expect("Failed to initialize QUIC client certificates");
 
-        let tpu_connection_manager =
-            TpuConnectionManager::new(certificate, key,
-                                      config.fanout_slots as usize, config.tpu_connection_path).await;
+        let connection_manager =
+            match config.tpu_connection_path {
+                TpuConnectionPath::QuicDirectPath => {
+                    let tpu_connection_manager =
+                        TpuConnectionManager::new(certificate, key,
+                                                  config.fanout_slots as usize).await;
+                    DirectTpu {
+                        tpu_connection_manager: Arc::new(tpu_connection_manager),
+                    }
+                }
+                TpuConnectionPath::QuicForwardProxyPath { forward_proxy_address } => {
+                    let quic_proxy_connection_manager =
+                        QuicProxyConnectionManager::new(certificate, key, identity.clone(), forward_proxy_address).await;
+
+                    QuicProxy {
+                        quic_proxy_connection_manager: Arc::new(quic_proxy_connection_manager),
+                    }
+                }
+            };
 
         Ok(Self {
             current_slot: Arc::new(AtomicU64::new(current_slot)),
@@ -93,7 +117,7 @@ impl TpuService {
             leader_schedule: Arc::new(LeaderSchedule::new(config.number_of_leaders_to_cache)),
             rpc_client,
             broadcast_sender: Arc::new(sender),
-            tpu_connection_manager: Arc::new(tpu_connection_manager),
+            connection_manager,
             identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
             txs_sent_store,
             identity: identity.pubkey(),
@@ -128,6 +152,7 @@ impl TpuService {
         Ok(())
     }
 
+    // update/reconfigure connections on slot change
     async fn update_quic_connections(&self) {
         let estimated_slot = self.estimated_slot.load(Ordering::Relaxed);
         let current_slot = self.current_slot.load(Ordering::Relaxed);
@@ -156,15 +181,29 @@ impl TpuService {
 
         let identity_stakes = self.identity_stakes.read().await;
 
-        self.tpu_connection_manager
-            .update_connections(
-                self.broadcast_sender.clone(),
-                connections_to_keep,
-                *identity_stakes,
-                self.txs_sent_store.clone(),
-                self.config.quic_connection_params,
-            )
-            .await;
+        match &self.connection_manager {
+            DirectTpu {
+                tpu_connection_manager,
+            } => {
+                tpu_connection_manager
+                    .update_connections(
+                        self.broadcast_sender.clone(),
+                        connections_to_keep,
+                        *identity_stakes,
+                        self.txs_sent_store.clone(),
+                        self.config.quic_connection_params,
+                    )
+                    .await;
+            },
+            QuicProxy { quic_proxy_connection_manager } => {
+                // TODO maybe we need more data (see .update_connections)
+                quic_proxy_connection_manager.update_connection(
+                    self.broadcast_sender.clone(),
+                    connections_to_keep,
+                ).await;
+            }
+        }
+
     }
 
     fn update_current_slot(

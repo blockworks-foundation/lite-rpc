@@ -21,7 +21,7 @@ use std::{
 };
 use tokio::sync::{broadcast::Receiver, broadcast::Sender};
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
-use crate::tpu_utils::tpu_connection_path::TpuConnectionPath::QuicForwardProxy;
+use crate::tpu_utils::tpu_connection_path::TpuConnectionPath::QuicForwardProxyPath;
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
@@ -42,7 +42,6 @@ struct ActiveConnection {
     exit_signal: Arc<AtomicBool>,
     txs_sent_store: TxStore,
     connection_parameters: QuicConnectionParameters,
-    tpu_connection_path: TpuConnectionPath,
 }
 
 impl ActiveConnection {
@@ -52,7 +51,6 @@ impl ActiveConnection {
         identity: Pubkey,
         txs_sent_store: TxStore,
         connection_parameters: QuicConnectionParameters,
-        tpu_connection_path: TpuConnectionPath,
     ) -> Self {
         Self {
             endpoints,
@@ -61,7 +59,6 @@ impl ActiveConnection {
             exit_signal: Arc::new(AtomicBool::new(false)),
             txs_sent_store,
             connection_parameters,
-            tpu_connection_path
         }
     }
 
@@ -229,15 +226,14 @@ struct ActiveConnectionWithExitChannel {
 pub struct TpuConnectionManager {
     endpoints: RotatingQueue<Endpoint>,
     identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitChannel>>>,
-    tpu_connection_path: TpuConnectionPath,
 }
+
 
 impl TpuConnectionManager {
     pub async fn new(
         certificate: rustls::Certificate,
         key: rustls::PrivateKey,
         fanout: usize,
-        tpu_connection_path: TpuConnectionPath,
     ) -> Self {
         let number_of_clients = fanout * 2;
         Self {
@@ -246,7 +242,6 @@ impl TpuConnectionManager {
             })
             .await,
             identity_to_active_connection: Arc::new(DashMap::new()),
-            tpu_connection_path: tpu_connection_path.clone(),
         }
     }
 
@@ -268,7 +263,6 @@ impl TpuConnectionManager {
                     *identity,
                     txs_sent_store.clone(),
                     connection_parameters,
-                    self.tpu_connection_path,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
                 let (sx, rx) = tokio::sync::mpsc::channel(1);

@@ -169,36 +169,20 @@ impl ActiveConnection {
                         NB_QUIC_TASKS.inc();
                         let connection = connection.unwrap();
 
-                        if true {
-                            // TODO split to new service
-                            // SOS
-                            info!("Sending copy of transaction batch of {} to tpu with identity {} to quic proxy",
-                                txs.len(), identity);
-                            Self::send_copy_of_txs_to_quicproxy(
-                                &txs, endpoint.clone(),
-                                // proxy address
-                                "127.0.0.1:11111".parse().unwrap(),
-                                tpu_address,
-                                identity.clone()).await.unwrap();
-                        }
-
-
-                        if false {
-                            QuicConnectionUtils::send_transaction_batch(
-                                connection,
-                                txs,
-                                identity,
-                                endpoint,
-                                tpu_address,
-                                exit_signal,
-                                last_stable_id,
-                                QUIC_CONNECTION_TIMEOUT,
-                                CONNECTION_RETRY_COUNT,
-                                || {
-                                    // do nothing as we are using the same connection
-                                }
-                            ).await;
-                        }
+                        QuicConnectionUtils::send_transaction_batch(
+                            connection,
+                            txs,
+                            identity,
+                            endpoint,
+                            tpu_address,
+                            exit_signal,
+                            last_stable_id,
+                            QUIC_CONNECTION_TIMEOUT,
+                            CONNECTION_RETRY_COUNT,
+                            || {
+                                // do nothing as we are using the same connection
+                            }
+                        ).await;
 
                         NB_QUIC_TASKS.dec();
                         task_counter.fetch_sub(1, Ordering::Relaxed);
@@ -212,57 +196,6 @@ impl ActiveConnection {
         drop(transaction_reciever);
         NB_QUIC_CONNECTIONS.dec();
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
-    }
-
-    async fn send_copy_of_txs_to_quicproxy(raw_tx_batch: &Vec<Vec<u8>>, endpoint: Endpoint,
-                                           proxy_address: SocketAddr, tpu_target_address: SocketAddr,
-                                           identity: Pubkey) -> anyhow::Result<()> {
-
-        info!("sending vecvec: {}", raw_tx_batch.iter().map(|tx| tx.len()).into_iter().join(","));
-
-        let raw_tx_batch_copy = raw_tx_batch.clone();
-
-        let mut txs = vec![];
-
-        for raw_tx in raw_tx_batch_copy {
-            let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
-                Ok(tx) => tx,
-                Err(err) => {
-                    bail!(err.to_string());
-                }
-            };
-            txs.push(tx);
-        }
-
-        let forwarding_request = TpuForwardingRequest::new(tpu_target_address, identity, txs);
-
-        let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
-
-        let send_result = timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw));
-
-        match send_result.await {
-            Ok(..) => {
-                info!("Successfully sent data to quic proxy");
-            }
-            Err(e) => {
-                warn!("Failed to send data to quic proxy: {:?}", e);
-            }
-        }
-        Ok(())
-    }
-
-    async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
-        info!("sending {} bytes to proxy", proxy_request_raw.len());
-
-        let mut connecting = endpoint.connect(proxy_address, "localhost")?;
-        let connection = timeout(Duration::from_millis(500), connecting).await??;
-        let mut send = connection.open_uni().await?;
-
-        send.write_all(proxy_request_raw).await?;
-
-        send.finish().await?;
-
-        Ok(())
     }
 
     pub fn start_listening(
