@@ -16,7 +16,7 @@ use solana_lite_rpc_core::{
     notifications::NotificationSender,
     AnyhowJoinHandle,
 };
-use solana_rpc_client::rpc_client::SerializableTransaction;
+use solana_lite_rpc_core::solana_utils::SerializableTransaction;
 use solana_sdk::{commitment_config::CommitmentConfig, transaction::VersionedTransaction};
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},

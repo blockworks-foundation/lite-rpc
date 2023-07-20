@@ -4075,6 +4075,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-lite-rpc-quic-forward-proxy-integration-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "base64 0.21.0",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "clap 4.2.4",
+ "countmap",
+ "crossbeam-channel",
+ "dashmap",
+ "dotenv",
+ "futures",
+ "itertools",
+ "lazy_static",
+ "log",
+ "native-tls",
+ "prometheus",
+ "quinn",
+ "rcgen 0.9.3",
+ "rustls 0.20.8",
+ "serde",
+ "serde_json",
+ "solana-lite-rpc-core",
+ "solana-lite-rpc-services",
+ "solana-net-utils",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "spl-memo",
+ "thiserror",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "solana-lite-rpc-services"
 version = "0.2.2"
 dependencies = [
