@@ -122,9 +122,7 @@ pub fn quic_proxy_and_solana_streamer() {
         tokio::spawn(start_literpc_client(
             listen_addr,
             literpc_validator_identity,
-            TpuConnectionPath::QuicForwardProxyPath {
-                forward_proxy_address: proxy_listen_addr,
-            },
+            proxy_listen_addr,
         ));
     });
 
@@ -256,9 +254,9 @@ const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameter
 async fn start_literpc_client(
     streamer_listen_addrs: SocketAddr,
     literpc_validator_identity: Arc<Keypair>,
-    tpu_connection_path: TpuConnectionPath,
+    forward_proxy_address: SocketAddr,
 ) -> anyhow::Result<()> {
-    info!("Start lite-rpc test client using {} ...", tpu_connection_path);
+    info!("Start lite-rpc test client using quic proxy at {} ...", forward_proxy_address);
 
     let fanout_slots = 4;
 
@@ -273,11 +271,6 @@ async fn start_literpc_client(
 
     // let tpu_connection_manager =
     //     TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
-
-    let forward_proxy_address = match tpu_connection_path {
-        TpuConnectionPath::QuicForwardProxyPath { forward_proxy_address } => forward_proxy_address,
-        _ => panic!("Expected TpuConnectionPath::Quic"),
-    };
 
     let quic_proxy_connection_manager =
         QuicProxyConnectionManager::new(certificate, key, literpc_validator_identity.clone(), forward_proxy_address).await;
