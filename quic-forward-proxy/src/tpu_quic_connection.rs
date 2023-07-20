@@ -16,13 +16,13 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::net::ToSocketAddrs;
-use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::RwLock;
-use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
-use solana_lite_rpc_core::quic_connection_utils::QuicConnectionUtils;
-use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::{ActiveConnection, CONNECTION_RETRY_COUNT, QUIC_CONNECTION_TIMEOUT};
+use crate::quic_connection_utils::QuicConnectionUtils;
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
+
+pub const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+pub const CONNECTION_RETRY_COUNT: usize = 10;
 
 /// stable connect to TPU to send transactions - optimized for proxy use case
 #[derive(Clone)]

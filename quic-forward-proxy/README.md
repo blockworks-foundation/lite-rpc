@@ -22,9 +22,13 @@ Local Development / Testing
 ```bash
 RUST_LOG="error,solana_streamer::nonblocking::quic=debug" solana-test-validator --log
 ```
+3. run quic proxy
+```bash
+RUST_LOG=debug cargo run --bin solana-lite-rpc-quic-forward-proxy -- --identity-keypair /pathto-test-ledger/validator-keypair.json
+```
 2. run lite-rpc
 ```bash
-RUST_LOG=info cargo run --bin lite-rpc -- --identity-keypair /pathto-test-ledger/validator-keypair.json
+RUST_LOG=debug cargo run --bin lite-rpc
 ```
 3. run rust bench tool in _lite-rpc_
 ```bash

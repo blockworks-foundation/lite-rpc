@@ -9,9 +9,6 @@ use solana_sdk::signature::Keypair;
 use std::env;
 use std::sync::Arc;
 use tokio::time::timeout;
-use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
-use solana_lite_rpc_quic_forward_proxy::SelfSignedTlsConfigProvider;
-use solana_lite_rpc_quic_forward_proxy::test_client::quic_test_client::QuicTestClient;
 // use lite_rpc_quic_forward_proxy::tls_config::SelfSignedTlsConfigProvider;
 
 // note: copy of this method is used in quic-forward-proxy
@@ -71,11 +68,11 @@ pub async fn main() -> anyhow::Result<()> {
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 
-    let proxy_listener_addr = "127.0.0.1:11111".parse().unwrap();
-    let tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
-    let quicproxy_service = QuicForwardProxy::new(proxy_listener_addr, &tls_configuration, validator_identity.clone())
-        .await?
-        .start_services();
+    // let proxy_listener_addr = "127.0.0.1:11111".parse().unwrap();
+    //
+    // let quicproxy_service = QuicForwardProxy::new(proxy_listener_addr, validator_identity.clone())
+    //     .await?
+    //     .start_services();
 
     let services = LiteBridge::new(
         rpc_addr,
@@ -106,9 +103,9 @@ pub async fn main() -> anyhow::Result<()> {
         res = services => {
             bail!("Services quit unexpectedly {res:?}");
         },
-        res = quicproxy_service => {
-            bail!("Quic Proxy quit unexpectedly {res:?}");
-        },
+        // res = quicproxy_service => {
+        //     bail!("Quic Proxy quit unexpectedly {res:?}");
+        // },
         // res = test_client => {
         //     bail!("Test Client quit unexpectedly {res:?}");
         // },

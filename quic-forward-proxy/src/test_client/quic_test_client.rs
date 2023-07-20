@@ -10,12 +10,12 @@ use rustls::ClientConfig;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use tokio::io::AsyncWriteExt;
-use solana_lite_rpc_core::AnyhowJoinHandle;
+use crate::proxy_request_format::TpuForwardingRequest;
+use crate::quic_connection_utils::SkipServerVerification;
 use crate::quic_util::ALPN_TPU_FORWARDPROXY_PROTOCOL_ID;
 use crate::tls_config_provicer::ProxyTlsConfigProvider;
-use solana_lite_rpc_core::quic_connection_utils::SkipServerVerification;
-use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
 use crate::test_client::sample_data_factory::build_raw_sample_tx;
+use crate::util::AnyhowJoinHandle;
 
 pub struct QuicTestClient {
     pub endpoint: Endpoint,

@@ -9,8 +9,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signer};
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use spl_memo::solana_program::message::VersionedMessage;
-use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
-use solana_lite_rpc_core::proxy_request_format::*;
+use solana_lite_rpc_quic_forward_proxy::proxy_request_format::TpuForwardingRequest;
 
 #[test]
 fn roundtrip() {

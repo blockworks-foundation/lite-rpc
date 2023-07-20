@@ -17,15 +17,12 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::net::ToSocketAddrs;
-use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::RwLock;
-use solana_lite_rpc_core::leader_schedule::LeaderSchedule;
-use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
-use solana_lite_rpc_core::quic_connection_utils::QuicConnectionUtils;
-use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::{ActiveConnection, CONNECTION_RETRY_COUNT, QUIC_CONNECTION_TIMEOUT};
+use crate::proxy_request_format::TpuForwardingRequest;
 use crate::tpu_quic_connection::TpuQuicConnection;
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
+use crate::util::AnyhowJoinHandle;
 
 
 pub struct QuicForwardProxy {
