@@ -26,6 +26,7 @@ use tokio::{
     sync::RwLock,
     time::{Duration, Instant},
 };
+use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -50,6 +51,7 @@ pub struct TpuServiceConfig {
     pub maximum_transaction_in_queue: usize,
     pub maximum_number_of_errors: usize,
     pub quic_connection_params: QuicConnectionParameters,
+    pub tpu_connection_path: TpuConnectionPath,
 }
 
 #[derive(Clone)]
@@ -82,7 +84,8 @@ impl TpuService {
         .expect("Failed to initialize QUIC client certificates");
 
         let tpu_connection_manager =
-            TpuConnectionManager::new(certificate, key, config.fanout_slots as usize).await;
+            TpuConnectionManager::new(certificate, key,
+                                      config.fanout_slots as usize, config.tpu_connection_path).await;
 
         Ok(Self {
             current_slot: Arc::new(AtomicU64::new(current_slot)),
