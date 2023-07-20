@@ -10,19 +10,20 @@ use solana_lite_rpc_services::{
     block_listenser::BlockListener,
     metrics_capture::MetricsCapture,
     prometheus_sync::PrometheusSync,
-    tpu_utils::tpu_service::TpuService,
+    tpu_utils::tpu_service::{TpuService, TpuServiceConfig},
     transaction_replayer::TransactionReplayer,
     transaction_service::{TransactionService, TransactionServiceBuilder},
     tx_sender::WireTransaction,
     tx_sender::{TxSender, TXS_IN_CHANNEL},
 };
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
-use log::info;
+use log::{error, info};
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
     block_store::{BlockInformation, BlockStore},
+    quic_connection_utils::QuicConnectionParameters,
     tx_store::{empty_tx_store, TxStore},
     AnyhowJoinHandle,
 };
@@ -75,23 +76,43 @@ pub struct LiteBridge {
 impl LiteBridge {
     pub async fn new(
         rpc_url: String,
-        ws_addr: String,
+        _ws_addr: String,
         fanout_slots: u64,
         validator_identity: Arc<Keypair>,
         retry_after: Duration,
         max_retries: usize,
     ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
-        let current_slot = rpc_client.get_slot().await?;
+        let current_slot = rpc_client
+            .get_slot()
+            .await
+            .context("failed to get initial slot")?;
 
         let tx_store = empty_tx_store();
 
-        let tpu_service = TpuService::new(
-            current_slot,
+        let tpu_config = TpuServiceConfig {
             fanout_slots,
-            validator_identity,
+            number_of_leaders_to_cache: 1024,
+            clusterinfo_refresh_time: Duration::from_secs(60 * 60),
+            leader_schedule_update_frequency: Duration::from_secs(10),
+            maximum_transaction_in_queue: 20000,
+            maximum_number_of_errors: 10,
+            quic_connection_params: QuicConnectionParameters {
+                connection_timeout: Duration::from_secs(1),
+                connection_retry_count: 10,
+                finalize_timeout: Duration::from_millis(200),
+                max_number_of_connections: 10,
+                unistream_timeout: Duration::from_millis(500),
+                write_timeout: Duration::from_secs(1),
+                number_of_transactions_per_unistream: 8,
+            },
+        };
+
+        let tpu_service = TpuService::new(
+            tpu_config,
+            Arc::new(identity),
+            current_slot,
             rpc_client.clone(),
-            ws_addr,
             tx_store.clone(),
         )
         .await?;
@@ -132,7 +153,6 @@ impl LiteBridge {
         mut self,
         http_addr: T,
         ws_addr: T,
-        clean_interval: Duration,
         enable_postgres: bool,
         prometheus_addr: T,
     ) -> anyhow::Result<()> {
@@ -147,19 +167,16 @@ impl LiteBridge {
         };
 
         let metrics_capture = MetricsCapture::new(self.tx_store.clone()).capture();
-        let prometheus_sync = PrometheusSync.sync(prometheus_addr);
+        let prometheus_sync = PrometheusSync::sync(prometheus_addr);
 
-        let max_retries = self.max_retries;
+        // transaction services
         let (transaction_service, jh_transaction_services) = self
             .transaction_service_builder
-            .start(
-                postgres_send,
-                self.block_store.clone(),
-                max_retries,
-                clean_interval,
-            )
-            .await;
+            .clone()
+            .start(postgres_send, self.block_store.clone(), self.max_retries);
+
         self.transaction_service = Some(transaction_service);
+
         let rpc = self.into_rpc();
 
         let (ws_server, http_server) = {
@@ -178,12 +195,14 @@ impl LiteBridge {
             let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("Websocket Server started at {ws_addr:?}");
                 ws_server_handle.stopped().await;
+                error!("Websocket server stopped");
                 bail!("Websocket server stopped");
             });
 
             let http_server: AnyhowJoinHandle = tokio::spawn(async move {
                 info!("HTTP Server started at {http_addr:?}");
                 http_server_handle.stopped().await;
+                error!("HTTP server stopped");
                 bail!("HTTP server stopped");
             });
 
@@ -196,27 +215,29 @@ impl LiteBridge {
                 unreachable!();
             };
 
-            postgres.await
+            let res = postgres.await;
+            error!("postgres server stopped");
+            res
         });
 
         tokio::select! {
             res = ws_server => {
-                bail!("WebSocket server exited unexpectedly {res:?}");
+                bail!("WebSocket server {res:?}");
             },
             res = http_server => {
-                bail!("HTTP server exited unexpectedly {res:?}");
+                bail!("HTTP server {res:?}");
             },
             res = metrics_capture => {
-                bail!("Metrics Capture exited unexpectedly {res:?}");
+                bail!("Metrics Capture {res:?}");
             },
             res = prometheus_sync => {
-                bail!("Prometheus Service exited unexpectedly {res:?}");
+                bail!("Prometheus Service {res:?}");
             },
             res = postgres => {
-                bail!("Postgres service exited unexpectedly {res:?}");
+                bail!("Postgres service {res:?}");
             },
             res = jh_transaction_services => {
-                bail!("Transaction service exited unexpectedly {res:?}");
+                bail!("Transaction service {res:?}");
             }
         }
     }
@@ -313,6 +334,7 @@ impl LiteRpcServer for LiteBridge {
             .rpc_client
             .is_blockhash_valid(&blockhash, commitment)
             .await
+            .context("failed to get blockhash validity")
         {
             Ok(is_valid) => is_valid,
             Err(err) => {
@@ -389,16 +411,27 @@ impl LiteRpcServer for LiteBridge {
             .rpc_client
             .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
             .await
+            .context("failed to request airdrop")
         {
             Ok(airdrop_sig) => airdrop_sig.to_string(),
             Err(err) => {
                 return Err(jsonrpsee::core::Error::Custom(err.to_string()));
             }
         };
-
-        self.tx_store
-            .insert(airdrop_sig.clone(), Default::default());
-
+        if let Ok((_, block_height)) = self
+            .rpc_client
+            .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+            .await
+            .context("failed to get latest blockhash")
+        {
+            self.tx_store.insert(
+                airdrop_sig.clone(),
+                solana_lite_rpc_core::tx_store::TxProps {
+                    status: None,
+                    last_valid_blockheight: block_height,
+                },
+            );
+        }
         Ok(airdrop_sig)
     }
 

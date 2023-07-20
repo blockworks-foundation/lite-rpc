@@ -1,8 +1,6 @@
 use crate::structures::identity_stakes::IdentityStakes;
 use anyhow::Context;
-use futures::StreamExt;
-use log::{info, warn};
-use solana_pubsub_client::nonblocking::pubsub_client::PubsubClient;
+use log::info;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
@@ -18,7 +16,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
 
-pub struct SolanaUtils {}
+pub struct SolanaUtils;
 
 impl SolanaUtils {
     pub async fn get_stakes_for_identity(
@@ -61,41 +59,20 @@ impl SolanaUtils {
     }
 
     pub async fn poll_slots(
-        rpc_client: Arc<RpcClient>,
-        rpc_ws_address: &str,
+        rpc_client: &RpcClient,
         update_slot: impl Fn(u64),
     ) -> anyhow::Result<()> {
-        let pubsub_client = PubsubClient::new(rpc_ws_address)
-            .await
-            .context("Error creating pubsub client")?;
-
-        let slot = rpc_client
-            .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
-                commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
-            })
-            .await
-            .context("error getting slot")?;
-
-        update_slot(slot);
-
-        let (mut client, unsub) =
-            tokio::time::timeout(Duration::from_millis(1000), pubsub_client.slot_subscribe())
+        let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));
+        loop {
+            let slot = rpc_client
+                .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
+                    commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
+                })
                 .await
-                .context("timedout subscribing to slots")?
-                .context("slot pub sub disconnected")?;
-
-        while let Ok(slot_info) =
-            tokio::time::timeout(Duration::from_millis(2000), client.next()).await
-        {
-            if let Some(slot_info) = slot_info {
-                update_slot(slot_info.slot);
-            }
+                .context("Error getting slot")?;
+            update_slot(slot);
+            poll_frequency.tick().await;
         }
-
-        warn!("slot pub sub disconnected reconnecting");
-        unsub();
-
-        Ok(())
     }
 
     // Estimates the slots, either from polled slot or by forcefully updating after every 400ms

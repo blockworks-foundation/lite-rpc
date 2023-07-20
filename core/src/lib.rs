@@ -2,6 +2,7 @@ pub mod block_processor;
 pub mod block_store;
 pub mod leader_schedule;
 pub mod notifications;
+pub mod quic_connection;
 pub mod quic_connection_utils;
 pub mod rotating_queue;
 pub mod solana_utils;

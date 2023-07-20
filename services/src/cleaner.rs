@@ -1,13 +1,10 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::time::Duration;
 
-use crate::block_listenser::BlockListener;
-use crate::tx_sender::TxSender;
+use crate::{block_listenser::BlockListener, tx_sender::TxSender};
 use log::info;
-use prometheus::core::GenericGauge;
-use prometheus::{opts, register_int_gauge};
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::block_store::BlockStore;
+use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::task::JoinHandle;
 
 lazy_static::lazy_static! {
@@ -35,8 +32,12 @@ impl Cleaner {
         }
     }
 
-    pub fn clean_tx_sender(&self, ttl_duration: Duration) {
-        self.tx_sender.cleanup(ttl_duration);
+    pub async fn clean_tx_sender(&self) {
+        let (_, blockhash_finalized) = self
+            .block_store
+            .get_latest_block(CommitmentConfig::finalized())
+            .await;
+        self.tx_sender.cleanup(blockhash_finalized.block_height);
     }
 
     /// Clean Signature Subscribers from Block Listeners
@@ -44,32 +45,24 @@ impl Cleaner {
         self.block_listenser.clean(ttl_duration);
     }
 
-    pub async fn clean_block_store(&self, ttl_duration: Duration) {
-        self.block_store.clean(ttl_duration).await;
+    pub async fn clean_block_store(&self) {
+        self.block_store.clean().await;
         BLOCKS_IN_BLOCKSTORE.set(self.block_store.number_of_blocks_in_store() as i64);
     }
 
-    pub fn start(
-        self,
-        ttl_duration: Duration,
-        exit_signal: Arc<AtomicBool>,
-    ) -> JoinHandle<anyhow::Result<()>> {
+    pub fn start(self, ttl_duration: Duration) -> JoinHandle<anyhow::Result<()>> {
         let mut ttl = tokio::time::interval(ttl_duration);
 
         tokio::spawn(async move {
             info!("Cleaning memory");
 
             loop {
-                if exit_signal.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
-                }
                 ttl.tick().await;
 
-                self.clean_tx_sender(ttl_duration);
+                self.clean_tx_sender().await;
                 self.clean_block_listeners(ttl_duration);
-                self.clean_block_store(ttl_duration).await;
+                self.clean_block_store().await;
             }
-            Ok(())
         })
     }
 }

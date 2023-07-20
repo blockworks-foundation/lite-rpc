@@ -1,4 +1,5 @@
 use anyhow::Context;
+use lazy_static::lazy_static;
 use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -12,9 +13,8 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use std::{str::FromStr, time::Duration};
 use std::path::PathBuf;
-use lazy_static::lazy_static;
+use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
@@ -22,20 +22,18 @@ const WAIT_LIMIT_IN_SECONDS: u64 = 60;
 
 lazy_static! {
     static ref USER_KEYPAIR: PathBuf = {
-        dirs::home_dir().unwrap()
+        dirs::home_dir()
+            .unwrap()
             .join(".config")
             .join("solana")
             .join("id.json")
     };
 }
 
-
 pub struct BenchHelper;
 
 impl BenchHelper {
-
     pub async fn get_payer() -> anyhow::Result<Keypair> {
-
         let payer = tokio::fs::read_to_string(USER_KEYPAIR.as_path())
             .await
             .context("Error reading payer file")?;

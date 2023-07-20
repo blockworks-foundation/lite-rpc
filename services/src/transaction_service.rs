@@ -1,31 +1,25 @@
 // This class will manage the lifecycle for a transaction
 // It will send, replay if necessary and confirm by listening to blocks
 
-use std::{
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::time::Duration;
 
 use crate::{
     block_listenser::BlockListener,
     cleaner::Cleaner,
     tpu_utils::tpu_service::TpuService,
     transaction_replayer::{TransactionReplay, TransactionReplayer, MESSAGES_IN_REPLAY_QUEUE},
-    tx_sender::{TxSender, WireTransaction},
+    tx_sender::{TransactionInfo, TxSender},
 };
 use anyhow::bail;
 use solana_lite_rpc_core::{
     block_store::{BlockInformation, BlockStore},
     notifications::NotificationSender,
+    AnyhowJoinHandle,
 };
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_sdk::{commitment_config::CommitmentConfig, transaction::VersionedTransaction};
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
-    task::JoinHandle,
     time::Instant,
 };
 
@@ -55,90 +49,80 @@ impl TransactionServiceBuilder {
         }
     }
 
-    pub async fn start(
-        &self,
+    pub fn start(
+        self,
         notifier: Option<NotificationSender>,
         block_store: BlockStore,
         max_retries: usize,
-        clean_interval: Duration,
-    ) -> (TransactionService, JoinHandle<String>) {
+    ) -> (TransactionService, AnyhowJoinHandle) {
         let (transaction_channel, tx_recv) = mpsc::channel(self.max_nb_txs_in_queue);
         let (replay_channel, replay_reciever) = tokio::sync::mpsc::unbounded_channel();
 
-        let tx_sender = self.tx_sender.clone();
-        let block_listner = self.block_listner.clone();
-        let tx_replayer = self.tx_replayer.clone();
-        let tpu_service = self.tpu_service.clone();
-        let replay_channel_task = replay_channel.clone();
-        let exit_signal = Arc::new(AtomicBool::new(false));
-        let exit_signal_t = exit_signal.clone();
-        let block_store_t = block_store.clone();
-        let jh_services: JoinHandle<String> = tokio::spawn(async move {
-            let tpu_service_fx = tpu_service.start(exit_signal_t.clone());
+        let jh_services: AnyhowJoinHandle = {
+            let tx_sender = self.tx_sender.clone();
+            let block_listner = self.block_listner.clone();
+            let tx_replayer = self.tx_replayer.clone();
+            let tpu_service = self.tpu_service.clone();
+            let replay_channel_task = replay_channel.clone();
+            let block_store_t = block_store.clone();
 
-            let tx_sender_jh =
-                tx_sender
-                    .clone()
-                    .execute(tx_recv, notifier.clone(), exit_signal_t.clone());
+            tokio::spawn(async move {
+                let tpu_service_fx = tpu_service.start();
 
-            let replay_service = tx_replayer.start_service(
-                replay_channel_task,
-                replay_reciever,
-                exit_signal_t.clone(),
-            );
+                let tx_sender_jh = tx_sender.clone().execute(tx_recv, notifier.clone());
 
-            let finalized_block_listener = block_listner.clone().listen(
-                CommitmentConfig::finalized(),
-                notifier.clone(),
-                tpu_service.get_estimated_slot_holder(),
-                exit_signal_t.clone(),
-            );
+                let replay_service =
+                    tx_replayer.start_service(replay_channel_task, replay_reciever);
 
-            let confirmed_block_listener = block_listner.clone().listen(
-                CommitmentConfig::confirmed(),
-                None,
-                tpu_service.get_estimated_slot_holder(),
-                exit_signal_t.clone(),
-            );
+                let finalized_block_listener = block_listner.clone().listen(
+                    CommitmentConfig::finalized(),
+                    notifier.clone(),
+                    tpu_service.get_estimated_slot_holder(),
+                );
 
-            let processed_block_listener = block_listner
-                .clone()
-                .listen_processed(exit_signal_t.clone());
+                let confirmed_block_listener = block_listner.clone().listen(
+                    CommitmentConfig::confirmed(),
+                    None,
+                    tpu_service.get_estimated_slot_holder(),
+                );
 
-            let cleaner = Cleaner::new(tx_sender.clone(), block_listner.clone(), block_store_t)
-                .start(clean_interval, exit_signal_t);
+                let processed_block_listener = block_listner.clone().listen_processed();
 
-            tokio::select! {
-                res = tpu_service_fx => {
-                    format!("{res:?}")
-                },
-                res = tx_sender_jh => {
-                    format!("{res:?}")
-                },
+                // transactions get invalid in around 1 mins, because the block hash expires in 150 blocks so 150 * 400ms = 60s
+                // Setting it to two to give some margin of error / as not all the blocks are filled.
+                let cleaner = Cleaner::new(tx_sender.clone(), block_listner.clone(), block_store_t)
+                    .start(Duration::from_secs(120));
 
-                res = finalized_block_listener => {
-                    format!("{res:?}")
-                },
-                res = confirmed_block_listener => {
-                    format!("{res:?}")
-                },
-                res = processed_block_listener => {
-                    format!("{res:?}")
-                },
-                res = replay_service => {
-                    format!("{res:?}")
-                },
-                res = cleaner => {
-                    format!("{res:?}")
-                },
-            }
-        });
+                tokio::select! {
+                    res = tpu_service_fx => {
+                        bail!("Tpu Service {res:?}")
+                    },
+                    res = tx_sender_jh => {
+                        bail!("Tx Sender {res:?}")
+                    },
+                    res = finalized_block_listener => {
+                        bail!("Finalized Block Listener {res:?}")
+                    },
+                    res = confirmed_block_listener => {
+                        bail!("Confirmed Block Listener {res:?}")
+                    },
+                    res = processed_block_listener => {
+                        bail!("Processed Block Listener {res:?}")
+                    },
+                    res = replay_service => {
+                        bail!("Replay Service {res:?}")
+                    },
+                    res = cleaner => {
+                        bail!("Cleaner {res:?}")
+                    },
+                }
+            })
+        };
 
         (
             TransactionService {
                 transaction_channel,
                 replay_channel,
-                exit_signal,
                 block_store,
                 max_retries,
                 replay_after: self.tx_replayer.retry_after,
@@ -150,9 +134,8 @@ impl TransactionServiceBuilder {
 
 #[derive(Clone)]
 pub struct TransactionService {
-    pub transaction_channel: Sender<(String, WireTransaction, u64)>,
+    pub transaction_channel: Sender<TransactionInfo>,
     pub replay_channel: UnboundedSender<TransactionReplay>,
-    pub exit_signal: Arc<AtomicBool>,
     pub block_store: BlockStore,
     pub max_retries: usize,
     pub replay_after: Duration,
@@ -172,7 +155,7 @@ impl TransactionService {
         };
         let signature = tx.signatures[0];
 
-        let Some(BlockInformation { slot, .. }) = self
+        let Some(BlockInformation { slot, last_valid_blockheight, .. }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {
@@ -183,7 +166,12 @@ impl TransactionService {
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         if let Err(e) = self
             .transaction_channel
-            .send((signature.to_string(), raw_tx, slot))
+            .send(TransactionInfo {
+                signature: signature.to_string(),
+                last_valid_block_height: last_valid_blockheight,
+                slot,
+                transaction: raw_tx,
+            })
             .await
         {
             bail!(
@@ -207,9 +195,5 @@ impl TransactionService {
             MESSAGES_IN_REPLAY_QUEUE.inc();
         }
         Ok(signature.to_string())
-    }
-
-    pub fn stop(&self) {
-        self.exit_signal.store(true, Ordering::Relaxed)
     }
 }

@@ -1,10 +1,10 @@
-use std::sync::Arc;
-
+use anyhow::Context;
 use log::{info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{
     borsh::try_from_slice_unchecked,
+    clock::MAX_RECENT_BLOCKHASHES,
     commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
@@ -14,7 +14,7 @@ use solana_transaction_status::{
     option_serializer::OptionSerializer, RewardType, TransactionDetails, UiTransactionEncoding,
     UiTransactionStatusMeta,
 };
-use tokio::time::Instant;
+use std::sync::Arc;
 
 use crate::block_store::{BlockInformation, BlockStore};
 
@@ -77,7 +77,8 @@ impl BlockProcessor {
                     rewards: Some(true),
                 },
             )
-            .await?;
+            .await
+            .context("failed to get block")?;
 
         let Some(block_height) = block.block_height else {
             return Ok(BlockProcessorResult::invalid());
@@ -97,7 +98,8 @@ impl BlockProcessor {
                     BlockInformation {
                         slot,
                         block_height,
-                        instant: Instant::now(),
+                        last_valid_blockheight: block_height + MAX_RECENT_BLOCKHASHES as u64,
+                        cleanup_slot: block_height + 1000,
                         processed_local_time: None,
                     },
                     commitment_config,

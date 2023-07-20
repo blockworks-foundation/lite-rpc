@@ -10,6 +10,15 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features:
 
+## [0.2.2] - 2023-06-23
+
+commit : 70eb250b103c64a0e5a3159c9493e87003d046a4
+
+- lite-rpc : Added restart logic.
+- metrics : added more counters for related to failure of services during restart.
+- tpu-client : sending transaction using multiple quic connections.
+- tpu-client : removed pubsub of slot and implementing force polling using rpc.
+
 ## [0.2.1]
 
 commit: c1eed987f29417f8a3b8d147f43a112388f02e4f
@@ -39,3 +48,6 @@ Initial release.
 - tpu-client: Mechanisms related to sending transaction to the cluster leaders
 - postgres: Saving transaction and block data into postgres
 - metrics: Updates related to metrics used for graphana and prometheus
+- core: Core library,
+- services: Services library
+- lite-rpc: The lite rpc binary

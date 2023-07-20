@@ -1,25 +1,27 @@
-use std::sync::Arc;
-use std::time::Duration;
-
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-
 use log::info;
 use serde_json::json;
-use solana_client::rpc_request::RpcRequest;
-use solana_client::rpc_response::{Response, RpcBlockhash};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcBlockConfig};
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_client::{
+    nonblocking::rpc_client::RpcClient,
+    rpc_config::RpcBlockConfig,
+    rpc_request::RpcRequest,
+    rpc_response::{Response, RpcBlockhash},
+};
+use solana_sdk::{
+    clock::MAX_RECENT_BLOCKHASHES, commitment_config::CommitmentConfig, slot_history::Slot,
+};
 use solana_transaction_status::TransactionDetails;
-use tokio::sync::RwLock;
-use tokio::time::Instant;
+use std::sync::Arc;
+use tokio::{sync::RwLock, time::Instant};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
-    pub instant: Instant,
+    pub last_valid_blockheight: u64,
+    pub cleanup_slot: Slot,
     pub processed_local_time: Option<DateTime<Utc>>,
 }
 
@@ -66,14 +68,19 @@ impl BlockStore {
                 RpcRequest::GetLatestBlockhash,
                 json!([commitment_config]),
             )
-            .await?;
+            .await
+            .context("failed to poll latest blockhash")?;
 
         let processed_blockhash = response.value.blockhash;
         let processed_block = BlockInformation {
             slot: response.context.slot,
-            block_height: response.value.last_valid_block_height,
+            last_valid_blockheight: response.value.last_valid_block_height,
+            block_height: response
+                .value
+                .last_valid_block_height
+                .saturating_sub(MAX_RECENT_BLOCKHASHES as u64),
             processed_local_time: Some(Utc::now()),
-            instant: Instant::now(),
+            cleanup_slot: response.value.last_valid_block_height + 700, // cleanup after 1000 slots
         };
 
         Ok((processed_blockhash, processed_block))
@@ -85,7 +92,8 @@ impl BlockStore {
     ) -> anyhow::Result<(String, BlockInformation)> {
         let slot = rpc_client
             .get_slot_with_commitment(commitment_config)
-            .await?;
+            .await
+            .context("failed to fetch latest slot")?;
 
         let block = rpc_client
             .get_block_with_config(
@@ -98,7 +106,8 @@ impl BlockStore {
                     max_supported_transaction_version: Some(0),
                 },
             )
-            .await?;
+            .await
+            .context("failed to fetch latest blockhash")?;
 
         let latest_block_hash = block.blockhash;
         let block_height = block
@@ -110,7 +119,8 @@ impl BlockStore {
             BlockInformation {
                 slot,
                 block_height,
-                instant: Instant::now(),
+                last_valid_blockheight: block_height + MAX_RECENT_BLOCKHASHES as u64,
+                cleanup_slot: block_height + 1000,
                 processed_local_time: None,
             },
         ))
@@ -194,24 +204,13 @@ impl BlockStore {
         }
     }
 
-    pub async fn clean(&self, cleanup_duration: Duration) {
-        let latest_processed = self
-            .get_latest_blockhash(CommitmentConfig::processed())
+    pub async fn clean(&self) {
+        let finalized_block_information = self
+            .get_latest_block_info(CommitmentConfig::finalized())
             .await;
-        let latest_confirmed = self
-            .get_latest_blockhash(CommitmentConfig::confirmed())
-            .await;
-        let latest_finalized = self
-            .get_latest_blockhash(CommitmentConfig::finalized())
-            .await;
-
         let before_length = self.blocks.len();
-        self.blocks.retain(|k, v| {
-            v.instant.elapsed() < cleanup_duration
-                || k.eq(&latest_processed)
-                || k.eq(&latest_confirmed)
-                || k.eq(&latest_finalized)
-        });
+        self.blocks
+            .retain(|_, v| v.last_valid_blockheight >= finalized_block_information.block_height);
 
         info!(
             "Cleaned {} block info",

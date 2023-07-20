@@ -1,10 +1,9 @@
 use crate::{
-    DEFAULT_CLEAN_INTERVAL_MS, DEFAULT_FANOUT_SIZE, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
-    DEFAULT_WS_ADDR, MAX_RETRIES,
+    DEFAULT_FANOUT_SIZE, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR, MAX_RETRIES,
 };
 use clap::Parser;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     #[arg(short, long, default_value_t = String::from(DEFAULT_RPC_ADDR))]
@@ -18,9 +17,6 @@ pub struct Args {
     /// tpu fanout
     #[arg(short = 'f', long, default_value_t = DEFAULT_FANOUT_SIZE) ]
     pub fanout_size: u64,
-    /// interval between clean
-    #[arg(short = 'c', long, default_value_t = DEFAULT_CLEAN_INTERVAL_MS)]
-    pub clean_interval_ms: u64,
     /// enable logging to postgres
     #[arg(short = 'p', long)]
     pub enable_postgres: bool,

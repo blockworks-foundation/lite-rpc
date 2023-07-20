@@ -1,22 +1,36 @@
-use log::{info, trace, warn};
+use log::{trace, warn};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig,
 };
 use solana_sdk::pubkey::Pubkey;
 use std::{
-    collections::VecDeque,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     time::Duration,
 };
-use anyhow::bail;
-use tokio::{sync::RwLock, time::timeout};
+use tokio::time::timeout;
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
+
+pub enum QuicConnectionError {
+    TimeOut,
+    ConnectionError { retry: bool },
+}
+
+#[derive(Clone, Copy)]
+pub struct QuicConnectionParameters {
+    pub connection_timeout: Duration,
+    pub unistream_timeout: Duration,
+    pub write_timeout: Duration,
+    pub finalize_timeout: Duration,
+    pub connection_retry_count: usize,
+    pub max_number_of_connections: usize,
+    pub number_of_transactions_per_unistream: usize,
+}
 
 pub struct QuicConnectionUtils {}
 
@@ -39,16 +53,12 @@ impl QuicConnectionUtils {
             .expect("Failed to set QUIC client certificates");
 
         crypto.enable_early_data = true;
-        // FIXME TEMP HACK TO ALLOW PROXY PROTOCOL
-        const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
-
-        crypto.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec(), ALPN_TPU_FORWARDPROXY_PROTOCOL_ID.to_vec()];
+        crypto.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec()];
 
         let mut config = ClientConfig::new(Arc::new(crypto));
         let mut transport_config = TransportConfig::default();
 
-        // TODO check timing
-        let timeout = IdleTimeout::try_from(Duration::from_secs(5)).unwrap();
+        let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
         config.transport_config(Arc::new(transport_config));
@@ -98,25 +108,23 @@ impl QuicConnectionUtils {
         identity: Pubkey,
         already_connected: bool,
         endpoint: Endpoint,
-        tpu_address: SocketAddr,
+        addr: SocketAddr,
         connection_timeout: Duration,
         connection_retry_count: usize,
         exit_signal: Arc<AtomicBool>,
-        on_connect: fn(),
     ) -> Option<Connection> {
         for _ in 0..connection_retry_count {
             let conn = if already_connected {
-                Self::make_connection_0rtt(endpoint.clone(), tpu_address, connection_timeout).await
+                Self::make_connection_0rtt(endpoint.clone(), addr, connection_timeout).await
             } else {
-                Self::make_connection(endpoint.clone(), tpu_address, connection_timeout).await
+                Self::make_connection(endpoint.clone(), addr, connection_timeout).await
             };
             match conn {
                 Ok(conn) => {
-                    on_connect();
                     return Some(conn);
                 }
                 Err(e) => {
-                    warn!("Could not connect to tpu {}/{}, error: {}", tpu_address, identity, e);
+                    trace!("Could not connect to {} because of error {}", identity, e);
                     if exit_signal.load(Ordering::Relaxed) {
                         break;
                     }
@@ -130,12 +138,13 @@ impl QuicConnectionUtils {
         mut send_stream: SendStream,
         tx: &Vec<u8>,
         identity: Pubkey,
-        last_stable_id: Arc<AtomicU64>,
-        connection_stable_id: u64,
-        connection_timeout: Duration,
-    ) -> bool {
-        let write_timeout_res =
-            timeout(connection_timeout, send_stream.write_all(tx.as_slice())).await;
+        connection_params: QuicConnectionParameters,
+    ) -> Result<(), QuicConnectionError> {
+        let write_timeout_res = timeout(
+            connection_params.write_timeout,
+            send_stream.write_all(tx.as_slice()),
+        )
+        .await;
         match write_timeout_res {
             Ok(write_res) => {
                 if let Err(e) = write_res {
@@ -144,149 +153,50 @@ impl QuicConnectionUtils {
                         identity,
                         e
                     );
-                    // retry
-                    last_stable_id.store(connection_stable_id, Ordering::Relaxed);
-                    return true;
+                    return Err(QuicConnectionError::ConnectionError { retry: true });
                 }
             }
             Err(_) => {
                 warn!("timeout while writing transaction for {}", identity);
+                return Err(QuicConnectionError::TimeOut);
             }
         }
 
-        let finish_timeout_res = timeout(connection_timeout, send_stream.finish()).await;
+        let finish_timeout_res =
+            timeout(connection_params.finalize_timeout, send_stream.finish()).await;
         match finish_timeout_res {
             Ok(finish_res) => {
                 if let Err(e) = finish_res {
-                    last_stable_id.store(connection_stable_id, Ordering::Relaxed);
                     trace!(
-                        "Error while writing transaction for {}, error {}",
+                        "Error while finishing transaction for {}, error {}",
                         identity,
                         e
                     );
-                    return true;
+                    return Err(QuicConnectionError::ConnectionError { retry: false });
                 }
             }
             Err(_) => {
                 warn!("timeout while finishing transaction for {}", identity);
+                return Err(QuicConnectionError::TimeOut);
             }
         }
 
-        false
+        Ok(())
     }
 
     pub async fn open_unistream(
         connection: Connection,
-        last_stable_id: Arc<AtomicU64>,
         connection_timeout: Duration,
-    ) -> (Option<SendStream>, bool) {
+    ) -> Result<SendStream, QuicConnectionError> {
         match timeout(connection_timeout, connection.open_uni()).await {
-            Ok(Ok(unistream)) => (Some(unistream), false),
-            Ok(Err(_)) => {
-                // reset connection for next retry
-                last_stable_id.store(connection.stable_id() as u64, Ordering::Relaxed);
-                (None, true)
-            }
-            // timeout
-            Err(_) => (None, false),
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub async fn send_transaction_batch(
-        connection: Arc<RwLock<Connection>>,
-        txs: Vec<Vec<u8>>,
-        identity: Pubkey,
-        endpoint: Endpoint,
-        tpu_address: SocketAddr,
-        exit_signal: Arc<AtomicBool>,
-        last_stable_id: Arc<AtomicU64>,
-        connection_timeout: Duration,
-        connection_retry_count: usize,
-        on_connect: fn(),
-    ) {
-        info!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
-        let mut queue = VecDeque::new();
-        for tx in txs {
-            queue.push_back(tx);
-        }
-        for _ in 0..connection_retry_count {
-            if queue.is_empty() || exit_signal.load(Ordering::Relaxed) {
-                // return
-                return;
-            }
-            // get new connection reset if necessary
-            let conn = {
-                let last_stable_id = last_stable_id.load(Ordering::Relaxed) as usize;
-                let conn = connection.read().await;
-                if conn.stable_id() == last_stable_id {
-                    let current_stable_id = conn.stable_id();
-                    // problematic connection
-                    drop(conn);
-                    let mut conn = connection.write().await;
-                    // check may be already written by another thread
-                    if conn.stable_id() != current_stable_id {
-                        conn.clone()
-                    } else {
-                        let new_conn = Self::connect(
-                            identity,
-                            true,
-                            endpoint.clone(),
-                            tpu_address,
-                            connection_timeout,
-                            connection_retry_count,
-                            exit_signal.clone(),
-                            on_connect,
-                        )
-                        .await;
-                        if let Some(new_conn) = new_conn {
-                            *conn = new_conn;
-                            conn.clone()
-                        } else {
-                            // could not connect
-                            return;
-                        }
-                    }
-                } else {
-                    conn.clone()
-                }
-            };
-            let mut retry = false;
-            while !queue.is_empty() {
-                let tx = queue.pop_front().unwrap();
-                let (stream, retry_conn) =
-                    Self::open_unistream(conn.clone(), last_stable_id.clone(), connection_timeout)
-                        .await;
-                if let Some(send_stream) = stream {
-                    if exit_signal.load(Ordering::Relaxed) {
-                        return;
-                    }
-
-                    retry = Self::write_all(
-                        send_stream,
-                        &tx,
-                        identity,
-                        last_stable_id.clone(),
-                        conn.stable_id() as u64,
-                        connection_timeout,
-                    )
-                    .await;
-                } else {
-                    retry = retry_conn;
-                }
-                if retry {
-                    queue.push_back(tx);
-                    break;
-                }
-            }
-            if !retry {
-                break;
-            }
+            Ok(Ok(unistream)) => Ok(unistream),
+            Ok(Err(_)) => Err(QuicConnectionError::ConnectionError { retry: true }),
+            Err(_) => Err(QuicConnectionError::TimeOut),
         }
     }
 }
 
-pub struct SkipServerVerification;
+struct SkipServerVerification;
 
 impl SkipServerVerification {
     pub fn new() -> Arc<Self> {

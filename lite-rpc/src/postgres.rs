@@ -6,18 +6,18 @@ use postgres_native_tls::MakeTlsConnector;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use std::{sync::Arc, time::Duration};
 
-use tokio::{
-    sync::{RwLock, RwLockReadGuard},
-    task::JoinHandle,
-};
+use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket};
 
 use native_tls::{Certificate, Identity, TlsConnector};
 
 use crate::encoding::BinaryEncoding;
-use solana_lite_rpc_core::notifications::{
-    BlockNotification, NotificationMsg, NotificationReciever, TransactionNotification,
-    TransactionUpdateNotification,
+use solana_lite_rpc_core::{
+    notifications::{
+        BlockNotification, NotificationMsg, NotificationReciever, TransactionNotification,
+        TransactionUpdateNotification,
+    },
+    AnyhowJoinHandle,
 };
 
 lazy_static::lazy_static! {
@@ -200,7 +200,6 @@ impl PostgresSession {
                 log::error!("Connection to Postgres broke {err:?}");
                 return;
             }
-
             unreachable!("Postgres thread returned")
         });
 
@@ -411,7 +410,7 @@ impl Postgres {
         Ok(self.session.read().await)
     }
 
-    pub fn start(mut self, mut recv: NotificationReciever) -> JoinHandle<anyhow::Result<()>> {
+    pub fn start(mut self, mut recv: NotificationReciever) -> AnyhowJoinHandle {
         tokio::spawn(async move {
             info!("start postgres worker");
 
@@ -462,6 +461,7 @@ impl Postgres {
                         }
                         Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
                         Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                            log::error!("Postgres channel broke");
                             bail!("Postgres channel broke")
                         }
                     }
