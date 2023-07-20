@@ -1,16 +1,16 @@
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::atomic::Ordering::Relaxed;
 use std::thread;
 use std::time::Duration;
-use anyhow::bail;
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use itertools::Itertools;
 use log::{debug, error, info, warn};
-use quinn::Endpoint;
+use quinn::{ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 use solana_sdk::signature::Keypair;
@@ -18,7 +18,7 @@ use solana_sdk::transaction::VersionedTransaction;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::time::timeout;
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
-use solana_lite_rpc_core::quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils};
+use solana_lite_rpc_core::quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils, SkipServerVerification};
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_core::tx_store::TxStore;
 
@@ -43,7 +43,7 @@ impl QuicProxyConnectionManager {
         validator_identity: Arc<Keypair>,
         proxy_addr: SocketAddr,
     ) -> Self {
-        let endpoint = QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone());
+        let endpoint = Self::create_proxy_client_endpoint(certificate.clone(), key.clone());
 
         Self {
             endpoint,
@@ -95,6 +95,42 @@ impl QuicProxyConnectionManager {
             self.endpoint.clone(),
         ));
 
+    }
+
+    fn create_proxy_client_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
+
+        const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
+
+        let mut endpoint = {
+            let client_socket =
+                solana_net_utils::bind_in_range(IpAddr::V4(Ipv4Addr::UNSPECIFIED), (8000, 10000))
+                    .expect("create_endpoint bind_in_range")
+                    .1;
+            let config = EndpointConfig::default();
+            quinn::Endpoint::new(config, None, client_socket, TokioRuntime)
+                .expect("create_endpoint quinn::Endpoint::new")
+        };
+
+        let mut crypto = rustls::ClientConfig::builder()
+            .with_safe_defaults()
+            .with_custom_certificate_verifier(SkipServerVerification::new())
+            .with_single_cert(vec![certificate], key)
+            .expect("Failed to set QUIC client certificates");
+
+        crypto.enable_early_data = true;
+        crypto.alpn_protocols = vec![ALPN_TPU_FORWARDPROXY_PROTOCOL_ID.to_vec()];
+
+        let mut config = ClientConfig::new(Arc::new(crypto));
+        let mut transport_config = TransportConfig::default();
+
+        let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
+        transport_config.max_idle_timeout(Some(timeout));
+        transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+        config.transport_config(Arc::new(transport_config));
+
+        endpoint.set_default_client_config(config);
+
+        endpoint
     }
 
     // blocks and loops until exit signal (TODO)
@@ -173,14 +209,16 @@ impl QuicProxyConnectionManager {
 
         let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
 
-        let send_result = timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw));
+        let send_result =
+            timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw))
+                .await.context("Timeout sending data to quic proxy")?;
 
-        match send_result.await {
-            Ok(..) => {
+        match send_result {
+            Ok(()) => {
                 info!("Successfully sent data to quic proxy");
             }
             Err(e) => {
-                warn!("Failed to send data to quic proxy: {:?}", e);
+                bail!("Failed to send data to quic proxy: {:?}", e);
             }
         }
         Ok(())

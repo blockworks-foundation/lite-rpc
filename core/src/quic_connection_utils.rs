@@ -196,7 +196,7 @@ impl QuicConnectionUtils {
     }
 }
 
-struct SkipServerVerification;
+pub struct SkipServerVerification;
 
 impl SkipServerVerification {
     pub fn new() -> Arc<Self> {
