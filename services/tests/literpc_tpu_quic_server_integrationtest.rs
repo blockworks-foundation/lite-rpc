@@ -43,7 +43,7 @@ use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionMa
 const SAMPLE_TX_COUNT: u32 = 20;
 
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
-const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 2; // prod=8
+const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8; // like solana repo
 
 #[test] // note: tokio runtimes get created as part of the integration test
 pub fn wireup_and_send_txs_via_channel() {
@@ -169,6 +169,7 @@ pub fn wireup_and_send_txs_via_channel() {
         info!("got all expected packets - shutting down tokio runtime with lite-rpc client");
 
         assert_eq!(count_map.len() as u32, SAMPLE_TX_COUNT, "count_map size should be equal to SAMPLE_TX_COUNT");
+        // note: this assumption will not hold as soon as test is configured to do fanout
         assert!(count_map.values().all(|cnt| *cnt == 1), "all transactions should be unique");
 
         runtime_literpc.shutdown_timeout(Duration::from_millis(1000));
@@ -201,7 +202,7 @@ const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameter
     connection_timeout: Duration::from_secs(1),
     connection_retry_count: 10,
     finalize_timeout: Duration::from_millis(200),
-    max_number_of_connections: 10,
+    max_number_of_connections: 8,
     unistream_timeout: Duration::from_millis(500),
     write_timeout: Duration::from_secs(1),
     number_of_transactions_per_unistream: 10,
