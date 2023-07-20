@@ -4178,6 +4178,8 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "yellowstone-grpc-client",
+ "yellowstone-grpc-proto",
 ]
 
 [[package]]

@@ -2,7 +2,7 @@ use crate::structures::identity_stakes::IdentityStakes;
 use anyhow::Context;
 use log::info;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
 use std::{
     collections::HashMap,
@@ -12,7 +12,10 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::{
+    broadcast,
+    mpsc::{UnboundedReceiver, UnboundedSender},
+};
 
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
 
@@ -58,11 +61,12 @@ impl SolanaUtils {
         }
     }
 
-    pub async fn poll_slots(
+    pub async fn poll_rpc_slots(
         rpc_client: &RpcClient,
-        update_slot: impl Fn(u64),
+        slot_tx: UnboundedSender<Slot>,
     ) -> anyhow::Result<()> {
         let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));
+
         loop {
             let slot = rpc_client
                 .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
@@ -70,7 +74,9 @@ impl SolanaUtils {
                 })
                 .await
                 .context("Error getting slot")?;
-            update_slot(slot);
+            // send
+            slot_tx.send(slot).context("Error sending slot")?;
+            // wait for next poll i.e at least 50ms
             poll_frequency.tick().await;
         }
     }
@@ -79,43 +85,35 @@ impl SolanaUtils {
     // returns if the estimated slot was updated or not
     pub async fn slot_estimator(
         slot_update_notifier: &mut UnboundedReceiver<u64>,
-        current_slot: Arc<AtomicU64>,
-        estimated_slot: Arc<AtomicU64>,
-    ) -> bool {
+        mut current_slot: Slot,
+        mut estimated_slot: Slot,
+    ) -> (Slot, Slot) {
         match tokio::time::timeout(
             Duration::from_millis(AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS),
             slot_update_notifier.recv(),
         )
         .await
         {
-            Ok(recv) => {
-                if let Some(slot) = recv {
-                    if slot > estimated_slot.load(Ordering::Relaxed) {
-                        // incase of multilple slot update events / take the current slot
-                        let current_slot = current_slot.load(Ordering::Relaxed);
-                        estimated_slot.store(current_slot, Ordering::Relaxed);
-                        true
-                    } else {
-                        // queue is late estimate slot is already ahead
-                        false
+            Ok(Some(slot)) => {
+                // slot is latest
+                if slot > current_slot {
+                    current_slot = slot;
+                    if current_slot > estimated_slot {
+                        estimated_slot = current_slot;
                     }
-                } else {
-                    false
                 }
             }
+            Ok(None) => (),
             Err(_) => {
                 // force update the slot
-                let es = estimated_slot.load(Ordering::Relaxed);
-                let cs = current_slot.load(Ordering::Relaxed);
                 // estimated slot should not go ahead more than 32 slots
                 // this is because it may be a slot block
-                if es < cs + 32 {
-                    estimated_slot.fetch_add(1, Ordering::Relaxed);
-                    true
-                } else {
-                    false
+                if estimated_slot < current_slot + 32 {
+                    estimated_slot += 1;
                 }
             }
         }
+
+        (current_slot, estimated_slot)
     }
 }

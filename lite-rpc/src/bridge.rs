@@ -76,7 +76,6 @@ pub struct LiteBridge {
 impl LiteBridge {
     pub async fn new(
         rpc_url: String,
-        _ws_addr: String,
         fanout_slots: u64,
         identity: Keypair,
         retry_after: Duration,
@@ -214,7 +213,7 @@ impl LiteBridge {
             };
 
             let res = postgres.await;
-            error!("postgres server stopped");
+            error!("Postgres server stopped");
             res
         });
 

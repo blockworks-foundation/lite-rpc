@@ -1,12 +1,25 @@
+use std::sync::Arc;
+
+use solana_lite_rpc_core::solana_utils::SolanaUtils;
 use solana_lite_rpc_core::AtomicSlot;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use tokio::sync::broadcast;
 
-pub struct RpcListener;
+use crate::slot_estimator::SlotClock;
 
 const MAX_BLOCK_INDEXERS: usize = 10;
 
+pub struct RpcListener {
+    rpc_client: Arc<RpcClient>,
+}
+
 impl RpcListener {
-    pub async fn run(
+    // get's block for the respective slot
+    async fn get_block_for_slot(slot: _) -> _ {
+        todo!()
+    }
+
+    pub async fn listen(
         rpc_client: &RpcClient,
         slots_tx: AtomicSlot,
         block_tx: UnboundedSender<Block>,
@@ -25,7 +38,7 @@ impl RpcListener {
                 drop(permit);
             });
         }
-        
+
         Ok(())
     }
 }

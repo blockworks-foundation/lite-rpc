@@ -12,6 +12,7 @@ pub mod structures;
 pub mod subscription_handler;
 pub mod subscription_sink;
 pub mod tx_store;
+pub mod grpc_client;
 
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;
 pub type AtomicSlot = Arc<AtomicU64>;

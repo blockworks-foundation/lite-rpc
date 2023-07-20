@@ -193,7 +193,6 @@ impl TpuService {
                 log::info!("Got error while polling slot {}", err);
             }
 
-            error!("Reached max amount of errors to fetch latest slot, exiting poll slot loop");
             bail!("Reached max amount of errors to fetch latest slot, exiting poll slot loop")
         })
     }
@@ -256,15 +255,12 @@ impl TpuService {
 
         tokio::select! {
             res = update_leader_schedule_service => {
-                error!("Leader update Service {res:?}");
                 bail!("Leader update Service {res:?}");
             },
             res = slot_poll_service => {
-                error!("Slot Poll Service {res:?}");
                 bail!("Slot Poll Service {res:?}");
             },
             res = estimated_slot_service => {
-                error!("Estimated slot Service {res:?}");
                 bail!("Estimated slot Service {res:?}");
             },
         }
