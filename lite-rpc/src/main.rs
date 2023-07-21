@@ -9,6 +9,7 @@ use lite_rpc::{bridge::LiteBridge, cli::Args};
 
 use solana_sdk::signature::Keypair;
 use std::env;
+use std::sync::Arc;
 
 use crate::rpc_tester::RpcTester;
 
@@ -49,7 +50,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         transaction_retry_after_secs,
     } = args;
 
-    let identity = get_identity_keypair(&identity_keypair).await;
+    let validator_identity = Arc::new(get_identity_keypair(&identity_keypair).await);
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 
@@ -57,7 +58,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         rpc_addr,
         ws_addr,
         fanout_size,
-        identity,
+        validator_identity,
         retry_after,
         maximum_retries_per_tx,
     )

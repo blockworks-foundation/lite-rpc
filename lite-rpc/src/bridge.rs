@@ -38,10 +38,12 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionStatus;
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
+use std::convert::identity;
 use tokio::{
     net::ToSocketAddrs,
     sync::mpsc::{self, Sender},
 };
+use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -106,11 +108,12 @@ impl LiteBridge {
                 write_timeout: Duration::from_secs(1),
                 number_of_transactions_per_unistream: 8,
             },
+            tpu_connection_path: TpuConnectionPath::QuicDirectPath,
         };
 
         let tpu_service = TpuService::new(
             tpu_config,
-            Arc::new(identity),
+            validator_identity,
             current_slot,
             rpc_client.clone(),
             tx_store.clone(),

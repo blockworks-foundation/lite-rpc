@@ -96,7 +96,29 @@ pub fn small_tx_batch_unstaked() {
 }
 
 #[test]
-pub fn many_transactions() {
+pub fn with_100_transactions() {
+    configure_logging(false);
+
+    wireup_and_send_txs_via_channel(TestCaseParams {
+        sample_tx_count: 100,
+        stake_connection: true,
+        proxy_mode: false,
+    });
+}
+
+#[test]
+pub fn with_1000_transactions() {
+    configure_logging(false);
+
+    wireup_and_send_txs_via_channel(TestCaseParams {
+        sample_tx_count: 1000,
+        stake_connection: true,
+        proxy_mode: false,
+    });
+}
+
+#[test]
+pub fn with_10000_transactions() {
     configure_logging(false);
 
     wireup_and_send_txs_via_channel(TestCaseParams {
