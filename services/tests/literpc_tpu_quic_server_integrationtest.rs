@@ -40,7 +40,7 @@ use tokio::{join, spawn, task};
 use tracing_subscriber::{filter::LevelFilter, fmt};
 
 // note: logging will be auto-adjusted
-const SAMPLE_TX_COUNT: u32 = 20;
+const SAMPLE_TX_COUNT: u32 = 10;
 
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
 const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8; // like solana repo
@@ -61,7 +61,7 @@ pub fn wireup_and_send_txs_via_channel() {
     // lite-rpc
     let runtime_literpc = tokio::runtime::Builder::new_multi_thread()
         // see lite-rpc -> main.rs
-        .worker_threads(16) // note: this value has changed with the "deadlock fix" - TODO experiment with it
+        .worker_threads(16) // also works with 1
         .enable_all()
         .build()
         .expect("failed to build tokio runtime for lite-rpc-tpu-client");
@@ -154,15 +154,11 @@ pub fn wireup_and_send_txs_via_channel() {
                     tx.get_signature()
                 );
                 count_map.insert_or_increment(*tx.get_signature());
-                // for ix in tx.message.instructions() {
-                //     info!("instruction: {:?}", ix.data);
-                // }
             }
 
             if packet_count == WARMUP_TX_COUNT {
                 timer2 = Some(Instant::now());
             }
-            // info!("received packets so far: {}", packet_count);
             if packet_count == SAMPLE_TX_COUNT {
                 break;
             }
@@ -198,9 +194,6 @@ pub fn wireup_and_send_txs_via_channel() {
         runtime_literpc.shutdown_timeout(Duration::from_millis(1000));
     });
 
-    // shutdown streamer
-    // solana_quic_streamer.shutdown().await;
-
     packet_consumer_jh.join().unwrap();
 }
 
@@ -211,7 +204,6 @@ fn configure_logging() {
         "debug,quinn_proto=info,rustls=info,solana_streamer=debug"
     };
     tracing_subscriber::fmt::fmt()
-        // .with_max_level(LevelFilter::DEBUG)
         .with_env_filter(env_filter)
         .init();
 }
@@ -294,24 +286,16 @@ async fn start_literpc_client(
         )
         .await;
 
-    // TODO this is a race
-    sleep(Duration::from_millis(1500)).await;
-
     for i in 0..SAMPLE_TX_COUNT {
         let raw_sample_tx = build_raw_sample_tx(i);
-        debug!(
-            "broadcast transaction {} to {} receivers: {}",
-            raw_sample_tx.0,
-            broadcast_sender.receiver_count(),
-            format!("hi {}", i)
-        );
-
         broadcast_sender.send(raw_sample_tx)?;
     }
 
+    // we need that to keep the tokio runtime dedicated to lite-rpc up long enough
     sleep(Duration::from_secs(30)).await;
 
-    Ok(())
+    // reaching this point means there is problem with test setup and the consumer threed
+    panic!("should never reach this point")
 }
 
 #[tokio::test]

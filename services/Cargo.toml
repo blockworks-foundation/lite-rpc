@@ -36,10 +36,10 @@ quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
-tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 
 [dev-dependencies]
+tracing = { workspace = true }
 # note: version 0.5.6 has a known bug
 crossbeam-channel = "0.5.6"
 countmap = "0.2.0"
