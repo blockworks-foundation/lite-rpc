@@ -246,9 +246,9 @@ pub fn quic_proxy_and_solana_streamer() {
 
 fn configure_logging() {
     let env_filter = if SAMPLE_TX_COUNT < 100 {
-        "debug, rustls=info,    quinn_proto=debug,  solana_streamer=debug,  solana_lite_rpc_quic_forward_proxy=trace    "
+        "debug,rustls=info,quinn_proto=debug,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=trace"
     } else {
-        "debug, rustls=info,    quinn_proto=info,   solana_streamer=debug,  solana_lite_rpc_quic_forward_proxy=debug    "
+        "debug,rustls=info,quinn_proto=info,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=debug"
     };
     tracing_subscriber::fmt::fmt()
         // .with_max_level(LevelFilter::DEBUG)
