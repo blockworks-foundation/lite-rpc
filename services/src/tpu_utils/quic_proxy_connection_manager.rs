@@ -8,6 +8,7 @@ use std::thread;
 use std::time::Duration;
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use futures::FutureExt;
 use itertools::Itertools;
 use log::{debug, error, info, warn};
 use quinn::{ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig};
