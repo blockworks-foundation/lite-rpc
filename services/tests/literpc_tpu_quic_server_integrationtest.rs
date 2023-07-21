@@ -182,8 +182,6 @@ pub fn wireup_and_send_txs_via_channel() {
             packet_count2 as f64 / half_duration.as_secs_f64(),
         );
 
-        info!("got all expected packets - shutting down tokio runtime with lite-rpc client");
-
         assert_eq!(
             count_map.len() as u32,
             SAMPLE_TX_COUNT,
