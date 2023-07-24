@@ -38,6 +38,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{interval, sleep};
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{filter::LevelFilter, fmt};
+use tracing_subscriber::fmt::format::FmtSpan;
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::tls_config_provicer::SelfSignedTlsConfigProvider;
 use solana_lite_rpc_services::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
@@ -114,6 +115,20 @@ pub fn with_1000_transactions() {
         sample_tx_count: 1000,
         stake_connection: true,
         proxy_mode: false,
+    });
+}
+
+#[test]
+pub fn bench_proxy() {
+    configure_logging(true);
+
+    // consumed 1000 packets in 2059004us - throughput 485.67 tps, throughput_50 6704.05 tps
+
+    wireup_and_send_txs_via_channel(TestCaseParams {
+        // sample_tx_count: 1000, // this is the goal -- ATM test runs too long
+        sample_tx_count: 200,
+        stake_connection: true,
+        proxy_mode: true,
     });
 }
 
@@ -319,12 +334,18 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
 
 fn configure_logging(verbose: bool) {
     let env_filter = if verbose {
-        "debug,rustls=info,quinn_proto=debug,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=trace"
+        "debug,rustls=info,quinn=info,quinn_proto=debug,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=trace"
     } else {
-        "debug,rustls=info,quinn_proto=info,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=debug"
+        "debug,rustls=info,quinn=info,quinn_proto=info,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=debug"
+    };
+    let span_mode = if verbose {
+        FmtSpan::FULL
+    } else {
+        FmtSpan::NONE
     };
     let result = tracing_subscriber::fmt::fmt()
         .with_env_filter(env_filter)
+        .with_span_events(span_mode)
         .try_init();
     if result.is_err() {
         println!("Logging already initialized - ignore");

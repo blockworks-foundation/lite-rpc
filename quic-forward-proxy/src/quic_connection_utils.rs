@@ -1,8 +1,5 @@
-use log::{info, trace, warn};
-use quinn::{
-    ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
-    TokioRuntime, TransportConfig,
-};
+use log::{error, info, trace, warn};
+use quinn::{ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream, TokioRuntime, TransportConfig, WriteError};
 use solana_sdk::pubkey::Pubkey;
 use std::{
     collections::VecDeque,
@@ -15,6 +12,7 @@ use std::{
 };
 use anyhow::bail;
 use tokio::{sync::RwLock, time::timeout};
+use tokio::time::error::Elapsed;
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 
@@ -127,30 +125,26 @@ impl QuicConnectionUtils {
     }
 
     pub async fn write_all(
-        mut send_stream: SendStream,
+        send_stream: &mut SendStream,
         tx: &Vec<u8>,
-        identity: Pubkey,
-        last_stable_id: Arc<AtomicU64>,
-        connection_stable_id: u64,
         connection_timeout: Duration,
-    ) -> bool {
+    )  {
         let write_timeout_res =
             timeout(connection_timeout, send_stream.write_all(tx.as_slice())).await;
         match write_timeout_res {
             Ok(write_res) => {
                 if let Err(e) = write_res {
                     trace!(
-                        "Error while writing transaction for {}, error {}",
-                        identity,
+                        "Error while writing transaction for TBD, error {}",
+                        // identity, // TODO add more context
                         e
                     );
-                    // retry
-                    last_stable_id.store(connection_stable_id, Ordering::Relaxed);
-                    return true;
+                    return;
                 }
             }
             Err(_) => {
-                warn!("timeout while writing transaction for {}", identity);
+                warn!("timeout while writing transaction for TBD"); // TODO add more context
+                panic!("TODO handle timeout"); // FIXME
             }
         }
 
@@ -158,33 +152,31 @@ impl QuicConnectionUtils {
         match finish_timeout_res {
             Ok(finish_res) => {
                 if let Err(e) = finish_res {
-                    last_stable_id.store(connection_stable_id, Ordering::Relaxed);
+                    // last_stable_id.store(connection_stable_id, Ordering::Relaxed);
                     trace!(
-                        "Error while writing transaction for {}, error {}",
-                        identity,
+                        "Error while writing transaction for TBD, error {}",
+                        // identity,
                         e
                     );
-                    return true;
+                    return;
                 }
             }
             Err(_) => {
-                warn!("timeout while finishing transaction for {}", identity);
+                warn!("timeout while finishing transaction for TBD"); // TODO
+                panic!("TODO handle timeout"); // FIXME
             }
         }
 
-        false
     }
 
     pub async fn open_unistream(
         connection: Connection,
-        last_stable_id: Arc<AtomicU64>,
         connection_timeout: Duration,
     ) -> (Option<SendStream>, bool) {
         match timeout(connection_timeout, connection.open_uni()).await {
             Ok(Ok(unistream)) => (Some(unistream), false),
             Ok(Err(_)) => {
                 // reset connection for next retry
-                last_stable_id.store(connection.stable_id() as u64, Ordering::Relaxed);
                 (None, true)
             }
             // timeout
@@ -194,94 +186,41 @@ impl QuicConnectionUtils {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn send_transaction_batch(
-        connection: Arc<RwLock<Connection>>,
+        connection: Connection,
         txs: Vec<Vec<u8>>,
-        identity: Pubkey,
-        endpoint: Endpoint,
-        tpu_address: SocketAddr,
         exit_signal: Arc<AtomicBool>,
-        last_stable_id: Arc<AtomicU64>,
         connection_timeout: Duration,
-        connection_retry_count: usize,
-        on_connect: fn(),
     ) {
-        info!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
-        let mut queue = VecDeque::new();
-        for tx in txs {
-            queue.push_back(tx);
-        }
-        for _ in 0..connection_retry_count {
-            if queue.is_empty() || exit_signal.load(Ordering::Relaxed) {
-                // return
+        let (mut stream, _retry_conn) =
+            Self::open_unistream(connection.clone(), connection_timeout)
+                .await;
+        if let Some(ref mut send_stream) = stream {
+            if exit_signal.load(Ordering::Relaxed) {
                 return;
             }
-            // get new connection reset if necessary
-            let conn = {
-                let last_stable_id = last_stable_id.load(Ordering::Relaxed) as usize;
-                let conn = connection.read().await;
-                if conn.stable_id() == last_stable_id {
-                    let current_stable_id = conn.stable_id();
-                    // problematic connection
-                    drop(conn);
-                    let mut conn = connection.write().await;
-                    // check may be already written by another thread
-                    if conn.stable_id() != current_stable_id {
-                        conn.clone()
-                    } else {
-                        let new_conn = Self::connect(
-                            identity,
-                            true,
-                            endpoint.clone(),
-                            tpu_address,
-                            connection_timeout,
-                            connection_retry_count,
-                            exit_signal.clone(),
-                            on_connect,
-                        )
-                        .await;
-                        if let Some(new_conn) = new_conn {
-                            *conn = new_conn;
-                            conn.clone()
-                        } else {
-                            // could not connect
-                            return;
+
+            for tx in txs {
+                let write_timeout_res =
+                    timeout(connection_timeout, send_stream.write_all(tx.as_slice())).await;
+                match write_timeout_res {
+                    Ok(no_timeout) => {
+                        match no_timeout {
+                            Ok(()) => {}
+                            Err(write_error) => {
+                                error!("Error writing transaction to stream: {}", write_error);
+                            }
                         }
                     }
-                } else {
-                    conn.clone()
-                }
-            };
-            let mut retry = false;
-            while !queue.is_empty() {
-                let tx = queue.pop_front().unwrap();
-                let (stream, retry_conn) =
-                    Self::open_unistream(conn.clone(), last_stable_id.clone(), connection_timeout)
-                        .await;
-                if let Some(send_stream) = stream {
-                    if exit_signal.load(Ordering::Relaxed) {
-                        return;
+                    Err(elapsed) => {
+                        warn!("timeout sending transactions")
                     }
+                }
+            }
+            // TODO wrap in timeout
+            stream.unwrap().finish().await.unwrap();
 
-                    retry = Self::write_all(
-                        send_stream,
-                        &tx,
-                        identity,
-                        last_stable_id.clone(),
-                        conn.stable_id() as u64,
-                        connection_timeout,
-                    )
-                    .await;
-                } else {
-                    retry = retry_conn;
-                }
-                if retry {
-                    queue.push_back(tx);
-                    break;
-                }
-            }
-            if !retry {
-                break;
-            }
+        } else {
+            panic!("no retry handling"); // FIXME
         }
     }
 }
