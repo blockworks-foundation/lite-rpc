@@ -61,10 +61,12 @@ impl ActiveConnection {
     }
 
     fn check_for_confirmation(txs_sent_store: &TxStore, signature: String) -> bool {
-        match txs_sent_store.get(&signature) {
-            Some(props) => props.status.is_some(),
-            None => false,
-        }
+        // TODO build a smarter duplication check
+        false
+        // match txs_sent_store.get(&signature) {
+        //     Some(props) => props.status.is_some(),
+        //     None => false,
+        // }
     }
 
     #[allow(clippy::too_many_arguments)]
