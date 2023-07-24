@@ -31,7 +31,7 @@ pub const CONNECTION_RETRY_COUNT: usize = 10;
 pub struct TpuQuicClient {
     endpoint: Endpoint,
     // naive single non-recoverable connection - TODO moke it smarter
-    connection_per_tpunode: DashMap<SocketAddr, Connection>,
+    connection_per_tpunode: Arc<DashMap<SocketAddr, Connection>>,
 }
 
 impl TpuQuicClient {
@@ -50,7 +50,7 @@ impl TpuQuicClient {
 
         let active_tpu_connection = TpuQuicClient {
             endpoint: endpoint_outbound.clone(),
-            connection_per_tpunode: DashMap::new(),
+            connection_per_tpunode: Arc::new(DashMap::new()),
         };
 
         active_tpu_connection
@@ -62,7 +62,6 @@ impl TpuQuicClient {
             return conn.clone();
         }
 
-        debug!("Creating new QUIC connection to {} and put it into the connection map", tpu_address);
         let connection =
         // TODO try 0rff
             QuicConnectionUtils::make_connection(
@@ -72,6 +71,7 @@ impl TpuQuicClient {
 
         self.connection_per_tpunode.insert(tpu_address, connection.clone());
 
+        debug!("Created new Quic connection to TPU node {}, total connections is now {}", tpu_address, self.connection_per_tpunode.len());
         return connection;
     }
 
