@@ -124,6 +124,7 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
         let exit_signal_copy = exit_signal.clone();
         let validator_identity_copy = validator_identity.clone();
         let tpu_quic_client_copy = tpu_quic_client.clone();
+
         tokio::spawn(async move {
 
             let raw_request = recv_stream.read_to_end(10_000_000).await // TODO extract to const
@@ -137,15 +138,16 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
             let tpu_address = proxy_request.get_tpu_socket_addr();
             let txs = proxy_request.get_transactions();
 
+            // TODO join get_or_create_connection future and read_to_end
             let tpu_connection = tpu_quic_client_copy.get_or_create_connection(tpu_address).await;
 
             info!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
             tpu_quic_client_copy.send_txs_to_tpu(tpu_connection, &txs, exit_signal_copy).await;
 
-
             // active_tpu_connection_copy.send_txs_to_tpu(exit_signal_copy, validator_identity_copy, tpu_identity, tpu_address, &txs).await;
 
-        }).instrument(debug_span!("send_txs_to_tpu")).await.unwrap();
+        })
+            .await.unwrap();
 
     } // -- loop
 }

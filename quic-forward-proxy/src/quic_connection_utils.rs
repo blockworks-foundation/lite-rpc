@@ -13,6 +13,7 @@ use std::{
 use anyhow::bail;
 use tokio::{sync::RwLock, time::timeout};
 use tokio::time::error::Elapsed;
+use tracing::instrument;
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 
@@ -185,6 +186,7 @@ impl QuicConnectionUtils {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn send_transaction_batch(
         connection: Connection,
         txs: Vec<Vec<u8>>,

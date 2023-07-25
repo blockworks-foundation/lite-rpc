@@ -1,7 +1,9 @@
+use std::collections::HashMap;
+use std::io::Write;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::time::Duration;
 use anyhow::{anyhow, bail};
@@ -31,6 +33,7 @@ pub const CONNECTION_RETRY_COUNT: usize = 10;
 pub struct TpuQuicClient {
     endpoint: Endpoint,
     // naive single non-recoverable connection - TODO moke it smarter
+    // TODO consider using DashMap again
     connection_per_tpunode: Arc<DashMap<SocketAddr, Connection>>,
 }
 
@@ -58,8 +61,18 @@ impl TpuQuicClient {
 
     #[tracing::instrument(skip(self), level = "debug")]
     pub async fn get_or_create_connection(&self, tpu_address: SocketAddr) -> Connection {
-        if let Some(conn) = self.connection_per_tpunode.get(&tpu_address) {
-            return conn.clone();
+        info!("looking up {}", tpu_address);
+            // TODO try 0rff
+            // QuicConnectionUtils::make_connection(
+            //     self.endpoint.clone(), tpu_address, QUIC_CONNECTION_TIMEOUT)
+            //     .await.unwrap()
+
+
+        {
+            if let Some(conn) =  self.connection_per_tpunode.get(&tpu_address) {
+                debug!("reusing connection {:?}", conn);
+                return conn.clone();
+            }
         }
 
         let connection =
@@ -68,8 +81,8 @@ impl TpuQuicClient {
                 self.endpoint.clone(), tpu_address, QUIC_CONNECTION_TIMEOUT)
                 .await.unwrap();
 
-
-        self.connection_per_tpunode.insert(tpu_address, connection.clone());
+        let old_value = self.connection_per_tpunode.insert(tpu_address, connection.clone());
+        assert!(old_value.is_none(), "no prev value must be overridden");
 
         debug!("Created new Quic connection to TPU node {}, total connections is now {}", tpu_address, self.connection_per_tpunode.len());
         return connection;

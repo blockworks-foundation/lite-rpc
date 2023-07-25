@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use itertools::Itertools;
 use log::{debug, error, info, warn};
-use quinn::{ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig};
+use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 use solana_sdk::signature::Keypair;
@@ -65,8 +65,6 @@ impl QuicProxyConnectionManager {
 
 
         {
-            let mut lock = self.current_tpu_nodes.write().await;
-
             let list_of_nodes = connections_to_keep.iter().map(|(identity, tpu_address)| {
                 TpuNode {
                     tpu_identity: identity.clone(),
@@ -74,6 +72,7 @@ impl QuicProxyConnectionManager {
                 }
             }).collect_vec();
 
+            let mut lock = self.current_tpu_nodes.write().await;
             *lock = list_of_nodes;
         }
 
@@ -82,6 +81,7 @@ impl QuicProxyConnectionManager {
             // already started
             return;
         }
+        self.simple_thread_started.store(true, Relaxed);
 
         info!("Starting very simple proxy thread");
 
@@ -141,6 +141,10 @@ impl QuicProxyConnectionManager {
         proxy_addr: SocketAddr,
         endpoint: Endpoint,
     ) {
+
+        let mut connection = endpoint.connect(proxy_addr, "localhost").unwrap()
+            .await.unwrap();
+
         loop {
             // TODO exit signal ???
 
@@ -150,7 +154,7 @@ impl QuicProxyConnectionManager {
                         // exit signal???
 
 
-                        let the_tx: Vec<u8> = match tx {
+                        let first_tx: Vec<u8> = match tx {
                             Ok((sig, tx)) => {
                                 // if Self::check_for_confirmation(&txs_sent_store, sig) {
                                 //     // transaction is already confirmed/ no need to send
@@ -165,20 +169,31 @@ impl QuicProxyConnectionManager {
                             }
                         };
 
-                        // TODO read all txs from channel (see "let mut txs = vec![first_tx];")
-                        let txs = vec![the_tx];
+                        let number_of_transactions_per_unistream = 8; // TODO read from QuicConnectionParameters
 
-                        let tpu_fanout_nodes = current_tpu_nodes.read().await;
+                        let mut txs = vec![first_tx];
+                        // TODO comment in
+                        // for _ in 1..number_of_transactions_per_unistream {
+                        //     if let Ok((signature, tx)) = transaction_receiver.try_recv() {
+                        //         // if Self::check_for_confirmation(&txs_sent_store, signature) {
+                        //         //     continue;
+                        //         // }
+                        //         txs.push(tx);
+                        //     }
+                        // }
 
-                        info!("Sending copy of transaction batch of {} to {} tpu nodes via quic proxy",
+                        let tpu_fanout_nodes = current_tpu_nodes.read().await.clone();
+
+                        info!("Sending copy of transaction batch of {} txs to {} tpu nodes via quic proxy",
                                 txs.len(), tpu_fanout_nodes.len());
 
-                        for target_tpu_node in &*tpu_fanout_nodes {
+                        for target_tpu_node in tpu_fanout_nodes {
                             Self::send_copy_of_txs_to_quicproxy(
                                 &txs, endpoint.clone(),
-                                proxy_addr,
+                            proxy_addr,
                                 target_tpu_node.tpu_address,
-                                target_tpu_node.tpu_identity).await.unwrap();
+                                target_tpu_node.tpu_identity)
+                            .await.unwrap();
                         }
 
                     },
@@ -190,7 +205,11 @@ impl QuicProxyConnectionManager {
                                            proxy_address: SocketAddr, tpu_target_address: SocketAddr,
                                            target_tpu_identity: Pubkey) -> anyhow::Result<()> {
 
-        info!("sending vecvec: {}", raw_tx_batch.iter().map(|tx| tx.len()).into_iter().join(","));
+        info!("sending vecvec {} to quic proxy for TPU node {}",
+            raw_tx_batch.iter().map(|tx| tx.len()).into_iter().join(","), tpu_target_address);
+
+        // TODO add timeout
+        // let mut send_stream = timeout(Duration::from_millis(500), connection.open_uni()).await??;
 
         let raw_tx_batch_copy = raw_tx_batch.clone();
 
@@ -207,6 +226,7 @@ impl QuicProxyConnectionManager {
         }
 
         let forwarding_request = TpuForwardingRequest::new(tpu_target_address, target_tpu_identity, txs);
+        debug!("forwarding_request: {}", forwarding_request);
 
         let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
 
@@ -222,23 +242,24 @@ impl QuicProxyConnectionManager {
                 bail!("Failed to send data to quic proxy: {:?}", e);
             }
         }
-        Ok(())
-    }
-
-
-    async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
-        info!("sending {} bytes to proxy", proxy_request_raw.len());
-
-        let mut connecting = endpoint.connect(proxy_address, "localhost")?;
-        let connection = timeout(Duration::from_millis(500), connecting).await??;
-        let mut send = connection.open_uni().await?;
-
-        send.write_all(proxy_request_raw).await?;
-
-        send.finish().await?;
 
         Ok(())
     }
+
+     async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
+         info!("sending {} bytes to proxy", proxy_request_raw.len());
+
+         let mut connecting = endpoint.connect(proxy_address, "localhost")?;
+         let connection = timeout(Duration::from_millis(500), connecting).await??;
+         let mut send = connection.open_uni().await?;
+
+             send.write_all(proxy_request_raw).await?;
+
+             send.finish().await?;
+
+             Ok(())
+     }
+
 
 }
 

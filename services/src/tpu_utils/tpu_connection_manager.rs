@@ -237,6 +237,7 @@ impl TpuConnectionManager {
     ) -> Self {
         let number_of_clients = fanout * 2;
         Self {
+            // TODO
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
             })
