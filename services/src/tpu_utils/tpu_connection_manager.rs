@@ -88,6 +88,8 @@ impl ActiveConnection {
             identity_stakes.stakes,
             identity_stakes.total_stakes,
         ) as u64;
+        // TODO remove
+        println!("max_uni_stream_connections {}", max_uni_stream_connections);
         let number_of_transactions_per_unistream = self
             .connection_parameters
             .number_of_transactions_per_unistream;
@@ -95,7 +97,7 @@ impl ActiveConnection {
 
         let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
         let exit_signal = self.exit_signal.clone();
-        let connection_pool = QuicConnectionPool::new(
+        let connection_pool = QuicCd onnectionPool::new(
             identity,
             self.endpoints.clone(),
             addr,

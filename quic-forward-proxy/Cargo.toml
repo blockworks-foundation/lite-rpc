@@ -36,6 +36,7 @@ dotenv = { workspace = true }
 async-channel = { workspace = true }
 quinn = { workspace = true }
 async-trait = { workspace = true }
+futures = { workspace = true }
 chrono = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
 rcgen = "0.9.3"

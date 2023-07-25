@@ -272,7 +272,7 @@ impl QuicConnectionUtils {
             }
         }
 
-        // TODO wrap in timeout
+        // TODO wrap in small timeout
         send_stream.finish().await.unwrap();
 
     }
