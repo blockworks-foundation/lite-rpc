@@ -1,9 +1,9 @@
-use anyhow::bail;
+
 use countmap::CountMap;
-use crossbeam_channel::{Receiver, RecvError, RecvTimeoutError, Sender};
-use futures::future::join_all;
-use log::{debug, error, info, trace, warn};
-use quinn::TokioRuntime;
+use crossbeam_channel::{Sender};
+
+use log::{debug, info, trace, warn};
+
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_core::tx_store::empty_tx_store;
@@ -14,7 +14,7 @@ use solana_sdk::instruction::Instruction;
 use solana_sdk::message::Message;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature, Signer};
-use solana_sdk::signer::keypair;
+
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
 use solana_streamer::packet::PacketBatch;
@@ -23,21 +23,18 @@ use solana_streamer::streamer::StakedNodes;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::ops::Deref;
-use std::option::Option;
-use std::path::Path;
+
+
+
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
-use tokio::runtime::{Builder, Runtime};
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::SendError;
+use tokio::runtime::{Builder};
 use tokio::task::JoinHandle;
-use tokio::time::{interval, sleep};
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{filter::LevelFilter, fmt};
+use tokio::time::{sleep};
+
 
 #[derive(Copy, Clone, Debug)]
 struct TestCaseParams {
@@ -104,7 +101,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     // value from solana - see quic streamer - see quic.rs -> rt()
     const NUM_QUIC_STREAMER_WORKER_THREADS: usize = 1;
     let runtime_quic1 = Builder::new_multi_thread()
-        .worker_threads(1)
+        .worker_threads(NUM_QUIC_STREAMER_WORKER_THREADS)
         .thread_name("quic-server")
         .enable_all()
         .build()
@@ -125,7 +122,6 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     let (inbound_packets_sender, inbound_packets_receiver) = crossbeam_channel::unbounded();
 
     runtime_quic1.block_on(async {
-        /// setup solana Quic streamer
         // see log "Start quic server on UdpSocket { addr: 127.0.0.1:xxxxx, fd: 10 }"
         let staked_nodes = StakedNodes {
             total_stake: 100,
@@ -150,7 +146,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
 
     runtime_literpc.block_on(async {
         tokio::spawn(start_literpc_client(
-            test_case_params.clone(),
+            test_case_params,
             listen_addr,
             literpc_validator_identity,
         ));
@@ -194,9 +190,9 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
                 );
             }
 
-            packet_count = packet_count + packet_batch.len() as u32;
+            packet_count += packet_batch.len() as u32;
             if timer2.is_some() {
-                packet_count2 = packet_count2 + packet_batch.len() as u32;
+                packet_count2 += packet_batch.len() as u32;
             }
 
             for packet in packet_batch.iter() {
@@ -378,7 +374,7 @@ async fn solana_quic_streamer_start() {
 
     let addr = sock.local_addr().unwrap().ip();
     let port = sock.local_addr().unwrap().port();
-    let tpu_addr = SocketAddr::new(addr, port);
+    let _tpu_addr = SocketAddr::new(addr, port);
 
     // sleep(Duration::from_millis(500)).await;
 
@@ -389,24 +385,10 @@ async fn solana_quic_streamer_start() {
 }
 
 struct SolanaQuicStreamer {
-    sock: UdpSocket,
-    exit: Arc<AtomicBool>,
-    join_handler: JoinHandle<()>,
-    stats: Arc<StreamStats>,
-}
-
-impl SolanaQuicStreamer {
-    pub fn get_socket_addr(&self) -> SocketAddr {
-        self.sock.local_addr().unwrap()
-    }
-}
-
-impl SolanaQuicStreamer {
-    pub async fn shutdown(self) {
-        self.exit.store(true, Ordering::Relaxed);
-        self.join_handler.await.unwrap();
-        self.stats.report();
-    }
+    _sock: UdpSocket,
+    _exit: Arc<AtomicBool>,
+    _join_handler: JoinHandle<()>,
+    _stats: Arc<StreamStats>,
 }
 
 impl SolanaQuicStreamer {
@@ -429,7 +411,7 @@ impl SolanaQuicStreamer {
             sender,
             exit.clone(),
             MAX_QUIC_CONNECTIONS_PER_PEER,
-            staked_nodes.clone(),
+            staked_nodes,
             10,
             10,
             stats.clone(),
@@ -439,13 +421,13 @@ impl SolanaQuicStreamer {
 
         let addr = udp_socket.local_addr().unwrap().ip();
         let port = udp_socket.local_addr().unwrap().port();
-        let tpu_addr = SocketAddr::new(addr, port);
+        let _tpu_addr = SocketAddr::new(addr, port);
 
         Self {
-            sock: udp_socket,
-            exit,
-            join_handler: jh,
-            stats,
+            _sock: udp_socket,
+            _exit: exit,
+            _join_handler: jh,
+            _stats: stats,
         }
     }
 }

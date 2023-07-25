@@ -167,7 +167,7 @@ impl ActiveConnection {
                 _ = exit_oneshot_channel.recv() => {
                     break;
                 }
-            };
+            }
         }
         drop(transaction_reciever);
         NB_QUIC_CONNECTIONS.dec();
