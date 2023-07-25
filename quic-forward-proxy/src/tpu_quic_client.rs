@@ -28,6 +28,10 @@ use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProv
 const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 pub const CONNECTION_RETRY_COUNT: usize = 10;
 
+pub const MAX_TRANSACTIONS_PER_BATCH: usize = 10;
+pub const MAX_BYTES_PER_BATCH: usize = 10;
+const MAX_PARALLEL_STREAMS: usize = 6;
+
 /// stable connect to TPU to send transactions - optimized for proxy use case
 #[derive(Debug, Clone)]
 pub struct TpuQuicClient {
@@ -93,12 +97,19 @@ impl TpuQuicClient {
                                  txs: &Vec<VersionedTransaction>,
                                  exit_signal: Arc<AtomicBool>,
     ) {
-        QuicConnectionUtils::send_transaction_batch(
-            connection,
-            serialize_to_vecvec(txs),
-            exit_signal.clone(),
-            QUIC_CONNECTION_TIMEOUT,
-        ).await;
+
+        for chunk in txs.chunks(MAX_PARALLEL_STREAMS) {
+            let vecvec = chunk.iter().map(|tx| {
+                let tx_raw = bincode::serialize(tx).unwrap();
+                tx_raw
+            }).collect_vec();
+            QuicConnectionUtils::send_transaction_batch_parallel(
+                connection.clone(),
+                vecvec,
+                exit_signal.clone(),
+                QUIC_CONNECTION_TIMEOUT,
+            ).await;
+        }
 
     }
 

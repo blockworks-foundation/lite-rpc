@@ -1,4 +1,4 @@
-use log::{error, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use quinn::{ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream, TokioRuntime, TransportConfig, WriteError};
 use solana_sdk::pubkey::Pubkey;
 use std::{
@@ -11,6 +11,8 @@ use std::{
     time::Duration,
 };
 use anyhow::bail;
+use futures::future::join_all;
+use itertools::Itertools;
 use tokio::{sync::RwLock, time::timeout};
 use tokio::time::error::Elapsed;
 use tracing::instrument;
@@ -185,9 +187,10 @@ impl QuicConnectionUtils {
         }
     }
 
+
     #[allow(clippy::too_many_arguments)]
     #[tracing::instrument(skip_all, level = "debug")]
-    pub async fn send_transaction_batch(
+    pub async fn send_transaction_batch_serial(
         connection: Connection,
         txs: Vec<Vec<u8>>,
         exit_signal: Arc<AtomicBool>,
@@ -226,6 +229,52 @@ impl QuicConnectionUtils {
         } else {
             panic!("no retry handling"); // FIXME
         }
+    }
+
+    // open streams in parallel
+    // one stream is used for one transaction
+    // number of parallel streams that connect to TPU must be limited by caller (should be 8)
+    #[allow(clippy::too_many_arguments)]
+    #[tracing::instrument(skip_all, level = "debug")]
+    pub async fn send_transaction_batch_parallel(
+        connection: Connection,
+        txs: Vec<Vec<u8>>,
+        exit_signal: Arc<AtomicBool>,
+        connection_timeout: Duration,
+    ) {
+        assert_ne!(txs.len(), 0, "no transactions to send");
+        debug!("Opening {} parallel quic streams", txs.len());
+
+        let all_send_fns = (0..txs.len()).map(|i| Self::send_tx_to_new_stream(&txs[i], connection.clone(), connection_timeout)).collect_vec();
+
+        join_all(all_send_fns).await;
+    }
+
+
+    async fn send_tx_to_new_stream(tx: &Vec<u8>, connection: Connection, connection_timeout: Duration) {
+        let mut send_stream = Self::open_unistream(connection.clone(), connection_timeout)
+            .await.0
+            .unwrap();
+
+        let write_timeout_res =
+            timeout(connection_timeout, send_stream.write_all(tx.as_slice())).await;
+        match write_timeout_res {
+            Ok(no_timeout) => {
+                match no_timeout {
+                    Ok(()) => {}
+                    Err(write_error) => {
+                        error!("Error writing transaction to stream: {}", write_error);
+                    }
+                }
+            }
+            Err(elapsed) => {
+                warn!("timeout sending transactions");
+            }
+        }
+
+        // TODO wrap in timeout
+        send_stream.finish().await.unwrap();
+
     }
 }
 
