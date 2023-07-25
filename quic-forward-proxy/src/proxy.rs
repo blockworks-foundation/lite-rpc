@@ -9,7 +9,7 @@ use anyhow::{anyhow, bail, Context};
 use dashmap::DashMap;
 use itertools::{any, Itertools};
 use log::{debug, error, info, trace, warn};
-use quinn::{Connecting, Connection, Endpoint, SendStream, ServerConfig, VarInt};
+use quinn::{Connecting, Connection, Endpoint, SendStream, ServerConfig, TransportConfig, VarInt};
 use rcgen::generate_simple_self_signed;
 use rustls::{Certificate, PrivateKey};
 use rustls::server::ResolvesServerCert;
@@ -41,6 +41,10 @@ impl QuicForwardProxy {
         let server_tls_config = tls_config.get_server_tls_crypto_config();
 
         let mut quinn_server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
+        let mut transport_config = TransportConfig::default();
+        transport_config.max_idle_timeout(None);
+        transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+        quinn_server_config.transport_config(Arc::new(transport_config));
 
         let endpoint = Endpoint::server(quinn_server_config, proxy_listener_addr).unwrap();
         info!("tpu forward proxy listening on {}", endpoint.local_addr()?);
@@ -146,8 +150,7 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
 
             // active_tpu_connection_copy.send_txs_to_tpu(exit_signal_copy, validator_identity_copy, tpu_identity, tpu_address, &txs).await;
 
-        })
-            .await.unwrap();
+        });
 
     } // -- loop
 }
