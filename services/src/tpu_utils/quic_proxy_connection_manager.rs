@@ -12,6 +12,7 @@ use futures::FutureExt;
 use itertools::Itertools;
 use log::{debug, error, info, warn};
 use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig};
+use solana_sdk::packet::PACKET_DATA_SIZE;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
 use solana_sdk::signature::Keypair;
@@ -173,14 +174,15 @@ impl QuicProxyConnectionManager {
 
                         let mut txs = vec![first_tx];
                         // TODO comment in
-                        // for _ in 1..number_of_transactions_per_unistream {
-                        //     if let Ok((signature, tx)) = transaction_receiver.try_recv() {
-                        //         // if Self::check_for_confirmation(&txs_sent_store, signature) {
-                        //         //     continue;
-                        //         // }
-                        //         txs.push(tx);
-                        //     }
-                        // }
+                        let foo = PACKET_DATA_SIZE;
+                        for _ in 1..number_of_transactions_per_unistream {
+                            if let Ok((signature, tx)) = transaction_receiver.try_recv() {
+                                // if Self::check_for_confirmation(&txs_sent_store, signature) {
+                                //     continue;
+                                // }
+                                txs.push(tx);
+                            }
+                        }
 
                         let tpu_fanout_nodes = current_tpu_nodes.read().await.clone();
 

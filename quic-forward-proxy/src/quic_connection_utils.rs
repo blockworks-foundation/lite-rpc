@@ -214,9 +214,11 @@ impl QuicConnectionUtils {
                         }
                     }
                     Err(elapsed) => {
-                        warn!("timeout sending transactions")
+                        warn!("timeout sending transactions");
                     }
                 }
+
+
             }
             // TODO wrap in timeout
             stream.unwrap().finish().await.unwrap();

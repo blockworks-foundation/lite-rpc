@@ -112,11 +112,11 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
         let maybe_stream = client_connection.accept_uni().await;
         let mut recv_stream = match maybe_stream {
             Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
-                debug!("connection closed by peer - reason: {:?}", reason);
+                debug!("connection closed by client - reason: {:?}", reason);
                 if reason.error_code != VarInt::from_u32(0) {
-                    return Err(anyhow!("connection closed by peer with unexpected reason: {:?}", reason));
+                    return Err(anyhow!("connection closed by client with unexpected reason: {:?}", reason));
                 }
-                debug!("connection gracefully closed by peer");
+                debug!("connection gracefully closed by client");
                 return Ok(());
             },
             Err(e) => {
