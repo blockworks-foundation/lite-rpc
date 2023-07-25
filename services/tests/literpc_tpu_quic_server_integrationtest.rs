@@ -1,6 +1,5 @@
-
 use countmap::CountMap;
-use crossbeam_channel::{Sender};
+use crossbeam_channel::Sender;
 
 use log::{debug, info, trace, warn};
 
@@ -24,17 +23,14 @@ use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
-
-
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
-use tokio::runtime::{Builder};
+use tokio::runtime::Builder;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep};
-
+use tokio::time::sleep;
 
 #[derive(Copy, Clone, Debug)]
 struct TestCaseParams {
