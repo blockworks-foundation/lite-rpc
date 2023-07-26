@@ -12,7 +12,7 @@ use crate::{
 };
 use anyhow::bail;
 use solana_lite_rpc_core::{
-    block_store::{BlockInformation, BlockStore},
+    block_store::{BlockMeta
     notifications::NotificationSender,
     AnyhowJoinHandle,
 };
@@ -155,7 +155,7 @@ impl TransactionService {
         };
         let signature = tx.signatures[0];
 
-        let Some(BlockInformation { slot, last_valid_blockheight, .. }) = self
+        let Some(BlockInfovalid_blockheight, .. }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {

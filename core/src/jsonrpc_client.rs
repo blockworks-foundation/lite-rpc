@@ -1,21 +1,13 @@
-use anyhow::Context;
-use log::{info, warn};
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{
-    clock::MAX_RECENT_BLOCKHASHES,
-    commitment_config::CommitmentConfig,
-    compute_budget::{self, ComputeBudgetInstruction},
-    slot_history::Slot,
-    transaction::TransactionError,
-};
-use solana_transaction_status::{
-    option_serializer::OptionSerializer, RewardType, TransactionDetails, UiTransactionEncoding,
-    UiTransactionStatusMeta,
-};
-use std::sync::Arc;
+use tokio::sync::broadcast;
 
-use crate::block_store::{BlockInformation, BlockStore};
+pub struct TransactionInfo {
+    pub signature: String,
+    pub err: Option<TransactionError>,
+    pub status: Result<(), TransactionError>,
+    pub cu_requested: Option<u32>,
+    pub prioritization_fees: Option<u64>,
+    pub cu_consumed: Option<u64>,
+}
 
 #[derive(Default)]
 pub struct ProcessedBlock {
@@ -30,31 +22,11 @@ pub enum BlockProcessorError {
     Incomplete,
 }
 
-pub struct TransactionInfo {
-    pub signature: String,
-    pub err: Option<TransactionError>,
-    pub status: Result<(), TransactionError>,
-    pub cu_requested: Option<u32>,
-    pub prioritization_fees: Option<u64>,
-    pub cu_consumed: Option<u64>,
-}
+pub struct JsonRpcClient;
 
-#[derive(Clone)]
-pub struct BlockProcessor {
-    rpc_client: Arc<RpcClient>,
-    block_store: Option<BlockStore>,
-}
-
-impl BlockProcessor {
-    pub fn new(rpc_client: Arc<RpcClient>, block_store: Option<BlockStore>) -> Self {
-        Self {
-            rpc_client,
-            block_store,
-        }
-    }
-
+impl JsonRpcClient {
     pub async fn process(
-        &self,
+        client: &RpcClient,
         slot: Slot,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<Result<ProcessedBlock, BlockProcessorError>> {
@@ -83,22 +55,6 @@ impl BlockProcessor {
 
         let blockhash = block.blockhash;
         let parent_slot = block.parent_slot;
-
-        if let Some(block_store) = &self.block_store {
-            block_store
-                .add_block(
-                    blockhash.clone(),
-                    BlockInformation {
-                        slot,
-                        block_height,
-                        last_valid_blockheight: block_height + MAX_RECENT_BLOCKHASHES as u64,
-                        cleanup_slot: block_height + 1000,
-                        processed_local_time: None,
-                    },
-                    commitment_config,
-                )
-                .await;
-        }
 
         let txs = txs.into_iter().filter_map(|tx| {
             let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
@@ -196,21 +152,23 @@ impl BlockProcessor {
         }))
     }
 
-    pub async fn poll_latest_block(
-        &self,
-        commitment_config: CommitmentConfig,
+    pub async fn poll_slots(
+        rpc_client: &RpcClient,
+        slot_tx: broadcast::Sender<Slot>,
     ) -> anyhow::Result<()> {
-        let (processed_blockhash, processed_block) =
-            BlockStore::poll_latest(self.rpc_client.as_ref(), commitment_config).await?;
-        if let Some(block_store) = &self.block_store {
-            block_store
-                .add_block(
-                    processed_blockhash,
-                    processed_block,
-                    CommitmentConfig::processed(),
-                )
-                .await;
+        let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));
+
+        loop {
+            let slot = rpc_client
+                .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
+                    commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
+                })
+                .await
+                .context("Error getting slot")?;
+            // send
+            slot_tx.send(slot).context("Error sending slot")?;
+            // wait for next poll i.e at least 50ms
+            poll_frequency.tick().await;
         }
-        Ok(())
     }
 }

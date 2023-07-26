@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{bail, Context};
 
+use bytes::Bytes;
 use futures::StreamExt;
 use solana_sdk::slot_history::Slot;
 use tokio::sync::mpsc::UnboundedSender;
@@ -14,11 +15,28 @@ use yellowstone_grpc_proto::{
     tonic::service::Interceptor,
 };
 
+pub const GRPC_VERSION: &str = "1.16.1";
+pub const GRPC_URL: &str = "http://127.0.0.0:10000";
+
 pub struct GrpcClient;
 
 impl GrpcClient {
-    pub async fn subscribe<F: Interceptor>(
-        client: &mut GeyserGrpcClient<F>,
+    pub async fn create_client<F>(
+        addr: impl Into<Bytes>,
+    ) -> anyhow::Result<GeyserGrpcClient<impl Interceptor>> {
+        let mut client = GeyserGrpcClient::connect(addr, None::<&'static str>, None)?;
+
+        let version = client.get_version().await?.version;
+
+        if version != GRPC_VERSION {
+            log::warn!("Expected version {:?}, got {:?}", GRPC_VERSION, version);
+        }
+
+        Ok(client)
+    }
+
+    pub async fn subscribe(
+        mut client: GeyserGrpcClient<impl Interceptor>,
         slots_sender: Option<UnboundedSender<Slot>>,
         tx_sender: Option<UnboundedSender<SubscribeUpdateTransaction>>,
         commitment: Option<CommitmentLevel>,

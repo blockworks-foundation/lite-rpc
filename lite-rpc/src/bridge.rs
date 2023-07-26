@@ -22,7 +22,7 @@ use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscrip
 use log::{error, info};
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
-    block_store::{BlockInformation, BlockStore},
+    block_store::{BlockMeta
     quic_connection_utils::QuicConnectionParameters,
     tx_store::{empty_tx_store, TxStore},
     AnyhowJoinHandle,
@@ -291,7 +291,7 @@ impl LiteRpcServer for LiteBridge {
 
         let (
             blockhash,
-            BlockInformation {
+            BlockMeta
                 slot, block_height, ..
             },
         ) = self.block_store.get_latest_block(commitment_config).await;
@@ -423,7 +423,7 @@ impl LiteRpcServer for LiteBridge {
         {
             self.tx_store.insert(
                 airdrop_sig.clone(),
-                solana_lite_rpc_core::tx_store::TxProps {
+                solana_lite_rpc_core::tx_store::TxMeta {
                     status: None,
                     last_valid_blockheight: block_height,
                 },
@@ -437,7 +437,7 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (_, BlockInformation { slot, .. }) =
+        let (_, BlockMeta =
             self.block_store.get_latest_block(commitment_config).await;
         Ok(slot)
     }

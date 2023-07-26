@@ -14,7 +14,7 @@ use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 use crate::tpu_utils::tpu_service::TpuService;
 use solana_lite_rpc_core::{
     notifications::{NotificationMsg, NotificationSender, TransactionNotification},
-    tx_store::{TxProps, TxStore},
+    tx_store::{TxMeta, TxStore},
 };
 
 lazy_static::lazy_static! {
@@ -84,7 +84,7 @@ impl TxSender {
             trace!("sending transaction {}", transaction_info.signature);
             txs_sent.insert(
                 transaction_info.signature.clone(),
-                TxProps {
+                TxMeta {
                     status: None,
                     last_valid_blockheight: transaction_info.last_valid_block_height,
                 },
@@ -98,7 +98,7 @@ impl TxSender {
         for transaction_info in transaction_infos.iter() {
             txs_sent.insert(
                 transaction_info.signature.clone(),
-                TxProps::new(transaction_info.last_valid_block_height),
+                TxMeta::new(transaction_info.last_valid_block_height),
             );
             let quic_response = match tpu_client.send_transaction(
                 transaction_info.signature.clone(),

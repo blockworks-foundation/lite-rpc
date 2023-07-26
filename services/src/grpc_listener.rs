@@ -7,7 +7,7 @@ use anyhow::bail;
 use bytes::Bytes;
 use futures_util::StreamExt;
 
-use solana_lite_rpc_core::AtomicSlot;
+use solana_lite_rpc_core::{grpc_client::GrpcClient, ledger::Ledger, AnyhowJoinHandle, AtomicSlot};
 use solana_sdk::slot_history::Slot;
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -22,31 +22,46 @@ use yellowstone_grpc_proto::{
     tonic::service::Interceptor,
 };
 
-const GRPC_URL: &str = "http://127.0.0.0:10000";
-const GRPC_VERSION: &str = "1.16.1";
-
-pub struct GrpcListener {
-}
+pub struct GrpcListener;
 
 impl GrpcListener {
-    pub async fn listen(addr: impl Into<Bytes>) -> anyhow::Result<()> {
-        let mut client = GeyserGrpcClient::connect(addr, None::<&'static str>, None)?;
+    pub async fn listen(
+        addr: impl Into<Bytes>,
+        slots_sender: UnboundedSender<Slot>,
+        processed_tx: UnboundedSender<SubscribeUpdateTransaction>,
+        confirmed_tx: UnboundedSender<SubscribeUpdateTransaction>,
+        finalized_tx: UnboundedSender<SubscribeUpdateTransaction>,
+    ) -> anyhow::Result<()> {
+        let processed_future = GrpcClient::subscribe(
+            GrpcClient::create_client(addr),
+            Some(slot),
+            Some(processed_tx),
+            Some(CommitmentLevel::Processed),
+        );
 
-        let version = client.get_version().await?.version;
+        let confirmed_future = GrpcClient::subscribe(
+            GrpcClient::create_client(addr),
+            None,
+            Some(processed_tx),
+            Some(CommitmentLevel::Confirmed),
+        );
 
-        if version != GRPC_VERSION {
-            log::warn!("Expected version {:?}, got {:?}", GRPC_VERSION, version);
-        }
-
-        let slot_producer = tokio::spawn(Self::subscribe(client, slot_tx, block_tx));
-        let block_indexer = tokio::spawn(Self::index_blocks(slot_rx));
+        let finalized_future = GrpcClient::subscribe(
+            GrpcClient::create_client(addr),
+            None,
+            Some(processed_tx),
+            Some(CommitmentLevel::Finalized),
+        );
 
         tokio::select! {
-            _ = slot_producer => {
-                bail!("Slot stream closed unexpectedly");
+            res = processed_future => {
+                bail!("Processed stream closed unexpectedly {res}");
             }
-            _ = block_indexer => {
-                bail!("Block indexer closed unexpectedly");
+            res = confirmed_future => {
+                bail!("Confirmed stream closed unexpectedly {res}");
+            }
+            res = finalized_future => {
+                bail!("Finalized stream closed unexpectedly {res}");
             }
         }
     }
