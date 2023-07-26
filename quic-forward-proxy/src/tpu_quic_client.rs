@@ -33,13 +33,13 @@ pub const MAX_TRANSACTIONS_PER_BATCH: usize = 10;
 pub const MAX_BYTES_PER_BATCH: usize = 10;
 const MAX_PARALLEL_STREAMS: usize = 6;
 
-/// stable connect to TPU to send transactions - optimized for proxy use case
+/// maintain many quic connection and streams to one TPU to send transactions - optimized for proxy use case
 #[derive(Debug, Clone)]
 pub struct TpuQuicClient {
     endpoint: Endpoint,
     // naive single non-recoverable connection - TODO moke it smarter
     // TODO consider using DashMap again
-    connection_per_tpunode: Arc<DashMap<SocketAddr, Connection>>,
+    connection_per_tpunode: Arc<RwLock<HashMap<SocketAddr, Connection>>>,
     last_stable_id: Arc<AtomicU64>,
 }
 
@@ -86,7 +86,7 @@ impl SingleTPUConnectionManager for TpuQuicClient {
 
 
         {
-            if let Some(conn) =  self.connection_per_tpunode.get(&tpu_address) {
+            if let Some(conn) =  self.connection_per_tpunode.read().await.get(&tpu_address) {
                 debug!("reusing connection {} for tpu {}; last_stable_id is {}",
                     conn.stable_id(), tpu_address, self.last_stable_id.load(Ordering::Relaxed));
                 return Ok(conn.clone());
@@ -105,11 +105,12 @@ impl SingleTPUConnectionManager for TpuQuicClient {
                 },
             };
 
-        let old_value = self.connection_per_tpunode.insert(tpu_address, connection.clone());
+        let mut lock = self.connection_per_tpunode.write().await;
+        let old_value = lock.insert(tpu_address, connection.clone());
         assert!(old_value.is_none(), "no prev value must be overridden");
 
         debug!("Created new Quic connection {} to TPU node {}, total connections is now {}",
-            connection.stable_id(), tpu_address, self.connection_per_tpunode.len());
+            connection.stable_id(), tpu_address, lock.len());
         return Ok(connection);
     }
 
@@ -135,7 +136,7 @@ impl TpuQuicClient {
 
         let active_tpu_connection = TpuQuicClient {
             endpoint: endpoint_outbound.clone(),
-            connection_per_tpunode: Arc::new(DashMap::new()),
+            connection_per_tpunode: Arc::new(RwLock::new(HashMap::new())),
             last_stable_id: Arc::new(AtomicU64::new(0)),
         };
 
