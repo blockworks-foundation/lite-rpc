@@ -339,7 +339,7 @@ fn configure_logging(verbose: bool) {
         "debug,rustls=info,quinn=info,quinn_proto=info,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=debug"
     };
     let span_mode = if verbose {
-        FmtSpan::FULL
+        FmtSpan::CLOSE
     } else {
         FmtSpan::NONE
     };

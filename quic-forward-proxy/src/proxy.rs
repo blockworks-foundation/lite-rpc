@@ -14,7 +14,9 @@ use rcgen::generate_simple_self_signed;
 use rustls::{Certificate, PrivateKey};
 use rustls::server::ResolvesServerCert;
 use serde::{Deserialize, Serialize};
+use solana_sdk::packet::PACKET_DATA_SIZE;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::quic::QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use solana_sdk::transaction::VersionedTransaction;
@@ -153,11 +155,9 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
             let tpu_address = proxy_request.get_tpu_socket_addr();
             let txs = proxy_request.get_transactions();
 
-            // TODO join get_or_create_connection future and read_to_end
-            let tpu_connection = tpu_quic_client_copy.get_or_create_connection(tpu_address).await;
 
             info!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
-            tpu_quic_client_copy.send_txs_to_tpu(tpu_connection, &txs, exit_signal_copy).await;
+            tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &txs, exit_signal_copy).await;
 
             // active_tpu_connection_copy.send_txs_to_tpu(exit_signal_copy, validator_identity_copy, tpu_identity, tpu_address, &txs).await;
 

@@ -253,6 +253,7 @@ impl QuicProxyConnectionManager {
         Ok(())
     }
 
+    // TODO optimize connection
      async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
          info!("sending {} bytes to proxy", proxy_request_raw.len());
 
@@ -260,11 +261,11 @@ impl QuicProxyConnectionManager {
          let connection = timeout(Duration::from_millis(500), connecting).await??;
          let mut send = connection.open_uni().await?;
 
-             send.write_all(proxy_request_raw).await?;
+         send.write_all(proxy_request_raw).await?;
 
-             send.finish().await?;
+         send.finish().await?;
 
-             Ok(())
+         Ok(())
      }
 
 

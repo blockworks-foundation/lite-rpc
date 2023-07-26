@@ -45,3 +45,9 @@ cd bench; cargo run -- --tx-count=10
 [2023-06-26T15:16:18.430850000Z DEBUG solana_streamer::nonblocking::quic] quic new connection 127.0.0.1:8058 streams: 0 connections: 1
 [2023-06-26T15:16:18.430854000Z DEBUG solana_streamer::nonblocking::quic] stream error: ApplicationClosed(ApplicationClose { error_code: 0, reason: b"done" })
 ```
+
+
+QUIC/QUINN Endpoint and Connection specifics
+---------------------------
+* keep-alive and idle timeout: both values must be aligned AND they must be configured on both endpoints (see [docs](https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html#method.keep_alive_interval))
+* tune or disable __max_concurrent_uni_streams__ respectively

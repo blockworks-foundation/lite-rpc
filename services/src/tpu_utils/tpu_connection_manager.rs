@@ -97,7 +97,7 @@ impl ActiveConnection {
 
         let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
         let exit_signal = self.exit_signal.clone();
-        let connection_pool = QuicCd onnectionPool::new(
+        let connection_pool = QuicConnectionPool::new(
             identity,
             self.endpoints.clone(),
             addr,
