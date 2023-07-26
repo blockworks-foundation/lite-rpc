@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use itertools::{any, Itertools};
 use log::{debug, error, info, trace, warn};
-use quinn::{Connecting, Connection, Endpoint, SendStream, ServerConfig, VarInt};
+use quinn::{Connecting, Connection, ConnectionError, Endpoint, SendStream, ServerConfig, VarInt};
 use rcgen::generate_simple_self_signed;
 use rustls::{Certificate, PrivateKey};
 use rustls::server::ResolvesServerCert;
@@ -23,7 +23,7 @@ use solana_sdk::transaction::VersionedTransaction;
 use tokio::net::ToSocketAddrs;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::RwLock;
-use crate::quic_connection_utils::{QuicConnectionError, QuicConnectionParameters, QuicConnectionUtils};
+use crate::quic_connection_utils::{connection_stats, QuicConnectionError, QuicConnectionParameters, QuicConnectionUtils};
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 
 const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -46,6 +46,7 @@ pub struct TpuQuicClient {
 /// per TPU connection manager
 #[async_trait]
 pub trait SingleTPUConnectionManager {
+    // async fn refresh_connection(&self, connection: &Connection) -> Connection;
     async fn get_or_create_connection(&self, tpu_address: SocketAddr) -> anyhow::Result<Connection>;
     fn update_last_stable_id(&self, stable_id: u64);
 }
@@ -55,8 +56,28 @@ pub type SingleTPUConnectionManagerWrapper = dyn SingleTPUConnectionManager + Sy
 #[async_trait]
 impl SingleTPUConnectionManager for TpuQuicClient {
 
+    // make sure the connection is usable for a resonable time
+    // never returns the "same" instances but a clone
+    // async fn refresh_connection(&self, connection: &Connection) -> Connection {
+    //     let reverse_lookup = self.connection_per_tpunode.into_read_only().values().find(|conn| {
+    //         conn.stable_id() == connection.stable_id()
+    //     });
+    //
+    //     match reverse_lookup {
+    //         Some(existing_conn) => {
+    //             return existing_conn.clone();
+    //         }
+    //         None => {
+    //             TpuQuicClient::create_new(&self, reverse_lookup).await.unwrap())
+    //         }
+    //     }
+    //
+    //     // TODO implement
+    //     connection.clone()
+    // }
+
     #[tracing::instrument(skip(self), level = "debug")]
-    // TODO improve error handling
+    // TODO improve error handling; might need to signal if connection was reset
     async fn get_or_create_connection(&self, tpu_address: SocketAddr) -> anyhow::Result<Connection> {
         // TODO try 0rff
         // QuicConnectionUtils::make_connection(
@@ -72,23 +93,11 @@ impl SingleTPUConnectionManager for TpuQuicClient {
             }
         }
 
-        let connection =
-            // TODO try 0rff
-            match QuicConnectionUtils::make_connection_0rtt(
-                self.endpoint.clone(), tpu_address, QUIC_CONNECTION_TIMEOUT)
-                .await {
-                Ok(conn) => conn,
-                Err(err) => {
-                    warn!("Failed to open Quic connection to TPU {}: {}", tpu_address, err);
-                    return Err(anyhow!("Failed to create Quic connection to TPU {}: {}", tpu_address, err));
-                },
-            };
+        let connection = match self.create_new(tpu_address).await {
+            Ok(value) => value,
+            Err(err) => return Err(err),
+        };
 
-        let old_value = self.connection_per_tpunode.insert(tpu_address, connection.clone());
-        assert!(old_value.is_none(), "no prev value must be overridden");
-
-        debug!("Created new Quic connection {} to TPU node {}, total connections is now {}",
-            connection.stable_id(), tpu_address, self.connection_per_tpunode.len());
         return Ok(connection);
     }
 
@@ -186,7 +195,6 @@ impl TpuQuicClient {
             let mut do_retry = false;
             while !queue.is_empty() {
                 let tx = queue.pop_front().unwrap();
-                // remove Option
                 let connection = connection_manager.get_or_create_connection(tpu_address).await;
 
                 if exit_signal.load(Ordering::Relaxed) {
@@ -196,7 +204,7 @@ impl TpuQuicClient {
                 if let Ok(connection) = connection {
                     let current_stable_id = connection.stable_id() as u64;
                     match QuicConnectionUtils::open_unistream(
-                        connection,
+                        &connection,
                         connection_params.unistream_timeout,
                     )
                         .await
@@ -211,6 +219,7 @@ impl TpuQuicClient {
                             {
                                 Ok(()) => {
                                     // do nothing
+                                    debug!("connection stats (proxy send tx batch): {}", connection_stats(&connection));
                                 }
                                 Err(QuicConnectionError::ConnectionError { retry }) => {
                                     do_retry = retry;
@@ -247,6 +256,26 @@ impl TpuQuicClient {
         }
     }
 
+    pub(crate) async fn create_new(&self, tpu_address: SocketAddr) -> anyhow::Result<Connection> {
+        let connection =
+            // TODO try 0rff
+            match QuicConnectionUtils::make_connection_0rtt(
+                self.endpoint.clone(), tpu_address, QUIC_CONNECTION_TIMEOUT)
+                .await {
+                Ok(conn) => conn,
+                Err(err) => {
+                    warn!("Failed to open Quic connection to TPU {}: {}", tpu_address, err);
+                    return Err(anyhow!("Failed to create Quic connection to TPU {}: {}", tpu_address, err));
+                },
+            };
+
+        let old_value = self.connection_per_tpunode.insert(tpu_address, connection.clone());
+        assert!(old_value.is_none(), "no prev value must be overridden");
+
+        debug!("Created new Quic connection {} to TPU node {}, total connections is now {}",
+            connection.stable_id(), tpu_address, self.connection_per_tpunode.len());
+        Ok(connection)
+    }
 }
 
 

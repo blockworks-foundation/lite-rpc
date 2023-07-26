@@ -19,8 +19,9 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::time::timeout;
+use tracing::field::debug;
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
-use solana_lite_rpc_core::quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils, SkipServerVerification};
+use solana_lite_rpc_core::quic_connection_utils::{connection_stats, QuicConnectionParameters, QuicConnectionUtils, SkipServerVerification};
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_core::tx_store::TxStore;
 
@@ -265,6 +266,7 @@ impl QuicProxyConnectionManager {
 
          send.finish().await?;
 
+         debug!("connection stats (lite-rpc to proxy): {}", connection_stats(&connection));
          Ok(())
      }
 

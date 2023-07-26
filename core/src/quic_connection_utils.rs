@@ -217,3 +217,15 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
 }
+
+// connection for sending proxy request: FrameStats {
+// ACK: 2, CONNECTION_CLOSE: 0, CRYPTO: 3, DATA_BLOCKED: 0, DATAGRAM: 0, HANDSHAKE_DONE: 1,
+// MAX_DATA: 0, MAX_STREAM_DATA: 1, MAX_STREAMS_BIDI: 0, MAX_STREAMS_UNI: 0, NEW_CONNECTION_ID: 4,
+// NEW_TOKEN: 0, PATH_CHALLENGE: 0, PATH_RESPONSE: 0, PING: 0, RESET_STREAM: 0, RETIRE_CONNECTION_ID: 1,
+// STREAM_DATA_BLOCKED: 0, STREAMS_BLOCKED_BIDI: 0, STREAMS_BLOCKED_UNI: 0, STOP_SENDING: 0, STREAM: 0 }
+// rtt=1.08178ms
+pub fn connection_stats(connection: &Connection) -> String {
+    format!("stable_id {}, rtt={:?}, stats {:?}",
+            connection.stable_id(), connection.stats().path.rtt, connection.stats().frame_rx)
+}
+

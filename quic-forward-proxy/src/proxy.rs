@@ -24,7 +24,7 @@ use tokio::net::ToSocketAddrs;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::RwLock;
 use crate::proxy_request_format::TpuForwardingRequest;
-use crate::quic_connection_utils::QuicConnectionUtils;
+use crate::quic_connection_utils::{connection_stats, QuicConnectionUtils};
 use crate::tpu_quic_client::{SingleTPUConnectionManager, TpuQuicClient};
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 use crate::util::AnyhowJoinHandle;
@@ -123,7 +123,7 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
 
     loop {
         let maybe_stream = client_connection.accept_uni().await;
-        let mut recv_stream = match maybe_stream {
+        let result = match maybe_stream {
             Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
                 debug!("connection closed by client - reason: {:?}", reason);
                 if reason.error_code != VarInt::from_u32(0) {
@@ -136,32 +136,39 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
                 error!("failed to accept stream: {}", e);
                 return Err(anyhow::Error::msg("error accepting stream"));
             }
-            Ok(s) => s,
-        };
-        let exit_signal_copy = exit_signal.clone();
-        let validator_identity_copy = validator_identity.clone();
-        let tpu_quic_client_copy = tpu_quic_client.clone();
+            Ok(recv_stream) => {
+                let exit_signal_copy = exit_signal.clone();
+                let validator_identity_copy = validator_identity.clone();
+                let tpu_quic_client_copy = tpu_quic_client.clone();
 
-        tokio::spawn(async move {
+                tokio::spawn(async move {
 
-            let raw_request = recv_stream.read_to_end(10_000_000).await // TODO extract to const
-                .unwrap();
-            debug!("read proxy_request {} bytes", raw_request.len());
+                    let raw_request = recv_stream.read_to_end(10_000_000).await // TODO extract to const
+                        .unwrap();
+                    trace!("read proxy_request {} bytes", raw_request.len());
 
-            let proxy_request = TpuForwardingRequest::deserialize_from_raw_request(&raw_request);
+                    let proxy_request = TpuForwardingRequest::deserialize_from_raw_request(&raw_request);
 
-            debug!("proxy request details: {}", proxy_request);
-            let tpu_identity = proxy_request.get_identity_tpunode();
-            let tpu_address = proxy_request.get_tpu_socket_addr();
-            let txs = proxy_request.get_transactions();
+                    trace!("proxy request details: {}", proxy_request);
+                    let tpu_identity = proxy_request.get_identity_tpunode();
+                    let tpu_address = proxy_request.get_tpu_socket_addr();
+                    let txs = proxy_request.get_transactions();
 
+                    debug!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
+                    tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &txs, exit_signal_copy).await;
 
-            info!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
-            tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &txs, exit_signal_copy).await;
+                    debug!("connection stats (proxy inbound): {}", connection_stats(&client_connection));
 
-            // active_tpu_connection_copy.send_txs_to_tpu(exit_signal_copy, validator_identity_copy, tpu_identity, tpu_address, &txs).await;
+                });
 
-        });
+                Ok(())
+            },
+        }; // -- result
 
+        if let Err(e) = result {
+            return Err(e);
+        }
+
+        return Ok(());
     } // -- loop
 }
