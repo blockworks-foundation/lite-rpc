@@ -3,15 +3,6 @@ use solana_lite_rpc_core::{grpc_client::GrpcClient, solana_utils::SolanaUtils, A
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentLevel, slot_history::Slot};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-
-lazy_static::lazy_static! {
-    static ref CURRENT_SLOT: GenericGauge<prometheus::core::AtomicI64> =
-    register_int_gauge!(opts!("literpc_current_slot", "Current slot seen by last rpc")).unwrap();
-
-    static ref ESTIMATED_SLOT: GenericGauge<prometheus::core::AtomicI64> =
-    register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
-}
-
 /// a centralized clock
 #[derive(Debug, Clone, Default)]
 pub struct SlotClock {

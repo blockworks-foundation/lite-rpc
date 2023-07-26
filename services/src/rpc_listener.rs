@@ -15,7 +15,7 @@ pub struct RpcListener {
 }
 
 impl RpcListener {
-    pub async fn new(rpc_client: Arc<RpcClient>) -> Self {
+    pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self { rpc_client }
     }
 

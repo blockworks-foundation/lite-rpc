@@ -1,3 +1,7 @@
+use std::sync::atomic::Ordering;
+
+use tokio::sync::broadcast;
+
 use crate::AtomicSlot;
 
 /// a centralized clock
@@ -12,7 +16,7 @@ pub struct SlotClock {
 impl SlotClock {
     // Estimates the slots, either from polled slot or by forcefully updating after every 400ms
     // returns if the estimated slot was updated or not
-    pub async fn set_slot(&self, slot_update_notifier: &mut UnboundedReceiver<u64>) {
+    pub async fn set_slot(&self, slot_update_notifier: &mut broadcast::Receiver<u64>) {
         let current_slot = self.current_slot.load(Ordering::Relaxed);
         let estimated_slot = self.estimated_slot.load(Ordering::Relaxed);
 
