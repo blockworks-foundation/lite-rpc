@@ -93,11 +93,23 @@ impl SingleTPUConnectionManager for TpuQuicClient {
             }
         }
 
-        let connection = match self.create_new(tpu_address).await {
-            Ok(value) => value,
-            Err(err) => return Err(err),
-        };
+        let connection =
+            // TODO try 0rff
+            match QuicConnectionUtils::make_connection_0rtt(
+                self.endpoint.clone(), tpu_address, QUIC_CONNECTION_TIMEOUT)
+                .await {
+                Ok(conn) => conn,
+                Err(err) => {
+                    warn!("Failed to open Quic connection to TPU {}: {}", tpu_address, err);
+                    return Err(anyhow!("Failed to create Quic connection to TPU {}: {}", tpu_address, err));
+                },
+            };
 
+        let old_value = self.connection_per_tpunode.insert(tpu_address, connection.clone());
+        assert!(old_value.is_none(), "no prev value must be overridden");
+
+        debug!("Created new Quic connection {} to TPU node {}, total connections is now {}",
+            connection.stable_id(), tpu_address, self.connection_per_tpunode.len());
         return Ok(connection);
     }
 
@@ -256,26 +268,6 @@ impl TpuQuicClient {
         }
     }
 
-    pub(crate) async fn create_new(&self, tpu_address: SocketAddr) -> anyhow::Result<Connection> {
-        let connection =
-            // TODO try 0rff
-            match QuicConnectionUtils::make_connection_0rtt(
-                self.endpoint.clone(), tpu_address, QUIC_CONNECTION_TIMEOUT)
-                .await {
-                Ok(conn) => conn,
-                Err(err) => {
-                    warn!("Failed to open Quic connection to TPU {}: {}", tpu_address, err);
-                    return Err(anyhow!("Failed to create Quic connection to TPU {}: {}", tpu_address, err));
-                },
-            };
-
-        let old_value = self.connection_per_tpunode.insert(tpu_address, connection.clone());
-        assert!(old_value.is_none(), "no prev value must be overridden");
-
-        debug!("Created new Quic connection {} to TPU node {}, total connections is now {}",
-            connection.stable_id(), tpu_address, self.connection_per_tpunode.len());
-        Ok(connection)
-    }
 }
 
 

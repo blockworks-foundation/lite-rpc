@@ -10,6 +10,8 @@ use lite_rpc::{bridge::LiteBridge, cli::Args};
 use solana_sdk::signature::Keypair;
 use std::env;
 use std::sync::Arc;
+use clap::builder::TypedValueParser;
+use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 
 use crate::rpc_tester::RpcTester;
 
@@ -48,11 +50,14 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         identity_keypair,
         maximum_retries_per_tx,
         transaction_retry_after_secs,
+        experimental_quic_proxy_addr,
     } = args;
 
     let validator_identity = Arc::new(get_identity_keypair(&identity_keypair).await);
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
+
+    let tpu_connection_path = configure_tpu_connection_path(experimental_quic_proxy_addr);
 
     LiteBridge::new(
         rpc_addr,
@@ -61,6 +66,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         validator_identity,
         retry_after,
         maximum_retries_per_tx,
+        tpu_connection_path
     )
     .await
     .context("Error building LiteBridge")?
@@ -71,6 +77,16 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         prometheus_addr,
     )
     .await
+}
+
+fn configure_tpu_connection_path(experimental_quic_proxy_addr: Option<String>) -> TpuConnectionPath {
+    match experimental_quic_proxy_addr {
+        None => TpuConnectionPath::QuicDirectPath,
+        Some(prox_address) => TpuConnectionPath::QuicForwardProxyPath {
+            // e.g. "127.0.0.1:11111"
+            forward_proxy_address: prox_address.parse().unwrap()
+        },
+    }
 }
 
 fn get_args() -> Args {

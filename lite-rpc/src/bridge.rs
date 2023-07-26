@@ -83,6 +83,7 @@ impl LiteBridge {
         validator_identity: Arc<Keypair>,
         retry_after: Duration,
         max_retries: usize,
+        tpu_connection_path: TpuConnectionPath,
     ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
         let current_slot = rpc_client
@@ -108,7 +109,7 @@ impl LiteBridge {
                 write_timeout: Duration::from_secs(1),
                 number_of_transactions_per_unistream: 8,
             },
-            tpu_connection_path: TpuConnectionPath::QuicDirectPath,
+            tpu_connection_path,
         };
 
         let tpu_service = TpuService::new(

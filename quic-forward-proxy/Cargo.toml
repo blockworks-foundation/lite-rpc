@@ -27,7 +27,7 @@ log = { workspace = true }
 clap = { workspace = true }
 dashmap = { workspace = true }
 itertools = { workspace = true }
-tracing = "0.1.37"
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 native-tls = { workspace = true }
 prometheus = { workspace = true }

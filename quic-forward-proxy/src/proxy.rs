@@ -60,8 +60,7 @@ impl QuicForwardProxy {
         transport_config.receive_window((PACKET_DATA_SIZE as u32 * MAX_CONCURRENT_UNI_STREAMS).into());
 
         let endpoint = Endpoint::server(quinn_server_config, proxy_listener_addr).unwrap();
-        info!("tpu forward proxy listening on {}", endpoint.local_addr()?);
-        info!("staking from validator identity {}", validator_identity.pubkey());
+        info!("Quic proxy uses validator identity {}", validator_identity.pubkey());
 
         let tpu_quic_client =
             TpuQuicClient::new_with_validator_identity(validator_identity.as_ref()).await;
@@ -77,7 +76,7 @@ impl QuicForwardProxy {
 
         let endpoint = self.endpoint.clone();
         let quic_proxy: AnyhowJoinHandle = tokio::spawn(async move {
-            info!("TPU Quic Proxy server start on {}", endpoint.local_addr()?);
+            info!("TPU Quic Proxy server listening on {}", endpoint.local_addr()?);
 
 
             while let Some(connecting) = endpoint.accept().await {
@@ -87,7 +86,7 @@ impl QuicForwardProxy {
                 let tpu_quic_client = self.tpu_quic_client.clone();
                 tokio::spawn(async move {
 
-                    let connection = connecting.await.context("accept connection").unwrap();
+                    let connection = connecting.await.context("handshake").unwrap();
                     match accept_client_connection(connection, tpu_quic_client, exit_signal, validator_identity_copy)
                         .await {
                         Ok(()) => {}

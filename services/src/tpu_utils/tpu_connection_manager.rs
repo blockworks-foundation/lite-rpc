@@ -88,8 +88,6 @@ impl ActiveConnection {
             identity_stakes.stakes,
             identity_stakes.total_stakes,
         ) as u64;
-        // TODO remove
-        println!("max_uni_stream_connections {}", max_uni_stream_connections);
         let number_of_transactions_per_unistream = self
             .connection_parameters
             .number_of_transactions_per_unistream;

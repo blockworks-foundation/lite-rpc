@@ -46,6 +46,7 @@ impl QuicProxyConnectionManager {
         validator_identity: Arc<Keypair>,
         proxy_addr: SocketAddr,
     ) -> Self {
+        info!("Configure Quic proxy connection manager to {}", proxy_addr);
         let endpoint = Self::create_proxy_client_endpoint(certificate.clone(), key.clone());
 
         Self {
