@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use futures::FutureExt;
 use itertools::Itertools;
 use log::{debug, error, info, warn};
-use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig};
+use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt};
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signer::Signer;
@@ -123,13 +123,18 @@ impl QuicProxyConnectionManager {
         crypto.alpn_protocols = vec![ALPN_TPU_FORWARDPROXY_PROTOCOL_ID.to_vec()];
 
         let mut config = ClientConfig::new(Arc::new(crypto));
-        let mut transport_config = TransportConfig::default();
 
+        // note: this config must be aligned with quic-proxy's server config
+        let mut transport_config = TransportConfig::default();
         let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
+        // no remotely-initiated streams required
+        transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
+        transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
+        let timeout = Duration::from_secs(10).try_into().unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
-        config.transport_config(Arc::new(transport_config));
 
+        config.transport_config(Arc::new(transport_config));
         endpoint.set_default_client_config(config);
 
         endpoint

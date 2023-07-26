@@ -23,9 +23,13 @@ use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::RwLock;
 use crate::proxy_request_format::TpuForwardingRequest;
 use crate::quic_connection_utils::QuicConnectionUtils;
-use crate::tpu_quic_client::{TpuQuicClient};
+use crate::tpu_quic_client::{SingleTPUConnectionManager, TpuQuicClient};
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 use crate::util::AnyhowJoinHandle;
+
+// TODO tweak this value - solana server sets 256
+// setting this to "1" did not make a difference!
+const MAX_CONCURRENT_UNI_STREAMS: u32 = 24;
 
 pub struct QuicForwardProxy {
     endpoint: Endpoint,
@@ -39,12 +43,19 @@ impl QuicForwardProxy {
         tls_config: &SelfSignedTlsConfigProvider,
         validator_identity: Arc<Keypair>) -> anyhow::Result<Self> {
         let server_tls_config = tls_config.get_server_tls_crypto_config();
-
         let mut quinn_server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
-        let mut transport_config = TransportConfig::default();
-        transport_config.max_idle_timeout(None);
+
+        // note: this config must be aligned with lite-rpc's client config
+        let transport_config = Arc::get_mut(&mut quinn_server_config.transport).unwrap();
+        // TODO experiment with this value
+        transport_config.max_concurrent_uni_streams(VarInt::from_u32(MAX_CONCURRENT_UNI_STREAMS));
+        // no bidi streams used
+        transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
+        let timeout = Duration::from_secs(10).try_into().unwrap();
+        transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
-        quinn_server_config.transport_config(Arc::new(transport_config));
+        transport_config.stream_receive_window((PACKET_DATA_SIZE as u32).into());
+        transport_config.receive_window((PACKET_DATA_SIZE as u32 * MAX_CONCURRENT_UNI_STREAMS).into());
 
         let endpoint = Endpoint::server(quinn_server_config, proxy_listener_addr).unwrap();
         info!("tpu forward proxy listening on {}", endpoint.local_addr()?);

@@ -1,5 +1,5 @@
 use log::{debug, error, info, trace, warn};
-use quinn::{ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream, TokioRuntime, TransportConfig, WriteError};
+use quinn::{ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream, TokioRuntime, TransportConfig, VarInt, WriteError};
 use solana_sdk::pubkey::Pubkey;
 use std::{
     collections::VecDeque,
@@ -13,6 +13,7 @@ use std::{
 use anyhow::bail;
 use futures::future::join_all;
 use itertools::Itertools;
+use solana_sdk::quic::QUIC_MAX_TIMEOUT_MS;
 use tokio::{sync::RwLock, time::timeout};
 use tokio::time::error::Elapsed;
 use tracing::instrument;
@@ -22,7 +23,8 @@ const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 pub struct QuicConnectionUtils {}
 
 impl QuicConnectionUtils {
-    pub fn create_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
+    // TODO move to a more specific place
+    pub fn create_tpu_client_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
         let mut endpoint = {
             let client_socket =
                 solana_net_utils::bind_in_range(IpAddr::V4(Ipv4Addr::UNSPECIFIED), (8000, 10000))
@@ -40,18 +42,19 @@ impl QuicConnectionUtils {
             .expect("Failed to set QUIC client certificates");
 
         crypto.enable_early_data = true;
-        // FIXME TEMP HACK TO ALLOW PROXY PROTOCOL
-        const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
 
-        crypto.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec(), ALPN_TPU_FORWARDPROXY_PROTOCOL_ID.to_vec()];
+        crypto.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec()];
 
         let mut config = ClientConfig::new(Arc::new(crypto));
-        let mut transport_config = TransportConfig::default();
 
-        // TODO check timing
-        let timeout = IdleTimeout::try_from(Duration::from_secs(5)).unwrap();
+        // note: this should be aligned with solana quic server's endpoint config
+        let mut transport_config = TransportConfig::default();
+        // no remotely-initiated streams required
+        transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
+        transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
+        let timeout = IdleTimeout::try_from(Duration::from_millis(QUIC_MAX_TIMEOUT_MS as u64)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
-        transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+        transport_config.keep_alive_interval(None);
         config.transport_config(Arc::new(transport_config));
 
         endpoint.set_default_client_config(config);
