@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::Path;
 use std::sync::Arc;
@@ -5,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::thread::sleep;
 use std::time::Duration;
 use tracing::{debug_span, instrument, Instrument, span};
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, bail, Context, Error};
 use dashmap::DashMap;
 use itertools::{any, Itertools};
 use log::{debug, error, info, trace, warn};
@@ -75,31 +76,7 @@ impl QuicForwardProxy {
         let exit_signal = Arc::new(AtomicBool::new(false));
 
         let endpoint = self.endpoint.clone();
-        let quic_proxy: AnyhowJoinHandle = tokio::spawn(async move {
-            info!("TPU Quic Proxy server listening on {}", endpoint.local_addr()?);
-
-
-            while let Some(connecting) = endpoint.accept().await {
-
-                let exit_signal = exit_signal.clone();
-                let validator_identity_copy = self.validator_identity.clone();
-                let tpu_quic_client = self.tpu_quic_client.clone();
-                tokio::spawn(async move {
-
-                    let connection = connecting.await.context("handshake").unwrap();
-                    match accept_client_connection(connection, tpu_quic_client, exit_signal, validator_identity_copy)
-                        .await {
-                        Ok(()) => {}
-                        Err(err) => {
-                            error!("setup connection failed: {reason}", reason = err);
-                        }
-                    }
-
-                });
-            }
-
-            bail!("TPU Quic Proxy server stopped");
-        });
+        let quic_proxy: AnyhowJoinHandle = tokio::spawn(self.listen(exit_signal, endpoint));
 
         tokio::select! {
             res = quic_proxy => {
@@ -108,6 +85,27 @@ impl QuicForwardProxy {
         }
     }
 
+    async fn listen(mut self, exit_signal: Arc<AtomicBool>, endpoint: Endpoint) -> anyhow::Result<()> {
+        info!("TPU Quic Proxy server listening on {}", endpoint.local_addr()?);
+
+        while let Some(connecting) = endpoint.accept().await {
+            let exit_signal = exit_signal.clone();
+            let validator_identity_copy = self.validator_identity.clone();
+            let tpu_quic_client = self.tpu_quic_client.clone();
+            tokio::spawn(async move {
+                let connection = connecting.await.context("handshake").unwrap();
+                match accept_client_connection(connection, tpu_quic_client, exit_signal, validator_identity_copy)
+                    .await {
+                    Ok(()) => {}
+                    Err(err) => {
+                        error!("setup connection failed: {reason}", reason = err);
+                    }
+                }
+            });
+        }
+
+        bail!("TPU Quic Proxy server stopped");
+    }
 }
 
 

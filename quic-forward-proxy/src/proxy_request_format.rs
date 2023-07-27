@@ -10,7 +10,7 @@ use solana_sdk::transaction::VersionedTransaction;
 /// lite-rpc to proxy wire format
 /// compat info: non-public format ATM
 /// initial version
-const FORMAT_VERSION1: u16 = 2301;
+pub const FORMAT_VERSION1: u16 = 2301;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuForwardingRequest {
@@ -50,7 +50,7 @@ impl TpuForwardingRequest {
             .context("deserialize proxy request")
             .unwrap();
 
-        assert_eq!(request.format_version, 2301);
+        assert_eq!(request.format_version, FORMAT_VERSION1);
 
         request
     }

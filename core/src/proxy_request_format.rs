@@ -15,7 +15,7 @@ const FORMAT_VERSION1: u16 = 2301;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuForwardingRequest {
     format_version: u16,
-    tpu_socket_addr: SocketAddr, // TODO is that correct
+    tpu_socket_addr: SocketAddr, // TODO is that correct, maybe it should be V4; maybe we also need to provide a list
     identity_tpunode: Pubkey,
     transactions: Vec<VersionedTransaction>,
 }
