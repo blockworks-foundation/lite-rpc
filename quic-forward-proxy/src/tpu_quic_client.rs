@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Error};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use itertools::{any, Itertools};
@@ -41,6 +41,24 @@ pub struct TpuQuicClient {
     // TODO consider using DashMap again
     connection_per_tpunode: Arc<RwLock<HashMap<SocketAddr, Connection>>>,
     last_stable_id: Arc<AtomicU64>,
+}
+
+impl TpuQuicClient {
+    pub async fn create_connection(&self, tpu_address: SocketAddr) -> anyhow::Result<Connection> {
+        let connection =
+            // TODO try 0rff
+            match QuicConnectionUtils::make_connection_0rtt(
+                self.endpoint.clone(), tpu_address, QUIC_CONNECTION_TIMEOUT)
+                .await {
+                Ok(conn) => conn,
+                Err(err) => {
+                    warn!("Failed to open Quic connection to TPU {}: {}", tpu_address, err);
+                    return Err(anyhow!("Failed to create Quic connection to TPU {}: {}", tpu_address, err));
+                },
+            };
+
+        Ok(connection)
+    }
 }
 
 /// per TPU connection manager
@@ -143,13 +161,15 @@ impl TpuQuicClient {
         active_tpu_connection
     }
 
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn send_txs_to_tpu(&self,
                                  tpu_address: SocketAddr,
                                  txs: &Vec<VersionedTransaction>,
                                  exit_signal: Arc<AtomicBool>,
     ) {
 
-        if true {
+        if false {
+            // note: this impl does not deal with connection errors
             // throughput_50 493.70 tps
             // throughput_50 769.43 tps (with finish timeout)
             // TODO join get_or_create_connection future and read_to_end
@@ -179,6 +199,7 @@ impl TpuQuicClient {
 
             let connection_manager = self as &SingleTPUConnectionManagerWrapper;
 
+            // TODO connection_params should be part of connection_manager
             Self::send_transaction_batch(serialize_to_vecvec(&txs), tpu_address, exit_signal, connection_params, connection_manager).await;
 
         }
@@ -277,4 +298,34 @@ fn serialize_to_vecvec(transactions: &Vec<VersionedTransaction>) -> Vec<Vec<u8>>
         let tx_raw = bincode::serialize(tx).unwrap();
         tx_raw
     }).collect_vec()
+}
+
+
+// send potentially large amount of transactions to a single TPU
+pub async fn send_txs_to_tpu_static(
+    tpu_connection: Connection,
+    tpu_address: SocketAddr,
+    txs: &Vec<VersionedTransaction>,
+    exit_signal: Arc<AtomicBool>,
+) {
+
+    // note: this impl does not deal with connection errors
+    // throughput_50 493.70 tps
+    // throughput_50 769.43 tps (with finish timeout)
+    // TODO join get_or_create_connection future and read_to_end
+    // TODO add error handling
+
+    for chunk in txs.chunks(MAX_PARALLEL_STREAMS) {
+        let vecvec = chunk.iter().map(|tx| {
+            let tx_raw = bincode::serialize(tx).unwrap();
+            tx_raw
+        }).collect_vec();
+        QuicConnectionUtils::send_transaction_batch_parallel(
+            tpu_connection.clone(),
+            vecvec,
+            exit_signal.clone(),
+            QUIC_CONNECTION_TIMEOUT,
+        ).await;
+    }
+
 }

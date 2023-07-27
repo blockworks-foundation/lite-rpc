@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::Path;
@@ -23,10 +24,15 @@ use solana_sdk::signer::Signer;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::net::ToSocketAddrs;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::RwLock;
+use tokio::task::JoinHandle;
+use tokio::time::error::Elapsed;
+use tokio::time::timeout;
+use tracing::field::debug;
 use crate::proxy_request_format::TpuForwardingRequest;
 use crate::quic_connection_utils::{connection_stats, QuicConnectionUtils};
-use crate::tpu_quic_client::{SingleTPUConnectionManager, TpuQuicClient};
+use crate::tpu_quic_client::{send_txs_to_tpu_static, SingleTPUConnectionManager, TpuQuicClient};
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 use crate::util::AnyhowJoinHandle;
 
@@ -38,6 +44,13 @@ pub struct QuicForwardProxy {
     endpoint: Endpoint,
     validator_identity: Arc<Keypair>,
     tpu_quic_client: TpuQuicClient,
+}
+
+/// internal structure with transactions and target TPU
+#[derive(Debug)]
+struct ForwardPacket {
+    pub transactions: Vec<VersionedTransaction>,
+    pub tpu_address: SocketAddr,
 }
 
 impl QuicForwardProxy {
@@ -75,26 +88,36 @@ impl QuicForwardProxy {
     ) -> anyhow::Result<()> {
         let exit_signal = Arc::new(AtomicBool::new(false));
 
+        let tpu_quic_client_copy = self.tpu_quic_client.clone();
         let endpoint = self.endpoint.clone();
-        let quic_proxy: AnyhowJoinHandle = tokio::spawn(self.listen(exit_signal, endpoint));
+        let (forwarder_channel, forward_receiver) = tokio::sync::mpsc::channel(1000);
+
+        let quic_proxy: AnyhowJoinHandle = tokio::spawn(self.listen(exit_signal.clone(), endpoint, forwarder_channel));
+
+        let forwarder: AnyhowJoinHandle = tokio::spawn(tx_forwarder(tpu_quic_client_copy, forward_receiver, exit_signal.clone()));
 
         tokio::select! {
             res = quic_proxy => {
                 bail!("TPU Quic Proxy server exited unexpectedly {res:?}");
             },
+            res = forwarder => {
+                bail!("TPU Quic Tx forwarder exited unexpectedly {res:?}");
+            },
         }
     }
 
-    async fn listen(mut self, exit_signal: Arc<AtomicBool>, endpoint: Endpoint) -> anyhow::Result<()> {
+    async fn listen(self, exit_signal: Arc<AtomicBool>, endpoint: Endpoint, forwarder_channel: Sender<ForwardPacket>) -> anyhow::Result<()> {
         info!("TPU Quic Proxy server listening on {}", endpoint.local_addr()?);
 
         while let Some(connecting) = endpoint.accept().await {
             let exit_signal = exit_signal.clone();
             let validator_identity_copy = self.validator_identity.clone();
             let tpu_quic_client = self.tpu_quic_client.clone();
+            let forwarder_channel_copy = forwarder_channel.clone();
             tokio::spawn(async move {
                 let connection = connecting.await.context("handshake").unwrap();
-                match accept_client_connection(connection, tpu_quic_client, exit_signal, validator_identity_copy)
+                match accept_client_connection(connection, forwarder_channel_copy,
+                                               tpu_quic_client, exit_signal, validator_identity_copy)
                     .await {
                     Ok(()) => {}
                     Err(err) => {
@@ -111,7 +134,8 @@ impl QuicForwardProxy {
 
 // TODO use interface abstraction for connection_per_tpunode
 #[tracing::instrument(skip_all, level = "debug")]
-async fn accept_client_connection(client_connection: Connection, tpu_quic_client: TpuQuicClient,
+async fn accept_client_connection(client_connection: Connection, forwarder_channel: Sender<ForwardPacket>,
+                                  tpu_quic_client: TpuQuicClient,
                                   exit_signal: Arc<AtomicBool>, validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
     debug!("inbound connection established, client {}", client_connection.remote_address());
 
@@ -138,6 +162,7 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
                 let validator_identity_copy = validator_identity.clone();
                 let tpu_quic_client_copy = tpu_quic_client.clone();
 
+                let forwarder_channel_copy = forwarder_channel.clone();
                 tokio::spawn(async move {
 
                     let raw_request = recv_stream.read_to_end(10_000_000).await // TODO extract to const
@@ -151,10 +176,11 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
                     let tpu_address = proxy_request.get_tpu_socket_addr();
                     let txs = proxy_request.get_transactions();
 
-                    debug!("send transaction batch of size {} to address {}", txs.len(), tpu_address);
-                    tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &txs, exit_signal_copy).await;
+                    debug!("enqueue transaction batch of size {} to address {}", txs.len(), tpu_address);
+                    // tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &txs, exit_signal_copy).await;
+                    forwarder_channel_copy.send(ForwardPacket { transactions: txs, tpu_address }).await.unwrap();
 
-                    debug!("connection stats (proxy inbound): {}", connection_stats(&client_connection));
+                    // debug!("connection stats (proxy inbound): {}", connection_stats(&client_connection));
 
                 });
 
@@ -166,6 +192,82 @@ async fn accept_client_connection(client_connection: Connection, tpu_quic_client
             return Err(e);
         }
 
-        return Ok(());
     } // -- loop
 }
+
+// takes transactions from upstream clients and forwards them to the TPU
+async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: Receiver<ForwardPacket>, exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
+    info!("TPU Quic forwarder started");
+
+    let mut agents: HashMap<SocketAddr, Sender<ForwardPacket>> = HashMap::new();
+
+    let tpu_quic_client_copy = tpu_quic_client.clone();
+    loop {
+        // TODO add exit
+
+        let forward_packet = transaction_channel.recv().await.expect("channel closed unexpectedly");
+        let tpu_address = forward_packet.tpu_address;
+
+        if !agents.contains_key(&tpu_address) {
+            let (sender, mut receiver) = channel::<ForwardPacket>(10000);
+            // TODO cleanup agent after a while of iactivity
+            agents.insert(tpu_address, sender);
+
+            let tpu_quic_client_copy = tpu_quic_client.clone();
+            let exit_signal = exit_signal.clone();
+            tokio::spawn(async move {
+                debug!("Start Quic forwarder agent for TPU {}", tpu_address);
+                // TODO pass+check the tpu_address
+                // TODO connect
+                // TODO consume queue
+                // TODO exit signal
+
+                loop {
+                    let maybe_connection = tpu_quic_client_copy.create_connection(tpu_address).await;
+                    if maybe_connection.is_err() {
+                        // TODO implement retries etc
+                        error!("failed to connect to TPU {} - giving up, dropping unprocessed elements in channel", tpu_address);
+                        return;
+                    }
+
+                    let connection = maybe_connection.unwrap();
+
+                    let exit_signal = exit_signal.clone();
+                    while let Some(packet) = receiver.recv().await {
+                        assert_eq!(packet.tpu_address, tpu_address, "routing error");
+
+                        debug!("forwarding transaction batch of size {} to address {}", packet.transactions.len(), packet.tpu_address);
+
+                        // TODo move send_txs_to_tpu_static to tpu_quic_client
+                        timeout(Duration::from_millis(500),
+                                send_txs_to_tpu_static(connection.clone(), tpu_address, &packet.transactions, exit_signal.clone())).await
+                            .expect("timeout sending data to TPU node")
+
+                    }
+
+                }
+
+            });
+
+        } // -- new agent
+
+        let agent_channel = agents.get(&tpu_address).unwrap();
+        agent_channel.send(forward_packet).await.unwrap();
+
+
+
+        // check if the tpu has already a task+queue running, if not start one, sort+queue packets by tpu address
+        // maintain the health of a TPU connection, debounce errors; if failing, drop the respective messages
+
+        // let exit_signal_copy = exit_signal.clone();
+        // debug!("send transaction batch of size {} to address {}", forward_packet.transactions.len(), forward_packet.tpu_address);
+        // // TODO: this will block/timeout if the TPU is not available
+        // timeout(Duration::from_millis(500),
+        //         tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &forward_packet.transactions, exit_signal_copy)).await;
+        // tpu_quic_client_copy.send_txs_to_tpu(forward_packet.tpu_address, &forward_packet.transactions, exit_signal_copy).await;
+
+    }
+
+    bail!("TPU Quic forward service stopped");
+}
+
