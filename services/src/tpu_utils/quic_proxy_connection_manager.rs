@@ -90,13 +90,15 @@ impl QuicProxyConnectionManager {
 
         let mut transaction_receiver = transaction_sender.subscribe();
 
-        // TODO
+        // TODO use it
+        let exit_signal = Arc::new(AtomicBool::new(false));
 
         tokio::spawn(Self::read_transactions_and_broadcast(
             transaction_receiver,
             self.current_tpu_nodes.clone(),
             self.proxy_addr,
             self.endpoint.clone(),
+            exit_signal,
         ));
 
     }
@@ -148,18 +150,21 @@ impl QuicProxyConnectionManager {
         current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>,
         proxy_addr: SocketAddr,
         endpoint: Endpoint,
+        exit_signal: Arc<AtomicBool>,
     ) {
 
         let mut connection = endpoint.connect(proxy_addr, "localhost").unwrap()
             .await.unwrap();
 
         loop {
-            // TODO exit signal ???
+            // exit signal set
+            if exit_signal.load(Ordering::Relaxed) {
+                break;
+            }
 
             tokio::select! {
                     // TODO add timeout
                     tx = transaction_receiver.recv() => {
-                        // exit signal???
 
 
                         let first_tx: Vec<u8> = match tx {
