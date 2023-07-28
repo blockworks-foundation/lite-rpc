@@ -32,12 +32,13 @@ pub async fn main() -> anyhow::Result<()> {
 
     let Args {
         identity_keypair,
+        proxy_rpc_addr,
     } = Args::parse();
 
     dotenv().ok();
 
     // TODO build args struct dedicyted to proxy
-    let proxy_listener_addr = "127.0.0.1:11111".parse().unwrap();
+    let proxy_listener_addr = proxy_rpc_addr.parse().unwrap();
     let tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let validator_identity =
         ValidatorIdentity::new(get_identity_keypair(&identity_keypair).await);
