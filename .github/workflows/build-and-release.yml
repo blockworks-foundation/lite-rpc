@@ -1,0 +1,36 @@
+name: Build Release Binaries and Create GitHub Release
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  APP_NAME: lite-rpc
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Build Release
+        run: |
+          cargo build --release
+
+      - name: Generate Checksum
+        run: |
+          echo "CHECKSUM=$(sha256sum ./target/release/${{ env.APP_NAME }} | head -c 64)" >> $GITHUB_ENV
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            sha256 checksum: ${{ env.CHECKSUM }}
+            github commit: ${{ github.sha }}
+          files: |
+            ./target/release/${{ env.APP_NAME }}

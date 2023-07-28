@@ -6,6 +6,7 @@ on:
 
 env: 
   CARGO_TERM_COLOR: always
+  APP_NAME: lite-rpc
 
 jobs:
   build_and_test:
@@ -24,7 +25,23 @@ jobs:
           sudo apt-get install libssl-dev openssl -y
 
       - name: Early Build
-        run: cargo build --workspace --tests 
+        run: cargo build --workspace --release --tests
+
+      - name: Generate Checksum
+        run: |
+          echo "CHECKSUM=$(sha256sum ./target/release/${{ env.APP_NAME }} | head -c 64)" >> $GITHUB_ENV
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            sha256 checksum: ${{ env.CHECKSUM }}
+            github commit: ${{ github.sha }}
+          files: |
+            ./target/release/${{ env.APP_NAME }}
 
       - name: Install node deps
         run: yarn
