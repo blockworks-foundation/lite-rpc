@@ -39,6 +39,7 @@ use crate::quinn_auto_reconnect::AutoReconnect;
 use crate::tpu_quic_client::{send_txs_to_tpu_static, SingleTPUConnectionManager, TpuQuicClient};
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 use crate::util::AnyhowJoinHandle;
+use crate::validator_identity::ValidatorIdentity;
 
 // TODO tweak this value - solana server sets 256
 // setting this to "1" did not make a difference!
@@ -46,7 +47,7 @@ const MAX_CONCURRENT_UNI_STREAMS: u32 = 24;
 
 pub struct QuicForwardProxy {
     endpoint: Endpoint,
-    validator_identity: Arc<Keypair>,
+    // validator_identity: ValidatorIdentity,
     tpu_quic_client: TpuQuicClient,
 }
 
@@ -61,7 +62,7 @@ impl QuicForwardProxy {
     pub async fn new(
         proxy_listener_addr: SocketAddr,
         tls_config: &SelfSignedTlsConfigProvider,
-        validator_identity: Arc<Keypair>) -> anyhow::Result<Self> {
+        validator_identity: ValidatorIdentity) -> anyhow::Result<Self> {
         let server_tls_config = tls_config.get_server_tls_crypto_config();
         let mut quinn_server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
 
@@ -78,12 +79,12 @@ impl QuicForwardProxy {
         transport_config.receive_window((PACKET_DATA_SIZE as u32 * MAX_CONCURRENT_UNI_STREAMS).into());
 
         let endpoint = Endpoint::server(quinn_server_config, proxy_listener_addr).unwrap();
-        info!("Quic proxy uses validator identity {}", validator_identity.pubkey());
+        info!("Quic proxy uses validator identity {}", validator_identity);
 
         let tpu_quic_client =
-            TpuQuicClient::new_with_validator_identity(validator_identity.as_ref()).await;
+            TpuQuicClient::new_with_validator_identity(validator_identity).await;
 
-        Ok(Self { endpoint, validator_identity, tpu_quic_client })
+        Ok(Self { endpoint, tpu_quic_client })
 
     }
 
@@ -115,13 +116,12 @@ impl QuicForwardProxy {
 
         while let Some(connecting) = endpoint.accept().await {
             let exit_signal = exit_signal.clone();
-            let validator_identity_copy = self.validator_identity.clone();
             let tpu_quic_client = self.tpu_quic_client.clone();
             let forwarder_channel_copy = forwarder_channel.clone();
             tokio::spawn(async move {
                 let connection = connecting.await.context("handshake").unwrap();
                 match accept_client_connection(connection, forwarder_channel_copy,
-                                               tpu_quic_client, exit_signal, validator_identity_copy)
+                                               tpu_quic_client, exit_signal)
                     .await {
                     Ok(()) => {}
                     Err(err) => {
@@ -140,11 +140,8 @@ impl QuicForwardProxy {
 #[tracing::instrument(skip_all, level = "debug")]
 async fn accept_client_connection(client_connection: Connection, forwarder_channel: Sender<ForwardPacket>,
                                   tpu_quic_client: TpuQuicClient,
-                                  exit_signal: Arc<AtomicBool>, validator_identity: Arc<Keypair>) -> anyhow::Result<()> {
+                                  exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
     debug!("inbound connection established, client {}", client_connection.remote_address());
-
-    // let active_tpu_connection =
-    //     TpuQuicClient::new_with_validator_identity(validator_identity.as_ref()).await;
 
     loop {
         let maybe_stream = client_connection.accept_uni().await;
@@ -163,7 +160,6 @@ async fn accept_client_connection(client_connection: Connection, forwarder_chann
             }
             Ok(recv_stream) => {
                 let exit_signal_copy = exit_signal.clone();
-                let validator_identity_copy = validator_identity.clone();
                 let tpu_quic_client_copy = tpu_quic_client.clone();
 
                 let forwarder_channel_copy = forwarder_channel.clone();

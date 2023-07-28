@@ -34,6 +34,7 @@ pub struct TpuNode {
 
 pub struct QuicProxyConnectionManager {
     endpoint: Endpoint,
+    // TODO remove
     validator_identity: Arc<Keypair>,
     simple_thread_started: AtomicBool,
     proxy_addr: SocketAddr,

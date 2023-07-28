@@ -13,7 +13,7 @@ use futures::future::join_all;
 use itertools::{any, Itertools};
 use log::{debug, error, info, trace, warn};
 use quinn::{Connecting, Connection, ConnectionError, Endpoint, SendStream, ServerConfig, VarInt};
-use rcgen::generate_simple_self_signed;
+use rcgen::{generate_simple_self_signed, KeyPair};
 use rustls::{Certificate, PrivateKey};
 use rustls::server::ResolvesServerCert;
 use serde::{Deserialize, Serialize};
@@ -27,6 +27,7 @@ use tokio::sync::RwLock;
 use crate::quic_connection_utils::{connection_stats, QuicConnectionError, QuicConnectionParameters, QuicConnectionUtils};
 use crate::quinn_auto_reconnect::AutoReconnect;
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
+use crate::validator_identity::ValidatorIdentity;
 
 const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
 pub const CONNECTION_RETRY_COUNT: usize = 10;
@@ -150,10 +151,10 @@ impl TpuQuicClient {
 
     /// takes a validator identity and creates a new QUIC client; appears as staked peer to TPU
     // note: ATM the provided identity might or might not be a valid validator keypair
-    pub async fn new_with_validator_identity(validator_identity: &Keypair) -> TpuQuicClient {
-        info!("Setup TPU Quic stable connection with validator identity {} ...", bs58::encode(validator_identity.pubkey()).into_string());
+    pub async fn new_with_validator_identity(validator_identity: ValidatorIdentity) -> TpuQuicClient {
+        info!("Setup TPU Quic stable connection with validator identity {} ...", validator_identity);
         let (certificate, key) = new_self_signed_tls_certificate(
-            validator_identity,
+            &validator_identity.get_keypair_for_tls(),
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         )
             .expect("Failed to initialize QUIC connection certificates");
