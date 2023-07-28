@@ -9,6 +9,7 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Error};
 use async_trait::async_trait;
 use dashmap::DashMap;
+use futures::future::join_all;
 use itertools::{any, Itertools};
 use log::{debug, error, info, trace, warn};
 use quinn::{Connecting, Connection, ConnectionError, Endpoint, SendStream, ServerConfig, VarInt};
@@ -24,6 +25,7 @@ use tokio::net::ToSocketAddrs;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::RwLock;
 use crate::quic_connection_utils::{connection_stats, QuicConnectionError, QuicConnectionParameters, QuicConnectionUtils};
+use crate::quinn_auto_reconnect::AutoReconnect;
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 
 const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -44,6 +46,12 @@ pub struct TpuQuicClient {
 }
 
 impl TpuQuicClient {
+
+    // note: this is a dirty workaround to expose enpoint to autoconnect class
+    pub fn get_endpoint(&self) -> Endpoint {
+        self.endpoint.clone()
+    }
+
     pub async fn create_connection(&self, tpu_address: SocketAddr) -> anyhow::Result<Connection> {
         let connection =
             // TODO try 0rff
@@ -302,11 +310,10 @@ fn serialize_to_vecvec(transactions: &Vec<VersionedTransaction>) -> Vec<Vec<u8>>
 
 
 // send potentially large amount of transactions to a single TPU
+#[tracing::instrument(skip_all, level = "debug")]
 pub async fn send_txs_to_tpu_static(
-    tpu_connection: Connection,
-    tpu_address: SocketAddr,
+    auto_connection: &AutoReconnect,
     txs: &Vec<VersionedTransaction>,
-    exit_signal: Arc<AtomicBool>,
 ) {
 
     // note: this impl does not deal with connection errors
@@ -316,16 +323,18 @@ pub async fn send_txs_to_tpu_static(
     // TODO add error handling
 
     for chunk in txs.chunks(MAX_PARALLEL_STREAMS) {
-        let vecvec = chunk.iter().map(|tx| {
+        let all_send_fns = chunk.iter().map(|tx| {
             let tx_raw = bincode::serialize(tx).unwrap();
             tx_raw
-        }).collect_vec();
-        QuicConnectionUtils::send_transaction_batch_parallel(
-            tpu_connection.clone(),
-            vecvec,
-            exit_signal.clone(),
-            QUIC_CONNECTION_TIMEOUT,
-        ).await;
+        })
+        .map(|tx_raw| {
+            auto_connection.send(tx_raw) // ignores error
+        });
+
+        // let all_send_fns = (0..txs.len()).map(|i| auto_connection.roundtrip(vecvec.get(i))).collect_vec();
+
+        join_all(all_send_fns).await;
+
     }
 
 }

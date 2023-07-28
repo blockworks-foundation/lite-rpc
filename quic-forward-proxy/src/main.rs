@@ -21,6 +21,7 @@ mod util;
 mod tx_store;
 mod identity_stakes;
 mod quic_connection_utils;
+mod quinn_auto_reconnect;
 
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]

@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 use tracing::{debug_span, instrument, Instrument, span};
@@ -11,7 +12,7 @@ use anyhow::{anyhow, bail, Context, Error};
 use dashmap::DashMap;
 use itertools::{any, Itertools};
 use log::{debug, error, info, trace, warn};
-use quinn::{Connecting, Connection, Endpoint, SendStream, ServerConfig, TransportConfig, VarInt};
+use quinn::{Connecting, Connection, ConnectionError, Endpoint, SendStream, ServerConfig, TransportConfig, VarInt};
 use rcgen::generate_simple_self_signed;
 use rustls::{Certificate, PrivateKey};
 use rustls::server::ResolvesServerCert;
@@ -25,13 +26,14 @@ use solana_sdk::transaction::VersionedTransaction;
 use tokio::net::ToSocketAddrs;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockReadGuard};
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 use tracing::field::debug;
 use crate::proxy_request_format::TpuForwardingRequest;
 use crate::quic_connection_utils::{connection_stats, QuicConnectionUtils};
+use crate::quinn_auto_reconnect::AutoReconnect;
 use crate::tpu_quic_client::{send_txs_to_tpu_static, SingleTPUConnectionManager, TpuQuicClient};
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 use crate::util::AnyhowJoinHandle;
@@ -222,26 +224,23 @@ async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: R
                 // TODO consume queue
                 // TODO exit signal
 
+                let auto_connection = AutoReconnect::new(tpu_quic_client_copy.get_endpoint(), tpu_address);
+                // let mut connection = tpu_quic_client_copy.create_connection(tpu_address).await.expect("handshake");
                 loop {
-                    let maybe_connection = tpu_quic_client_copy.create_connection(tpu_address).await;
-                    if maybe_connection.is_err() {
-                        // TODO implement retries etc
-                        error!("failed to connect to TPU {} - giving up, dropping unprocessed elements in channel", tpu_address);
-                        return;
-                    }
-
-                    let connection = maybe_connection.unwrap();
 
                     let exit_signal = exit_signal.clone();
-                    while let Some(packet) = receiver.recv().await {
+                    loop {
+                        let packet = receiver.recv().await.unwrap();
                         assert_eq!(packet.tpu_address, tpu_address, "routing error");
 
                         debug!("forwarding transaction batch of size {} to address {}", packet.transactions.len(), packet.tpu_address);
 
                         // TODo move send_txs_to_tpu_static to tpu_quic_client
-                        timeout(Duration::from_millis(500),
-                                send_txs_to_tpu_static(connection.clone(), tpu_address, &packet.transactions, exit_signal.clone())).await
-                            .expect("timeout sending data to TPU node")
+                        let result = timeout(Duration::from_millis(500),
+                                      send_txs_to_tpu_static(&auto_connection, &packet.transactions)).await;
+                            // .expect("timeout sending data to TPU node");
+
+                        debug!("send_txs_to_tpu_static result {:?} - loop over errors", result);
 
                     }
 
@@ -270,4 +269,5 @@ async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: R
 
     bail!("TPU Quic forward service stopped");
 }
+
 
