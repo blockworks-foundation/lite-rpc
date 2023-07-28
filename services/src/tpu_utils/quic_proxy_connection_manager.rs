@@ -10,7 +10,7 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use futures::FutureExt;
 use itertools::Itertools;
-use log::{debug, error, info, warn};
+use log::{debug, error, info, trace, warn};
 use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt};
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use solana_sdk::pubkey::Pubkey;
@@ -39,6 +39,8 @@ pub struct QuicProxyConnectionManager {
     proxy_addr: SocketAddr,
     current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>
 }
+
+const PARALLEL_STREAMS_TO_PROXY: usize = 4;
 
 impl QuicProxyConnectionManager {
     pub async fn new(
@@ -201,7 +203,7 @@ impl QuicProxyConnectionManager {
 
                         let tpu_fanout_nodes = current_tpu_nodes.read().await.clone();
 
-                        info!("Sending copy of transaction batch of {} txs to {} tpu nodes via quic proxy",
+                        trace!("Sending copy of transaction batch of {} txs to {} tpu nodes via quic proxy",
                                 txs.len(), tpu_fanout_nodes.len());
 
                         for target_tpu_node in tpu_fanout_nodes {
@@ -222,9 +224,6 @@ impl QuicProxyConnectionManager {
                                            proxy_address: SocketAddr, tpu_target_address: SocketAddr,
                                            target_tpu_identity: Pubkey) -> anyhow::Result<()> {
 
-        info!("sending vecvec {} to quic proxy for TPU node {}",
-            raw_tx_batch.iter().map(|tx| tx.len()).into_iter().join(","), tpu_target_address);
-
         // TODO add timeout
         // let mut send_stream = timeout(Duration::from_millis(500), connection.open_uni()).await??;
 
@@ -242,25 +241,31 @@ impl QuicProxyConnectionManager {
             txs.push(tx);
         }
 
-        let forwarding_request = TpuForwardingRequest::new(tpu_target_address, target_tpu_identity, txs);
-        debug!("forwarding_request: {}", forwarding_request);
 
-        let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
+        for chunk in txs.chunks(PARALLEL_STREAMS_TO_PROXY) {
 
-        let send_result = auto_connection.send(proxy_request_raw).await;
+            let forwarding_request = TpuForwardingRequest::new(tpu_target_address, target_tpu_identity, chunk.into());
+            debug!("forwarding_request: {}", forwarding_request);
 
-        // let send_result =
-        //     timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw))
-        //         .await.context("Timeout sending data to quic proxy")?;
+            let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
 
-        match send_result {
-            Ok(()) => {
-                info!("Successfully sent data to quic proxy");
+            let send_result = auto_connection.send(proxy_request_raw).await;
+
+            // let send_result =
+            //     timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw))
+            //         .await.context("Timeout sending data to quic proxy")?;
+
+            match send_result {
+                Ok(()) => {
+                    debug!("Successfully sent {} txs to quic proxy", txs.len());
+                }
+                Err(e) => {
+                    bail!("Failed to send data to quic proxy: {:?}", e);
+                }
             }
-            Err(e) => {
-                bail!("Failed to send data to quic proxy: {:?}", e);
-            }
-        }
+
+        } // -- one chunk
+
 
         Ok(())
     }

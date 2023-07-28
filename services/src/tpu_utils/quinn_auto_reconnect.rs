@@ -40,8 +40,7 @@ impl AutoReconnect {
         // TOOD do smart error handling + reconnect
         let mut send_stream = self.refresh().await.open_uni().await?;
         send_stream.write_all(payload.as_slice()).await?;
-        send_stream.finish().await?;
-
+        let _ = send_stream.finish().await;
 
         Ok(())
     }

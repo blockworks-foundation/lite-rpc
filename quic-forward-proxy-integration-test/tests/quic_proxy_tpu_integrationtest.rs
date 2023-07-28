@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::SendError;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, yield_now};
 use tokio::time::{interval, sleep};
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{filter::LevelFilter, fmt};
@@ -126,7 +126,7 @@ pub fn bench_proxy() {
 
     wireup_and_send_txs_via_channel(TestCaseParams {
         // sample_tx_count: 1000, // this is the goal -- ATM test runs too long
-        sample_tx_count: 200,
+        sample_tx_count: 1000,
         stake_connection: true,
         proxy_mode: true,
     });
@@ -143,6 +143,17 @@ pub fn with_10000_transactions() {
     });
 }
 
+#[test]
+pub fn with_10000_transactions_proxy() {
+    configure_logging(false);
+
+    wireup_and_send_txs_via_channel(TestCaseParams {
+        sample_tx_count: 10000,
+        stake_connection: true,
+        proxy_mode: true,
+    });
+}
+
 #[ignore]
 #[test]
 pub fn too_many_transactions() {
@@ -151,7 +162,7 @@ pub fn too_many_transactions() {
     wireup_and_send_txs_via_channel(TestCaseParams {
         sample_tx_count: 100000,
         stake_connection: false,
-        proxy_mode: false,
+        proxy_mode: true,
     });
 }
 
@@ -250,7 +261,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
             CountMap::with_capacity(test_case_params.sample_tx_count as usize);
         let warmup_tx_count: u32 = test_case_params.sample_tx_count / 2;
         while packet_count < test_case_params.sample_tx_count {
-            if latest_tx.elapsed() > Duration::from_secs(5) {
+            if latest_tx.elapsed() > Duration::from_secs(25) {
                 warn!("abort after timeout waiting for packet from quic streamer");
                 break;
             }
@@ -336,7 +347,7 @@ fn configure_logging(verbose: bool) {
     let env_filter = if verbose {
         "debug,rustls=info,quinn=info,quinn_proto=debug,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=trace"
     } else {
-        "debug,rustls=info,quinn=info,quinn_proto=info,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=debug"
+        "info,rustls=info,quinn=info,quinn_proto=info,solana_streamer=info,solana_lite_rpc_quic_forward_proxy=info"
     };
     let span_mode = if verbose {
         FmtSpan::CLOSE
@@ -426,6 +437,9 @@ async fn start_literpc_client(
     for i in 0..test_case_params.sample_tx_count {
         let raw_sample_tx = build_raw_sample_tx(i);
         broadcast_sender.send(raw_sample_tx)?;
+        if (i+1) % 1000 == 0 {
+            yield_now().await;
+        }
     }
 
     // we need that to keep the tokio runtime dedicated to lite-rpc up long enough
@@ -549,7 +563,7 @@ async fn start_literpc_client_direct_mode(
 
     for i in 0..test_case_params.sample_tx_count {
         let raw_sample_tx = build_raw_sample_tx(i);
-        debug!(
+        trace!(
             "broadcast transaction {} to {} receivers: {}",
             raw_sample_tx.0,
             broadcast_sender.receiver_count(),
@@ -642,7 +656,7 @@ async fn start_literpc_client_proxy_mode(
 
     for i in 0..test_case_params.sample_tx_count {
         let raw_sample_tx = build_raw_sample_tx(i);
-        debug!(
+        trace!(
             "broadcast transaction {} to {} receivers: {}",
             raw_sample_tx.0,
             broadcast_sender.receiver_count(),
@@ -650,6 +664,9 @@ async fn start_literpc_client_proxy_mode(
         );
 
         broadcast_sender.send(raw_sample_tx)?;
+        if (i+1) % 1000 == 0 {
+            yield_now().await;
+        }
     }
 
     sleep(Duration::from_secs(30)).await;
