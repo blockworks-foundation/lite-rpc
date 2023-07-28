@@ -24,6 +24,7 @@ use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
 use solana_lite_rpc_core::quic_connection_utils::{connection_stats, QuicConnectionParameters, QuicConnectionUtils, SkipServerVerification};
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_core::tx_store::TxStore;
+use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;
 
 #[derive(Clone, Copy, Debug)]
 pub struct TpuNode {
@@ -153,8 +154,10 @@ impl QuicProxyConnectionManager {
         exit_signal: Arc<AtomicBool>,
     ) {
 
-        let mut connection = endpoint.connect(proxy_addr, "localhost").unwrap()
-            .await.unwrap();
+        // let mut connection = endpoint.connect(proxy_addr, "localhost").unwrap()
+        //     .await.unwrap();
+
+        let auto_connection = AutoReconnect::new(endpoint, proxy_addr);
 
         loop {
             // exit signal set
@@ -203,7 +206,7 @@ impl QuicProxyConnectionManager {
 
                         for target_tpu_node in tpu_fanout_nodes {
                             Self::send_copy_of_txs_to_quicproxy(
-                                &txs, endpoint.clone(),
+                                &txs, &auto_connection,
                             proxy_addr,
                                 target_tpu_node.tpu_address,
                                 target_tpu_node.tpu_identity)
@@ -215,7 +218,7 @@ impl QuicProxyConnectionManager {
         }
     }
 
-    async fn send_copy_of_txs_to_quicproxy(raw_tx_batch: &Vec<Vec<u8>>, endpoint: Endpoint,
+    async fn send_copy_of_txs_to_quicproxy(raw_tx_batch: &Vec<Vec<u8>>, auto_connection: &AutoReconnect,
                                            proxy_address: SocketAddr, tpu_target_address: SocketAddr,
                                            target_tpu_identity: Pubkey) -> anyhow::Result<()> {
 
@@ -244,9 +247,11 @@ impl QuicProxyConnectionManager {
 
         let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
 
-        let send_result =
-            timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw))
-                .await.context("Timeout sending data to quic proxy")?;
+        let send_result = auto_connection.send(proxy_request_raw).await;
+
+        // let send_result =
+        //     timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw))
+        //         .await.context("Timeout sending data to quic proxy")?;
 
         match send_result {
             Ok(()) => {
