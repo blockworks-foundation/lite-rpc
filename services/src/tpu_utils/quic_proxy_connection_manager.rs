@@ -40,7 +40,8 @@ pub struct QuicProxyConnectionManager {
     current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>
 }
 
-const PARALLEL_STREAMS_TO_PROXY: usize = 4;
+// TODO consolidate with number_of_transactions_per_unistream
+const CHUNK_SIZE_PER_STREAM: usize = 20;
 
 impl QuicProxyConnectionManager {
     pub async fn new(
@@ -242,7 +243,7 @@ impl QuicProxyConnectionManager {
         }
 
 
-        for chunk in txs.chunks(PARALLEL_STREAMS_TO_PROXY) {
+        for chunk in txs.chunks(CHUNK_SIZE_PER_STREAM) {
 
             let forwarding_request = TpuForwardingRequest::new(tpu_target_address, target_tpu_identity, chunk.into());
             debug!("forwarding_request: {}", forwarding_request);

@@ -151,7 +151,7 @@ impl TpuQuicClient {
     /// takes a validator identity and creates a new QUIC client; appears as staked peer to TPU
     // note: ATM the provided identity might or might not be a valid validator keypair
     pub async fn new_with_validator_identity(validator_identity: &Keypair) -> TpuQuicClient {
-        info!("Setup TPU Quic stable connection ...");
+        info!("Setup TPU Quic stable connection with validator identity {} ...", bs58::encode(validator_identity.pubkey()).into_string());
         let (certificate, key) = new_self_signed_tls_certificate(
             validator_identity,
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),

@@ -10,6 +10,8 @@ use std::time::Duration;
 use tracing::{debug_span, instrument, Instrument, span};
 use anyhow::{anyhow, bail, Context, Error};
 use dashmap::DashMap;
+use fan::tokio::mpsc::FanOut;
+use futures::sink::Fanout;
 use itertools::{any, Itertools};
 use log::{debug, error, info, trace, warn};
 use quinn::{Connecting, Connection, ConnectionError, Endpoint, SendStream, ServerConfig, TransportConfig, VarInt};
@@ -201,7 +203,7 @@ async fn accept_client_connection(client_connection: Connection, forwarder_chann
 async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: Receiver<ForwardPacket>, exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
     info!("TPU Quic forwarder started");
 
-    let mut agents: HashMap<SocketAddr, Sender<ForwardPacket>> = HashMap::new();
+    let mut agents: HashMap<SocketAddr, FanOut<ForwardPacket>> = HashMap::new();
 
     let tpu_quic_client_copy = tpu_quic_client.clone();
     loop {
@@ -211,53 +213,65 @@ async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: R
         let tpu_address = forward_packet.tpu_address;
 
         if !agents.contains_key(&tpu_address) {
-            let (sender, mut receiver) = channel::<ForwardPacket>(10000);
             // TODO cleanup agent after a while of iactivity
-            agents.insert(tpu_address, sender);
 
-            let tpu_quic_client_copy = tpu_quic_client.clone();
-            let exit_signal = exit_signal.clone();
-            tokio::spawn(async move {
-                debug!("Start Quic forwarder agent for TPU {}", tpu_address);
-                // TODO pass+check the tpu_address
-                // TODO connect
-                // TODO consume queue
-                // TODO exit signal
+            let mut senders = Vec::new();
+            for i in 0..4 {
+                let (sender, mut receiver) = channel::<ForwardPacket>(100000);
+                senders.push(sender);
+                let endpoint = tpu_quic_client.get_endpoint().clone();
+                let exit_signal = exit_signal.clone();
+                tokio::spawn(async move {
+                    debug!("Start Quic forwarder agent for TPU {}", tpu_address);
+                    // TODO pass+check the tpu_address
+                    // TODO connect
+                    // TODO consume queue
+                    // TODO exit signal
 
-                let auto_connection = AutoReconnect::new(tpu_quic_client_copy.get_endpoint(), tpu_address);
-                // let mut connection = tpu_quic_client_copy.create_connection(tpu_address).await.expect("handshake");
-                loop {
-
-                    let exit_signal = exit_signal.clone();
+                    let auto_connection = AutoReconnect::new(endpoint, tpu_address);
+                    // let mut connection = tpu_quic_client_copy.create_connection(tpu_address).await.expect("handshake");
                     loop {
-                        let packet = receiver.recv().await.unwrap();
-                        assert_eq!(packet.tpu_address, tpu_address, "routing error");
 
-                        let mut transactions_batch = packet.transactions;
+                        let exit_signal = exit_signal.clone();
+                        loop {
+                            let packet = receiver.recv().await.unwrap();
+                            assert_eq!(packet.tpu_address, tpu_address, "routing error");
 
-                        let mut batch_size = 1;
-                        while let Ok(more) = receiver.try_recv() {
-                            transactions_batch.extend(more.transactions);
-                            batch_size += 1;
-                        }
-                        if batch_size > 1 {
-                            debug!("encountered batch of size {}", batch_size);
-                        }
+                            let mut transactions_batch = packet.transactions;
 
-                        debug!("forwarding transaction batch of size {} to address {}", transactions_batch.len(), packet.tpu_address);
+                            let mut batch_size = 1;
+                            while let Ok(more) = receiver.try_recv() {
+                                transactions_batch.extend(more.transactions);
+                                batch_size += 1;
+                            }
+                            if batch_size > 1 {
+                                debug!("encountered batch of size {}", batch_size);
+                            }
 
-                        // TODo move send_txs_to_tpu_static to tpu_quic_client
-                        let result = timeout(Duration::from_millis(500),
-                                      send_txs_to_tpu_static(&auto_connection, &transactions_batch)).await;
+                            debug!("forwarding transaction batch of size {} to address {}", transactions_batch.len(), packet.tpu_address);
+
+                            // TODo move send_txs_to_tpu_static to tpu_quic_client
+                            let result = timeout(Duration::from_millis(500),
+                                                 send_txs_to_tpu_static(&auto_connection, &transactions_batch)).await;
                             // .expect("timeout sending data to TPU node");
 
-                        debug!("send_txs_to_tpu_static result {:?} - loop over errors", result);
+                            if result.is_err() {
+                                warn!("send_txs_to_tpu_static result {:?} - loop over errors", result);
+                            } else {
+                                debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
+                            }
+
+                        }
 
                     }
 
-                }
+                });
 
-            });
+            }
+
+            let fanout = FanOut::new(senders);
+
+            agents.insert(tpu_address, fanout);
 
         } // -- new agent
 
