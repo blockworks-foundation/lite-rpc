@@ -233,11 +233,22 @@ async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: R
                         let packet = receiver.recv().await.unwrap();
                         assert_eq!(packet.tpu_address, tpu_address, "routing error");
 
-                        debug!("forwarding transaction batch of size {} to address {}", packet.transactions.len(), packet.tpu_address);
+                        let mut transactions_batch = packet.transactions;
+
+                        let mut batch_size = 1;
+                        while let Ok(more) = receiver.try_recv() {
+                            transactions_batch.extend(more.transactions);
+                            batch_size += 1;
+                        }
+                        if batch_size > 1 {
+                            debug!("encountered batch of size {}", batch_size);
+                        }
+
+                        debug!("forwarding transaction batch of size {} to address {}", transactions_batch.len(), packet.tpu_address);
 
                         // TODo move send_txs_to_tpu_static to tpu_quic_client
                         let result = timeout(Duration::from_millis(500),
-                                      send_txs_to_tpu_static(&auto_connection, &packet.transactions)).await;
+                                      send_txs_to_tpu_static(&auto_connection, &transactions_batch)).await;
                             // .expect("timeout sending data to TPU node");
 
                         debug!("send_txs_to_tpu_static result {:?} - loop over errors", result);
@@ -251,8 +262,17 @@ async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: R
         } // -- new agent
 
         let agent_channel = agents.get(&tpu_address).unwrap();
+
         agent_channel.send(forward_packet).await.unwrap();
 
+        let mut batch_size = 1;
+        while let Ok(more) = transaction_channel.try_recv() {
+            agent_channel.send(more).await.unwrap();
+            batch_size += 1;
+        }
+        if batch_size > 1 {
+            debug!("encountered batch of size {}", batch_size);
+        }
 
 
         // check if the tpu has already a task+queue running, if not start one, sort+queue packets by tpu address
