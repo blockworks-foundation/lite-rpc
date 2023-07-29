@@ -14,7 +14,7 @@ use std::{
 };
 use serde::Serialize;
 use solana_sdk::hash::Hash;
-use solana_sdk::message::{LegacyMessage, v0};
+
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::{Transaction, uses_durable_nonce, VersionedTransaction};
 use tokio::sync::mpsc::UnboundedReceiver;

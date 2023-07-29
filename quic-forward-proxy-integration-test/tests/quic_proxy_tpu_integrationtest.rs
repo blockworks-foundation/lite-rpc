@@ -1,9 +1,9 @@
-use anyhow::bail;
+
 use countmap::CountMap;
-use crossbeam_channel::{Receiver, RecvError, RecvTimeoutError, Sender};
-use futures::future::join_all;
-use log::{debug, error, info, trace, warn};
-use quinn::TokioRuntime;
+use crossbeam_channel::{Sender};
+
+use log::{debug, info, trace, warn};
+
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_core::tx_store::empty_tx_store;
@@ -14,7 +14,7 @@ use solana_sdk::instruction::Instruction;
 use solana_sdk::message::Message;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature, Signer};
-use solana_sdk::signer::keypair;
+
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
 use solana_streamer::packet::PacketBatch;
@@ -23,21 +23,21 @@ use solana_streamer::streamer::StakedNodes;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
-use std::ops::Deref;
-use std::option::Option;
-use std::path::Path;
+
+
+
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
-use tokio::runtime::{Builder, Runtime};
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::SendError;
+use tokio::runtime::{Builder};
+
+
 use tokio::task::{JoinHandle, yield_now};
-use tokio::time::{interval, sleep};
+use tokio::time::{sleep};
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{filter::LevelFilter, fmt};
+
 use tracing_subscriber::fmt::format::FmtSpan;
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::tls_config_provicer::SelfSignedTlsConfigProvider;
@@ -480,7 +480,7 @@ async fn solana_quic_streamer_start() {
 
     let addr = sock.local_addr().unwrap().ip();
     let port = sock.local_addr().unwrap().port();
-    let tpu_addr = SocketAddr::new(addr, port);
+    let _tpu_addr = SocketAddr::new(addr, port);
 
     // sleep(Duration::from_millis(500)).await;
 
@@ -587,7 +587,7 @@ async fn start_literpc_client_proxy_mode(
 ) -> anyhow::Result<()> {
     info!("Start lite-rpc test client using quic proxy at {} ...", forward_proxy_address);
 
-    let fanout_slots = 4;
+    let _fanout_slots = 4;
 
     // (String, Vec<u8>) (signature, transaction)
     let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
@@ -629,7 +629,7 @@ async fn start_literpc_client_proxy_mode(
 
     // get information about the optional validator identity stake
     // populated from get_stakes_for_identity()
-    let identity_stakes = IdentityStakes {
+    let _identity_stakes = IdentityStakes {
         peer_type: ConnectionPeerType::Staked,
         stakes: if test_case_params.stake_connection { 30 } else { 0 }, // stake of lite-rpc
         min_stakes: 0,
@@ -677,7 +677,7 @@ async fn start_literpc_client_proxy_mode(
 
 async fn start_quic_proxy(proxy_listen_addr: SocketAddr) -> anyhow::Result<()> {
 
-    let tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
+    let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let random_unstaked_validator_identity = ValidatorIdentity::new(None);
 
     let tls_config = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
@@ -744,7 +744,7 @@ impl SolanaQuicStreamer {
 
         let addr = udp_socket.local_addr().unwrap().ip();
         let port = udp_socket.local_addr().unwrap().port();
-        let tpu_addr = SocketAddr::new(addr, port);
+        let _tpu_addr = SocketAddr::new(addr, port);
 
         Self {
             sock: udp_socket,

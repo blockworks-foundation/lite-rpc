@@ -1,12 +1,12 @@
-use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
+
+
 use anyhow::bail;
 use clap::Parser;
 use dotenv::dotenv;
 use log::info;
 use crate::cli::{Args, get_identity_keypair};
 use crate::proxy::QuicForwardProxy;
-use crate::test_client::quic_test_client::QuicTestClient;
+
 pub use tls_config_provicer::SelfSignedTlsConfigProvider;
 use crate::validator_identity::ValidatorIdentity;
 
@@ -39,7 +39,7 @@ pub async fn main() -> anyhow::Result<()> {
 
     // TODO build args struct dedicyted to proxy
     let proxy_listener_addr = proxy_rpc_addr.parse().unwrap();
-    let tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
+    let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let validator_identity =
         ValidatorIdentity::new(get_identity_keypair(&identity_keypair).await);
 

@@ -1,42 +1,42 @@
 use std::collections::HashMap;
-use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::path::Path;
+
+use std::net::{SocketAddr};
+
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64};
-use std::thread;
-use std::thread::sleep;
+use std::sync::atomic::{AtomicBool};
+
+
 use std::time::Duration;
-use tracing::{debug_span, instrument, Instrument, span};
-use anyhow::{anyhow, bail, Context, Error};
-use dashmap::DashMap;
+
+use anyhow::{anyhow, bail, Context};
+
 use fan::tokio::mpsc::FanOut;
-use futures::sink::Fanout;
-use itertools::{any, Itertools};
+
+
 use log::{debug, error, info, trace, warn};
-use quinn::{Connecting, Connection, ConnectionError, Endpoint, SendStream, ServerConfig, TransportConfig, VarInt};
-use rcgen::generate_simple_self_signed;
-use rustls::{Certificate, PrivateKey};
-use rustls::server::ResolvesServerCert;
-use serde::{Deserialize, Serialize};
+use quinn::{Connection, Endpoint, ServerConfig, VarInt};
+
+
+
+
 use solana_sdk::packet::PACKET_DATA_SIZE;
-use solana_sdk::pubkey::Pubkey;
-use solana_sdk::quic::QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS;
-use solana_sdk::signature::Keypair;
-use solana_sdk::signer::Signer;
+
+
+
+
 use solana_sdk::transaction::VersionedTransaction;
-use tokio::net::ToSocketAddrs;
-use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+
+
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::{RwLock, RwLockReadGuard};
-use tokio::task::JoinHandle;
-use tokio::time::error::Elapsed;
+
+
+
 use tokio::time::timeout;
-use tracing::field::debug;
+
 use crate::proxy_request_format::TpuForwardingRequest;
-use crate::quic_connection_utils::{connection_stats, QuicConnectionUtils};
+
 use crate::quinn_auto_reconnect::AutoReconnect;
-use crate::tpu_quic_client::{send_txs_to_tpu_static, SingleTPUConnectionManager, TpuQuicClient};
+use crate::tpu_quic_client::{send_txs_to_tpu_static, TpuQuicClient};
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 use crate::util::AnyhowJoinHandle;
 use crate::validator_identity::ValidatorIdentity;
@@ -89,7 +89,7 @@ impl QuicForwardProxy {
     }
 
     pub async fn start_services(
-        mut self,
+        self,
     ) -> anyhow::Result<()> {
         let exit_signal = Arc::new(AtomicBool::new(false));
 
@@ -159,8 +159,8 @@ async fn accept_client_connection(client_connection: Connection, forwarder_chann
                 return Err(anyhow::Error::msg("error accepting stream"));
             }
             Ok(recv_stream) => {
-                let exit_signal_copy = exit_signal.clone();
-                let tpu_quic_client_copy = tpu_quic_client.clone();
+                let _exit_signal_copy = exit_signal.clone();
+                let _tpu_quic_client_copy = tpu_quic_client.clone();
 
                 let forwarder_channel_copy = forwarder_channel.clone();
                 tokio::spawn(async move {
@@ -172,7 +172,7 @@ async fn accept_client_connection(client_connection: Connection, forwarder_chann
                     let proxy_request = TpuForwardingRequest::deserialize_from_raw_request(&raw_request);
 
                     trace!("proxy request details: {}", proxy_request);
-                    let tpu_identity = proxy_request.get_identity_tpunode();
+                    let _tpu_identity = proxy_request.get_identity_tpunode();
                     let tpu_address = proxy_request.get_tpu_socket_addr();
                     let txs = proxy_request.get_transactions();
 
@@ -212,7 +212,7 @@ async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: R
             // TODO cleanup agent after a while of iactivity
 
             let mut senders = Vec::new();
-            for i in 0..4 {
+            for _i in 0..4 {
                 let (sender, mut receiver) = channel::<ForwardPacket>(100000);
                 senders.push(sender);
                 let exit_signal = exit_signal.clone();
@@ -228,7 +228,7 @@ async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: R
                     // let mut connection = tpu_quic_client_copy.create_connection(tpu_address).await.expect("handshake");
                     loop {
 
-                        let exit_signal = exit_signal.clone();
+                        let _exit_signal = exit_signal.clone();
                         loop {
                             let packet = receiver.recv().await.unwrap();
                             assert_eq!(packet.tpu_address, tpu_address, "routing error");
@@ -295,9 +295,9 @@ async fn tx_forwarder(tpu_quic_client: TpuQuicClient, mut transaction_channel: R
         //         tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &forward_packet.transactions, exit_signal_copy)).await;
         // tpu_quic_client_copy.send_txs_to_tpu(forward_packet.tpu_address, &forward_packet.transactions, exit_signal_copy).await;
 
-    }
+    } // -- loop over transactions from ustream channels
 
-    panic!("not reachable");
+    // not reachable
 }
 
 

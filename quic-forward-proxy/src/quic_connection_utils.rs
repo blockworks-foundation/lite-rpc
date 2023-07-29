@@ -1,22 +1,21 @@
-use log::{debug, error, info, trace, warn};
-use quinn::{ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream, TokioRuntime, TransportConfig, VarInt, WriteError};
+use log::{debug, error, trace, warn};
+use quinn::{ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream, TokioRuntime, TransportConfig, VarInt};
 use solana_sdk::pubkey::Pubkey;
 use std::{
-    collections::VecDeque,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     time::Duration,
 };
-use anyhow::bail;
+
 use futures::future::join_all;
 use itertools::Itertools;
 use solana_sdk::quic::QUIC_MAX_TIMEOUT_MS;
-use tokio::{sync::RwLock, time::timeout};
-use tokio::time::error::Elapsed;
-use tracing::instrument;
+use tokio::{time::timeout};
+
+
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 
@@ -297,7 +296,7 @@ impl QuicConnectionUtils {
                             }
                         }
                     }
-                    Err(elapsed) => {
+                    Err(_elapsed) => {
                         warn!("timeout sending transactions");
                     }
                 }
@@ -320,7 +319,7 @@ impl QuicConnectionUtils {
     pub async fn send_transaction_batch_parallel(
         connection: Connection,
         txs: Vec<Vec<u8>>,
-        exit_signal: Arc<AtomicBool>,
+        _exit_signal: Arc<AtomicBool>,
         connection_timeout: Duration,
     ) {
         assert_ne!(txs.len(), 0, "no transactions to send");
@@ -350,7 +349,7 @@ impl QuicConnectionUtils {
                     }
                 }
             }
-            Err(elapsed) => {
+            Err(_elapsed) => {
                 warn!("timeout sending transactions");
             }
         }

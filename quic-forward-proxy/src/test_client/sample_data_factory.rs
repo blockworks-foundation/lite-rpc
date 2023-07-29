@@ -4,7 +4,7 @@ use solana_sdk::hash::Hash;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::message::Message;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::{Keypair, keypair, Signature, Signer};
+use solana_sdk::signature::{Keypair, keypair, Signer};
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 

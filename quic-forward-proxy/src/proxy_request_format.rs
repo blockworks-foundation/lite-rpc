@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fmt::Display;
-use std::net::{SocketAddr, SocketAddrV4};
+use std::net::{SocketAddr};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;

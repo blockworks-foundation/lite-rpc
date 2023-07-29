@@ -38,7 +38,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionStatus;
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
-use std::convert::identity;
+
 use tokio::{
     net::ToSocketAddrs,
     sync::mpsc::{self, Sender},

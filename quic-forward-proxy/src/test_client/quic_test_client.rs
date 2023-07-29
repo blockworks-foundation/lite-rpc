@@ -1,9 +1,9 @@
-use std::net::{SocketAddr, SocketAddrV4};
+use std::net::{SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use anyhow::bail;
-use bytes::BufMut;
+
 use log::{info, trace};
 use quinn::{Endpoint, VarInt};
 use rustls::ClientConfig;
@@ -14,7 +14,7 @@ use crate::proxy_request_format::TpuForwardingRequest;
 use crate::quic_connection_utils::SkipServerVerification;
 use crate::quic_util::ALPN_TPU_FORWARDPROXY_PROTOCOL_ID;
 use crate::tls_config_provicer::ProxyTlsConfigProvider;
-use crate::test_client::sample_data_factory::build_raw_sample_tx;
+
 use crate::util::AnyhowJoinHandle;
 
 pub struct QuicTestClient {
@@ -36,7 +36,7 @@ impl QuicTestClient {
 
     // connect to a server
     pub async fn start_services(
-        mut self,
+        self,
     ) -> anyhow::Result<()> {
         let endpoint_copy = self.endpoint.clone();
         let test_client_service: AnyhowJoinHandle = tokio::spawn(async move {
@@ -50,7 +50,7 @@ impl QuicTestClient {
                 let connecting = endpoint_copy.connect(self.proxy_addr, "localhost").unwrap();
                 let connection = tokio::time::timeout(connection_timeout, connecting).await??;
 
-                for si in 0..5 {
+                for _si in 0..5 {
                     let mut send = connection.open_uni().await?;
 
                     let raw = build_memo_tx_raw();

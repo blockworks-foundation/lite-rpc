@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use log::{error, info, trace};
+use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
@@ -20,8 +20,8 @@ use std::{
     },
 };
 use tokio::sync::{broadcast::Receiver, broadcast::Sender};
-use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
-use crate::tpu_utils::tpu_connection_path::TpuConnectionPath::QuicForwardProxyPath;
+
+
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =

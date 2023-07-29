@@ -1,29 +1,29 @@
-use std::cell::Cell;
+
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::Ordering::Relaxed;
-use std::thread;
+
 use std::time::Duration;
-use anyhow::{bail, Context};
-use async_trait::async_trait;
+use anyhow::{bail};
+
 use futures::FutureExt;
 use itertools::Itertools;
-use log::{debug, error, info, trace, warn};
-use quinn::{ClientConfig, Connection, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt};
+use log::{debug, error, info, trace};
+use quinn::{ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt};
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signer::Signer;
+
 use solana_sdk::signature::Keypair;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::time::timeout;
-use tracing::field::debug;
+
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
-use solana_lite_rpc_core::quic_connection_utils::{connection_stats, QuicConnectionParameters, QuicConnectionUtils, SkipServerVerification};
-use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
-use solana_lite_rpc_core::tx_store::TxStore;
+use solana_lite_rpc_core::quic_connection_utils::{connection_stats, SkipServerVerification};
+
+
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;
 
 #[derive(Clone, Copy, Debug)]
@@ -93,7 +93,7 @@ impl QuicProxyConnectionManager {
 
         info!("Starting very simple proxy thread");
 
-        let mut transaction_receiver = transaction_sender.subscribe();
+        let transaction_receiver = transaction_sender.subscribe();
 
         // TODO use it
         let exit_signal = Arc::new(AtomicBool::new(false));
@@ -135,7 +135,7 @@ impl QuicProxyConnectionManager {
 
         // note: this config must be aligned with quic-proxy's server config
         let mut transport_config = TransportConfig::default();
-        let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
+        let _timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         // no remotely-initiated streams required
         transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
         transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
@@ -175,7 +175,7 @@ impl QuicProxyConnectionManager {
 
 
                         let first_tx: Vec<u8> = match tx {
-                            Ok((sig, tx)) => {
+                            Ok((_sig, tx)) => {
                                 // if Self::check_for_confirmation(&txs_sent_store, sig) {
                                 //     // transaction is already confirmed/ no need to send
                                 //     continue;
@@ -193,9 +193,9 @@ impl QuicProxyConnectionManager {
 
                         let mut txs = vec![first_tx];
                         // TODO comment in
-                        let foo = PACKET_DATA_SIZE;
+                        let _foo = PACKET_DATA_SIZE;
                         for _ in 1..number_of_transactions_per_unistream {
-                            if let Ok((signature, tx)) = transaction_receiver.try_recv() {
+                            if let Ok((_signature, tx)) = transaction_receiver.try_recv() {
                                 // if Self::check_for_confirmation(&txs_sent_store, signature) {
                                 //     continue;
                                 // }
@@ -223,7 +223,7 @@ impl QuicProxyConnectionManager {
     }
 
     async fn send_copy_of_txs_to_quicproxy(raw_tx_batch: &Vec<Vec<u8>>, auto_connection: &AutoReconnect,
-                                           proxy_address: SocketAddr, tpu_target_address: SocketAddr,
+                                           _proxy_address: SocketAddr, tpu_target_address: SocketAddr,
                                            target_tpu_identity: Pubkey) -> anyhow::Result<()> {
 
         // TODO add timeout
@@ -276,7 +276,7 @@ impl QuicProxyConnectionManager {
      async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
          info!("sending {} bytes to proxy", proxy_request_raw.len());
 
-         let mut connecting = endpoint.connect(proxy_address, "localhost")?;
+         let connecting = endpoint.connect(proxy_address, "localhost")?;
          let connection = timeout(Duration::from_millis(500), connecting).await??;
          let mut send = connection.open_uni().await?;
 
