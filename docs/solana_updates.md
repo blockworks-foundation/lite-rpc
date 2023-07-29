@@ -15,10 +15,10 @@ Bootstrap not studied.
 | getVoteAccounts | None | update geyser to add epoch notification |
 | getRecentPerformanceSamples | None | Update geyser plugin, add the call. |
 | sendtransaction | Some is missing | need getclusternodes and getLeaderSchedule call |
-| getSignatureStatuses | Part. | Update geyser add process commitment notification. |
+| getSignatureStatuses | Part. | Update geyser add Processed commitment notification. |
 | getTransaction | geyser + Faithfull | None |
 | getRecentPrioritizationFees | geyser + local algo | None |
-| getslot |  geyser | Need processed commitment. |
+| getslot |  geyser | Need Processed commitment. |
 | getBlockHeight | geyser | None || getBlockHeight |  geyser     | None     |
 | getBlockTime | local algo | None |
 | getFirstAvailableBlock | faithful plugin + local algo | None |
@@ -77,4 +77,4 @@ Several possibilities exist to generate the needed data. This is the actual choi
 Notified when connecting and at each epoch beginning.
 
 - add geyser plugin call: getRecentPerformanceSamples
-- notify slot, Block Meta and BLock at *processes* commitment. Can send part of the data for the block.
+- notify slot, Block Meta and BLock at *Processed* commitment. Can send part of the data for the block.
