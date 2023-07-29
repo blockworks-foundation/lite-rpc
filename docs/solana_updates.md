@@ -8,25 +8,30 @@ Bootstrap not studied.
 | -------- | -------- | -------- |
 | getBlock |  geyser + Faithfull | None |
 | getBlocks |  geyser + Faithfull | Decide where the block indexes are. |
-| getSignaturesForAddress |  geyser + Faithfull | None (see evolutions) |
-| getclusternodes | None | update geyser or use gossip |
+| getSignaturesForAddress |  Geyser + Faithfull | None (see evolutions) |
+| getclusternodes | None | Update geyser or use gossip |
 | getepochinfo | None | Update geyser Epoch subscription |
-| getLeaderSchedule | None | update geyser see getVoteAccounts |
-| getVoteAccounts | None | update geyser to add epoch notification |
+| getLeaderSchedule | None | Update geyser see getVoteAccounts |
+| getVoteAccounts | None | Update geyser to add epoch notification |
 | getRecentPerformanceSamples | None | Update geyser plugin, add the call. |
-| sendtransaction | Some is missing | need getclusternodes and getLeaderSchedule call |
+| sendtransaction | Some is missing | Need getclusternodes and getLeaderSchedule call |
 | getSignatureStatuses | Part. | Update geyser add Processed commitment notification. |
 | getTransaction | geyser + Faithfull | None |
 | getRecentPrioritizationFees | geyser + local algo | None |
 | getslot |  geyser | Need Processed commitment. |
-| getBlockHeight | geyser | None || getBlockHeight |  geyser     | None     |
+| getBlockHeight | geyser | None || GetBlockHeight |  geyser     | None     |
 | getBlockTime | local algo | None |
-| getFirstAvailableBlock | faithful plugin + local algo | None |
+| getFirstAvailableBlock | Faithful plugin + local algo | None |
 | getLatestBlockhash | geyser | None |
 | isBlockhashValid | geyser | None |
-| getBlockCommitment | geyser + local algo | None |
+| getBlockCommitment | Geyser + local algo | None |
 
 ## Evolutions
+### getBlocks
+Need the Faithful block index. The index can be copied on in the RPC node and updated by the node. The query is done by the RPC node. Otherwise it's Faithful that keep its index and the service need to add the *getBlocks* method.
+
+To be defined.
+
 ### getclusternodes
 1) Geyser: :
   * a) propose the same get_cluster_nodes impl to get the cluster a any time
