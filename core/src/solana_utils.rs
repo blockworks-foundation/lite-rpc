@@ -17,8 +17,6 @@ use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender},
 };
 
-const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;
-
 pub struct SolanaUtils;
 
 impl SolanaUtils {
@@ -60,5 +58,4 @@ impl SolanaUtils {
             Ok(IdentityStakes::default())
         }
     }
-
 }

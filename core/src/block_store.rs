@@ -1,15 +1,13 @@
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use log::info;
-use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use std::sync::Arc;
-use tokio::{sync::RwLock, time::Instant};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Block {
-    hash: String,
-    info: BlockMeta,
+    blockhash: String,
+    meta: BlockMeta,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -21,46 +19,39 @@ pub struct BlockMeta {
     pub processed_local_time: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct BlockStore {
     blocks: Arc<DashMap<String, BlockMeta>>,
-    latest_block: Arc<DashMap<CommitmentLevel, Block>>,
+    latest_block: Arc<DashMap<CommitmentConfig, Block>>,
 }
 
 impl BlockStore {
-    pub fn new() -> Self {
-        Self {
-            blocks: Default::default(),
-            latest_block: Default::default(),
-        }
-    }
-
     pub fn get_block_info(&self, blockhash: &str) -> Option<BlockMeta> {
         self.blocks
             .get(blockhash)
             .map(|info| info.value().to_owned())
     }
 
-    fn get_latest_block(&self, commitment_config: &CommitmentConfig) -> (String, BlockMeta) {
+    pub fn get_latest_block(&self, commitment_config: &CommitmentConfig) -> Block {
         self.latest_block
-            .get(&commitment_config.commitment)
+            .get(&commitment_config)
             .expect("Blockstore is empty")
             .to_owned()
     }
 
     pub fn get_latest_blockhash(&self, commitment_config: &CommitmentConfig) -> String {
-        self.get_latest_block(commitment_config).0
+        self.get_latest_block(commitment_config).blockhash
     }
 
-    pub fn get_latest_block_info(&self, commitment_config: &CommitmentConfig) -> BlockMeta {
-        self.get_latest_block(commitment_config).1
+    pub fn get_latest_block_meta(&self, commitment_config: &CommitmentConfig) -> BlockMeta {
+        self.get_latest_block(commitment_config).meta
     }
 
     pub async fn add_block(
         &self,
         blockhash: String,
-        mut block_info: BlockMeta,
-        commitment_config: &CommitmentConfig,
+        mut meta: BlockMeta,
+        commitment_config: CommitmentConfig,
     ) {
         // create context for add block metric
         {
@@ -69,32 +60,29 @@ impl BlockStore {
         }
 
         // override timestamp from previous value, so we always keep the earliest (processed) timestamp around
-        if let Some(processed_block) = self.get_block_info(&blockhash.clone()) {
-            block_info.processed_local_time = processed_block.processed_local_time;
+        if let Some(processed_block) = self.get_block_info(&blockhash) {
+            meta.processed_local_time = processed_block.processed_local_time;
         }
 
         // save slot copy to avoid borrow issues
-        let slot = block_info.slot;
+        let slot = meta.slot;
 
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
-        self.blocks.insert(blockhash.clone(), block_info);
+        self.blocks.insert(blockhash.clone(), meta.clone());
 
         // update latest block
-        let latest_block_slot = self.get_latest_block_info(&commitment_config).slot;
+        let latest_block_slot = self.get_latest_block_meta(&commitment_config).slot;
         if slot > latest_block_slot {
-            self.latest_block.insert(
-                commitment_config.commitment,
-                (blockhash.clone(), self.get_block_info(&blockhash).unwrap()),
-            );
+            self.latest_block
+                .insert(commitment_config, Block { blockhash, meta });
         }
     }
 
     pub async fn clean(&self) {
-        let finalized_block_information = self
-            .get_latest_block_info(&CommitmentConfig::finalized())
-            .await;
+        let finalized_block_information =
+            self.get_latest_block_meta(&CommitmentConfig::finalized());
 
         let before_length = self.blocks.len();
         self.blocks

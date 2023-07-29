@@ -1,3 +1,19 @@
+use std::time::Duration;
+
+use anyhow::Context;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::config::RpcBlockConfig;
+use solana_sdk::{
+    borsh::try_from_slice_unchecked,
+    commitment_config::CommitmentConfig,
+    compute_budget::{self, ComputeBudgetInstruction},
+    slot_history::Slot,
+    transaction::TransactionError,
+};
+use solana_transaction_status::{
+    option_serializer::OptionSerializer, RewardType, TransactionDetails, UiTransactionEncoding,
+    UiTransactionStatusMeta,
+};
 use tokio::sync::broadcast;
 
 pub struct TransactionInfo {
@@ -14,6 +30,7 @@ pub struct ProcessedBlock {
     pub txs: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
     pub blockhash: String,
+    pub block_height: u64,
     pub parent_slot: Slot,
     pub block_time: u64,
 }
@@ -26,12 +43,11 @@ pub struct JsonRpcClient;
 
 impl JsonRpcClient {
     pub async fn process(
-        client: &RpcClient,
+        rpc_client: &RpcClient,
         slot: Slot,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<Result<ProcessedBlock, BlockProcessorError>> {
-        let block = self
-            .rpc_client
+        let block = rpc_client
             .get_block_with_config(
                 slot,
                 RpcBlockConfig {
@@ -145,6 +161,7 @@ impl JsonRpcClient {
 
         Ok(Ok(ProcessedBlock {
             txs,
+            block_height,
             leader_id,
             blockhash,
             parent_slot,
@@ -155,14 +172,13 @@ impl JsonRpcClient {
     pub async fn poll_slots(
         rpc_client: &RpcClient,
         slot_tx: broadcast::Sender<Slot>,
+        commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
         let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));
 
         loop {
             let slot = rpc_client
-                .get_slot_with_commitment(solana_sdk::commitment_config::CommitmentConfig {
-                    commitment: solana_sdk::commitment_config::CommitmentLevel::Processed,
-                })
+                .get_slot_with_commitment(commitment_config)
                 .await
                 .context("Error getting slot")?;
             // send

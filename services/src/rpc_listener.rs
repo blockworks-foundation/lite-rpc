@@ -1,6 +1,11 @@
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{atomic::Ordering, Arc};
 
-use solana_lite_rpc_core::{block_store::{Block, BlockStore}, jsonrpc_client::{JsonRpcClient, ProcessedBlock}, solana_utils::SolanaUtils, AtomicSlot};
+use solana_lite_rpc_core::{
+    block_store::{Block, BlockStore},
+    jsonrpc_client::{JsonRpcClient, ProcessedBlock},
+    solana_utils::SolanaUtils,
+    AtomicSlot,
+};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};
@@ -29,8 +34,12 @@ impl RpcListener {
         block_tx: UnboundedSender<ProcessedBlock>,
     ) -> anyhow::Result<()> {
         // retry the slot till it is at most 128 slots behind the current slot
-        while atomic_current_slot.load(Ordering::Relaxed).saturating_sub(slot) > 10 {
-            let Ok(processed_block) = JsonRpcClient::process(&self.rpc_client, slot, commitment_config)? {
+        while atomic_current_slot
+            .load(Ordering::Relaxed)
+            .saturating_sub(slot)
+            > 10
+        {
+            let Ok(processed_block) = JsonRpcClient::process(&self.rpc_client, slot, commitment_config)? else {
                 // retry after 10ms
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 continue;
@@ -40,7 +49,6 @@ impl RpcListener {
             block_tx.send(processed_block)?;
         }
     }
-
 
     pub async fn listen(
         self,
@@ -63,7 +71,9 @@ impl RpcListener {
             let block_tx = block_tx.clone();
 
             tokio::spawn(async {
-                self.process_slot(slot, curernt_slot, commitment_config, block_tx).await.unwrap();
+                self.process_slot(slot, curernt_slot, commitment_config, block_tx)
+                    .await
+                    .unwrap();
 
                 drop(permit);
             });

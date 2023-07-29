@@ -6,6 +6,10 @@ use crate::{
     DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
+use solana_lite_rpc_core::{
+    block_store::{Block, BlockMeta},
+    ledger::Ledger,
+};
 use solana_lite_rpc_services::{
     block_listenser::BlockListener,
     metrics_capture::MetricsCapture,
@@ -19,14 +23,7 @@ use solana_lite_rpc_services::{
 
 use anyhow::{bail, Context};
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
-use log::{error, info};
 use prometheus::{opts, register_int_counter, IntCounter};
-use solana_lite_rpc_core::{
-    block_store::{BlockMeta
-    quic_connection_utils::QuicConnectionParameters,
-    tx_store::{empty_tx_store, TxStore},
-    AnyhowJoinHandle,
-};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
@@ -62,15 +59,12 @@ lazy_static::lazy_static! {
 
 /// A bridge between clients and tpu
 pub struct LiteBridge {
-    pub rpc_client: Arc<RpcClient>,
-    pub tx_store: TxStore,
     // None if LiteBridge is not executed
     pub tx_send_channel: Option<Sender<(String, WireTransaction, u64)>>,
-    pub block_store: BlockStore,
+    pub ledger: Ledger,
     pub max_retries: usize,
     pub transaction_service_builder: TransactionServiceBuilder,
     pub transaction_service: Option<TransactionService>,
-    pub block_listner: BlockListener,
 }
 
 impl LiteBridge {
@@ -134,15 +128,14 @@ impl LiteBridge {
             DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
         );
 
+        let ledger = Ledger::default();
+
         Ok(Self {
-            rpc_client,
-            tx_store,
+            ledger,
             tx_send_channel: None,
-            block_store,
             max_retries,
             transaction_service_builder: transaction_manager,
             transaction_service: None,
-            block_listner,
         })
     }
 
@@ -289,12 +282,14 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (
-            blockhash,
-            BlockMeta
-                slot, block_height, ..
-            },
-        ) = self.block_store.get_latest_block(commitment_config).await;
+        let Block {
+            hash,
+            meta: BlockMeta { block_height, .. },
+        } = self
+            .ledger
+            .block_store
+            .get_latest_block(&commitment_config)
+            .await;
 
         info!("glb {blockhash} {slot} {block_height}");
 
@@ -339,11 +334,7 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let slot = self
-            .block_store
-            .get_latest_block_info(commitment)
-            .await
-            .slot;
+        let slot = self.ledger.clock.get_current_slot();
 
         Ok(RpcResponse {
             context: RpcResponseContext {
@@ -368,11 +359,7 @@ impl LiteRpcServer for LiteBridge {
 
         Ok(RpcResponse {
             context: RpcResponseContext {
-                slot: self
-                    .block_store
-                    .get_latest_block_info(CommitmentConfig::finalized())
-                    .await
-                    .slot,
+                slot: self.ledger.clock.get_current_slot(),
                 api_version: None,
             },
             value: sig_statuses,
@@ -421,7 +408,7 @@ impl LiteRpcServer for LiteBridge {
             .await
             .context("failed to get latest blockhash")
         {
-            self.tx_store.insert(
+            self.ledger.txs.insert(
                 airdrop_sig.clone(),
                 solana_lite_rpc_core::tx_store::TxMeta {
                     status: None,
@@ -437,8 +424,7 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (_, BlockMeta =
-            self.block_store.get_latest_block(commitment_config).await;
+        let (_, BlockMeta) = self.block_store.get_latest_block(commitment_config).await;
         Ok(slot)
     }
 
@@ -452,20 +438,11 @@ impl LiteRpcServer for LiteBridge {
         let sink = pending.accept().await?;
 
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
-        self.block_listner.signature_subscribe(
-            signature,
-            commitment_config,
-            Arc::new(jsonrpsee_sink),
-        );
+
+        self.ledger
+            .tx_subs
+            .subscribe((signature, commitment_config), Box::new(jsonrpsee_sink));
 
         Ok(())
-    }
-}
-
-impl Deref for LiteBridge {
-    type Target = RpcClient;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rpc_client
     }
 }

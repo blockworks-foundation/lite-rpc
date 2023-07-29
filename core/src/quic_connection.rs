@@ -2,8 +2,6 @@ use crate::{
     quic_connection_utils::{QuicConnectionError, QuicConnectionParameters, QuicConnectionUtils},
     rotating_queue::RotatingQueue,
 };
-use anyhow::bail;
-use log::warn;
 use quinn::{Connection, Endpoint};
 use solana_sdk::pubkey::Pubkey;
 use std::{
@@ -65,7 +63,7 @@ impl QuicConnection {
                 timeout_counters: Arc::new(AtomicU64::new(0)),
             }),
             None => {
-                bail!("Could not establish connection");
+                anyhow::bail!("Could not establish connection");
             }
         }
     }
@@ -169,7 +167,7 @@ impl QuicConnection {
                         break;
                     }
                 } else {
-                    warn!(
+                    log::warn!(
                         "Could not establish connection with {}",
                         self.identity.to_string()
                     );

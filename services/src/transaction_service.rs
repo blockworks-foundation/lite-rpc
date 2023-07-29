@@ -4,18 +4,13 @@
 use std::time::Duration;
 
 use crate::{
-    block_listenser::BlockListener,
     cleaner::Cleaner,
     tpu_utils::tpu_service::TpuService,
     transaction_replayer::{TransactionReplay, TransactionReplayer, MESSAGES_IN_REPLAY_QUEUE},
     tx_sender::{TransactionInfo, TxSender},
 };
 use anyhow::bail;
-use solana_lite_rpc_core::{
-    block_store::{BlockMeta
-    notifications::NotificationSender,
-    AnyhowJoinHandle,
-};
+use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_sdk::{commitment_config::CommitmentConfig, transaction::VersionedTransaction};
 use tokio::{
@@ -155,7 +150,7 @@ impl TransactionService {
         };
         let signature = tx.signatures[0];
 
-        let Some(BlockInfovalid_blockheight, .. }) = self
+        let Some(BlockInfo { valid_blockheight, .. }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {
