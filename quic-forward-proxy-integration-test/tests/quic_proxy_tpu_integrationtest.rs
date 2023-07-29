@@ -41,7 +41,7 @@ use tracing_subscriber::{filter::LevelFilter, fmt};
 use tracing_subscriber::fmt::format::FmtSpan;
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::tls_config_provicer::SelfSignedTlsConfigProvider;
-use solana_lite_rpc_quic_forward_proxy::ValidatorIdentity;
+use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
 use solana_lite_rpc_services::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 
 #[derive(Copy, Clone, Debug)]
@@ -367,7 +367,7 @@ fn configure_logging(verbose: bool) {
 async fn start_literpc_client(
     test_case_params: TestCaseParams,
     streamer_listen_addrs: SocketAddr,
-    literpc_validator_identity: ValidatorIdentity,
+    literpc_validator_identity: Arc<Keypair>,
 ) -> anyhow::Result<()> {
     info!("Start lite-rpc test client ...");
 
@@ -377,7 +377,7 @@ async fn start_literpc_client(
     let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
     let broadcast_sender = Arc::new(sender);
     let (certificate, key) = new_self_signed_tls_certificate(
-        literpc_validator_identity.get_keypair_for_tls().as_ref(),
+        literpc_validator_identity.as_ref(),
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
     )
     .expect("Failed to initialize QUIC connection certificates");
@@ -406,7 +406,7 @@ async fn start_literpc_client(
     );
 
     // this is the real streamer
-    connections_to_keep.insert(literpc_validator_identity.get_pubkey(), streamer_listen_addrs);
+    connections_to_keep.insert(literpc_validator_identity.pubkey(), streamer_listen_addrs);
 
     // get information about the optional validator identity stake
     // populated from get_stakes_for_identity()
