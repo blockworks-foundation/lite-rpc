@@ -14,7 +14,8 @@ use solana_lite_rpc_services::{
     block_listenser::BlockListener,
     metrics_capture::MetricsCapture,
     prometheus_sync::PrometheusSync,
-    tpu_utils::tpu_service::{TpuService, TpuServiceConfig}, tx_service::{tx_sender::TxSender, tx_batch_fwd::TxBatchFwd},
+    tpu_utils::tpu_service::{TpuService, TpuServiceConfig},
+    tx_service::{tx_batch_fwd::TxBatchFwd, tx_sender::TxSender},
 };
 
 use anyhow::{bail, Context};

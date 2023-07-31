@@ -13,3 +13,15 @@ pub struct Ledger {
     pub txs: TxStore,
     pub tx_subs: SubscriptionStore<TxSubKey>,
 }
+
+impl Ledger {
+    pub async fn clean(&self, ttl_duration: std::time::Duration) {
+        self.block_store.clean().await;
+        self.txs.clean(
+            self.block_store
+                .get_latest_block_meta(&CommitmentConfig::finalized())
+                .block_height,
+        );
+        self.tx_subs.clean(ttl_duration);
+    }
+}

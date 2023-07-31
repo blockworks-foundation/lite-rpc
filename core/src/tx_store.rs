@@ -13,7 +13,7 @@ pub struct TxMeta {
 pub struct TxStore(Arc<DashMap<String, TxMeta>>);
 
 impl TxStore {
-    pub fn cleanup(&self, current_finalized_blochash: u64) {
+    pub fn clean(&self, current_finalized_blochash: u64) {
         let length_before = self.len();
         self.retain(|_k, v| {
             let retain = v.last_valid_blockheight >= current_finalized_blochash;

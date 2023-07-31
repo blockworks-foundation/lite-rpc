@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{atomic::Ordering, Arc},
-};
+use std::sync::{atomic::Ordering, Arc};
 
 use anyhow::bail;
 use bytes::Bytes;
@@ -17,7 +14,7 @@ use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::{
     prelude::{
         subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterSlots,
-        SubscribeRequestFilterTransactions, SubscribeUpdateSlot,
+        SubscribeRequestFilterTransactions, SubscribeUpdateSlot, SubscribeUpdateTransaction,
     },
     tonic::service::Interceptor,
 };
