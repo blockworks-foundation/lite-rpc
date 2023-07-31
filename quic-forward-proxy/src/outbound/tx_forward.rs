@@ -78,7 +78,7 @@ pub async fn tx_forwarder(validator_identity: ValidatorIdentity, mut transaction
                         debug!("forwarding transaction batch of size {} to address {}", transactions_batch.len(), packet.tpu_address);
 
                         let result = timeout_fallback(send_tx_batch_to_tpu(&auto_connection, &transactions_batch)).await
-                            .context("send txs to tpu");
+                            .context(format!("send txs to tpu node {}", auto_connection.target_address));
 
                         if result.is_err() {
                             warn!("got send_txs_to_tpu_static error {:?} - loop over errors", result);
@@ -101,9 +101,10 @@ pub async fn tx_forwarder(validator_identity: ValidatorIdentity, mut transaction
 
         let agent_channel = agents.get(&tpu_address).unwrap();
 
-        agent_channel.send(forward_packet).await.unwrap();
+        timeout_fallback(agent_channel.send(forward_packet)).await
+            .context("send to agent channel")??;
 
-    } // -- loop over transactions from ustream channels
+    } // -- loop over transactions from upstream channels
 
     // not reachable
 }
@@ -174,7 +175,7 @@ async fn send_tx_batch_to_tpu(
             tx_raw
         })
             .map(|tx_raw| {
-                auto_connection.send(tx_raw) // ignores error
+                auto_connection.send_uni(tx_raw) // ignores error
             });
 
         join_all(all_send_fns).await;

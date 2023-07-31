@@ -41,12 +41,14 @@ impl ProxyListener {
             let forwarder_channel_copy = forwarder_channel.clone();
             tokio::spawn(async move {
                 let connection = connecting.await.context("handshake").unwrap();
-                match Self::accept_client_connection(connection, forwarder_channel_copy,
-                                               exit_signal)
+                match Self::accept_client_connection(
+                    connection, forwarder_channel_copy, exit_signal)
                     .await {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        debug!("connection handles correctly");
+                    }
                     Err(err) => {
-                        error!("setup connection failed: {reason}", reason = err);
+                        error!("failed to accect connection from client: {reason} - skip", reason = err);
                     }
                 }
             });

@@ -24,7 +24,7 @@ RUST_LOG="error,solana_streamer::nonblocking::quic=debug" solana-test-validator 
 ```
 3. run quic proxy
 ```bash
-RUST_LOG=debug cargo run --bin solana-lite-rpc-quic-forward-proxy -- --proxy-rpc-addr 0.0.0.0:11111 --identity-keypair /pathto-test-ledger/validator-keypair.json
+RUST_LOG=debug cargo run --bin solana-lite-rpc-quic-forward-proxy -- --proxy-listen-addr 0.0.0.0:11111 --identity-keypair /pathto-test-ledger/validator-keypair.json
 ```
 2. run lite-rpc
 ```bash
