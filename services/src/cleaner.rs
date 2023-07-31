@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{block_listenser::BlockListener, tx_sender::TxSender};
+use crate::{block_listenser::BlockListener, tx_sender::TxBatcher};
 use log::info;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::block_store::BlockStore;
@@ -14,14 +14,14 @@ lazy_static::lazy_static! {
 /// Background worker which cleans up memory  
 #[derive(Clone)]
 pub struct Cleaner {
-    tx_sender: TxSender,
+    tx_sender: TxBatcher,
     block_listenser: BlockListener,
     block_store: BlockStore,
 }
 
 impl Cleaner {
     pub fn new(
-        tx_sender: TxSender,
+        tx_sender: TxBatcher,
         block_listenser: BlockListener,
         block_store: BlockStore,
     ) -> Self {

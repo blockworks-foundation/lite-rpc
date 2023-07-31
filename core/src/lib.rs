@@ -16,5 +16,7 @@ pub mod subscription_sink;
 pub mod subscription_store;
 pub mod tx_store;
 
+pub type WireTx = Vec<u8>;
+
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;
 pub type AtomicSlot = Arc<AtomicU64>;

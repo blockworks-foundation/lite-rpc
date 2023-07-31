@@ -5,7 +5,9 @@ pub mod metrics_capture;
 pub mod prometheus_sync;
 pub mod rpc_listener;
 pub mod slot_clock;
+pub mod spawner;
 pub mod tpu_utils;
-pub mod transaction_replayer;
-pub mod transaction_service;
-pub mod tx_sender;
+pub mod tx_service;
+
+/// 25 slots in 10s send to little more leaders
+pub const DEFAULT_FANOUT_SIZE: u64 = 16;

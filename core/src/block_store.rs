@@ -34,7 +34,7 @@ impl BlockStore {
 
     pub fn get_latest_block(&self, commitment_config: &CommitmentConfig) -> Block {
         self.latest_block
-            .get(&commitment_config)
+            .get(commitment_config)
             .expect("Blockstore is empty")
             .to_owned()
     }
@@ -47,18 +47,16 @@ impl BlockStore {
         self.get_latest_block(commitment_config).meta
     }
 
+    pub fn cotains_block(&self, blockhash: &str) -> bool {
+        self.blocks.contains_key(blockhash)
+    }
+
     pub async fn add_block(
         &self,
         blockhash: String,
         mut meta: BlockMeta,
         commitment_config: CommitmentConfig,
     ) {
-        // create context for add block metric
-        {
-            //            let mut last_add_block_metric = self.last_add_block_metric.write().await;
-            //            *last_add_block_metric = Instant::now();
-        }
-
         // override timestamp from previous value, so we always keep the earliest (processed) timestamp around
         if let Some(processed_block) = self.get_block_info(&blockhash) {
             meta.processed_local_time = processed_block.processed_local_time;
@@ -70,7 +68,7 @@ impl BlockStore {
         // Write to block store first in order to prevent
         // any race condition i.e prevent some one to
         // ask the map what it doesn't have rn
-        self.blocks.insert(blockhash.clone(), meta.clone());
+        self.blocks.insert(blockhash.clone(), meta);
 
         // update latest block
         let latest_block_slot = self.get_latest_block_meta(&commitment_config).slot;

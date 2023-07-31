@@ -1,8 +1,6 @@
 use std::time::{Duration, Instant};
 
-use anyhow::bail;
 use chrono::Utc;
-use log::{info, trace, warn};
 
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
@@ -13,8 +11,10 @@ use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 use crate::tpu_utils::tpu_service::TpuService;
 use solana_lite_rpc_core::{
+    ledger::Ledger,
     notifications::{NotificationMsg, NotificationSender, TransactionNotification},
-    tx_store::{TxMeta, TxStore},
+    tx_store::TxMeta,
+    WireTx,
 };
 
 lazy_static::lazy_static! {
@@ -33,41 +33,34 @@ lazy_static::lazy_static! {
 
 }
 
-pub type WireTransaction = Vec<u8>;
-
-#[derive(Clone, Debug)]
-pub struct TransactionInfo {
-    pub signature: String,
-    pub slot: Slot,
-    pub transaction: WireTransaction,
-    pub last_valid_block_height: u64,
-}
 // making 250 as sleep time will effectively make lite rpc send
 // (1000/250) * 5 * 512 = 10240 tps
 const INTERVAL_PER_BATCH_IN_MS: u64 = 50;
 const MAX_BATCH_SIZE_IN_PER_INTERVAL: usize = 2000;
 
-/// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
-#[derive(Clone)]
-pub struct TxSender {
-    /// Tx(s) forwarded to tpu
-    txs_sent_store: TxStore,
-    /// TpuClient to call the tpu port
-    tpu_service: TpuService,
+#[derive(Clone, Debug)]
+pub struct TxInfo {
+    pub signature: String,
+    pub slot: Slot,
+    pub tx: WireTx,
+    pub last_valid_blockheight: u64,
 }
 
-impl TxSender {
-    pub fn new(txs_sent_store: TxStore, tpu_service: TpuService) -> Self {
-        Self {
-            tpu_service,
-            txs_sent_store,
-        }
-    }
+/// batch txs and send them tpu
+/// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
+#[derive(Clone)]
+pub struct TxBatchFwd {
+    /// Tx(s) forwarded to tpu
+    pub ledger: Ledger,
+    /// TpuClient to call the tpu port
+    pub tpu_service: TpuService,
+}
 
+impl TxBatchFwd {
     /// retry enqued_tx(s)
     async fn forward_txs(
         &self,
-        transaction_infos: Vec<TransactionInfo>,
+        transaction_infos: Vec<TxInfo>,
         notifier: Option<NotificationSender>,
     ) {
         if transaction_infos.is_empty() {
@@ -77,32 +70,29 @@ impl TxSender {
         let histo_timer = TT_SENT_TIMER.start_timer();
         let start = Instant::now();
 
-        let tpu_client = self.tpu_service.clone();
-        let txs_sent = self.txs_sent_store.clone();
-
         for transaction_info in &transaction_infos {
-            trace!("sending transaction {}", transaction_info.signature);
-            txs_sent.insert(
+            log::trace!("sending transaction {}", transaction_info.signature);
+            self.ledger.txs.insert(
                 transaction_info.signature.clone(),
                 TxMeta {
                     status: None,
-                    last_valid_blockheight: transaction_info.last_valid_block_height,
+                    last_valid_blockheight: transaction_info.last_valid_blockheight,
                 },
             );
         }
 
-        let forwarded_slot = tpu_client.get_estimated_slot();
+        let forwarded_slot = self.ledger.clock.get_estimated_slot();
         let forwarded_local_time = Utc::now();
 
         let mut quic_responses = vec![];
         for transaction_info in transaction_infos.iter() {
-            txs_sent.insert(
+            self.ledger.txs.insert(
                 transaction_info.signature.clone(),
-                TxMeta::new(transaction_info.last_valid_block_height),
+                TxMeta::new(transaction_info.last_valid_blockheight),
             );
-            let quic_response = match tpu_client.send_transaction(
+            let quic_response = match self.tpu_client.send_transaction(
                 transaction_info.signature.clone(),
-                transaction_info.transaction.clone(),
+                transaction_info.tx.clone(),
             ) {
                 Ok(_) => {
                     TXS_SENT.inc_by(1);
@@ -110,7 +100,7 @@ impl TxSender {
                 }
                 Err(err) => {
                     TXS_SENT_ERRORS.inc_by(1);
-                    warn!("{err}");
+                    log::warn!("{err}");
                     0
                 }
             };
@@ -135,7 +125,7 @@ impl TxSender {
             let _ = notifier.send(NotificationMsg::TxNotificationMsg(notification_msgs));
         }
         histo_timer.observe_duration();
-        trace!(
+        log::trace!(
             "It took {} ms to send a batch of {} transaction(s)",
             start.elapsed().as_millis(),
             transaction_infos.len()
@@ -145,7 +135,7 @@ impl TxSender {
     /// retry and confirm transactions every 2ms (avg time to confirm tx)
     pub fn execute(
         self,
-        mut recv: Receiver<TransactionInfo>,
+        mut recv: Receiver<TxInfo>,
         notifier: Option<NotificationSender>,
     ) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
@@ -178,8 +168,7 @@ impl TxSender {
                                     .max(1);
                             }
                             None => {
-                                log::error!("Channel Disconnected");
-                                bail!("Channel Disconnected");
+                                anyhow::bail!("Channel Disconnected");
                             }
                         },
                         Err(_) => {
@@ -197,20 +186,5 @@ impl TxSender {
                 self.forward_txs(transaction_infos, notifier.clone()).await;
             }
         })
-    }
-
-    pub fn cleanup(&self, current_finalized_blochash: u64) {
-        let length_before = self.txs_sent_store.len();
-        self.txs_sent_store.retain(|_k, v| {
-            let retain = v.last_valid_blockheight >= current_finalized_blochash;
-            if !retain && v.status.is_none() {
-                TX_TIMED_OUT.inc();
-            }
-            retain
-        });
-        info!(
-            "Cleaned {} transactions",
-            length_before - self.txs_sent_store.len()
-        );
     }
 }
