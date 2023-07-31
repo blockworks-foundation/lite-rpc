@@ -8,7 +8,7 @@ pub struct Args {
     #[arg(short = 'k', long, default_value_t = String::new())]
     pub identity_keypair: String,
     #[arg(short = 'l', long)]
-    pub proxy_rpc_addr: String,
+    pub proxy_listen_addr: String,
 }
 
 // note this is duplicated from lite-rpc module

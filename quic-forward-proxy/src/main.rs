@@ -8,22 +8,22 @@ use crate::cli::{Args, get_identity_keypair};
 use crate::proxy::QuicForwardProxy;
 
 pub use tls_config_provicer::SelfSignedTlsConfigProvider;
-use crate::validator_identity::ValidatorIdentity;
+use crate::outbound::validator_identity::ValidatorIdentity;
 
 
 pub mod quic_util;
 pub mod tls_config_provicer;
 pub mod proxy;
 pub mod proxy_request_format;
-pub mod tpu_quic_client;
 pub mod cli;
 pub mod test_client;
 mod util;
 mod tx_store;
-mod identity_stakes;
 mod quic_connection_utils;
 mod quinn_auto_reconnect;
-mod validator_identity;
+mod outbound;
+mod inbound;
+mod share;
 
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
@@ -32,7 +32,7 @@ pub async fn main() -> anyhow::Result<()> {
 
     let Args {
         identity_keypair,
-        proxy_rpc_addr,
+        proxy_listen_addr: proxy_rpc_addr,
     } = Args::parse();
 
     dotenv().ok();

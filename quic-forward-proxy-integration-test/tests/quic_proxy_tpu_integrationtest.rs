@@ -39,9 +39,9 @@ use tokio::time::{sleep};
 use tracing_subscriber::util::SubscriberInitExt;
 
 use tracing_subscriber::fmt::format::FmtSpan;
+use solana_lite_rpc_quic_forward_proxy::outbound::validator_identity::ValidatorIdentity;
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::tls_config_provicer::SelfSignedTlsConfigProvider;
-use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
 use solana_lite_rpc_services::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 
 #[derive(Copy, Clone, Debug)]
@@ -680,8 +680,8 @@ async fn start_quic_proxy(proxy_listen_addr: SocketAddr) -> anyhow::Result<()> {
     let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let random_unstaked_validator_identity = ValidatorIdentity::new(None);
 
-    let tls_config = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
-    let proxy_service = QuicForwardProxy::new(proxy_listen_addr, &tls_config, random_unstaked_validator_identity)
+    let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());
+    let proxy_service = QuicForwardProxy::new(proxy_listen_addr, tls_config, random_unstaked_validator_identity)
         .await?
         .start_services();
 
