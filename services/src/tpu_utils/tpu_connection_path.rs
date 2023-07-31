@@ -2,13 +2,6 @@
 use std::fmt::Display;
 use std::net::SocketAddr;
 
-
-
-
-
-
-
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TpuConnectionPath {
     QuicDirectPath,

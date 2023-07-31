@@ -21,8 +21,6 @@ use std::{
 };
 use tokio::sync::{broadcast::Receiver, broadcast::Sender};
 
-
-
 lazy_static::lazy_static! {
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
@@ -161,27 +159,7 @@ impl ActiveConnection {
                     tokio::spawn(async move {
                         task_counter.fetch_add(1, Ordering::Relaxed);
                         NB_QUIC_TASKS.inc();
-
-                         // TODO split to new service
-
-                         connection_pool.send_transaction_batch(txs).await;
-
-                        // match self.tpu_connection_path {
-                        //     QuicDirect => {
-                        //         connection_pool.send_transaction_batch(txs).await;
-                        //     },
-                        //     QuicForwardProxy { forward_proxy_address } => {
-                        //         info!("Sending copy of transaction batch of {} to tpu with identity {} to quic proxy",
-                        //             txs.len(), identity);
-                        //         Self::send_copy_of_txs_to_quicproxy(
-                        //             &txs, endpoint.clone(),
-                        //             // proxy address
-                        //             forward_proxy_address,
-                        //             tpu_address,
-                        //             identity.clone()).await.unwrap();
-                        //     }
-                        // }
-
+                        connection_pool.send_transaction_batch(txs).await;
                         NB_QUIC_TASKS.dec();
                         task_counter.fetch_sub(1, Ordering::Relaxed);
                     });
@@ -228,7 +206,6 @@ pub struct TpuConnectionManager {
     identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitChannel>>>,
 }
 
-
 impl TpuConnectionManager {
     pub async fn new(
         certificate: rustls::Certificate,
@@ -237,7 +214,6 @@ impl TpuConnectionManager {
     ) -> Self {
         let number_of_clients = fanout * 2;
         Self {
-            // TODO
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
             })
