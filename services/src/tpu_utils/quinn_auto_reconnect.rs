@@ -64,7 +64,7 @@ impl AutoReconnect {
             Some(current) => {
 
                 if current.close_reason().is_some() {
-                    warn!("Connection i s closed for reason: {:?}", current.close_reason());
+                    warn!("Connection is closed for reason: {:?}", current.close_reason());
                     let new_connection = self.create_connection().await;
                     let prev_stable_id = current.stable_id();
                     *lock = Some(new_connection.clone());
