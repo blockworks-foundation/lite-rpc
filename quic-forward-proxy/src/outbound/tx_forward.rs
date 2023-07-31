@@ -7,12 +7,14 @@ use fan::tokio::mpsc::FanOut;
 use std::time::Duration;
 use futures::future::join_all;
 use itertools::Itertools;
-use quinn::Endpoint;
+use quinn::{ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt};
+use solana_sdk::quic::QUIC_MAX_TIMEOUT_MS;
 use solana_sdk::transaction::VersionedTransaction;
+use solana_streamer::nonblocking::quic::ALPN_TPU_PROTOCOL_ID;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::mpsc::{channel, Receiver};
 use tokio::time::timeout;
-use crate::tpu_quic_connection_utils::QuicConnectionUtils;
+use crate::quic_util::SkipServerVerification;
 use crate::quinn_auto_reconnect::AutoReconnect;
 use crate::shared::ForwardPacket;
 use crate::validator_identity::ValidatorIdentity;
@@ -133,7 +135,7 @@ async fn new_endpoint_with_validator_identity(validator_identity: ValidatorIdent
     )
         .expect("Failed to initialize QUIC connection certificates");
 
-    let endpoint_outbound = QuicConnectionUtils::create_tpu_client_endpoint(certificate.clone(), key.clone());
+    let endpoint_outbound = create_tpu_client_endpoint(certificate.clone(), key.clone());
 
     endpoint_outbound
 }
@@ -146,7 +148,43 @@ pub const MAX_TRANSACTIONS_PER_BATCH: usize = 10;
 pub const MAX_BYTES_PER_BATCH: usize = 10;
 const MAX_PARALLEL_STREAMS: usize = 6;
 
+fn create_tpu_client_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
+    let mut endpoint = {
+        let client_socket =
+            solana_net_utils::bind_in_range(IpAddr::V4(Ipv4Addr::UNSPECIFIED), (8000, 10000))
+                .expect("create_endpoint bind_in_range")
+                .1;
+        let config = EndpointConfig::default();
+        quinn::Endpoint::new(config, None, client_socket, TokioRuntime)
+            .expect("create_endpoint quinn::Endpoint::new")
+    };
 
+    let mut crypto = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_custom_certificate_verifier(SkipServerVerification::new())
+        .with_single_cert(vec![certificate], key)
+        .expect("Failed to set QUIC client certificates");
+
+    crypto.enable_early_data = true;
+
+    crypto.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec()];
+
+    let mut config = ClientConfig::new(Arc::new(crypto));
+
+    // note: this should be aligned with solana quic server's endpoint config
+    let mut transport_config = TransportConfig::default();
+    // no remotely-initiated streams required
+    transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
+    transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
+    let timeout = IdleTimeout::try_from(Duration::from_millis(QUIC_MAX_TIMEOUT_MS as u64)).unwrap();
+    transport_config.max_idle_timeout(Some(timeout));
+    transport_config.keep_alive_interval(None);
+    config.transport_config(Arc::new(transport_config));
+
+    endpoint.set_default_client_config(config);
+
+    endpoint
+}
 
 fn serialize_to_vecvec(transactions: &Vec<VersionedTransaction>) -> Vec<Vec<u8>> {
     transactions.iter().map(|tx| {

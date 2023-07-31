@@ -20,7 +20,6 @@ pub mod cli;
 pub mod test_client;
 mod util;
 mod tx_store;
-mod tpu_quic_connection_utils;
 mod quinn_auto_reconnect;
 mod outbound;
 mod inbound;
