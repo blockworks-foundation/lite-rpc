@@ -183,7 +183,7 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "derivative",
- "num-traits",
+ "num-traits 0.2.15",
  "zeroize",
 ]
 
@@ -199,7 +199,7 @@ dependencies = [
  "ark-std",
  "derivative",
  "num-bigint 0.4.3",
- "num-traits",
+ "num-traits 0.2.15",
  "paste",
  "rustc_version 0.3.3",
  "zeroize",
@@ -222,7 +222,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db2fd794a08ccb318058009eefdf15bcaaaaf6f8161eb3345f907222bac38b20"
 dependencies = [
  "num-bigint 0.4.3",
- "num-traits",
+ "num-traits 0.2.15",
  "quote 1.0.26",
  "syn 1.0.109",
 ]
@@ -243,7 +243,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1df2c09229cbc5a028b1d70e00fdb2acee28b1055dfb5ca73eea49c5a25c4e7c"
 dependencies = [
- "num-traits",
+ "num-traits 0.2.15",
  "rand 0.8.5",
 ]
 
@@ -281,7 +281,7 @@ dependencies = [
  "asn1-rs-impl",
  "displaydoc",
  "nom",
- "num-traits",
+ "num-traits 0.2.15",
  "rusticata-macros",
  "thiserror",
  "time 0.3.20",
@@ -745,7 +745,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-integer",
- "num-traits",
+ "num-traits 0.2.15",
  "serde",
  "time 0.1.45",
  "wasm-bindgen",
@@ -977,6 +977,15 @@ name = "core-foundation-sys"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e496a50fda8aacccc86d7529e2c1e0892dbd0f898a6b5645b5561b89c3210efa"
+
+[[package]]
+name = "countmap"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ef2a403c4af585607826502480ab6e453f320c230ef67255eee21f0cc72c0a6"
+dependencies = [
+ "num-traits 0.1.43",
+]
 
 [[package]]
 name = "cpufeatures"
@@ -1226,7 +1235,7 @@ dependencies = [
  "displaydoc",
  "nom",
  "num-bigint 0.4.3",
- "num-traits",
+ "num-traits 0.2.15",
  "rusticata-macros",
 ]
 
@@ -2467,6 +2476,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "matchers"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
+dependencies = [
+ "regex-automata",
+]
+
+[[package]]
 name = "matchit"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2646,7 +2664,7 @@ dependencies = [
  "num-integer",
  "num-iter",
  "num-rational",
- "num-traits",
+ "num-traits 0.2.15",
 ]
 
 [[package]]
@@ -2657,7 +2675,7 @@ checksum = "090c7f9998ee0ff65aa5b723e4009f7b217707f1fb5ea551329cc4d6231fb304"
 dependencies = [
  "autocfg",
  "num-integer",
- "num-traits",
+ "num-traits 0.2.15",
 ]
 
 [[package]]
@@ -2668,7 +2686,7 @@ checksum = "f93ab6289c7b344a8a9f60f88d80aa20032336fe78da341afc91c8a2341fc75f"
 dependencies = [
  "autocfg",
  "num-integer",
- "num-traits",
+ "num-traits 0.2.15",
 ]
 
 [[package]]
@@ -2678,7 +2696,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6b19411a9719e753aff12e5187b74d60d3dc449ec3f4dc21e3989c3f554bc95"
 dependencies = [
  "autocfg",
- "num-traits",
+ "num-traits 0.2.15",
 ]
 
 [[package]]
@@ -2699,7 +2717,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "225d3389fb3509a24c93f5c29eb6bde2586b98d9f016636dff58d7c6f7569cd9"
 dependencies = [
  "autocfg",
- "num-traits",
+ "num-traits 0.2.15",
 ]
 
 [[package]]
@@ -2710,7 +2728,7 @@ checksum = "7d03e6c028c5dc5cac6e2dec0efda81fc887605bb3d884578bb6d6bf7514e252"
 dependencies = [
  "autocfg",
  "num-integer",
- "num-traits",
+ "num-traits 0.2.15",
 ]
 
 [[package]]
@@ -2722,7 +2740,16 @@ dependencies = [
  "autocfg",
  "num-bigint 0.2.6",
  "num-integer",
- "num-traits",
+ "num-traits 0.2.15",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "92e5113e9fd4cc14ded8e499429f396a20f98c772a47cc8622a736e1ec843c31"
+dependencies = [
+ "num-traits 0.2.15",
 ]
 
 [[package]]
@@ -3442,6 +3469,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-automata"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
+dependencies = [
+ "regex-syntax",
+]
+
+[[package]]
 name = "regex-syntax"
 version = "0.6.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4023,7 +4059,7 @@ dependencies = [
  "bytemuck",
  "log",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "rustc_version 0.4.0",
  "serde",
  "solana-frozen-abi",
@@ -4213,10 +4249,10 @@ dependencies = [
  "bs58",
  "bytes",
  "chrono",
+ "countmap",
  "crossbeam-channel",
  "dashmap",
  "futures",
- "futures-util",
  "lazy_static",
  "log",
  "prometheus",
@@ -4357,7 +4393,7 @@ dependencies = [
  "memoffset 0.8.0",
  "num-bigint 0.4.3",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "parking_lot",
  "rand 0.7.3",
  "rand_chacha 0.2.2",
@@ -4393,7 +4429,7 @@ dependencies = [
  "libloading",
  "log",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "rand 0.7.3",
  "rustc_version 0.4.0",
  "serde",
@@ -4479,7 +4515,7 @@ dependencies = [
  "dialoguer",
  "log",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "parking_lot",
  "qstring",
  "semver 1.0.16",
@@ -4577,7 +4613,7 @@ dependencies = [
  "log",
  "memmap2",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "num_enum",
  "pbkdf2 0.11.0",
  "qstring",
@@ -4755,7 +4791,7 @@ dependencies = [
  "bincode",
  "log",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "rustc_version 0.4.0",
  "serde",
  "serde_derive",
@@ -4787,7 +4823,7 @@ dependencies = [
  "lazy_static",
  "merlin",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "rand 0.7.3",
  "serde",
  "serde_json",
@@ -4843,7 +4879,7 @@ dependencies = [
  "assert_matches",
  "borsh",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "solana-program",
  "spl-token",
  "spl-token-2022",
@@ -4868,7 +4904,7 @@ dependencies = [
  "arrayref",
  "bytemuck",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "num_enum",
  "solana-program",
  "thiserror",
@@ -4883,7 +4919,7 @@ dependencies = [
  "arrayref",
  "bytemuck",
  "num-derive",
- "num-traits",
+ "num-traits 0.2.15",
  "num_enum",
  "solana-program",
  "solana-zk-token-sdk",
@@ -5415,10 +5451,14 @@ version = "0.3.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6176eae26dd70d0c919749377897b54a9276bd7061339665dd68777926b5a70"
 dependencies = [
+ "matchers",
  "nu-ansi-term",
+ "once_cell",
+ "regex",
  "sharded-slab",
  "smallvec",
  "thread_local",
+ "tracing",
  "tracing-core",
  "tracing-log",
 ]
