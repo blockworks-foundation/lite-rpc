@@ -31,7 +31,7 @@ impl AutoReconnect {
         send_stream.write_all(payload.as_slice()).await?;
         send_stream.finish().await?;
 
-        let answer = recv_stream.read_to_end(64 * 1024).await?;
+        let answer = recv_stream.reread_to_end(64 * 1024).await?;
 
         Ok(answer)
     }

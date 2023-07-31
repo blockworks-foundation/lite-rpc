@@ -57,12 +57,14 @@ pub async fn tx_forwarder(validator_identity: ValidatorIdentity, mut transaction
                 let endpoint_copy = endpoint.clone();
                 tokio::spawn(async move {
                     debug!("Start Quic forwarder agent #{} for TPU {}", connection_idx, tpu_address);
+                    if exit_signal.load(Ordering::Relaxed) {
+                        return;
+                    }
 
                     let auto_connection = AutoReconnect::new(endpoint_copy, tpu_address);
 
                     let exit_signal_copy = exit_signal.clone();
-                    loop {
-                        let packet = receiver.recv().await.unwrap();
+                    while let Some(packet) = receiver.recv().await {
                         assert_eq!(packet.tpu_address, tpu_address, "routing error");
 
                         let mut transactions_batch = packet.transactions;
@@ -84,8 +86,9 @@ pub async fn tx_forwarder(validator_identity: ValidatorIdentity, mut transaction
                             debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
                         }
 
-                    }
+                    } // -- while all packtes from channel
 
+                    info!("Quic forwarder agent #{} for TPU {} exited", connection_idx, tpu_address);
                 });
 
             }
