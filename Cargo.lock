@@ -4002,6 +4002,7 @@ dependencies = [
  "bs58",
  "bytes",
  "chrono",
+ "crossbeam-channel",
  "dashmap",
  "futures",
  "lazy_static",
@@ -4023,6 +4024,8 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
