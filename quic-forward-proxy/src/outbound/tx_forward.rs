@@ -12,7 +12,7 @@ use solana_sdk::transaction::VersionedTransaction;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::mpsc::{channel, Receiver};
 use tokio::time::timeout;
-use crate::quic_connection_utils::QuicConnectionUtils;
+use crate::tpu_quic_connection_utils::QuicConnectionUtils;
 use crate::quinn_auto_reconnect::AutoReconnect;
 use crate::shared::ForwardPacket;
 use crate::validator_identity::ValidatorIdentity;

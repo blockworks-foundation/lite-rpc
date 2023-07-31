@@ -18,7 +18,7 @@ pub mod cli;
 pub mod test_client;
 mod util;
 mod tx_store;
-mod quic_connection_utils;
+mod tpu_quic_connection_utils;
 mod quinn_auto_reconnect;
 mod outbound;
 mod inbound;
@@ -37,7 +37,7 @@ pub async fn main() -> anyhow::Result<()> {
 
     dotenv().ok();
 
-    // TODO build args struct dedicyted to proxy
+    // TODO build args struct dedicated to proxy
     let proxy_listener_addr = proxy_rpc_addr.parse().unwrap();
     let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let validator_identity =

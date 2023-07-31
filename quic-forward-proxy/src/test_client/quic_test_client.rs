@@ -11,7 +11,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use tokio::io::AsyncWriteExt;
 use crate::proxy_request_format::TpuForwardingRequest;
-use crate::quic_connection_utils::SkipServerVerification;
+use crate::tpu_quic_connection_utils::SkipServerVerification;
 use crate::quic_util::ALPN_TPU_FORWARDPROXY_PROTOCOL_ID;
 use crate::tls_config_provider::ProxyTlsConfigProvider;
 
