@@ -9,7 +9,8 @@ use solana_sdk::packet::PACKET_DATA_SIZE;
 use tokio::sync::mpsc::Sender;
 use crate::proxy_request_format::TpuForwardingRequest;
 use crate::shared::ForwardPacket;
-use crate::tls_config_provider::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
+use crate::tls_config_provider_server::ProxyTlsConfigProvider;
+use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use crate::util::FALLBACK_TIMEOUT;
 
 // TODO tweak this value - solana server sets 256

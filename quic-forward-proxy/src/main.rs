@@ -5,13 +5,15 @@ use dotenv::dotenv;
 use log::info;
 use crate::cli::{Args, get_identity_keypair};
 use crate::proxy::QuicForwardProxy;
+use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 
-pub use tls_config_provider::SelfSignedTlsConfigProvider;
 use crate::validator_identity::ValidatorIdentity;
 
 
 pub mod quic_util;
-pub mod tls_config_provider;
+pub mod tls_config_provider_client;
+pub mod tls_config_provider_server;
+pub mod tls_self_signed_pair_generator;
 pub mod proxy;
 pub mod proxy_request_format;
 pub mod cli;

@@ -13,8 +13,8 @@ use tokio::io::AsyncWriteExt;
 use crate::proxy_request_format::TpuForwardingRequest;
 use crate::tpu_quic_connection_utils::SkipServerVerification;
 use crate::quic_util::ALPN_TPU_FORWARDPROXY_PROTOCOL_ID;
-use crate::tls_config_provider::ProxyTlsConfigProvider;
-
+use crate::tls_config_provider_server::ProxyTlsConfigProvider;
+use crate::tls_config_provider_client::TpuCLientTlsConfigProvider;
 use crate::util::AnyhowJoinHandle;
 
 pub struct QuicTestClient {
@@ -25,7 +25,7 @@ pub struct QuicTestClient {
 impl QuicTestClient {
     pub async fn new_with_endpoint(
         proxy_addr: SocketAddr,
-        tls_config: &impl ProxyTlsConfigProvider
+        tls_config: &impl TpuCLientTlsConfigProvider
     ) -> anyhow::Result<Self> {
         let client_crypto = tls_config.get_client_tls_crypto_config();
         let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse().unwrap())?;
