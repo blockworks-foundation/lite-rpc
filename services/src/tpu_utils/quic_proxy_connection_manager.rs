@@ -251,7 +251,7 @@ impl QuicProxyConnectionManager {
 
             let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
 
-            let send_result = auto_connection.send(proxy_request_raw).await;
+            let send_result = auto_connection.send_uni(proxy_request_raw).await;
 
             // let send_result =
             //     timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw))
