@@ -1,10 +1,11 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use log::{debug, info, warn};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use fan::tokio::mpsc::FanOut;
 use std::time::Duration;
+use anyhow::{bail, Context};
 use futures::future::join_all;
 use itertools::Itertools;
 use quinn::{ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt};
@@ -13,11 +14,20 @@ use solana_sdk::transaction::VersionedTransaction;
 use solana_streamer::nonblocking::quic::ALPN_TPU_PROTOCOL_ID;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::mpsc::{channel, Receiver};
-use tokio::time::timeout;
 use crate::quic_util::SkipServerVerification;
 use crate::quinn_auto_reconnect::AutoReconnect;
 use crate::shared::ForwardPacket;
+use crate::util::timeout_fallback;
 use crate::validator_identity::ValidatorIdentity;
+
+
+const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+pub const CONNECTION_RETRY_COUNT: usize = 10;
+
+pub const MAX_TRANSACTIONS_PER_BATCH: usize = 10;
+pub const MAX_BYTES_PER_BATCH: usize = 10;
+const MAX_PARALLEL_STREAMS: usize = 6;
+pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
 
 // takes transactions from upstream clients and forwards them to the TPU
 pub async fn tx_forwarder(validator_identity: ValidatorIdentity, mut transaction_channel: Receiver<ForwardPacket>, exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
@@ -28,60 +38,50 @@ pub async fn tx_forwarder(validator_identity: ValidatorIdentity, mut transaction
     let mut agents: HashMap<SocketAddr, FanOut<ForwardPacket>> = HashMap::new();
 
     loop {
-        // TODO add exit
+        if exit_signal.load(Ordering::Relaxed) {
+            bail!("exit signal received");
+        }
 
         let forward_packet = transaction_channel.recv().await.expect("channel closed unexpectedly");
+        // TODO drain the queue with .try_recv() and batch the transactions
         let tpu_address = forward_packet.tpu_address;
 
         if !agents.contains_key(&tpu_address) {
             // TODO cleanup agent after a while of iactivity
 
             let mut senders = Vec::new();
-            for _i in 0..4 {
-                let (sender, mut receiver) = channel::<ForwardPacket>(100000);
+            for connection_idx in 1..PARALLEL_TPU_CONNECTION_COUNT {
+                let (sender, mut receiver) = channel::<ForwardPacket>(100_000);
                 senders.push(sender);
                 let exit_signal = exit_signal.clone();
                 let endpoint_copy = endpoint.clone();
                 tokio::spawn(async move {
-                    debug!("Start Quic forwarder agent for TPU {}", tpu_address);
-                    // TODO pass+check the tpu_address
-                    // TODO connect
-                    // TODO consume queue
-                    // TODO exit signal
+                    debug!("Start Quic forwarder agent #{} for TPU {}", connection_idx, tpu_address);
 
                     let auto_connection = AutoReconnect::new(endpoint_copy, tpu_address);
-                    // let mut connection = tpu_quic_client_copy.create_connection(tpu_address).await.expect("handshake");
+
+                    let exit_signal_copy = exit_signal.clone();
                     loop {
+                        let packet = receiver.recv().await.unwrap();
+                        assert_eq!(packet.tpu_address, tpu_address, "routing error");
 
-                        let _exit_signal = exit_signal.clone();
-                        loop {
-                            let packet = receiver.recv().await.unwrap();
-                            assert_eq!(packet.tpu_address, tpu_address, "routing error");
+                        let mut transactions_batch = packet.transactions;
 
-                            let mut transactions_batch = packet.transactions;
+                        let mut batch_size = 1;
+                        while let Ok(more) = receiver.try_recv() {
+                            transactions_batch.extend(more.transactions);
+                            batch_size += 1;
+                        }
 
-                            let mut batch_size = 1;
-                            while let Ok(more) = receiver.try_recv() {
-                                transactions_batch.extend(more.transactions);
-                                batch_size += 1;
-                            }
-                            if batch_size > 1 {
-                                debug!("encountered batch of size {}", batch_size);
-                            }
+                        debug!("forwarding transaction batch of size {} to address {}", transactions_batch.len(), packet.tpu_address);
 
-                            debug!("forwarding transaction batch of size {} to address {}", transactions_batch.len(), packet.tpu_address);
+                        let result = timeout_fallback(send_tx_batch_to_tpu(&auto_connection, &transactions_batch)).await
+                            .context("send txs to tpu");
 
-                            // TODo move send_txs_to_tpu_static to tpu_quic_client
-                            let result = timeout(Duration::from_millis(500),
-                                                 send_txs_to_tpu_static(&auto_connection, &transactions_batch)).await;
-                            // .expect("timeout sending data to TPU node");
-
-                            if result.is_err() {
-                                warn!("send_txs_to_tpu_static result {:?} - loop over errors", result);
-                            } else {
-                                debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
-                            }
-
+                        if result.is_err() {
+                            warn!("got send_txs_to_tpu_static error {:?} - loop over errors", result);
+                        } else {
+                            debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
                         }
 
                     }
@@ -99,26 +99,6 @@ pub async fn tx_forwarder(validator_identity: ValidatorIdentity, mut transaction
         let agent_channel = agents.get(&tpu_address).unwrap();
 
         agent_channel.send(forward_packet).await.unwrap();
-
-        // let mut batch_size = 1;
-        // while let Ok(more) = transaction_channel.try_recv() {
-        //     agent_channel.send(more).await.unwrap();
-        //     batch_size += 1;
-        // }
-        // if batch_size > 1 {
-        //     debug!("encountered batch of size {}", batch_size);
-        // }
-
-
-        // check if the tpu has already a task+queue running, if not start one, sort+queue packets by tpu address
-        // maintain the health of a TPU connection, debounce errors; if failing, drop the respective messages
-
-        // let exit_signal_copy = exit_signal.clone();
-        // debug!("send transaction batch of size {} to address {}", forward_packet.transactions.len(), forward_packet.tpu_address);
-        // // TODO: this will block/timeout if the TPU is not available
-        // timeout(Duration::from_millis(500),
-        //         tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &forward_packet.transactions, exit_signal_copy)).await;
-        // tpu_quic_client_copy.send_txs_to_tpu(forward_packet.tpu_address, &forward_packet.transactions, exit_signal_copy).await;
 
     } // -- loop over transactions from ustream channels
 
@@ -139,14 +119,6 @@ async fn new_endpoint_with_validator_identity(validator_identity: ValidatorIdent
 
     endpoint_outbound
 }
-
-
-const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
-pub const CONNECTION_RETRY_COUNT: usize = 10;
-
-pub const MAX_TRANSACTIONS_PER_BATCH: usize = 10;
-pub const MAX_BYTES_PER_BATCH: usize = 10;
-const MAX_PARALLEL_STREAMS: usize = 6;
 
 fn create_tpu_client_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
     let mut endpoint = {
@@ -179,6 +151,7 @@ fn create_tpu_client_endpoint(certificate: rustls::Certificate, key: rustls::Pri
     let timeout = IdleTimeout::try_from(Duration::from_millis(QUIC_MAX_TIMEOUT_MS as u64)).unwrap();
     transport_config.max_idle_timeout(Some(timeout));
     transport_config.keep_alive_interval(None);
+
     config.transport_config(Arc::new(transport_config));
 
     endpoint.set_default_client_config(config);
@@ -186,27 +159,12 @@ fn create_tpu_client_endpoint(certificate: rustls::Certificate, key: rustls::Pri
     endpoint
 }
 
-fn serialize_to_vecvec(transactions: &Vec<VersionedTransaction>) -> Vec<Vec<u8>> {
-    transactions.iter().map(|tx| {
-        let tx_raw = bincode::serialize(tx).unwrap();
-        tx_raw
-    }).collect_vec()
-}
-
-
 // send potentially large amount of transactions to a single TPU
 #[tracing::instrument(skip_all, level = "debug")]
-async fn send_txs_to_tpu_static(
+async fn send_tx_batch_to_tpu(
     auto_connection: &AutoReconnect,
     txs: &Vec<VersionedTransaction>,
 ) {
-
-    // note: this impl does not deal with connection errors
-    // throughput_50 493.70 tps
-    // throughput_50 769.43 tps (with finish timeout)
-    // TODO join get_or_create_connection future and read_to_end
-    // TODO add error handling
-
     for chunk in txs.chunks(MAX_PARALLEL_STREAMS) {
         let all_send_fns = chunk.iter().map(|tx| {
             let tx_raw = bincode::serialize(tx).unwrap();
@@ -215,8 +173,6 @@ async fn send_txs_to_tpu_static(
             .map(|tx_raw| {
                 auto_connection.send(tx_raw) // ignores error
             });
-
-        // let all_send_fns = (0..txs.len()).map(|i| auto_connection.roundtrip(vecvec.get(i))).collect_vec();
 
         join_all(all_send_fns).await;
 

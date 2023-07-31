@@ -19,7 +19,6 @@ pub mod proxy_request_format;
 pub mod cli;
 pub mod test_client;
 mod util;
-mod tx_store;
 mod quinn_auto_reconnect;
 mod outbound;
 mod inbound;
