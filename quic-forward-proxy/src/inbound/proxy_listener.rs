@@ -1,30 +1,16 @@
 use std::net::SocketAddr;
-
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-
-
 use std::time::Duration;
-
 use anyhow::{anyhow, bail, Context};
-
 use log::{debug, error, info, trace};
 use quinn::{Connection, Endpoint, ServerConfig, VarInt};
-
 use solana_sdk::packet::PACKET_DATA_SIZE;
-
-
 use tokio::sync::mpsc::Sender;
-use crate::inbound::proxy_listener;
-use crate::outbound::tx_forward::tx_forwarder;
-use crate::outbound::validator_identity::ValidatorIdentity;
-
-
 use crate::proxy_request_format::TpuForwardingRequest;
 use crate::share::ForwardPacket;
-
 use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
-use crate::util::AnyhowJoinHandle;
+use crate::util::FALLBACK_TIMEOUT;
 
 // TODO tweak this value - solana server sets 256
 // setting this to "1" did not make a difference!
@@ -47,7 +33,7 @@ impl ProxyListener {
     pub async fn listen(&self, exit_signal: Arc<AtomicBool>, forwarder_channel: Sender<ForwardPacket>) -> anyhow::Result<()> {
         info!("TPU Quic Proxy server listening on {}", self.proxy_listener_addr);
 
-        let endpoint = Self::new_proxy_listen_endpoint(&self.tls_config, self.proxy_listener_addr).await;
+        let endpoint = Self::new_proxy_listen_server_endpoint(&self.tls_config, self.proxy_listener_addr).await;
 
         while let Some(connecting) = endpoint.accept().await {
             let exit_signal = exit_signal.clone();
@@ -69,7 +55,7 @@ impl ProxyListener {
     }
 
 
-    async fn new_proxy_listen_endpoint(tls_config: &SelfSignedTlsConfigProvider, proxy_listener_addr: SocketAddr) -> Endpoint {
+    async fn new_proxy_listen_server_endpoint(tls_config: &SelfSignedTlsConfigProvider, proxy_listener_addr: SocketAddr) -> Endpoint {
 
         let server_tls_config = tls_config.get_server_tls_crypto_config();
         let mut quinn_server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
@@ -112,14 +98,11 @@ impl ProxyListener {
                     return Err(anyhow::Error::msg("error accepting stream"));
                 }
                 Ok(recv_stream) => {
-                    let _exit_signal_copy = exit_signal.clone();
-
                     let forwarder_channel_copy = forwarder_channel.clone();
                     tokio::spawn(async move {
 
-                        let raw_request = recv_stream.read_to_end(10_000_000).await // TODO extract to const
+                        let raw_request = recv_stream.read_to_end(10_000_000).await
                             .unwrap();
-                        trace!("read proxy_request {} bytes", raw_request.len());
 
                         let proxy_request = TpuForwardingRequest::deserialize_from_raw_request(&raw_request);
 
@@ -129,10 +112,11 @@ impl ProxyListener {
                         let txs = proxy_request.get_transactions();
 
                         debug!("enqueue transaction batch of size {} to address {}", txs.len(), tpu_address);
-                        // tpu_quic_client_copy.send_txs_to_tpu(tpu_address, &txs, exit_signal_copy).await;
-                        forwarder_channel_copy.send(ForwardPacket { transactions: txs, tpu_address }).await.unwrap();
-
-                        // debug!("connection stats (proxy inbound): {}", connection_stats(&client_connection));
+                        forwarder_channel_copy.send_timeout(ForwardPacket { transactions: txs, tpu_address },
+                                                            FALLBACK_TIMEOUT)
+                        .await
+                            .context("sending internal packet from proxy to forwarder")
+                            .unwrap();
 
                     });
 

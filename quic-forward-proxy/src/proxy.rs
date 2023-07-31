@@ -55,7 +55,7 @@ impl QuicForwardProxy {
     ) -> anyhow::Result<()> {
         let exit_signal = Arc::new(AtomicBool::new(false));
 
-        let (forwarder_channel, forward_receiver) = tokio::sync::mpsc::channel(1000);
+        let (forwarder_channel, forward_receiver) = tokio::sync::mpsc::channel(100_000);
 
         let proxy_listener = proxy_listener::ProxyListener::new(
             self.proxy_listener_addr,
@@ -64,7 +64,8 @@ impl QuicForwardProxy {
         let exit_signal_clone = exit_signal.clone();
         let quic_proxy = tokio::spawn(async move {
 
-            proxy_listener.listen(exit_signal_clone.clone(), forwarder_channel).await;
+            proxy_listener.listen(exit_signal_clone.clone(), forwarder_channel).await
+                .expect("proxy listen service");
         });
 
         let validator_identity = self.validator_identity.clone();
