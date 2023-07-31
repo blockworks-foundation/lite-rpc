@@ -1,13 +1,16 @@
-pub mod quic_util;
-pub mod tls_config_provicer;
+// lib definition is only required for 'quic-forward-proxy-integration-test' to work
+
+mod quic_util;
+pub mod tls_config_provider;
 pub mod proxy;
-pub mod proxy_request_format;
-pub mod cli;
-pub mod test_client;
+pub mod validator_identity;
+mod proxy_request_format;
+mod cli;
+mod test_client;
 mod util;
 mod tx_store;
 mod quic_connection_utils;
 mod quinn_auto_reconnect;
-pub mod outbound;
+mod outbound;
 mod inbound;
-mod share;
+mod shared;

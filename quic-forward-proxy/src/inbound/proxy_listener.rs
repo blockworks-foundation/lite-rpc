@@ -8,8 +8,8 @@ use quinn::{Connection, Endpoint, ServerConfig, VarInt};
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use tokio::sync::mpsc::Sender;
 use crate::proxy_request_format::TpuForwardingRequest;
-use crate::share::ForwardPacket;
-use crate::tls_config_provicer::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
+use crate::shared::ForwardPacket;
+use crate::tls_config_provider::{ProxyTlsConfigProvider, SelfSignedTlsConfigProvider};
 use crate::util::FALLBACK_TIMEOUT;
 
 // TODO tweak this value - solana server sets 256

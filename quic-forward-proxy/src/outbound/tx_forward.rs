@@ -5,15 +5,17 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use fan::tokio::mpsc::FanOut;
 use std::time::Duration;
+use futures::future::join_all;
+use itertools::Itertools;
 use quinn::Endpoint;
+use solana_sdk::transaction::VersionedTransaction;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::mpsc::{channel, Receiver};
 use tokio::time::timeout;
-use crate::outbound::tpu_quic_client::{send_txs_to_tpu_static, TpuQuicClient};
-use crate::outbound::validator_identity::ValidatorIdentity;
 use crate::quic_connection_utils::QuicConnectionUtils;
 use crate::quinn_auto_reconnect::AutoReconnect;
-use crate::share::ForwardPacket;
+use crate::shared::ForwardPacket;
+use crate::validator_identity::ValidatorIdentity;
 
 // takes transactions from upstream clients and forwards them to the TPU
 pub async fn tx_forwarder(validator_identity: ValidatorIdentity, mut transaction_channel: Receiver<ForwardPacket>, exit_signal: Arc<AtomicBool>) -> anyhow::Result<()> {
@@ -134,4 +136,52 @@ async fn new_endpoint_with_validator_identity(validator_identity: ValidatorIdent
     let endpoint_outbound = QuicConnectionUtils::create_tpu_client_endpoint(certificate.clone(), key.clone());
 
     endpoint_outbound
+}
+
+
+const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+pub const CONNECTION_RETRY_COUNT: usize = 10;
+
+pub const MAX_TRANSACTIONS_PER_BATCH: usize = 10;
+pub const MAX_BYTES_PER_BATCH: usize = 10;
+const MAX_PARALLEL_STREAMS: usize = 6;
+
+
+
+fn serialize_to_vecvec(transactions: &Vec<VersionedTransaction>) -> Vec<Vec<u8>> {
+    transactions.iter().map(|tx| {
+        let tx_raw = bincode::serialize(tx).unwrap();
+        tx_raw
+    }).collect_vec()
+}
+
+
+// send potentially large amount of transactions to a single TPU
+#[tracing::instrument(skip_all, level = "debug")]
+async fn send_txs_to_tpu_static(
+    auto_connection: &AutoReconnect,
+    txs: &Vec<VersionedTransaction>,
+) {
+
+    // note: this impl does not deal with connection errors
+    // throughput_50 493.70 tps
+    // throughput_50 769.43 tps (with finish timeout)
+    // TODO join get_or_create_connection future and read_to_end
+    // TODO add error handling
+
+    for chunk in txs.chunks(MAX_PARALLEL_STREAMS) {
+        let all_send_fns = chunk.iter().map(|tx| {
+            let tx_raw = bincode::serialize(tx).unwrap();
+            tx_raw
+        })
+            .map(|tx_raw| {
+                auto_connection.send(tx_raw) // ignores error
+            });
+
+        // let all_send_fns = (0..txs.len()).map(|i| auto_connection.roundtrip(vecvec.get(i))).collect_vec();
+
+        join_all(all_send_fns).await;
+
+    }
+
 }

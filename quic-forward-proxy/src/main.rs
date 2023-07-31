@@ -1,5 +1,4 @@
-
-
+use std::sync::Arc;
 use anyhow::bail;
 use clap::Parser;
 use dotenv::dotenv;
@@ -7,12 +6,12 @@ use log::info;
 use crate::cli::{Args, get_identity_keypair};
 use crate::proxy::QuicForwardProxy;
 
-pub use tls_config_provicer::SelfSignedTlsConfigProvider;
-use crate::outbound::validator_identity::ValidatorIdentity;
+pub use tls_config_provider::SelfSignedTlsConfigProvider;
+use crate::validator_identity::ValidatorIdentity;
 
 
 pub mod quic_util;
-pub mod tls_config_provicer;
+pub mod tls_config_provider;
 pub mod proxy;
 pub mod proxy_request_format;
 pub mod cli;
@@ -23,7 +22,8 @@ mod quic_connection_utils;
 mod quinn_auto_reconnect;
 mod outbound;
 mod inbound;
-mod share;
+mod shared;
+mod validator_identity;
 
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
@@ -43,8 +43,8 @@ pub async fn main() -> anyhow::Result<()> {
     let validator_identity =
         ValidatorIdentity::new(get_identity_keypair(&identity_keypair).await);
 
-    let tls_config = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
-    let main_services = QuicForwardProxy::new(proxy_listener_addr, &tls_config, validator_identity)
+    let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());
+    let main_services = QuicForwardProxy::new(proxy_listener_addr, tls_config, validator_identity)
         .await?
         .start_services();
 
