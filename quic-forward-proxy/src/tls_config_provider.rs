@@ -44,7 +44,7 @@ impl SelfSignedTlsConfigProvider {
             hostnames,
             certificate,
             private_key,
-            client_crypto: Self::build_client_crypto(),
+            client_crypto: Self::build_client_crypto_insecure(),
             server_crypto: server_crypto,
         }
     }
@@ -55,7 +55,7 @@ impl SelfSignedTlsConfigProvider {
         (Certificate(cert.serialize_der().unwrap()), PrivateKey(key))
     }
 
-    fn build_client_crypto() -> ClientConfig {
+    fn build_client_crypto_insecure() -> ClientConfig {
         let mut client_crypto = rustls::ClientConfig::builder()
             .with_safe_defaults()
             // .with_root_certificates(roots)
