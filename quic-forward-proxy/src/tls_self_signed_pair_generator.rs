@@ -1,9 +1,9 @@
-use std::sync::atomic::{AtomicU32, Ordering};
-use rcgen::generate_simple_self_signed;
-use rustls::{Certificate, ClientConfig, PrivateKey, ServerConfig};
-use crate::quic_util::{ALPN_TPU_FORWARDPROXY_PROTOCOL_ID, SkipServerVerification};
+use crate::quic_util::{SkipServerVerification, ALPN_TPU_FORWARDPROXY_PROTOCOL_ID};
 use crate::tls_config_provider_client::TpuCLientTlsConfigProvider;
 use crate::tls_config_provider_server::ProxyTlsConfigProvider;
+use rcgen::generate_simple_self_signed;
+use rustls::{Certificate, ClientConfig, PrivateKey, ServerConfig};
+use std::sync::atomic::{AtomicU32, Ordering};
 
 impl ProxyTlsConfigProvider for SelfSignedTlsConfigProvider {
     fn get_server_tls_crypto_config(&self) -> ServerConfig {
@@ -30,7 +30,11 @@ const INSTANCES: AtomicU32 = AtomicU32::new(0);
 impl SelfSignedTlsConfigProvider {
     pub fn new_singleton_self_signed_localhost() -> Self {
         // note: this check could be relaxed when you know what you are doing!
-        assert_eq!(INSTANCES.fetch_add(1, Ordering::Relaxed), 0, "should be a singleton");
+        assert_eq!(
+            INSTANCES.fetch_add(1, Ordering::Relaxed),
+            0,
+            "should be a singleton"
+        );
         let hostnames = vec!["localhost".to_string()];
         let (certificate, private_key) = Self::gen_tls_certificate_and_key(hostnames.clone());
         let server_crypto = Self::build_server_crypto(certificate.clone(), private_key.clone());
@@ -76,7 +80,4 @@ impl SelfSignedTlsConfigProvider {
     pub fn get_client_tls_crypto_config(&self) -> &ClientConfig {
         &self.client_crypto
     }
-
 }
-
-

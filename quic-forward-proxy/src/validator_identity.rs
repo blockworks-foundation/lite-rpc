@@ -1,8 +1,8 @@
-use std::fmt::Display;
-use std::sync::Arc;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use std::fmt::Display;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ValidatorIdentity {

@@ -1,6 +1,6 @@
-use std::env;
 use clap::Parser;
 use solana_sdk::signature::Keypair;
+use std::env;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

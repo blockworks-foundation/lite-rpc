@@ -1,13 +1,12 @@
-
+use crate::util::timeout_fallback;
+use anyhow::Context;
+use log::warn;
+use quinn::{Connection, Endpoint};
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
-use anyhow::Context;
-use log::warn;
-use tracing::{debug, info};
-use quinn::{Connection, Endpoint};
-use tokio::sync::{RwLock};
-use crate::util::timeout_fallback;
+use tokio::sync::RwLock;
+use tracing::debug;
 
 pub struct AutoReconnect {
     // endoint should be configures with keep-alive and idle timeout
@@ -29,19 +28,22 @@ impl AutoReconnect {
 
     pub async fn send_uni(&self, payload: Vec<u8>) -> anyhow::Result<()> {
         // TOOD do smart error handling + reconnect
-        let mut send_stream = timeout_fallback(self.refresh().await.open_uni()).await
+        let mut send_stream = timeout_fallback(self.refresh().await.open_uni())
+            .await
             .context("open uni stream for sending")??;
         send_stream.write_all(payload.as_slice()).await?;
         send_stream.finish().await?;
         Ok(())
     }
 
-
     pub async fn refresh(&self) -> Connection {
         {
             let lock = self.current.read().await;
             let maybe_conn = lock.as_ref();
-            if maybe_conn.filter(|conn| conn.close_reason().is_none()).is_some() {
+            if maybe_conn
+                .filter(|conn| conn.close_reason().is_none())
+                .is_some()
+            {
                 let reuse = maybe_conn.unwrap();
                 debug!("Reuse connection {}", reuse.stable_id());
                 return reuse.clone();
@@ -53,17 +55,23 @@ impl AutoReconnect {
             Some(current) => {
                 if current.close_reason().is_some() {
                     let old_stable_id = current.stable_id();
-                    warn!("Connection {} is closed for reason: {:?}", old_stable_id, current.close_reason());
+                    warn!(
+                        "Connection {} is closed for reason: {:?}",
+                        old_stable_id,
+                        current.close_reason()
+                    );
 
                     let new_connection = self.create_connection().await;
                     *lock = Some(new_connection.clone());
                     // let old_conn = lock.replace(new_connection.clone());
                     self.reconnect_count.fetch_add(1, Ordering::SeqCst);
 
-                    debug!("Replace closed connection {} with {} (retry {})",
+                    debug!(
+                        "Replace closed connection {} with {} (retry {})",
                         old_stable_id,
                         new_connection.stable_id(),
-                        self.reconnect_count.load(Ordering::SeqCst));
+                        self.reconnect_count.load(Ordering::SeqCst)
+                    );
 
                     new_connection.clone()
                 } else {
@@ -81,12 +89,14 @@ impl AutoReconnect {
 
                 new_connection.clone()
             }
-        }
+        };
     }
 
     async fn create_connection(&self) -> Connection {
-        let connection =
-            self.endpoint.connect(self.target_address, "localhost").expect("handshake");
+        let connection = self
+            .endpoint
+            .connect(self.target_address, "localhost")
+            .expect("handshake");
 
         connection.await.expect("connection")
     }
@@ -94,9 +104,6 @@ impl AutoReconnect {
 
 impl fmt::Display for AutoReconnect {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Connection to {}",
-               self.target_address,
-        )
+        write!(f, "Connection to {}", self.target_address,)
     }
 }
-

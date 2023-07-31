@@ -1,19 +1,19 @@
-use std::net::{SocketAddr};
+use anyhow::bail;
+use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use anyhow::bail;
 
+use crate::proxy_request_format::TpuForwardingRequest;
+use crate::quic_util::{SkipServerVerification, ALPN_TPU_FORWARDPROXY_PROTOCOL_ID};
+use crate::tls_config_provider_client::TpuCLientTlsConfigProvider;
+use crate::util::AnyhowJoinHandle;
 use log::{info, trace};
 use quinn::{Endpoint, VarInt};
 use rustls::ClientConfig;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use tokio::io::AsyncWriteExt;
-use crate::proxy_request_format::TpuForwardingRequest;
-use crate::quic_util::{ALPN_TPU_FORWARDPROXY_PROTOCOL_ID, SkipServerVerification};
-use crate::tls_config_provider_client::TpuCLientTlsConfigProvider;
-use crate::util::AnyhowJoinHandle;
 
 pub struct QuicTestClient {
     pub endpoint: Endpoint,
@@ -23,19 +23,20 @@ pub struct QuicTestClient {
 impl QuicTestClient {
     pub async fn new_with_endpoint(
         proxy_addr: SocketAddr,
-        tls_config: &impl TpuCLientTlsConfigProvider
+        tls_config: &impl TpuCLientTlsConfigProvider,
     ) -> anyhow::Result<Self> {
         let client_crypto = tls_config.get_client_tls_crypto_config();
         let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse().unwrap())?;
         endpoint.set_default_client_config(quinn::ClientConfig::new(Arc::new(client_crypto)));
 
-        Ok(Self { proxy_addr, endpoint })
+        Ok(Self {
+            proxy_addr,
+            endpoint,
+        })
     }
 
     // connect to a server
-    pub async fn start_services(
-        self,
-    ) -> anyhow::Result<()> {
+    pub async fn start_services(self) -> anyhow::Result<()> {
         let endpoint_copy = self.endpoint.clone();
         let test_client_service: AnyhowJoinHandle = tokio::spawn(async move {
             info!("Sample Quic Client starting ...");
@@ -64,8 +65,6 @@ impl QuicTestClient {
                 ticker.tick().await;
             }
 
-
-
             Ok(())
         });
 
@@ -75,7 +74,6 @@ impl QuicTestClient {
             },
         }
     }
-
 }
 
 fn build_tls_config() -> ClientConfig {
@@ -94,7 +92,6 @@ fn build_tls_config() -> ClientConfig {
     return client_crypto;
 }
 
-
 fn build_memo_tx_raw() -> Vec<u8> {
     let payer_pubkey = Pubkey::new_unique();
     let signer_pubkey = Pubkey::new_unique();
@@ -107,19 +104,19 @@ fn build_memo_tx_raw() -> Vec<u8> {
         // FIXME hardcoded to local test-validator
         "127.0.0.1:1027".parse().unwrap(),
         Pubkey::from_str("EPLzGRhibYmZ7qysF9BiPmSTRaL8GiLhrQdFTfL8h2fy").unwrap(),
-        vec![tx.into()]);
+        vec![tx.into()],
+    );
 
     println!("wire_data: {:02X?}", wire_data);
 
     wire_data
 }
 
-
 fn serialize_tpu_forwarding_request(
     tpu_socket_addr: SocketAddr,
     tpu_identity: Pubkey,
-    transactions: Vec<VersionedTransaction>) -> Vec<u8> {
-
+    transactions: Vec<VersionedTransaction>,
+) -> Vec<u8> {
     let request = TpuForwardingRequest::new(tpu_socket_addr, tpu_identity, transactions);
 
     bincode::serialize(&request).expect("Expect to serialize transactions")

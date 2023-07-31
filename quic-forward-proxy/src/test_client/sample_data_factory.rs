@@ -1,21 +1,18 @@
-use std::path::Path;
-use std::str::FromStr;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::message::Message;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::{Keypair, keypair, Signer};
+use solana_sdk::signature::{keypair, Keypair, Signer};
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
+use std::path::Path;
+use std::str::FromStr;
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
-
-
 pub fn build_raw_sample_tx() -> Vec<u8> {
-
-    let payer_keypair = keypair::read_keypair_file(
-        Path::new("/Users/stefan/mango/solana-wallet/solana-testnet-stefantest.json")
-    ).unwrap();
-
+    let payer_keypair = keypair::read_keypair_file(Path::new(
+        "/Users/stefan/mango/solana-wallet/solana-testnet-stefantest.json",
+    ))
+    .unwrap();
 
     let tx = build_sample_tx(&payer_keypair);
 
@@ -37,5 +34,3 @@ pub fn create_memo_tx(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transacti
     let message = Message::new(&[instruction], Some(&payer.pubkey()));
     Transaction::new(&[payer], message, blockhash)
 }
-
-

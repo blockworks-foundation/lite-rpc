@@ -1,30 +1,28 @@
-use std::sync::Arc;
+use crate::cli::{get_identity_keypair, Args};
+use crate::proxy::QuicForwardProxy;
+use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use anyhow::bail;
 use clap::Parser;
 use dotenv::dotenv;
 use log::info;
-use crate::cli::{Args, get_identity_keypair};
-use crate::proxy::QuicForwardProxy;
-use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
+use std::sync::Arc;
 
 use crate::validator_identity::ValidatorIdentity;
 
-
+pub mod cli;
+mod inbound;
+mod outbound;
+pub mod proxy;
+pub mod proxy_request_format;
 pub mod quic_util;
+mod quinn_auto_reconnect;
+mod shared;
+pub mod test_client;
 pub mod tls_config_provider_client;
 pub mod tls_config_provider_server;
 pub mod tls_self_signed_pair_generator;
-pub mod proxy;
-pub mod proxy_request_format;
-pub mod cli;
-pub mod test_client;
 mod util;
-mod quinn_auto_reconnect;
-mod outbound;
-mod inbound;
-mod shared;
 mod validator_identity;
-
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
@@ -40,8 +38,7 @@ pub async fn main() -> anyhow::Result<()> {
     // TODO build args struct dedicated to proxy
     let proxy_listener_addr = proxy_rpc_addr.parse().unwrap();
     let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
-    let validator_identity =
-        ValidatorIdentity::new(get_identity_keypair(&identity_keypair).await);
+    let validator_identity = ValidatorIdentity::new(get_identity_keypair(&identity_keypair).await);
 
     let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());
     let main_services = QuicForwardProxy::new(proxy_listener_addr, tls_config, validator_identity)
@@ -53,7 +50,6 @@ pub async fn main() -> anyhow::Result<()> {
     //     proxy_addr, &tls_configuration)
     //     .await?
     //     .start_services();
-
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
@@ -70,5 +66,4 @@ pub async fn main() -> anyhow::Result<()> {
             Ok(())
         }
     }
-
 }

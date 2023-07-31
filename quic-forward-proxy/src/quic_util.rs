@@ -1,8 +1,7 @@
-use std::sync::Arc;
 use quinn::Connection;
+use std::sync::Arc;
 
 pub const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
-
 
 pub struct SkipServerVerification;
 
@@ -34,6 +33,10 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 // RETIRE_CONNECTION_ID: 1, STREAM_DATA_BLOCKED: 0, STREAMS_BLOCKED_BIDI: 0,
 // STREAMS_BLOCKED_UNI: 0, STOP_SENDING: 0, STREAM: 0 }
 pub fn connection_stats(connection: &Connection) -> String {
-    format!("stable_id {} stats {:?}, rtt={:?}",
-            connection.stable_id(), connection.stats().frame_rx, connection.stats().path.rtt)
+    format!(
+        "stable_id {} stats {:?}, rtt={:?}",
+        connection.stable_id(),
+        connection.stats().frame_rx,
+        connection.stats().path.rtt
+    )
 }
