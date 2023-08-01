@@ -199,16 +199,42 @@ It represent the lifecycle of a Tx before it's added to a block.
 
 ##### Data
  * sent Tx: a solana transaction that before it has been added to a block.
+ * confirmed Tx: a solana transaction that has been confirmed by a number of validator that represent more than 2/3 of the staked solana.
  * Sender: the sender of the Tx that sign it.
+ * leader: the validator that will create the next block.
 
 ##### Modules
- * Lite-RPC: open the RPC send_transaction call. Relay Tx to the proxy. Several RPC-Lite can be started and connect to one proxy. The Lite-RPC can be connected to only one proxy.
- * Proxy: use to open a stake connection to the TPU connection of a validator. Can manage several Lite-RPC.
+ * Tx processing: open the RPC send_transaction call. Verify, put the Tx in batch and extract data needed to send it: next leaders.
+ * Tx transfer: use to open a stake connection to the TPU connection of the leader and send the Tx batch.
+ * Tx confirmation: process Tx added to block to detect when a Tx hasn't been add by a leader to resend it.
 
-Define the type of connection between Lite-RPC and Proxy.
 
 ##### Process
-###### sendtransaction
+###### Tx processing
+This module manage the Tx RPC calls *sendtransaction*.
+
+The send Tx process is:
+ * Tx verification: slot, recent blockhash and signature
+ * Add the Tx to the waiting Tx list for replay.
+ * Aggregate the Tx in a batch. Wait 10ms for all receive TX then send aggregated Tx in a batch.
+ * Define the 2 next leaders for the batch
+ * call transfer module to send the Tx.
+
+###### Tx transfer
+Use leaders information to send the Tx batch to the leader using the TPU connection. Manager TPU connection to optimize the transfer time.
+
+###### Tx confirmation
+This module manage the Tx RPC calls *getSignatureStatuses*
+
+Get Tx from confirmed block and put them in a cache with their status. The cache size is MAX_RECENT_BLOCKHASHES (300).
+When a new Tx is added, it is removed from the retry TX list.
+
+To response to the RPC call, add the call to the RPC server and get the TX from the cache.
+
+Define what we do when a Tx is not confirmed after it has been send the replay time.
+
+
+###### sendtransaction call
 
 **Scenario**:
 
@@ -372,20 +398,44 @@ Query the PrioritizationFeeCache like in the current Solana validator impl. The 
 This domain concerns the current blockchain activity. It integrate all the process done on produced block.
 
 ##### Data
+ * slot: a time interval during which a block can be produced by a leader.
+ * epoch: A set of slot that aggregate a set of processed data. The RPC server can manage 2 or more epoch. Define by the configuration.
  * block: a block created by a leader and notified by the trusted validator geyser plugin.
+ * Commitment: a step in the block lifetime. Commitment managed are Processed, Confirmed, Finalized.
  * Vote Tx: A tx that contains a vote for a block by a validator.
  * A block Tx: the other non Vote Tx contains by a block.
- * confirmed Tx: a solana transaction that has been confirmed by a number of validator that represent more than 2/3 of the staked solana.
  * Tx account: the public address of an account involved in a Tx.
+ * Current data: Data that represent the state of Solana blockchain: current blocks, current slot, ...
+
 
 ##### Modules
- * Validator: A trusted validator connected to the cluster.
+ * Validator access: A trusted validator connected to the cluster. Provide the geyser plugin access
  * Block Processing: Process each block pushed by the connected Validator geyser plugin.
- * Block processing DB: the database start store all processed block data. It contains the current epoch block data. When the epoch change the db is cleaned.
+ * Block storage: Store the block and associated index for each managed epoch. Use as a cache to avoid to query history for pass epoch. That why the server can manage more than 2 epoch if the user wants more cache. All RPC history RPC call use this cache before queering the history.
 
 ##### Process
+###### Block storage
+One database is created per epoch. This way went an epoch become to old, the db file are removed in one write access. It's the easier way to clean all epoch data (more than 1go of data).
+To query the data, all managed epoch database are open and the query is send to all database concerned by the query.
+
+For example if the getBLocks query overlap 2 epoch (define by the start and end slot), the query is processed on the 2 epoch database and the result aggregated. 
+
+The block storage provide a sort of cached data for all RPC calls. Database query is faster than Faythful service query.
+
+The storage is using a disk IO that are not very well optimized by Tokio. If will use its own thread to process query.
+
+###### Process block
+A block can be notified in 3 commitment. Each notified block are process before being stored. New block process depend on the other modules. For example Tx replay get newly confirmed Tx, getSignatureStatuses use a cache of MAX_RECENT_BLOCKHASHES Tx.
+Block process update local current data.
+
+The process block module cache the recent block to accelerate some other module processing (Tx domain for example). The size of the cache has to be defined.
+
 ###### Change epoch
-Describe the process of Epoch change. 2 epoch is needed to process the current and let the Faithful plug in process the last epoch.
+When the epoch change, these actions are done:
+ * update current data with new epoch one.
+ * create ne epoch database
+ * remove old epoch database
+ * process notified epoch data from the geyser plugin: Vote accounts (Cluster domain), start/end slot, ...
 
 ###### getslot
     - Returns the slot that has reached the given or default commitment level
@@ -507,17 +557,18 @@ Calculate the block commitment using the validator algo.
 
 
 #### Domain History
-This domain include all function related to get pass data of the blockchain.
+This domain include all function related to get past data of the blockchain.
 
 The data of this domain is divided in 2 sources:
  * Faithful plugin history data access (yellowstone-faithful project). It contains all the block data associated to past finished epoch.
- * current epoch data: managed by the block processing service. It contains the current not finished epoch data + 1 epoch currently processed by Faithful plugin.
+ * current epoch data: managed by the block processing module storage. It contains the current not finished epoch data + 1 (at least) epoch currently processed by Faithful plugin.
 
 ##### Data
- * slot:  during a slot a block is produced by the slot leader validator.
- * Epoch: a predefined number of slot (432,000 slots).
+ * slot: a time interval during which a block can be produced by a leader.
+ * epoch: A set of slot that aggregate a set of processed data (432,000 slots). The RPC server can manage 2 or more epoch. Define by the configuration.
 
 ##### Process
+###### Query process
 Each call can get part or all the data from the block processing service or Faithful plugin. The common query pattern is:
  * query the block processing for the requested service.
  * if the query return an answer and doesn't need more data, the service return the anwser
@@ -654,7 +705,21 @@ This function need some evolutions with the current implementation:
 #### Domain Cluster
 Manage all data related to the solana validator cluster.
 
+##### Data
+ * Cluster: define at the beginning of the epoch all cluster's validator data (ip and port) 
+ * Leader schedule: define for all epoch slot the validator that will be leader.
+ * Epoch data: data related to the epoch.
+ * Vote account: Account data (staking) at the beginning of the epoch for all account that can vote for the blocks.
+
 ##### Process
+##### Cluster storage
+Store all cluster data per epoch like for block processing module.
+
+##### Cluster processing
+Process epoch data to extract cluster data (ex: Total staking from the vote accounts).
+
+See the CLuster RPC call to have more details.
+
 ###### getclusternodes
     - Returns information about all the nodes participating in the cluster
     - Parameters: None
@@ -671,7 +736,7 @@ Sources: not provided by geyser plugin.
 
 In Solana the cluster data are stored in the ClusterInfo share struct 
 
-1) Geyser: :
+1) Geyser (currently not accepted by Solana) :
   * a) propose the same get_cluster_nodes impl to get the cluster a any time
   * b) notify at the beginning of the epoch. Change the call name, enough for us but perhaps not for every user: change notifier to add a ClusterInfo notifier like BlockMetadataNotifier for block metadata.
     Need to change the plugin interface, add notify_cluster_at_epoch. We can notify every time the cluster info is changed but not sure Solana will accept (too much data).
@@ -806,7 +871,55 @@ This domain is not part of the RPC service functionalities. Another project will
 
 
 ### Architecture
-Work in progress.
+Main architecture
+``` mermaid
+flowchart TB
+    rpc(RPC access)
+    sup(Supervisor loop)
+    sol(Solana connector)
+    block(block processor)
+    blstore(Block storage)
+    tx(Tx processing)
+    sendtx(Send TX TPU)
+    clus(Cluster processing)
+    clusstore(Cluster Storage)
+    histo(History Processing)
+    faith(Faithful service)
+    subgraph Main loop
+    rpc --> |new request| sup
+    end
+    subgraph Solana
+    direction TB
+    sol --> |new block-slot|sup
+    sol --> |new epoch|sup
+    sup --> |geyser call| sol
+    end
+    subgraph Block
+    direction TB
+    sup --> |update block-block| block
+    block --> |get data| sup
+    block --> |query block| blstore
+    end
+    subgraph History
+    direction TB
+    sup --> |query| histo
+    histo --> |get data| block
+    histo --> |get data| faith
+    end
+    subgraph Tx
+    direction TB
+    sup --> |update block|tx
+    sup --> |send Tx request|tx
+    tx --> |get data| sup
+    tx --> |send Tx| sendtx
+    end
+    subgraph Cluster
+    direction TB
+    sup --> |update epoch|clus
+    clus --> |get data| sup
+    clus --> |store data|clusstore
+    end
+```
 
 send_transaction
 ``` mermaid
@@ -842,5 +955,75 @@ flowchart TB
     
 ```
 
+### Task definition
 
+```mermaid
+stateDiagram
+    a1: Architecture skeleton
+    c1: geyser connector
+    c2: Faithful connector
+    c22: Triton block index
+    c3: TPU connector
+    c4: gossip listening
+    s1: Data model
+    s2: Storage definition
+    s3: Block storage
+    s4: Cluster storage
+    b1: Block processing
+    b2: Update block
+    b3: get block
+    b4: get current data
+    b5: Block RPC call
+    t1: Tx processing
+    t2: notify Tx
+    t22: update Tx cache
+    t3: Sendtransacton
+    t333: replay Tx
+    t33: confirm Tx
+    t4: get Tx + Status
+    h1: History getBlock
+    h2: History getBlocks
+    h3: History calls
+    cl1: Cluster data
+    cl2: cluster RPC solana
+    cl3: cluster epoch update
+    cl4: cluster info
+    cl5: cluster epoch notification
+    cl6: cluster RPC call
 
+    
+    [*] --> a1
+    [*] --> c1
+    [*] --> c2
+    c2 --> c22
+    [*] --> c3
+    [*] --> c4
+    [*] --> s1
+    [*] --> cl1
+    s1 --> s2
+    s2 --> s3
+    s2 --> s4
+    a1 --> s2
+    a1 --> b1
+    b1 --> b2
+    b2 --> b3
+    b2 --> b4
+    b4 --> b5
+    a1 --> t1
+    t1 --> t2
+    t1 --> t22
+    t1 --> t3
+    t1 --> t4
+    t2 --> t33
+    t33 --> t333
+    cl1 --> cl2
+    cl1 --> cl3
+    c4 --> cl4
+    cl3 --> cl5
+    cl5 --> cl6
+    s3 --> h1
+    c22 --> h1
+    b3 --> h1
+    h1 --> h2
+    h2 --> h3
+```
