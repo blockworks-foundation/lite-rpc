@@ -1,16 +1,12 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use solana_lite_rpc_core::{
-    block_store::{Block, BlockStore},
     jsonrpc_client::{JsonRpcClient, ProcessedBlock},
-    solana_utils::SolanaUtils,
     AtomicSlot,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use tokio::sync::{broadcast, mpsc::UnboundedSender};
-
-use crate::{slot_clock::SlotClock, slot_estimator::SlotClock};
 
 const MAX_BLOCK_INDEXERS: usize = 10;
 
@@ -57,6 +53,7 @@ impl RpcListener {
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
         let curernt_slot = AtomicSlot::default();
+        let block_worker_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_BLOCK_INDEXERS));
 
         while let Some(slot) = slot_rx.recv().await {
             // update the current slot for retry queue
