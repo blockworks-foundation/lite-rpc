@@ -871,7 +871,9 @@ This domain is not part of the RPC service functionalities. Another project will
 
 
 ### Architecture
+
 Main architecture
+
 ``` mermaid
 flowchart TB
     rpc(RPC access)
@@ -922,6 +924,7 @@ flowchart TB
 ```
 
 send_transaction
+
 ``` mermaid
 flowchart TB
     user(Web3 User)
@@ -938,7 +941,9 @@ flowchart TB
     cluster -->|forward epoch info:stake, slots| lite
     cluster -->|forward epoch info: stake| proxy
 ```
+
 getblocks
+
 ``` mermaid
 flowchart TB
     user(Web3 User)
