@@ -11,7 +11,7 @@ pub struct ValidatorIdentity {
 
 impl ValidatorIdentity {
     pub fn new(keypair: Option<Keypair>) -> Self {
-        let keypair = keypair.unwrap();
+        let keypair = keypair.unwrap_or(Keypair::new());
         ValidatorIdentity {
             keypair: Arc::new(keypair),
         }
