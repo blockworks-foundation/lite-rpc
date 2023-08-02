@@ -211,7 +211,6 @@ impl QuicProxyConnectionManager {
         tpu_target_address: SocketAddr,
         target_tpu_identity: Pubkey,
     ) -> anyhow::Result<()> {
-
         let mut txs = vec![];
 
         for raw_tx in raw_tx_batch {
@@ -246,5 +245,4 @@ impl QuicProxyConnectionManager {
 
         Ok(())
     }
-
 }
