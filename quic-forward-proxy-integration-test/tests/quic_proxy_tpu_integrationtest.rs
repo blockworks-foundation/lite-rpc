@@ -1,14 +1,13 @@
-
 use countmap::CountMap;
-use crossbeam_channel::{Sender};
+use crossbeam_channel::Sender;
 
 use log::{debug, info, trace, warn};
 
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
+use solana_lite_rpc_core::solana_utils::SerializableTransaction;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_core::tx_store::empty_tx_store;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
-use solana_lite_rpc_core::solana_utils::SerializableTransaction;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::message::Message;
@@ -24,25 +23,22 @@ use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
-
-
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
-use tokio::runtime::{Builder};
+use tokio::runtime::Builder;
 
-
-use tokio::task::{JoinHandle, yield_now};
-use tokio::time::{sleep};
+use tokio::task::{yield_now, JoinHandle};
+use tokio::time::sleep;
 use tracing_subscriber::util::SubscriberInitExt;
 
-use tracing_subscriber::fmt::format::FmtSpan;
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
 use solana_lite_rpc_services::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
+use tracing_subscriber::fmt::format::FmtSpan;
 
 #[derive(Copy, Clone, Debug)]
 struct TestCaseParams {
@@ -196,7 +192,10 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     let udp_listen_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
     let listen_addr = udp_listen_socket.local_addr().unwrap();
 
-    let proxy_listen_addr = UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    let proxy_listen_addr = UdpSocket::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
 
     let (inbound_packets_sender, inbound_packets_receiver) = crossbeam_channel::unbounded();
 
@@ -225,11 +224,8 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     });
 
     runtime_quic_proxy.block_on(async {
-        tokio::spawn(start_quic_proxy(
-            proxy_listen_addr,
-        ));
+        tokio::spawn(start_quic_proxy(proxy_listen_addr));
     });
-
 
     runtime_literpc.block_on(async {
         if test_case_params.proxy_mode {
@@ -438,7 +434,7 @@ async fn start_literpc_client(
     for i in 0..test_case_params.sample_tx_count {
         let raw_sample_tx = build_raw_sample_tx(i);
         broadcast_sender.send(raw_sample_tx)?;
-        if (i+1) % 1000 == 0 {
+        if (i + 1) % 1000 == 0 {
             yield_now().await;
         }
     }
@@ -490,7 +486,6 @@ async fn solana_quic_streamer_start() {
     stats.report();
 }
 
-
 // no quic proxy
 async fn start_literpc_client_direct_mode(
     test_case_params: TestCaseParams,
@@ -508,7 +503,7 @@ async fn start_literpc_client_direct_mode(
         literpc_validator_identity.as_ref(),
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
     )
-        .expect("Failed to initialize QUIC connection certificates");
+    .expect("Failed to initialize QUIC connection certificates");
 
     let tpu_connection_manager =
         TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
@@ -540,7 +535,11 @@ async fn start_literpc_client_direct_mode(
     // populated from get_stakes_for_identity()
     let identity_stakes = IdentityStakes {
         peer_type: ConnectionPeerType::Staked,
-        stakes: if test_case_params.stake_connection { 30 } else { 0 }, // stake of lite-rpc
+        stakes: if test_case_params.stake_connection {
+            30
+        } else {
+            0
+        }, // stake of lite-rpc
         min_stakes: 0,
         max_stakes: 40,
         total_stakes: 100,
@@ -582,7 +581,10 @@ async fn start_literpc_client_proxy_mode(
     validator_identity: Arc<Keypair>,
     forward_proxy_address: SocketAddr,
 ) -> anyhow::Result<()> {
-    info!("Start lite-rpc test client using quic proxy at {} ...", forward_proxy_address);
+    info!(
+        "Start lite-rpc test client using quic proxy at {} ...",
+        forward_proxy_address
+    );
 
     // (String, Vec<u8>) (signature, transaction)
     let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
@@ -591,7 +593,7 @@ async fn start_literpc_client_proxy_mode(
         validator_identity.as_ref(),
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
     )
-        .expect("Failed to initialize QUIC connection certificates");
+    .expect("Failed to initialize QUIC connection certificates");
 
     let quic_proxy_connection_manager =
         QuicProxyConnectionManager::new(certificate, key, forward_proxy_address).await;
@@ -623,7 +625,11 @@ async fn start_literpc_client_proxy_mode(
     // populated from get_stakes_for_identity()
     let _identity_stakes = IdentityStakes {
         peer_type: ConnectionPeerType::Staked,
-        stakes: if test_case_params.stake_connection { 30 } else { 0 }, // stake of lite-rpc
+        stakes: if test_case_params.stake_connection {
+            30
+        } else {
+            0
+        }, // stake of lite-rpc
         min_stakes: 0,
         max_stakes: 40,
         total_stakes: 100,
@@ -642,8 +648,13 @@ async fn start_literpc_client_proxy_mode(
     //     )
     //     .await;
 
-    quic_proxy_connection_manager.update_connection(
-        broadcast_sender.clone(), connections_to_keep, QUIC_CONNECTION_PARAMS).await;
+    quic_proxy_connection_manager
+        .update_connection(
+            broadcast_sender.clone(),
+            connections_to_keep,
+            QUIC_CONNECTION_PARAMS,
+        )
+        .await;
 
     // TODO this is a race
     sleep(Duration::from_millis(1500)).await;
@@ -658,7 +669,7 @@ async fn start_literpc_client_proxy_mode(
         );
 
         broadcast_sender.send(raw_sample_tx)?;
-        if (i+1) % 1000 == 0 {
+        if (i + 1) % 1000 == 0 {
             yield_now().await;
         }
     }
@@ -669,14 +680,17 @@ async fn start_literpc_client_proxy_mode(
 }
 
 async fn start_quic_proxy(proxy_listen_addr: SocketAddr) -> anyhow::Result<()> {
-
     let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let random_unstaked_validator_identity = ValidatorIdentity::new(None);
 
     let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());
-    let proxy_service = QuicForwardProxy::new(proxy_listen_addr, tls_config, random_unstaked_validator_identity)
-        .await?
-        .start_services();
+    let proxy_service = QuicForwardProxy::new(
+        proxy_listen_addr,
+        tls_config,
+        random_unstaked_validator_identity,
+    )
+    .await?
+    .start_services();
 
     tokio::select! {
         _ = proxy_service => {
@@ -684,7 +698,6 @@ async fn start_quic_proxy(proxy_listen_addr: SocketAddr) -> anyhow::Result<()> {
         },
     }
 }
-
 
 struct SolanaQuicStreamer {
     sock: UdpSocket,
