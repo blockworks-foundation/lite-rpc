@@ -147,9 +147,7 @@ async fn new_endpoint_with_validator_identity(validator_identity: ValidatorIdent
     )
     .expect("Failed to initialize QUIC connection certificates");
 
-    let endpoint_outbound = create_tpu_client_endpoint(certificate.clone(), key.clone());
-
-    endpoint_outbound
+    create_tpu_client_endpoint(certificate, key)
 }
 
 fn create_tpu_client_endpoint(
@@ -196,13 +194,12 @@ fn create_tpu_client_endpoint(
 
 // send potentially large amount of transactions to a single TPU
 #[tracing::instrument(skip_all, level = "debug")]
-async fn send_tx_batch_to_tpu(auto_connection: &AutoReconnect, txs: &Vec<VersionedTransaction>) {
+async fn send_tx_batch_to_tpu(auto_connection: &AutoReconnect, txs: &[VersionedTransaction]) {
     for chunk in txs.chunks(MAX_PARALLEL_STREAMS) {
         let all_send_fns = chunk
             .iter()
             .map(|tx| {
-                let tx_raw = bincode::serialize(tx).unwrap();
-                tx_raw
+                bincode::serialize(tx).unwrap()
             })
             .map(|tx_raw| {
                 auto_connection.send_uni(tx_raw) // ignores error

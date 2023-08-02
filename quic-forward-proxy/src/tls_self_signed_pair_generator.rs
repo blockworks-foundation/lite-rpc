@@ -25,16 +25,9 @@ pub struct SelfSignedTlsConfigProvider {
     server_crypto: ServerConfig,
 }
 
-const INSTANCES: AtomicU32 = AtomicU32::new(0);
-
 impl SelfSignedTlsConfigProvider {
     pub fn new_singleton_self_signed_localhost() -> Self {
         // note: this check could be relaxed when you know what you are doing!
-        assert_eq!(
-            INSTANCES.fetch_add(1, Ordering::Relaxed),
-            0,
-            "should be a singleton"
-        );
         let hostnames = vec!["localhost".to_string()];
         let (certificate, private_key) = Self::gen_tls_certificate_and_key(hostnames.clone());
         let server_crypto = Self::build_server_crypto(certificate.clone(), private_key.clone());
@@ -43,7 +36,7 @@ impl SelfSignedTlsConfigProvider {
             certificate,
             private_key,
             client_crypto: Self::build_client_crypto_insecure(),
-            server_crypto: server_crypto,
+            server_crypto,
         }
     }
 
@@ -61,7 +54,7 @@ impl SelfSignedTlsConfigProvider {
             .with_no_client_auth();
         client_crypto.enable_early_data = true;
         client_crypto.alpn_protocols = vec![ALPN_TPU_FORWARDPROXY_PROTOCOL_ID.to_vec()];
-        return client_crypto;
+        client_crypto
     }
 
     fn build_server_crypto(server_cert: Certificate, server_key: PrivateKey) -> ServerConfig {
@@ -74,7 +67,7 @@ impl SelfSignedTlsConfigProvider {
             .with_single_cert(vec![server_cert], server_key)
             .unwrap();
         server_crypto.alpn_protocols = vec![ALPN_TPU_FORWARDPROXY_PROTOCOL_ID.to_vec()];
-        return server_crypto;
+        server_crypto
     }
 
     pub fn get_client_tls_crypto_config(&self) -> &ClientConfig {

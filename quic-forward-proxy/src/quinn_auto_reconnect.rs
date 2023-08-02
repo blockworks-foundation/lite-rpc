@@ -51,7 +51,7 @@ impl AutoReconnect {
         }
         let mut lock = self.current.write().await;
         let maybe_conn = lock.as_ref();
-        return match maybe_conn {
+        match maybe_conn {
             Some(current) => {
                 if current.close_reason().is_some() {
                     let old_stable_id = current.stable_id();
@@ -73,7 +73,7 @@ impl AutoReconnect {
                         self.reconnect_count.load(Ordering::SeqCst)
                     );
 
-                    new_connection.clone()
+                    new_connection
                 } else {
                     debug!("Reuse connection {} with write-lock", current.stable_id());
                     current.clone()
@@ -87,9 +87,9 @@ impl AutoReconnect {
                 // let old_conn = foo.replace(Some(new_connection.clone()));
                 debug!("Create initial connection {}", new_connection.stable_id());
 
-                new_connection.clone()
+                new_connection
             }
-        };
+        }
     }
 
     async fn create_connection(&self) -> Connection {

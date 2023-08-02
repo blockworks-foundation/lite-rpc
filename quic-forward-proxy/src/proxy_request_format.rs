@@ -53,7 +53,7 @@ impl TpuForwardingRequest {
 
     // TODO reame
     pub fn deserialize_from_raw_request(raw_proxy_request: &Vec<u8>) -> TpuForwardingRequest {
-        let request = bincode::deserialize::<TpuForwardingRequest>(&raw_proxy_request)
+        let request = bincode::deserialize::<TpuForwardingRequest>(raw_proxy_request)
             .context("deserialize proxy request")
             .unwrap();
 

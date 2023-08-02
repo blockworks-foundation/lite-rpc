@@ -14,7 +14,7 @@ impl ValidatorIdentity {
     pub fn new(keypair: Option<Keypair>) -> Self {
         let dummy_keypair = Keypair::new();
         ValidatorIdentity {
-            keypair: keypair.map(|kp| Arc::new(kp)),
+            keypair: keypair.map(Arc::new),
             dummy_keypair: Arc::new(dummy_keypair),
         }
     }
@@ -38,7 +38,7 @@ impl ValidatorIdentity {
 impl Display for ValidatorIdentity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.keypair {
-            Some(keypair) => write!(f, "{}", keypair.pubkey().to_string()),
+            Some(keypair) => write!(f, "{}", keypair.pubkey()),
             None => write!(f, "no keypair"),
         }
     }
