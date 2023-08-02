@@ -79,16 +79,6 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     .await
 }
 
-fn configure_tpu_connection_path(experimental_quic_proxy_addr: Option<String>) -> TpuConnectionPath {
-    match experimental_quic_proxy_addr {
-        None => TpuConnectionPath::QuicDirectPath,
-        Some(prox_address) => TpuConnectionPath::QuicForwardProxyPath {
-            // e.g. "127.0.0.1:11111"
-            forward_proxy_address: prox_address.parse().unwrap()
-        },
-    }
-}
-
 fn get_args() -> Args {
     let mut args = Args::parse();
 
@@ -130,5 +120,15 @@ pub async fn main() -> anyhow::Result<()> {
 
             Ok(())
         }
+    }
+}
+
+fn configure_tpu_connection_path(experimental_quic_proxy_addr: Option<String>) -> TpuConnectionPath {
+    match experimental_quic_proxy_addr {
+        None => TpuConnectionPath::QuicDirectPath,
+        Some(prox_address) => TpuConnectionPath::QuicForwardProxyPath {
+            // e.g. "127.0.0.1:11111"
+            forward_proxy_address: prox_address.parse().unwrap()
+        },
     }
 }

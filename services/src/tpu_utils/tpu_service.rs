@@ -203,7 +203,6 @@ impl TpuService {
                 ).await;
             }
         }
-
     }
 
     fn update_current_slot(
