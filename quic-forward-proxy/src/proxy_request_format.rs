@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 /// lite-rpc to proxy wire format
 /// compat info: non-public format ATM
 /// initial version
-pub const FORMAT_VERSION1: u16 = 2301;
+pub const FORMAT_VERSION1: u16 = 2302;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuForwardingRequest {

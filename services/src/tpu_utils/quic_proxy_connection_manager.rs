@@ -21,7 +21,7 @@ use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::time::timeout;
 
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
-use solana_lite_rpc_core::quic_connection_utils::{connection_stats, SkipServerVerification};
+use solana_lite_rpc_core::quic_connection_utils::{connection_stats, QuicConnectionParameters, SkipServerVerification};
 
 
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;
@@ -34,21 +34,17 @@ pub struct TpuNode {
 
 pub struct QuicProxyConnectionManager {
     endpoint: Endpoint,
-    // TODO remove
-    validator_identity: Arc<Keypair>,
     simple_thread_started: AtomicBool,
     proxy_addr: SocketAddr,
     current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>
 }
 
-// TODO consolidate with number_of_transactions_per_unistream
 const CHUNK_SIZE_PER_STREAM: usize = 20;
 
 impl QuicProxyConnectionManager {
     pub async fn new(
         certificate: rustls::Certificate,
         key: rustls::PrivateKey,
-        validator_identity: Arc<Keypair>,
         proxy_addr: SocketAddr,
     ) -> Self {
         info!("Configure Quic proxy connection manager to {}", proxy_addr);
@@ -56,7 +52,6 @@ impl QuicProxyConnectionManager {
 
         Self {
             endpoint,
-            validator_identity,
             simple_thread_started: AtomicBool::from(false),
             proxy_addr,
             current_tpu_nodes: Arc::new(RwLock::new(vec![])),
@@ -68,9 +63,9 @@ impl QuicProxyConnectionManager {
         transaction_sender: Arc<Sender<(String, Vec<u8>)>>,
         // for duration of this slot these tpu nodes will receive the transactions
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
+        connection_parameters: QuicConnectionParameters,
     ) {
         debug!("reconfigure quic proxy connection (# of tpu nodes: {})", connections_to_keep.len());
-
 
         {
             let list_of_nodes = connections_to_keep.iter().map(|(identity, tpu_address)| {
@@ -95,7 +90,6 @@ impl QuicProxyConnectionManager {
 
         let transaction_receiver = transaction_sender.subscribe();
 
-        // TODO use it
         let exit_signal = Arc::new(AtomicBool::new(false));
 
         tokio::spawn(Self::read_transactions_and_broadcast(
@@ -104,6 +98,7 @@ impl QuicProxyConnectionManager {
             self.proxy_addr,
             self.endpoint.clone(),
             exit_signal,
+            connection_parameters,
         ));
 
     }
@@ -149,17 +144,14 @@ impl QuicProxyConnectionManager {
         endpoint
     }
 
-    // blocks and loops until exit signal (TODO)
     async fn read_transactions_and_broadcast(
         mut transaction_receiver: Receiver<(String, Vec<u8>)>,
         current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>,
         proxy_addr: SocketAddr,
         endpoint: Endpoint,
         exit_signal: Arc<AtomicBool>,
+        connection_parameters: QuicConnectionParameters,
     ) {
-
-        // let mut connection = endpoint.connect(proxy_addr, "localhost").unwrap()
-        //     .await.unwrap();
 
         let auto_connection = AutoReconnect::new(endpoint, proxy_addr);
 
@@ -173,13 +165,8 @@ impl QuicProxyConnectionManager {
                     // TODO add timeout
                     tx = transaction_receiver.recv() => {
 
-
                         let first_tx: Vec<u8> = match tx {
                             Ok((_sig, tx)) => {
-                                // if Self::check_for_confirmation(&txs_sent_store, sig) {
-                                //     // transaction is already confirmed/ no need to send
-                                //     continue;
-                                // }
                                 tx
                             },
                             Err(e) => {
@@ -189,16 +176,9 @@ impl QuicProxyConnectionManager {
                             }
                         };
 
-                        let number_of_transactions_per_unistream = 8; // TODO read from QuicConnectionParameters
-
                         let mut txs = vec![first_tx];
-                        // TODO comment in
-                        let _foo = PACKET_DATA_SIZE;
-                        for _ in 1..number_of_transactions_per_unistream {
+                        for _ in 1..connection_parameters.number_of_transactions_per_unistream {
                             if let Ok((_signature, tx)) = transaction_receiver.try_recv() {
-                                // if Self::check_for_confirmation(&txs_sent_store, signature) {
-                                //     continue;
-                                // }
                                 txs.push(tx);
                             }
                         }
@@ -226,9 +206,6 @@ impl QuicProxyConnectionManager {
                                            _proxy_address: SocketAddr, tpu_target_address: SocketAddr,
                                            target_tpu_identity: Pubkey) -> anyhow::Result<()> {
 
-        // TODO add timeout
-        // let mut send_stream = timeout(Duration::from_millis(500), connection.open_uni()).await??;
-
         let raw_tx_batch_copy = raw_tx_batch.clone();
 
         let mut txs = vec![];
@@ -253,10 +230,6 @@ impl QuicProxyConnectionManager {
 
             let send_result = auto_connection.send_uni(proxy_request_raw).await;
 
-            // let send_result =
-            //     timeout(Duration::from_millis(3500), Self::send_proxy_request(endpoint, proxy_address, &proxy_request_raw))
-            //         .await.context("Timeout sending data to quic proxy")?;
-
             match send_result {
                 Ok(()) => {
                     debug!("Successfully sent {} txs to quic proxy", txs.len());
@@ -272,7 +245,6 @@ impl QuicProxyConnectionManager {
         Ok(())
     }
 
-    // TODO optimize connection
      async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
          info!("sending {} bytes to proxy", proxy_request_raw.len());
 

@@ -31,12 +31,9 @@ pub async fn main() -> anyhow::Result<()> {
         identity_keypair,
         proxy_listen_addr: proxy_listen_addr,
     } = Args::parse();
-
     dotenv().ok();
 
-    // TODO build args struct dedicated to proxy
     let proxy_listener_addr = proxy_listen_addr.parse().unwrap();
-    let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let validator_identity = ValidatorIdentity::new(get_identity_keypair(&identity_keypair).await);
 
     let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());

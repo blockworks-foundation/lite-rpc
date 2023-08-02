@@ -1,5 +1,5 @@
 use crate::quic_util::{SkipServerVerification, ALPN_TPU_FORWARDPROXY_PROTOCOL_ID};
-use crate::tls_config_provider_client::TpuCLientTlsConfigProvider;
+use crate::tls_config_provider_client::TpuClientTlsConfigProvider;
 use crate::tls_config_provider_server::ProxyTlsConfigProvider;
 use rcgen::generate_simple_self_signed;
 use rustls::{Certificate, ClientConfig, PrivateKey, ServerConfig};
@@ -11,7 +11,7 @@ impl ProxyTlsConfigProvider for SelfSignedTlsConfigProvider {
     }
 }
 
-impl TpuCLientTlsConfigProvider for SelfSignedTlsConfigProvider {
+impl TpuClientTlsConfigProvider for SelfSignedTlsConfigProvider {
     fn get_client_tls_crypto_config(&self) -> ClientConfig {
         self.client_crypto.clone()
     }

@@ -103,7 +103,7 @@ impl TpuService {
                 }
                 TpuConnectionPath::QuicForwardProxyPath { forward_proxy_address } => {
                     let quic_proxy_connection_manager =
-                        QuicProxyConnectionManager::new(certificate, key, identity.clone(), forward_proxy_address).await;
+                        QuicProxyConnectionManager::new(certificate, key,  forward_proxy_address).await;
 
                     QuicProxy {
                         quic_proxy_connection_manager: Arc::new(quic_proxy_connection_manager),
@@ -196,10 +196,10 @@ impl TpuService {
                     .await;
             },
             QuicProxy { quic_proxy_connection_manager } => {
-                // TODO maybe we need more data (see .update_connections)
                 quic_proxy_connection_manager.update_connection(
                     self.broadcast_sender.clone(),
                     connections_to_keep,
+                    self.config.quic_connection_params,
                 ).await;
             }
         }

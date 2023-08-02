@@ -10,12 +10,12 @@ use solana_sdk::transaction::VersionedTransaction;
 /// lite-rpc to proxy wire format
 /// compat info: non-public format ATM
 /// initial version
-const FORMAT_VERSION1: u16 = 2301;
+const FORMAT_VERSION1: u16 = 2302;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuForwardingRequest {
     format_version: u16,
-    tpu_socket_addr: SocketAddr, // TODO is that correct, maybe it should be V4; maybe we also need to provide a list
+    tpu_socket_addr: SocketAddr,
     identity_tpunode: Pubkey,
     transactions: Vec<VersionedTransaction>,
 }
@@ -43,7 +43,6 @@ impl TpuForwardingRequest {
         bincode::serialize(&self).expect("Expect to serialize transactions")
     }
 
-    // TODO reame
     pub fn deserialize_from_raw_request(raw_proxy_request: &Vec<u8>) -> TpuForwardingRequest {
         let request = bincode::deserialize::<TpuForwardingRequest>(&raw_proxy_request)
             .context("deserialize proxy request")

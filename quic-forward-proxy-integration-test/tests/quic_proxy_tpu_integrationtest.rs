@@ -559,9 +559,6 @@ async fn start_literpc_client_direct_mode(
         )
         .await;
 
-    // TODO this is a race
-    sleep(Duration::from_millis(1500)).await;
-
     for i in 0..test_case_params.sample_tx_count {
         let raw_sample_tx = build_raw_sample_tx(i);
         trace!(
@@ -582,27 +579,22 @@ async fn start_literpc_client_direct_mode(
 async fn start_literpc_client_proxy_mode(
     test_case_params: TestCaseParams,
     streamer_listen_addrs: SocketAddr,
-    literpc_validator_identity: Arc<Keypair>,
+    validator_identity: Arc<Keypair>,
     forward_proxy_address: SocketAddr,
 ) -> anyhow::Result<()> {
     info!("Start lite-rpc test client using quic proxy at {} ...", forward_proxy_address);
-
-    let _fanout_slots = 4;
 
     // (String, Vec<u8>) (signature, transaction)
     let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
     let broadcast_sender = Arc::new(sender);
     let (certificate, key) = new_self_signed_tls_certificate(
-        literpc_validator_identity.as_ref(),
+        validator_identity.as_ref(),
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
     )
         .expect("Failed to initialize QUIC connection certificates");
 
-    // let tpu_connection_manager =
-    //     TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
-
     let quic_proxy_connection_manager =
-        QuicProxyConnectionManager::new(certificate, key, literpc_validator_identity.clone(), forward_proxy_address).await;
+        QuicProxyConnectionManager::new(certificate, key, forward_proxy_address).await;
 
     // this effectively controls how many connections we will have
     let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
@@ -625,7 +617,7 @@ async fn start_literpc_client_proxy_mode(
     );
 
     // this is the real streamer
-    connections_to_keep.insert(literpc_validator_identity.pubkey(), streamer_listen_addrs);
+    connections_to_keep.insert(validator_identity.pubkey(), streamer_listen_addrs);
 
     // get information about the optional validator identity stake
     // populated from get_stakes_for_identity()
@@ -650,7 +642,8 @@ async fn start_literpc_client_proxy_mode(
     //     )
     //     .await;
 
-    quic_proxy_connection_manager.update_connection(broadcast_sender.clone(), connections_to_keep).await;
+    quic_proxy_connection_manager.update_connection(
+        broadcast_sender.clone(), connections_to_keep, QUIC_CONNECTION_PARAMS).await;
 
     // TODO this is a race
     sleep(Duration::from_millis(1500)).await;
