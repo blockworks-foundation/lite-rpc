@@ -6,40 +6,40 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct ValidatorIdentity {
-    keypair: Option<Arc<Keypair>>,
-    dummy_keypair: Arc<Keypair>,
+    keypair: Arc<Keypair>,
+    is_dummy_keypair: bool,
 }
 
 impl ValidatorIdentity {
     pub fn new(keypair: Option<Keypair>) -> Self {
-        let dummy_keypair = Keypair::new();
-        ValidatorIdentity {
-            keypair: keypair.map(Arc::new),
-            dummy_keypair: Arc::new(dummy_keypair),
+        match keypair {
+            Some(keypair) => ValidatorIdentity {
+                keypair: Arc::new(keypair),
+                is_dummy_keypair: false,
+            },
+            None => ValidatorIdentity {
+                keypair: Arc::new(Keypair::new()),
+                is_dummy_keypair: true,
+            },
         }
     }
 
     pub fn get_keypair_for_tls(&self) -> Arc<Keypair> {
-        match &self.keypair {
-            Some(keypair) => keypair.clone(),
-            None => self.dummy_keypair.clone(),
-        }
+        self.keypair.clone()
     }
 
     pub fn get_pubkey(&self) -> Pubkey {
-        let keypair = match &self.keypair {
-            Some(keypair) => keypair.clone(),
-            None => self.dummy_keypair.clone(),
-        };
+        let keypair = self.keypair.clone();
         keypair.pubkey()
     }
 }
 
 impl Display for ValidatorIdentity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.keypair {
-            Some(keypair) => write!(f, "{}", keypair.pubkey()),
-            None => write!(f, "no keypair"),
+        if self.is_dummy_keypair {
+            write!(f, "no keypair")
+        } else {
+            write!(f, "{}", self.keypair.pubkey())
         }
     }
 }
