@@ -100,6 +100,29 @@ impl AutoReconnect {
 
         connection.await.expect("connection")
     }
+
+
+    //  stable_id 140266619216912, rtt=2.156683ms,
+    // stats FrameStats { ACK: 3, CONNECTION_CLOSE: 0, CRYPTO: 3,
+    // DATA_BLOCKED: 0, DATAGRAM: 0, HANDSHAKE_DONE: 1, MAX_DATA: 0,
+    // MAX_STREAM_DATA: 1, MAX_STREAMS_BIDI: 0, MAX_STREAMS_UNI: 0, NEW_CONNECTION_ID: 4,
+    // NEW_TOKEN: 0, PATH_CHALLENGE: 0, PATH_RESPONSE: 0, PING: 0, RESET_STREAM: 0,
+    // RETIRE_CONNECTION_ID: 1, STREAM_DATA_BLOCKED: 0, STREAMS_BLOCKED_BIDI: 0,
+    // STREAMS_BLOCKED_UNI: 0, STOP_SENDING: 0, STREAM: 0 }
+    pub async fn connection_stats(&self) -> String {
+        let lock = self.current.read().await;
+        let maybe_conn = lock.as_ref();
+        match maybe_conn {
+            Some(connection) => format!(
+                    "stable_id {} stats {:?}, rtt={:?}",
+                    connection.stable_id(),
+                    connection.stats().frame_rx,
+                    connection.stats().path.rtt
+                ),
+            None => "n/a".to_string(),
+        }
+    }
+
 }
 
 impl fmt::Display for AutoReconnect {

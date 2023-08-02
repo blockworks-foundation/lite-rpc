@@ -1,4 +1,4 @@
-use crate::cli::{get_identity_keypair, Args};
+use crate::cli::Args;
 use crate::proxy::QuicForwardProxy;
 use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use anyhow::bail;
@@ -6,6 +6,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use log::info;
 use std::sync::Arc;
+use crate::util::get_identity_keypair;
 
 use crate::validator_identity::ValidatorIdentity;
 
@@ -29,7 +30,7 @@ pub async fn main() -> anyhow::Result<()> {
 
     let Args {
         identity_keypair,
-        proxy_listen_addr: proxy_listen_addr,
+        proxy_listen_addr,
     } = Args::parse();
     dotenv().ok();
 

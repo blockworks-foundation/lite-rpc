@@ -12,6 +12,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
+use crate::quic_util::connection_stats;
 
 // note: setting this to "1" did not make a difference!
 // solana server sets this to 256
@@ -110,7 +111,7 @@ impl ProxyListener {
 
         loop {
             let maybe_stream = client_connection.accept_uni().await;
-            let result = match maybe_stream {
+            match maybe_stream {
                 Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
                     debug!("connection closed by client - reason: {:?}", reason);
                     if reason.error_code != VarInt::from_u32(0) {
@@ -124,7 +125,7 @@ impl ProxyListener {
                 }
                 Err(e) => {
                     error!("failed to accept stream: {}", e);
-                    return Err(anyhow::Error::msg("error accepting stream"));
+                    bail!("error accepting stream");
                 }
                 Ok(recv_stream) => {
                     let forwarder_channel_copy = forwarder_channel.clone();
@@ -157,13 +158,11 @@ impl ProxyListener {
                             .unwrap();
                     });
 
-                    Ok(())
+                    debug!("Inbound connection stats: {}", connection_stats(&client_connection));
+
                 }
             }; // -- result
 
-            if let Err(e) = result {
-                return Err(e);
-            }
         } // -- loop
     }
 }

@@ -6,7 +6,6 @@ use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail, Context};
 use fan::tokio::mpsc::FanOut;
 use futures::future::join_all;
-use itertools::Itertools;
 use log::{debug, info, warn};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
@@ -22,11 +21,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{channel, Receiver};
 
-const QUIC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
-pub const CONNECTION_RETRY_COUNT: usize = 10;
-
-pub const MAX_TRANSACTIONS_PER_BATCH: usize = 10;
-pub const MAX_BYTES_PER_BATCH: usize = 10;
 const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
 
@@ -53,8 +47,7 @@ pub async fn tx_forwarder(
             .expect("channel closed unexpectedly");
         let tpu_address = forward_packet.tpu_address;
 
-        if !agents.contains_key(&tpu_address) {
-            // TODO cleanup agent after a while of iactivity
+        agents.entry(tpu_address).or_insert_with(|| {
 
             let mut senders = Vec::new();
             for connection_idx in 1..PARALLEL_TPU_CONNECTION_COUNT {
@@ -79,10 +72,8 @@ pub async fn tx_forwarder(
 
                         let mut transactions_batch = packet.transactions;
 
-                        let mut batch_size = 1;
                         while let Ok(more) = receiver.try_recv() {
                             transactions_batch.extend(more.transactions);
-                            batch_size += 1;
                         }
 
                         debug!(
@@ -95,11 +86,11 @@ pub async fn tx_forwarder(
                             &auto_connection,
                             &transactions_batch,
                         ))
-                        .await
-                        .context(format!(
-                            "send txs to tpu node {}",
-                            auto_connection.target_address
-                        ));
+                            .await
+                            .context(format!(
+                                "send txs to tpu node {}",
+                                auto_connection.target_address
+                            ));
 
                         if result.is_err() {
                             warn!(
@@ -108,6 +99,7 @@ pub async fn tx_forwarder(
                             );
                         } else {
                             debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
+                            debug!("Outbound connection stats: {}", &auto_connection.connection_stats().await);
                         }
                     } // -- while all packtes from channel
 
@@ -118,10 +110,8 @@ pub async fn tx_forwarder(
                 });
             }
 
-            let fanout = FanOut::new(senders);
-
-            agents.insert(tpu_address, fanout);
-        } // -- new agent
+            FanOut::new(senders)
+        }); // -- new agent
 
         let agent_channel = agents.get(&tpu_address).unwrap();
 

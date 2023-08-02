@@ -3,7 +3,6 @@ use crate::tls_config_provider_client::TpuClientTlsConfigProvider;
 use crate::tls_config_provider_server::ProxyTlsConfigProvider;
 use rcgen::generate_simple_self_signed;
 use rustls::{Certificate, ClientConfig, PrivateKey, ServerConfig};
-use std::sync::atomic::{AtomicU32, Ordering};
 
 impl ProxyTlsConfigProvider for SelfSignedTlsConfigProvider {
     fn get_server_tls_crypto_config(&self) -> ServerConfig {
@@ -18,9 +17,6 @@ impl TpuClientTlsConfigProvider for SelfSignedTlsConfigProvider {
 }
 
 pub struct SelfSignedTlsConfigProvider {
-    hostnames: Vec<String>,
-    certificate: Certificate,
-    private_key: PrivateKey,
     client_crypto: ClientConfig,
     server_crypto: ServerConfig,
 }
@@ -29,12 +25,9 @@ impl SelfSignedTlsConfigProvider {
     pub fn new_singleton_self_signed_localhost() -> Self {
         // note: this check could be relaxed when you know what you are doing!
         let hostnames = vec!["localhost".to_string()];
-        let (certificate, private_key) = Self::gen_tls_certificate_and_key(hostnames.clone());
-        let server_crypto = Self::build_server_crypto(certificate.clone(), private_key.clone());
+        let (certificate, private_key) = Self::gen_tls_certificate_and_key(hostnames);
+        let server_crypto = Self::build_server_crypto(certificate, private_key);
         Self {
-            hostnames,
-            certificate,
-            private_key,
             client_crypto: Self::build_client_crypto_insecure(),
             server_crypto,
         }

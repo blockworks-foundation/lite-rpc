@@ -26,6 +26,6 @@ fn roundtrip() {
 
     let request = TpuForwardingRequest::deserialize_from_raw_request(&wire_data);
 
-    assert_eq!(request.get_tpu_socket_addr().is_ipv4(), true);
+    assert!(request.get_tpu_socket_addr().is_ipv4());
     assert_eq!(request.get_transactions().len(), 1);
 }
