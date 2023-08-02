@@ -13,8 +13,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 
-// TODO tweak this value - solana server sets 256
-// setting this to "1" did not make a difference!
+// note: setting this to "1" did not make a difference!
+// solana server sets this to 256
 const MAX_CONCURRENT_UNI_STREAMS: u32 = 24;
 
 pub struct ProxyListener {
@@ -84,7 +84,6 @@ impl ProxyListener {
 
         // note: this config must be aligned with lite-rpc's client config
         let transport_config = Arc::get_mut(&mut quinn_server_config.transport).unwrap();
-        // TODO experiment with this value
         transport_config.max_concurrent_uni_streams(VarInt::from_u32(MAX_CONCURRENT_UNI_STREAMS));
         // no bidi streams used
         transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
@@ -98,7 +97,6 @@ impl ProxyListener {
         Endpoint::server(quinn_server_config, proxy_listener_addr).unwrap()
     }
 
-    // TODO use interface abstraction for connection_per_tpunode
     #[tracing::instrument(skip_all, level = "debug")]
     async fn accept_client_connection(
         client_connection: Connection,

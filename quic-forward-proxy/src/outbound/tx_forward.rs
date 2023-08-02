@@ -51,7 +51,6 @@ pub async fn tx_forwarder(
             .recv()
             .await
             .expect("channel closed unexpectedly");
-        // TODO drain the queue with .try_recv() and batch the transactions
         let tpu_address = forward_packet.tpu_address;
 
         if !agents.contains_key(&tpu_address) {

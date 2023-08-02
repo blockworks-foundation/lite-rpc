@@ -17,7 +17,6 @@ pub mod proxy_request_format;
 pub mod quic_util;
 mod quinn_auto_reconnect;
 mod shared;
-pub mod test_client;
 pub mod tls_config_provider_client;
 pub mod tls_config_provider_server;
 pub mod tls_self_signed_pair_generator;
@@ -30,13 +29,13 @@ pub async fn main() -> anyhow::Result<()> {
 
     let Args {
         identity_keypair,
-        proxy_listen_addr: proxy_rpc_addr,
+        proxy_listen_addr: proxy_listen_addr,
     } = Args::parse();
 
     dotenv().ok();
 
     // TODO build args struct dedicated to proxy
-    let proxy_listener_addr = proxy_rpc_addr.parse().unwrap();
+    let proxy_listener_addr = proxy_listen_addr.parse().unwrap();
     let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let validator_identity = ValidatorIdentity::new(get_identity_keypair(&identity_keypair).await);
 
@@ -44,12 +43,6 @@ pub async fn main() -> anyhow::Result<()> {
     let main_services = QuicForwardProxy::new(proxy_listener_addr, tls_config, validator_identity)
         .await?
         .start_services();
-
-    // let proxy_addr = "127.0.0.1:11111".parse().unwrap();
-    // let test_client = QuicTestClient::new_with_endpoint(
-    //     proxy_addr, &tls_configuration)
-    //     .await?
-    //     .start_services();
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
