@@ -141,6 +141,7 @@ async fn new_endpoint_with_validator_identity(validator_identity: ValidatorIdent
         "Setup TPU Quic stable connection with validator identity {} ...",
         validator_identity
     );
+    // the counterpart of this function is get_remote_pubkey+get_pubkey_from_tls_certificate
     let (certificate, key) = new_self_signed_tls_certificate(
         &validator_identity.get_keypair_for_tls(),
         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
