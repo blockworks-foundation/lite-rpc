@@ -16,11 +16,10 @@ use solana_sdk::pubkey::Pubkey;
 
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
-use tokio::time::timeout;
 
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
 use solana_lite_rpc_core::quic_connection_utils::{
-    connection_stats, QuicConnectionParameters, SkipServerVerification,
+    QuicConnectionParameters, SkipServerVerification,
 };
 
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;

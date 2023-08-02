@@ -7,7 +7,6 @@ use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 
-use clap::builder::TypedValueParser;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_sdk::signature::Keypair;
 use std::env;

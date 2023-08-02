@@ -31,7 +31,6 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Builder;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Copy, Clone, Debug)]
 struct TestCaseParams {

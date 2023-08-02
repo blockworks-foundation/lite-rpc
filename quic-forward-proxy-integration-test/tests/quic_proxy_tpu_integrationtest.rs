@@ -32,7 +32,6 @@ use tokio::runtime::Builder;
 
 use tokio::task::{yield_now, JoinHandle};
 use tokio::time::sleep;
-use tracing_subscriber::util::SubscriberInitExt;
 
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
@@ -166,7 +165,6 @@ pub fn too_many_transactions() {
 // note: this not a tokio test as runtimes get created as part of the integration test
 fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     // value from solana - see quic streamer - see quic.rs -> rt()
-    const NUM_QUIC_STREAMER_WORKER_THREADS: usize = 1;
     let runtime_quic1 = Builder::new_multi_thread()
         .worker_threads(1)
         .thread_name("quic-server")
@@ -200,7 +198,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     let (inbound_packets_sender, inbound_packets_receiver) = crossbeam_channel::unbounded();
 
     runtime_quic1.block_on(async {
-        /// setup solana Quic streamer
+        // setup solana Quic streamer
         // see log "Start quic server on UdpSocket { addr: 127.0.0.1:xxxxx, fd: 10 }"
         let staked_nodes = StakedNodes {
             total_stake: 100,
@@ -230,17 +228,16 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     runtime_literpc.block_on(async {
         if test_case_params.proxy_mode {
             tokio::spawn(start_literpc_client_proxy_mode(
-                test_case_params.clone(),
+                test_case_params,
                 listen_addr,
                 literpc_validator_identity,
                 proxy_listen_addr,
             ));
         } else {
             tokio::spawn(start_literpc_client_direct_mode(
-                test_case_params.clone(),
+                test_case_params,
                 listen_addr,
                 literpc_validator_identity,
-                // proxy_listen_addr,
             ));
         }
     });
@@ -283,9 +280,9 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
                 );
             }
 
-            packet_count = packet_count + packet_batch.len() as u32;
+            packet_count += packet_batch.len() as u32;
             if timer2.is_some() {
-                packet_count2 = packet_count2 + packet_batch.len() as u32;
+                packet_count2 += packet_batch.len() as u32;
             }
 
             for packet in packet_batch.iter() {
@@ -358,92 +355,6 @@ fn configure_logging(verbose: bool) {
     if result.is_err() {
         println!("Logging already initialized - ignore");
     }
-}
-
-async fn start_literpc_client(
-    test_case_params: TestCaseParams,
-    streamer_listen_addrs: SocketAddr,
-    literpc_validator_identity: Arc<Keypair>,
-) -> anyhow::Result<()> {
-    info!("Start lite-rpc test client ...");
-
-    let fanout_slots = 4;
-
-    // (String, Vec<u8>) (signature, transaction)
-    let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
-    let broadcast_sender = Arc::new(sender);
-    let (certificate, key) = new_self_signed_tls_certificate(
-        literpc_validator_identity.as_ref(),
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-    )
-    .expect("Failed to initialize QUIC connection certificates");
-
-    let tpu_connection_manager =
-        TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
-
-    // this effectively controls how many connections we will have
-    let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
-    let addr1 = UdpSocket::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap();
-    connections_to_keep.insert(
-        Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ")?,
-        addr1,
-    );
-
-    let addr2 = UdpSocket::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap();
-    connections_to_keep.insert(
-        Pubkey::from_str("1111111k4AYMctpyJakWNvGcte6tR8BLyZw54R8qu")?,
-        addr2,
-    );
-
-    // this is the real streamer
-    connections_to_keep.insert(literpc_validator_identity.pubkey(), streamer_listen_addrs);
-
-    // get information about the optional validator identity stake
-    // populated from get_stakes_for_identity()
-    let identity_stakes = IdentityStakes {
-        peer_type: ConnectionPeerType::Staked,
-        stakes: if test_case_params.stake_connection {
-            30
-        } else {
-            0
-        }, // stake of lite-rpc
-        min_stakes: 0,
-        max_stakes: 40,
-        total_stakes: 100,
-    };
-
-    // solana_streamer::nonblocking::quic: Peer type: Staked, stake 30, total stake 0, max streams 128 receive_window Ok(12320) from peer 127.0.0.1:8000
-
-    tpu_connection_manager
-        .update_connections(
-            broadcast_sender.clone(),
-            connections_to_keep,
-            identity_stakes,
-            // note: tx_store is useless in this scenario as it is never changed; it's only used to check for duplicates
-            empty_tx_store().clone(),
-            QUIC_CONNECTION_PARAMS,
-        )
-        .await;
-
-    for i in 0..test_case_params.sample_tx_count {
-        let raw_sample_tx = build_raw_sample_tx(i);
-        broadcast_sender.send(raw_sample_tx)?;
-        if (i + 1) % 1000 == 0 {
-            yield_now().await;
-        }
-    }
-
-    // we need that to keep the tokio runtime dedicated to lite-rpc up long enough
-    sleep(Duration::from_secs(30)).await;
-
-    // reaching this point means there is problem with test setup and the consumer threed
-    panic!("should never reach this point")
 }
 
 #[tokio::test]
@@ -699,25 +610,12 @@ async fn start_quic_proxy(proxy_listen_addr: SocketAddr) -> anyhow::Result<()> {
     }
 }
 
+#[allow(dead_code)]
 struct SolanaQuicStreamer {
     sock: UdpSocket,
     exit: Arc<AtomicBool>,
     join_handler: JoinHandle<()>,
     stats: Arc<StreamStats>,
-}
-
-impl SolanaQuicStreamer {
-    pub fn get_socket_addr(&self) -> SocketAddr {
-        self.sock.local_addr().unwrap()
-    }
-}
-
-impl SolanaQuicStreamer {
-    pub async fn shutdown(self) {
-        self.exit.store(true, Ordering::Relaxed);
-        self.join_handler.await.unwrap();
-        self.stats.report();
-    }
 }
 
 impl SolanaQuicStreamer {
@@ -740,7 +638,7 @@ impl SolanaQuicStreamer {
             sender,
             exit.clone(),
             MAX_QUIC_CONNECTIONS_PER_PEER,
-            staked_nodes.clone(),
+            staked_nodes,
             10,
             10,
             stats.clone(),
