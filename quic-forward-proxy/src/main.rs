@@ -1,12 +1,12 @@
 use crate::cli::Args;
 use crate::proxy::QuicForwardProxy;
 use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
+use crate::util::get_identity_keypair;
 use anyhow::bail;
 use clap::Parser;
 use dotenv::dotenv;
 use log::info;
 use std::sync::Arc;
-use crate::util::get_identity_keypair;
 
 use crate::validator_identity::ValidatorIdentity;
 

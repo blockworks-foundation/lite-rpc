@@ -101,7 +101,6 @@ impl AutoReconnect {
         connection.await.expect("connection")
     }
 
-
     //  stable_id 140266619216912, rtt=2.156683ms,
     // stats FrameStats { ACK: 3, CONNECTION_CLOSE: 0, CRYPTO: 3,
     // DATA_BLOCKED: 0, DATAGRAM: 0, HANDSHAKE_DONE: 1, MAX_DATA: 0,
@@ -114,15 +113,14 @@ impl AutoReconnect {
         let maybe_conn = lock.as_ref();
         match maybe_conn {
             Some(connection) => format!(
-                    "stable_id {} stats {:?}, rtt={:?}",
-                    connection.stable_id(),
-                    connection.stats().frame_rx,
-                    connection.stats().path.rtt
-                ),
+                "stable_id {} stats {:?}, rtt={:?}",
+                connection.stable_id(),
+                connection.stats().frame_rx,
+                connection.stats().path.rtt
+            ),
             None => "n/a".to_string(),
         }
     }
-
 }
 
 impl fmt::Display for AutoReconnect {

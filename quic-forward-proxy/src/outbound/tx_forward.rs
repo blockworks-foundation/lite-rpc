@@ -48,7 +48,6 @@ pub async fn tx_forwarder(
         let tpu_address = forward_packet.tpu_address;
 
         agents.entry(tpu_address).or_insert_with(|| {
-
             let mut senders = Vec::new();
             for connection_idx in 1..PARALLEL_TPU_CONNECTION_COUNT {
                 let (sender, mut receiver) = channel::<ForwardPacket>(100_000);
@@ -86,11 +85,11 @@ pub async fn tx_forwarder(
                             &auto_connection,
                             &transactions_batch,
                         ))
-                            .await
-                            .context(format!(
-                                "send txs to tpu node {}",
-                                auto_connection.target_address
-                            ));
+                        .await
+                        .context(format!(
+                            "send txs to tpu node {}",
+                            auto_connection.target_address
+                        ));
 
                         if result.is_err() {
                             warn!(
@@ -99,7 +98,10 @@ pub async fn tx_forwarder(
                             );
                         } else {
                             debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
-                            debug!("Outbound connection stats: {}", &auto_connection.connection_stats().await);
+                            debug!(
+                                "Outbound connection stats: {}",
+                                &auto_connection.connection_stats().await
+                            );
                         }
                     } // -- while all packtes from channel
 
@@ -188,9 +190,7 @@ async fn send_tx_batch_to_tpu(auto_connection: &AutoReconnect, txs: &[VersionedT
     for chunk in txs.chunks(MAX_PARALLEL_STREAMS) {
         let all_send_fns = chunk
             .iter()
-            .map(|tx| {
-                bincode::serialize(tx).unwrap()
-            })
+            .map(|tx| bincode::serialize(tx).unwrap())
             .map(|tx_raw| {
                 auto_connection.send_uni(tx_raw) // ignores error
             });

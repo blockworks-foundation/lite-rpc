@@ -1,4 +1,5 @@
 use crate::proxy_request_format::TpuForwardingRequest;
+use crate::quic_util::connection_stats;
 use crate::shared::ForwardPacket;
 use crate::tls_config_provider_server::ProxyTlsConfigProvider;
 use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
@@ -12,7 +13,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
-use crate::quic_util::connection_stats;
 
 // note: setting this to "1" did not make a difference!
 // solana server sets this to 256
@@ -158,11 +158,12 @@ impl ProxyListener {
                             .unwrap();
                     });
 
-                    debug!("Inbound connection stats: {}", connection_stats(&client_connection));
-
+                    debug!(
+                        "Inbound connection stats: {}",
+                        connection_stats(&client_connection)
+                    );
                 }
             }; // -- result
-
         } // -- loop
     }
 }

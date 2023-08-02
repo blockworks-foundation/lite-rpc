@@ -1,8 +1,8 @@
 #![allow(dead_code)]
+use solana_sdk::signature::Keypair;
 use std::env;
 use std::future::Future;
 use std::time::Duration;
-use solana_sdk::signature::Keypair;
 
 use tokio::time::Timeout;
 
@@ -15,7 +15,6 @@ where
 {
     tokio::time::timeout(FALLBACK_TIMEOUT, future)
 }
-
 
 // note this is duplicated from lite-rpc module
 pub async fn get_identity_keypair(identity_from_cli: &String) -> Option<Keypair> {
