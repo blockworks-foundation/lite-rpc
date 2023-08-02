@@ -33,7 +33,6 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing_subscriber::util::SubscriberInitExt;
 
-
 #[derive(Copy, Clone, Debug)]
 struct TestCaseParams {
     sample_tx_count: u32,

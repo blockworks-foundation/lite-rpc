@@ -7,11 +7,11 @@ use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 
+use clap::builder::TypedValueParser;
+use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_sdk::signature::Keypair;
 use std::env;
 use std::sync::Arc;
-use clap::builder::TypedValueParser;
-use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 
 use crate::rpc_tester::RpcTester;
 
@@ -66,7 +66,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         validator_identity,
         retry_after,
         maximum_retries_per_tx,
-        tpu_connection_path
+        tpu_connection_path,
     )
     .await
     .context("Error building LiteBridge")?
@@ -123,12 +123,14 @@ pub async fn main() -> anyhow::Result<()> {
     }
 }
 
-fn configure_tpu_connection_path(experimental_quic_proxy_addr: Option<String>) -> TpuConnectionPath {
+fn configure_tpu_connection_path(
+    experimental_quic_proxy_addr: Option<String>,
+) -> TpuConnectionPath {
     match experimental_quic_proxy_addr {
         None => TpuConnectionPath::QuicDirectPath,
         Some(prox_address) => TpuConnectionPath::QuicForwardProxyPath {
             // e.g. "127.0.0.1:11111"
-            forward_proxy_address: prox_address.parse().unwrap()
+            forward_proxy_address: prox_address.parse().unwrap(),
         },
     }
 }

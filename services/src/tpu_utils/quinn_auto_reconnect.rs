@@ -29,16 +29,13 @@ impl AutoReconnect {
 
     pub async fn send_uni(&self, payload: Vec<u8>) -> anyhow::Result<()> {
         // TOOD do smart error handling + reconnect
-        let mut send_stream = timeout(
-            Duration::from_secs(4), self.refresh()
-                .await.open_uni())
-                .await
-                .context("open uni stream for sending")??;
+        let mut send_stream = timeout(Duration::from_secs(4), self.refresh().await.open_uni())
+            .await
+            .context("open uni stream for sending")??;
         send_stream.write_all(payload.as_slice()).await?;
         send_stream.finish().await?;
         Ok(())
     }
-
 
     pub async fn refresh(&self) -> Connection {
         {
@@ -55,7 +52,7 @@ impl AutoReconnect {
         }
         let mut lock = self.current.write().await;
         let maybe_conn = lock.as_ref();
-        return match maybe_conn {
+        match maybe_conn {
             Some(current) => {
                 if current.close_reason().is_some() {
                     let old_stable_id = current.stable_id();
@@ -66,7 +63,6 @@ impl AutoReconnect {
                     );
 
                     let new_connection = self.create_connection().await;
-                    let prev_stable_id = current.stable_id();
                     *lock = Some(new_connection.clone());
                     // let old_conn = lock.replace(new_connection.clone());
                     self.reconnect_count.fetch_add(1, Ordering::SeqCst);
@@ -78,7 +74,7 @@ impl AutoReconnect {
                         self.reconnect_count.load(Ordering::SeqCst)
                     );
 
-                    new_connection.clone()
+                    new_connection
                 } else {
                     debug!("Reuse connection {} with write-lock", current.stable_id());
                     current.clone()
@@ -92,9 +88,9 @@ impl AutoReconnect {
                 // let old_conn = foo.replace(Some(new_connection.clone()));
                 debug!("Create initial connection {}", new_connection.stable_id());
 
-                new_connection.clone()
+                new_connection
             }
-        };
+        }
     }
 
     async fn create_connection(&self) -> Connection {
@@ -112,4 +108,3 @@ impl fmt::Display for AutoReconnect {
         write!(f, "Connection to {}", self.target_address,)
     }
 }
-

@@ -1,28 +1,27 @@
-
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::Ordering::Relaxed;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
+use anyhow::bail;
 use std::time::Duration;
-use anyhow::{bail};
 
-use futures::FutureExt;
 use itertools::Itertools;
 use log::{debug, error, info, trace};
-use quinn::{ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt};
-use solana_sdk::packet::PACKET_DATA_SIZE;
+use quinn::{
+    ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
+};
 use solana_sdk::pubkey::Pubkey;
 
-use solana_sdk::signature::Keypair;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::time::timeout;
 
 use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
-use solana_lite_rpc_core::quic_connection_utils::{connection_stats, QuicConnectionParameters, SkipServerVerification};
-
+use solana_lite_rpc_core::quic_connection_utils::{
+    connection_stats, QuicConnectionParameters, SkipServerVerification,
+};
 
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;
 
@@ -36,7 +35,7 @@ pub struct QuicProxyConnectionManager {
     endpoint: Endpoint,
     simple_thread_started: AtomicBool,
     proxy_addr: SocketAddr,
-    current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>
+    current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>,
 }
 
 const CHUNK_SIZE_PER_STREAM: usize = 20;
@@ -48,7 +47,7 @@ impl QuicProxyConnectionManager {
         proxy_addr: SocketAddr,
     ) -> Self {
         info!("Configure Quic proxy connection manager to {}", proxy_addr);
-        let endpoint = Self::create_proxy_client_endpoint(certificate.clone(), key.clone());
+        let endpoint = Self::create_proxy_client_endpoint(certificate, key);
 
         Self {
             endpoint,
@@ -65,20 +64,23 @@ impl QuicProxyConnectionManager {
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         connection_parameters: QuicConnectionParameters,
     ) {
-        debug!("reconfigure quic proxy connection (# of tpu nodes: {})", connections_to_keep.len());
+        debug!(
+            "reconfigure quic proxy connection (# of tpu nodes: {})",
+            connections_to_keep.len()
+        );
 
         {
-            let list_of_nodes = connections_to_keep.iter().map(|(identity, tpu_address)| {
-                TpuNode {
-                    tpu_identity: identity.clone(),
-                    tpu_address: tpu_address.clone(),
-                }
-            }).collect_vec();
+            let list_of_nodes = connections_to_keep
+                .iter()
+                .map(|(identity, tpu_address)| TpuNode {
+                    tpu_identity: *identity,
+                    tpu_address: *tpu_address,
+                })
+                .collect_vec();
 
             let mut lock = self.current_tpu_nodes.write().await;
             *lock = list_of_nodes;
         }
-
 
         if self.simple_thread_started.load(Relaxed) {
             // already started
@@ -100,11 +102,12 @@ impl QuicProxyConnectionManager {
             exit_signal,
             connection_parameters,
         ));
-
     }
 
-    fn create_proxy_client_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
-
+    fn create_proxy_client_endpoint(
+        certificate: rustls::Certificate,
+        key: rustls::PrivateKey,
+    ) -> Endpoint {
         const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
 
         let mut endpoint = {
@@ -152,7 +155,6 @@ impl QuicProxyConnectionManager {
         exit_signal: Arc<AtomicBool>,
         connection_parameters: QuicConnectionParameters,
     ) {
-
         let auto_connection = AutoReconnect::new(endpoint, proxy_addr);
 
         loop {
@@ -162,56 +164,58 @@ impl QuicProxyConnectionManager {
             }
 
             tokio::select! {
-                    // TODO add timeout
-                    tx = transaction_receiver.recv() => {
+                // TODO add timeout
+                tx = transaction_receiver.recv() => {
 
-                        let first_tx: Vec<u8> = match tx {
-                            Ok((_sig, tx)) => {
-                                tx
-                            },
-                            Err(e) => {
-                                error!(
-                                    "Broadcast channel error on recv error {}", e);
-                                continue;
-                            }
-                        };
-
-                        let mut txs = vec![first_tx];
-                        for _ in 1..connection_parameters.number_of_transactions_per_unistream {
-                            if let Ok((_signature, tx)) = transaction_receiver.try_recv() {
-                                txs.push(tx);
-                            }
+                    let first_tx: Vec<u8> = match tx {
+                        Ok((_sig, tx)) => {
+                            tx
+                        },
+                        Err(e) => {
+                            error!(
+                                "Broadcast channel error on recv error {}", e);
+                            continue;
                         }
+                    };
 
-                        let tpu_fanout_nodes = current_tpu_nodes.read().await.clone();
-
-                        trace!("Sending copy of transaction batch of {} txs to {} tpu nodes via quic proxy",
-                                txs.len(), tpu_fanout_nodes.len());
-
-                        for target_tpu_node in tpu_fanout_nodes {
-                            Self::send_copy_of_txs_to_quicproxy(
-                                &txs, &auto_connection,
-                            proxy_addr,
-                                target_tpu_node.tpu_address,
-                                target_tpu_node.tpu_identity)
-                            .await.unwrap();
+                    let mut txs = vec![first_tx];
+                    for _ in 1..connection_parameters.number_of_transactions_per_unistream {
+                        if let Ok((_signature, tx)) = transaction_receiver.try_recv() {
+                            txs.push(tx);
                         }
+                    }
 
-                    },
-                };
+                    let tpu_fanout_nodes = current_tpu_nodes.read().await.clone();
+
+                    trace!("Sending copy of transaction batch of {} txs to {} tpu nodes via quic proxy",
+                            txs.len(), tpu_fanout_nodes.len());
+
+                    for target_tpu_node in tpu_fanout_nodes {
+                        Self::send_copy_of_txs_to_quicproxy(
+                            &txs, &auto_connection,
+                        proxy_addr,
+                            target_tpu_node.tpu_address,
+                            target_tpu_node.tpu_identity)
+                        .await.unwrap();
+                    }
+
+                },
+            };
         }
     }
 
-    async fn send_copy_of_txs_to_quicproxy(raw_tx_batch: &Vec<Vec<u8>>, auto_connection: &AutoReconnect,
-                                           _proxy_address: SocketAddr, tpu_target_address: SocketAddr,
-                                           target_tpu_identity: Pubkey) -> anyhow::Result<()> {
-
-        let raw_tx_batch_copy = raw_tx_batch.clone();
+    async fn send_copy_of_txs_to_quicproxy(
+        raw_tx_batch: &[Vec<u8>],
+        auto_connection: &AutoReconnect,
+        _proxy_address: SocketAddr,
+        tpu_target_address: SocketAddr,
+        target_tpu_identity: Pubkey,
+    ) -> anyhow::Result<()> {
 
         let mut txs = vec![];
 
-        for raw_tx in raw_tx_batch_copy {
-            let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
+        for raw_tx in raw_tx_batch {
+            let tx = match bincode::deserialize::<VersionedTransaction>(raw_tx) {
                 Ok(tx) => tx,
                 Err(err) => {
                     bail!(err.to_string());
@@ -220,13 +224,13 @@ impl QuicProxyConnectionManager {
             txs.push(tx);
         }
 
-
         for chunk in txs.chunks(CHUNK_SIZE_PER_STREAM) {
-
-            let forwarding_request = TpuForwardingRequest::new(tpu_target_address, target_tpu_identity, chunk.into());
+            let forwarding_request =
+                TpuForwardingRequest::new(tpu_target_address, target_tpu_identity, chunk.into());
             debug!("forwarding_request: {}", forwarding_request);
 
-            let proxy_request_raw = bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
+            let proxy_request_raw =
+                bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
 
             let send_result = auto_connection.send_uni(proxy_request_raw).await;
 
@@ -238,29 +242,9 @@ impl QuicProxyConnectionManager {
                     bail!("Failed to send data to quic proxy: {:?}", e);
                 }
             }
-
         } // -- one chunk
-
 
         Ok(())
     }
 
-     async fn send_proxy_request(endpoint: Endpoint, proxy_address: SocketAddr, proxy_request_raw: &Vec<u8>) -> anyhow::Result<()> {
-         info!("sending {} bytes to proxy", proxy_request_raw.len());
-
-         let connecting = endpoint.connect(proxy_address, "localhost")?;
-         let connection = timeout(Duration::from_millis(500), connecting).await??;
-         let mut send = connection.open_uni().await?;
-
-         send.write_all(proxy_request_raw).await?;
-
-         send.finish().await?;
-
-         debug!("connection stats (lite-rpc to proxy): {}", connection_stats(&connection));
-         Ok(())
-     }
-
-
 }
-
-

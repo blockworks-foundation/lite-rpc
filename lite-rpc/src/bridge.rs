@@ -39,11 +39,11 @@ use solana_sdk::{
 use solana_transaction_status::TransactionStatus;
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
 
+use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use tokio::{
     net::ToSocketAddrs,
     sync::mpsc::{self, Sender},
 };
-use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =

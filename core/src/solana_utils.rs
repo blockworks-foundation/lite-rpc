@@ -1,7 +1,9 @@
 use crate::structures::identity_stakes::IdentityStakes;
 use anyhow::Context;
 use log::info;
+use serde::Serialize;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::hash::Hash;
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
 use std::{
@@ -12,11 +14,9 @@ use std::{
     },
     time::Duration,
 };
-use serde::Serialize;
-use solana_sdk::hash::Hash;
 
 use solana_sdk::signature::Signature;
-use solana_sdk::transaction::{Transaction, uses_durable_nonce, VersionedTransaction};
+use solana_sdk::transaction::{uses_durable_nonce, Transaction, VersionedTransaction};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS: u64 = 400;

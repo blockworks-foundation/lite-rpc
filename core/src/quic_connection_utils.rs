@@ -226,7 +226,10 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
 // rtt=1.08178ms
 pub fn connection_stats(connection: &Connection) -> String {
     // see https://www.rfc-editor.org/rfc/rfc9000.html#name-frame-types-and-formats
-    format!("stable_id {}, rtt={:?}, stats {:?}",
-            connection.stable_id(), connection.stats().path.rtt, connection.stats().frame_rx)
+    format!(
+        "stable_id {}, rtt={:?}, stats {:?}",
+        connection.stable_id(),
+        connection.stats().path.rtt,
+        connection.stats().frame_rx
+    )
 }
-
