@@ -37,7 +37,7 @@ impl ProxyListener {
     pub async fn listen(
         &self,
         exit_signal: Arc<AtomicBool>,
-        forwarder_channel: Sender<ForwardPacket>,
+        forwarder_channel: &Sender<ForwardPacket>,
     ) -> anyhow::Result<()> {
         info!(
             "TPU Quic Proxy server listening on {}",
