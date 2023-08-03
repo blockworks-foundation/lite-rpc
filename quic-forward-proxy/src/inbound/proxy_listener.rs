@@ -145,6 +145,10 @@ impl ProxyListener {
                             txs.len(),
                             tpu_address
                         );
+                        if forwarder_channel_copy.capacity() < forwarder_channel_copy.max_capacity() {
+                            debug!("forward channel buffered: capacity {} of {}",
+                                forwarder_channel_copy.capacity(), forwarder_channel_copy.max_capacity());
+                        }
                         forwarder_channel_copy
                             .send_timeout(
                                 ForwardPacket {
