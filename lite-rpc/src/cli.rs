@@ -1,15 +1,19 @@
-use crate::{
-    DEFAULT_FANOUT_SIZE, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR, MAX_RETRIES,
-};
+use crate::{DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR, MAX_RETRIES};
 use clap::Parser;
+use solana_lite_rpc_core::grpc_client::DEFAULT_GRPC_ADDR;
+use solana_lite_rpc_services::DEFAULT_FANOUT_SIZE;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     #[arg(short, long, default_value_t = String::from(DEFAULT_RPC_ADDR))]
     pub rpc_addr: String,
-    #[arg(short, long, default_value_t = String::from(DEFAULT_WS_ADDR))]
-    pub ws_addr: String,
+    /// use grpc
+    #[arg(short = 'g', long)]
+    pub use_grpc: bool,
+    /// grpc address
+    #[arg(long, default_value_t = String::from(DEFAULT_GRPC_ADDR))]
+    pub grpc_addr: String,
     #[arg(short = 'l', long, default_value_t = String::from("[::]:8890"))]
     pub lite_rpc_http_addr: String,
     #[arg(short = 's', long, default_value_t = String::from("[::]:8891"))]
@@ -26,7 +30,7 @@ pub struct Args {
     #[arg(short = 'k', long, default_value_t = String::new())]
     pub identity_keypair: String,
     #[arg(long, default_value_t = MAX_RETRIES)]
-    pub maximum_retries_per_tx: usize,
+    pub maximum_retries_per_tx: u16,
     #[arg(long, default_value_t = DEFAULT_RETRY_TIMEOUT)]
     pub transaction_retry_after_secs: u64,
 }

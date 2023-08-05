@@ -1,9 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
-use solana_lite_rpc_core::ledger::Ledger;
-use solana_lite_rpc_core::notifications::NotificationSender;
-use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_lite_rpc_core::{ledger::Ledger, notifications::NotificationSender, AnyhowJoinHandle};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Keypair;
 use tokio::sync::mpsc;
@@ -16,8 +14,8 @@ pub mod tx_batch_fwd;
 pub mod tx_replayer;
 pub mod tx_sender;
 
+#[derive(Clone, Debug)]
 pub struct TxServiceConfig {
-    pub ledger: Ledger,
     /// TPU identity
     pub identity: Arc<Keypair>,
     /// TPU fanout slots
@@ -28,30 +26,32 @@ pub struct TxServiceConfig {
     pub max_retries: u16,
     /// retry tx after
     pub retry_after: Duration,
-    // TODO: remove this dependency when get vote accounts is figured out for grpc
-    pub rpc_client: Arc<RpcClient>,
 }
 
-impl TxServiceConfig {
+pub struct TxService {
+    pub ledger: Ledger,
+    // TODO: remove this dependency when get vote accounts is figured out for grpc
+    pub rpc_client: Arc<RpcClient>,
+    // config
+    pub config: TxServiceConfig,
+}
+
+impl TxService {
     pub async fn create_tx_services(&self) -> anyhow::Result<(TpuService, TxBatchFwd, TxReplayer)> {
-        let TxServiceConfig {
+        let TxService {
             ledger,
-            identity,
-            fanout_slots,
-            max_nb_txs_in_queue,
-            max_retries,
-            retry_after,
+            config,
             rpc_client,
         } = self;
 
         // setup TPU
         let tpu_service = TpuService::new(
             TpuServiceConfig {
-                fanout_slots,
+                fanout_slots: config.fanout_slots,
                 ..Default::default()
             },
-            identity,
-            rpc_client,
+            config.identity.clone(),
+            rpc_client.clone(),
             ledger.clone(),
         )
         .await
@@ -63,9 +63,9 @@ impl TxServiceConfig {
         };
         // tx replayer
         let tx_replayer = TxReplayer {
-            tpu_service,
+            tpu_service: tpu_service.clone(),
             ledger: ledger.clone(),
-            retry_after,
+            retry_after: config.retry_after,
         };
 
         Ok((tpu_service, tx_batch_fwd, tx_replayer))
@@ -75,14 +75,14 @@ impl TxServiceConfig {
         self,
         notifier: Option<NotificationSender>,
     ) -> anyhow::Result<(TxSender, AnyhowJoinHandle)> {
-        let (tpu_service, tx_batch_fwd, tx_replayer) = self.create_tx_replay_fwd().await?;
+        let (tpu_service, tx_batch_fwd, tx_replayer) = self.create_tx_services().await?;
         // channels
-        let (tx_channel, tx_recv) = mpsc::channel(self.max_nb_txs_in_queue);
+        let (tx_channel, tx_recv) = mpsc::channel(self.config.max_nb_txs_in_queue);
         let (replay_channel, replay_recv) = mpsc::unbounded_channel();
 
         let tpu_service = tpu_service.start();
         let tx_batch_fwd = tx_batch_fwd.execute(tx_recv, notifier);
-        let tx_replayer = tx_replayer.start_service(replay_channel, replay_recv);
+        let tx_replayer = tx_replayer.start_service(replay_channel.clone(), replay_recv);
 
         // spawn
         let jh = tokio::spawn(async move {
@@ -99,15 +99,15 @@ impl TxServiceConfig {
             }
         });
 
-        (
+        Ok((
             TxSender {
                 tx_channel,
                 replay_channel,
                 ledger: self.ledger,
-                max_retries: self.max_retries,
-                retry_after: self.retry_after,
+                max_retries: self.config.max_retries,
+                retry_after: self.config.retry_after,
             },
             jh,
-        )
+        ))
     }
 }

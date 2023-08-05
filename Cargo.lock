@@ -4274,6 +4274,8 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "yellowstone-grpc-client",
+ "yellowstone-grpc-proto",
 ]
 
 [[package]]

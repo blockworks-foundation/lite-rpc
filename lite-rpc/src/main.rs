@@ -1,14 +1,19 @@
-pub mod rpc_tester;
+mod rpc_tester;
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
-use anyhow::{bail, Context};
 use clap::Parser;
 use dotenv::dotenv;
+use lite_rpc::postgres::Postgres;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 
+use solana_lite_rpc_core::ledger::Ledger;
+use solana_lite_rpc_core::notifications::NotificationSender;
+use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_lite_rpc_services::{spawner::Spawner, tx_service::TxServiceConfig};
 use solana_sdk::signature::Keypair;
 use std::env;
+use tokio::sync::mpsc;
 
 use crate::rpc_tester::RpcTester;
 
@@ -35,10 +40,32 @@ async fn get_identity_keypair(identity_from_cli: &str) -> Keypair {
     }
 }
 
+pub async fn start_postgres(
+    enable: bool,
+) -> anyhow::Result<(Option<NotificationSender>, AnyhowJoinHandle)> {
+    if !enable {
+        return Ok((
+            None,
+            tokio::spawn(async {
+                std::future::pending::<()>().await;
+                unreachable!()
+            }),
+        ));
+    }
+
+    let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
+
+    let postgres = Postgres::new().await?.start(postgres_recv);
+
+    Ok((Some(postgres_send), postgres))
+}
+
 pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
+    // get all configs
     let Args {
         rpc_addr,
-        ws_addr,
+        use_grpc,
+        grpc_addr,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
@@ -49,27 +76,68 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         transaction_retry_after_secs,
     } = args;
 
-    let identity = get_identity_keypair(&identity_keypair).await;
+    let identity = Arc::new(get_identity_keypair(&identity_keypair).await);
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 
-    LiteBridge::new(
-        rpc_addr,
-        ws_addr,
-        fanout_size,
+    let addr = if use_grpc {
+        grpc_addr
+    } else {
+        rpc_addr.clone()
+    };
+
+    // tx service config
+    let tx_service_config = TxServiceConfig {
         identity,
+        fanout_slots: fanout_size,
+        max_nb_txs_in_queue: 40, // TODO: fix this
+        max_retries: maximum_retries_per_tx,
         retry_after,
-        maximum_retries_per_tx,
-    )
-    .await
-    .context("Error building LiteBridge")?
-    .start_services(
-        lite_rpc_http_addr,
-        lite_rpc_ws_addr,
-        enable_postgres,
+    };
+
+    // postgres
+    let (notification_channel, postgres) = start_postgres(enable_postgres).await?;
+
+    // setup ledger
+    let ledger = Ledger::default();
+
+    // spawner
+    let spawner = Spawner {
         prometheus_addr,
-    )
-    .await
+        grpc: use_grpc,
+        addr,
+        tx_service_config,
+        rpc_addr,
+        ledger: Ledger::default(),
+        notification_channel,
+    };
+    // start services
+    let leger_service = spawner.spawn_ledger_service();
+    let (tx_sender, tx_services) = spawner.spawn_tx_service().await?;
+    let support_service = spawner.spawn_support_services();
+
+    // lite bridge
+    let lite_bridge = LiteBridge { ledger, tx_sender };
+
+    let bridge_serivce = lite_bridge.start_services(lite_rpc_ws_addr, lite_rpc_http_addr);
+
+    tokio::select! {
+        leger_service = leger_service => {
+            anyhow::bail!("{leger_service:?}")
+        }
+        tx_service = tx_services => {
+            anyhow::bail!("{tx_service:?}")
+        }
+        support_service = support_service => {
+            anyhow::bail!("{support_service:?}")
+        }
+        bridge_serivce = bridge_serivce => {
+            anyhow::bail!("{bridge_serivce:?}")
+        }
+        res = postgres => {
+            anyhow::bail!("Postgres service {res:?}");
+        }
+    }
 }
 
 fn get_args() -> Args {
@@ -106,7 +174,7 @@ pub async fn main() -> anyhow::Result<()> {
         res = main => {
             // This should never happen
             log::error!("Services quit unexpectedly {res:?}");
-            bail!("")
+            anyhow::bail!("")
         }
         _ = ctrl_c_signal => {
             log::info!("Received ctrl+c signal");

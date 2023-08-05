@@ -1,41 +1,26 @@
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
-    postgres::Postgres,
     rpc::LiteRpcServer,
-    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
 use solana_lite_rpc_core::{
     block_store::{Block, BlockMeta},
     ledger::Ledger,
+    AnyhowJoinHandle,
 };
-use solana_lite_rpc_services::{
-    block_listenser::BlockListener,
-    metrics_capture::MetricsCapture,
-    prometheus_sync::PrometheusSync,
-    tpu_utils::tpu_service::{TpuService, TpuServiceConfig},
-    tx_service::{tx_batch_fwd::TxBatchFwd, tx_sender::TxSender},
-};
+use solana_lite_rpc_services::tx_service::{tx_batch_fwd::TXS_IN_CHANNEL, tx_sender::TxSender};
 
-use anyhow::{bail, Context};
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
 use prometheus::{opts, register_int_counter, IntCounter};
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
-use solana_sdk::{
-    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
-    slot_history::Slot,
-};
+use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use solana_transaction_status::TransactionStatus;
-use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
-use tokio::{
-    net::ToSocketAddrs,
-    sync::mpsc::{self, Sender},
-};
+
+use tokio::{net::ToSocketAddrs};
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -57,121 +42,49 @@ lazy_static::lazy_static! {
 /// A bridge between clients and tpu
 pub struct LiteBridge {
     pub ledger: Ledger,
-    pub tx_max_retries: usize,
     pub tx_sender: TxSender,
 }
 
 impl LiteBridge {
-    pub async fn new(
-        fanout_slots: u64,
-        identity: Keypair,
-        retry_after: Duration,
-        max_retries: usize,
-    ) -> anyhow::Result<Self> {
-        let transaction_manager = TransactionServiceBuilder::new(
-            tx_sender,
-            tx_replayer,
-            block_listner.clone(),
-            tpu_service,
-            DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
-        );
-
-        Ok(Self {
-            ledger,
-            tx_max_retries: max_retries,
-            tx_sender,
-        })
-    }
-
     /// List for `JsonRpc` requests
     pub async fn start_services<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
-        mut self,
+        self,
         http_addr: T,
         ws_addr: T,
-        enable_postgres: bool,
-        prometheus_addr: T,
     ) -> anyhow::Result<()> {
-        let (postgres, postgres_send) = if enable_postgres {
-            let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
-            let postgres = Postgres::new().await?;
-            let postgres = postgres.start(postgres_recv);
-
-            (Some(postgres), Some(postgres_send))
-        } else {
-            (None, None)
-        };
-
-        let metrics_capture = MetricsCapture::new(self.tx_store.clone()).capture();
-        let prometheus_sync = PrometheusSync::sync(prometheus_addr);
-
-        // transaction services
-        let (transaction_service, jh_transaction_services) = self
-            .transaction_service_builder
-            .clone()
-            .start(postgres_send, self.block_store.clone(), self.tx_max_retries);
-
-        self.transaction_service = Some(transaction_service);
-
         let rpc = self.into_rpc();
 
-        let (ws_server, http_server) = {
-            let ws_server_handle = ServerBuilder::default()
-                .ws_only()
-                .build(ws_addr.clone())
-                .await?
-                .start(rpc.clone())?;
+        let ws_server_handle = ServerBuilder::default()
+            .ws_only()
+            .build(ws_addr.clone())
+            .await?
+            .start(rpc.clone())?;
 
-            let http_server_handle = ServerBuilder::default()
-                .http_only()
-                .build(http_addr.clone())
-                .await?
-                .start(rpc)?;
+        let http_server_handle = ServerBuilder::default()
+            .http_only()
+            .build(http_addr.clone())
+            .await?
+            .start(rpc)?;
 
-            let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
-                log::info!("Websocket Server started at {ws_addr:?}");
-                ws_server_handle.stopped().await;
-                anyhow::bail!("Websocket server stopped");
-            });
+        let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
+            log::info!("Websocket Server started at {ws_addr:?}");
+            ws_server_handle.stopped().await;
+            anyhow::bail!("Websocket server stopped");
+        });
 
-            let http_server: AnyhowJoinHandle = tokio::spawn(async move {
-                log::info!("HTTP Server started at {http_addr:?}");
-                http_server_handle.stopped().await;
-                anyhow::bail!("HTTP server stopped");
-            });
-
-            (ws_server, http_server)
-        };
-
-        let postgres = tokio::spawn(async {
-            let Some(postgres) = postgres else {
-                std::future::pending::<()>().await;
-                unreachable!();
-            };
-
-            let res = postgres.await;
-            error!("Postgres server stopped");
-            res
+        let http_server: AnyhowJoinHandle = tokio::spawn(async move {
+            log::info!("HTTP Server started at {http_addr:?}");
+            http_server_handle.stopped().await;
+            anyhow::bail!("HTTP server stopped");
         });
 
         tokio::select! {
             res = ws_server => {
-                bail!("WebSocket server {res:?}");
+                anyhow::bail!("WebSocket server {res:?}");
             },
             res = http_server => {
-                bail!("HTTP server {res:?}");
+                anyhow::bail!("HTTP server {res:?}");
             },
-            res = metrics_capture => {
-                bail!("Metrics Capture {res:?}");
-            },
-            res = prometheus_sync => {
-                bail!("Prometheus Service {res:?}");
-            },
-            res = postgres => {
-                bail!("Postgres service {res:?}");
-            },
-            res = jh_transaction_services => {
-                bail!("Transaction service {res:?}");
-            }
         }
     }
 }
@@ -197,15 +110,7 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let transaction_service = self
-            .transaction_service
-            .clone()
-            .expect("Transaction Service should have been initialized");
-
-        match transaction_service
-            .send_transaction(raw_tx, max_retries)
-            .await
-        {
+        match self.tx_sender.send_transaction(raw_tx, max_retries).await {
             Ok(sig) => {
                 TXS_IN_CHANNEL.inc();
 
@@ -227,12 +132,10 @@ impl LiteRpcServer for LiteBridge {
 
         let Block {
             blockhash,
-            meta: BlockMeta { block_height, .. },
-        } = self
-            .ledger
-            .block_store
-            .get_latest_block(&commitment_config)
-            .await;
+            meta: BlockMeta {
+                block_height, slot, ..
+            },
+        } = self.ledger.block_store.get_latest_block(&commitment_config);
 
         log::info!("glb {blockhash} {slot} {block_height}");
 
@@ -250,42 +153,43 @@ impl LiteRpcServer for LiteBridge {
 
     async fn is_blockhash_valid(
         &self,
-        blockhash: String,
-        config: Option<IsBlockHashValidConfig>,
+        _blockhash: String,
+        _config: Option<IsBlockHashValidConfig>,
     ) -> crate::rpc::Result<RpcResponse<bool>> {
-        RPC_IS_BLOCKHASH_VALID.inc();
+        todo!()
+        //RPC_IS_BLOCKHASH_VALID.inc();
 
-        let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
-        let commitment = CommitmentConfig { commitment };
+        //let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
+        //let commitment = CommitmentConfig { commitment };
 
-        let blockhash = match Hash::from_str(&blockhash) {
-            Ok(blockhash) => blockhash,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+        //let blockhash = match Hash::from_str(&blockhash) {
+        //    Ok(blockhash) => blockhash,
+        //    Err(err) => {
+        //        return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+        //    }
+        //};
 
-        let is_valid = match self
-            .rpc_client
-            .is_blockhash_valid(&blockhash, commitment)
-            .await
-            .context("failed to get blockhash validity")
-        {
-            Ok(is_valid) => is_valid,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+        //let is_valid = match self
+        //    .rpc_client
+        //    .is_blockhash_valid(&blockhash, commitment)
+        //    .await
+        //    .context("failed to get blockhash validity")
+        //{
+        //    Ok(is_valid) => is_valid,
+        //    Err(err) => {
+        //        return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+        //    }
+        //};
 
-        let slot = self.ledger.clock.get_current_slot();
+        //let slot = self.ledger.clock.get_current_slot();
 
-        Ok(RpcResponse {
-            context: RpcResponseContext {
-                slot,
-                api_version: None,
-            },
-            value: is_valid,
-        })
+        //Ok(RpcResponse {
+        //    context: RpcResponseContext {
+        //        slot,
+        //        api_version: None,
+        //    },
+        //    value: is_valid,
+        //})
     }
 
     async fn get_signature_statuses(
@@ -297,7 +201,7 @@ impl LiteRpcServer for LiteBridge {
 
         let sig_statuses = sigs
             .iter()
-            .map(|sig| self.tx_store.get(sig).and_then(|v| v.status.clone()))
+            .map(|sig| self.ledger.txs.get(sig).and_then(|v| v.status.clone()))
             .collect();
 
         Ok(RpcResponse {
@@ -321,54 +225,54 @@ impl LiteRpcServer for LiteBridge {
 
     async fn request_airdrop(
         &self,
-        pubkey_str: String,
-        lamports: u64,
-        config: Option<RpcRequestAirdropConfig>,
+        _pubkey_str: String,
+        _lamports: u64,
+        _config: Option<RpcRequestAirdropConfig>,
     ) -> crate::rpc::Result<String> {
         RPC_REQUEST_AIRDROP.inc();
+        todo!()
 
-        let pubkey = match Pubkey::from_str(&pubkey_str) {
-            Ok(pubkey) => pubkey,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
+        //let pubkey = match Pubkey::from_str(&pubkey_str) {
+        //    Ok(pubkey) => pubkey,
+        //    Err(err) => {
+        //        return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+        //    }
+        //};
 
-        let airdrop_sig = match self
-            .rpc_client
-            .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
-            .await
-            .context("failed to request airdrop")
-        {
-            Ok(airdrop_sig) => airdrop_sig.to_string(),
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
-        if let Ok((_, block_height)) = self
-            .rpc_client
-            .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
-            .await
-            .context("failed to get latest blockhash")
-        {
-            self.ledger.txs.insert(
-                airdrop_sig.clone(),
-                solana_lite_rpc_core::tx_store::TxMeta {
-                    status: None,
-                    last_valid_blockheight: block_height,
-                },
-            );
-        }
-        Ok(airdrop_sig)
+        //let airdrop_sig = match self
+        //    .rpc_client
+        //    .request_airdrop_with_config(&pubkey, lamports, config.unwrap_or_default())
+        //    .await
+        //    .context("failed to request airdrop")
+        //{
+        //    Ok(airdrop_sig) => airdrop_sig.to_string(),
+        //    Err(err) => {
+        //        return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+        //    }
+        //};
+        //if let Ok((_, block_height)) = self
+        //    .rpc_client
+        //    .get_latest_blockhash_with_commitment(CommitmentConfig::finalized())
+        //    .await
+        //    .context("failed to get latest blockhash")
+        //{
+        //    self.ledger.txs.insert(
+        //        airdrop_sig.clone(),
+        //        solana_lite_rpc_core::tx_store::TxMeta {
+        //            status: None,
+        //            last_valid_blockheight: block_height,
+        //        },
+        //    );
+        //}
+        //Ok(airdrop_sig)
     }
 
     async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
-        let commitment_config = config
+        let _commitment_config = config
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (_, BlockMeta) = self.block_store.get_latest_block(commitment_config).await;
-        Ok(slot)
+        Ok(self.ledger.clock.get_current_slot())
     }
 
     async fn signature_subscribe(
@@ -380,7 +284,7 @@ impl LiteRpcServer for LiteBridge {
         RPC_SIGNATURE_SUBSCRIBE.inc();
         let sink = pending.accept().await?;
 
-        let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
+        let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink(sink);
 
         self.ledger
             .tx_subs

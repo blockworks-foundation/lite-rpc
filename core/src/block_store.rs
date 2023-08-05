@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct Block {
-    blockhash: String,
-    meta: BlockMeta,
+    pub blockhash: String,
+    pub meta: BlockMeta,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

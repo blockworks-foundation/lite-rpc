@@ -3,11 +3,11 @@ use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
+    ledger::Ledger,
     quic_connection::QuicConnectionPool,
     quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
     rotating_queue::RotatingQueue,
     structures::identity_stakes::IdentityStakes,
-    tx_store::TxStore,
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
@@ -38,7 +38,7 @@ struct ActiveConnection {
     identity: Pubkey,
     tpu_address: SocketAddr,
     exit_signal: Arc<AtomicBool>,
-    txs_sent_store: TxStore,
+    ledger: Ledger,
     connection_parameters: QuicConnectionParameters,
 }
 
@@ -47,7 +47,7 @@ impl ActiveConnection {
         endpoints: RotatingQueue<Endpoint>,
         tpu_address: SocketAddr,
         identity: Pubkey,
-        txs_sent_store: TxStore,
+        ledger: Ledger,
         connection_parameters: QuicConnectionParameters,
     ) -> Self {
         Self {
@@ -55,13 +55,13 @@ impl ActiveConnection {
             tpu_address,
             identity,
             exit_signal: Arc::new(AtomicBool::new(false)),
-            txs_sent_store,
+            ledger,
             connection_parameters,
         }
     }
 
-    fn check_for_confirmation(txs_sent_store: &TxStore, signature: String) -> bool {
-        match txs_sent_store.get(&signature) {
+    fn check_for_confirmation(ledger: &Ledger, signature: String) -> bool {
+        match ledger.txs.get(&signature) {
             Some(props) => props.status.is_some(),
             None => false,
         }
@@ -74,7 +74,7 @@ impl ActiveConnection {
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         addr: SocketAddr,
         identity_stakes: IdentityStakes,
-        txs_sent_store: TxStore,
+        ledger: Ledger,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
@@ -121,7 +121,7 @@ impl ActiveConnection {
 
                     let first_tx: Vec<u8> = match tx {
                         Ok((sig, tx)) => {
-                            if Self::check_for_confirmation(&txs_sent_store, sig) {
+                            if Self::check_for_confirmation(&ledger, sig) {
                                 // transaction is already confirmed/ no need to send
                                 continue;
                             }
@@ -139,7 +139,7 @@ impl ActiveConnection {
                     let mut txs = vec![first_tx];
                     for _ in 1..number_of_transactions_per_unistream {
                         if let Ok((signature, tx)) = transaction_reciever.try_recv() {
-                            if Self::check_for_confirmation(&txs_sent_store, signature) {
+                            if Self::check_for_confirmation(&ledger, signature) {
                                 continue;
                             }
                             txs.push(tx);
@@ -181,7 +181,7 @@ impl ActiveConnection {
         identity_stakes: IdentityStakes,
     ) {
         let addr = self.tpu_address;
-        let txs_sent_store = self.txs_sent_store.clone();
+        let txs_sent_store = self.ledger.clone();
         let this = self.clone();
         tokio::spawn(async move {
             this.listen(
@@ -227,7 +227,7 @@ impl TpuConnectionManager {
         transaction_sender: Arc<Sender<(String, Vec<u8>)>>,
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakes,
-        txs_sent_store: TxStore,
+        ledger: Ledger,
         connection_parameters: QuicConnectionParameters,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
@@ -238,7 +238,7 @@ impl TpuConnectionManager {
                     self.endpoints.clone(),
                     *socket_addr,
                     *identity,
-                    txs_sent_store.clone(),
+                    ledger.clone(),
                     connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever

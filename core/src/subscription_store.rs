@@ -10,9 +10,11 @@ use crate::{
     jsonrpc_client::TransactionInfo, ledger::TxSubKey, subscription_sink::SubscriptionSink,
 };
 
+pub type Subscriber = (Box<dyn SubscriptionSink>, Instant);
+
 #[derive(Clone, Default)]
 pub struct SubscriptionStore<T: Hash + Eq> {
-    pub subs: Arc<DashMap<T, (Box<dyn SubscriptionSink>, Instant)>>,
+    pub subs: Arc<DashMap<T, Subscriber>>,
 }
 
 impl<T: Hash + Eq> SubscriptionStore<T> {

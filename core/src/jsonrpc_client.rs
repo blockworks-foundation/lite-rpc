@@ -14,8 +14,9 @@ use solana_transaction_status::{
     option_serializer::OptionSerializer, RewardType, TransactionDetails, UiTransactionEncoding,
     UiTransactionStatusMeta,
 };
-use tokio::sync::broadcast;
+use tokio::sync::{mpsc::UnboundedSender};
 
+#[derive(Debug)]
 pub struct TransactionInfo {
     pub signature: String,
     pub err: Option<TransactionError>,
@@ -25,7 +26,7 @@ pub struct TransactionInfo {
     pub cu_consumed: Option<u64>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ProcessedBlock {
     pub txs: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
@@ -171,7 +172,7 @@ impl JsonRpcClient {
 
     pub async fn poll_slots(
         rpc_client: &RpcClient,
-        slot_tx: broadcast::Sender<Slot>,
+        slot_tx: UnboundedSender<Slot>,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
         let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));

@@ -88,9 +88,12 @@ impl TxBatchFwd {
         for transaction_info in transaction_infos.iter() {
             self.ledger.txs.insert(
                 transaction_info.signature.clone(),
-                TxMeta::new(transaction_info.last_valid_blockheight),
+                TxMeta {
+                    last_valid_blockheight: transaction_info.last_valid_blockheight,
+                    ..Default::default()
+                },
             );
-            let quic_response = match self.tpu_client.send_transaction(
+            let quic_response = match self.tpu_service.send_transaction(
                 transaction_info.signature.clone(),
                 transaction_info.tx.clone(),
             ) {
@@ -155,10 +158,7 @@ impl TxBatchFwd {
                                 TXS_IN_CHANNEL.dec();
 
                                 // duplicate transaction
-                                if self
-                                    .txs_sent_store
-                                    .contains_key(&transaction_info.signature)
-                                {
+                                if self.ledger.txs.contains_key(&transaction_info.signature) {
                                     continue;
                                 }
                                 transaction_infos.push(transaction_info);

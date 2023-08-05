@@ -16,12 +16,12 @@ use yellowstone_grpc_proto::{
 };
 
 pub const GRPC_VERSION: &str = "1.16.1";
-pub const GRPC_URL: &str = "http://127.0.0.0:10000";
+pub const DEFAULT_GRPC_ADDR: &str = "http://127.0.0.0:10000";
 
 pub struct GrpcClient;
 
 impl GrpcClient {
-    pub async fn create_client<F>(
+    pub async fn create_client(
         addr: impl Into<Bytes>,
     ) -> anyhow::Result<GeyserGrpcClient<impl Interceptor>> {
         let mut client = GeyserGrpcClient::connect(addr, None::<&'static str>, None)?;

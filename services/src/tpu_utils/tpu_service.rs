@@ -16,7 +16,7 @@ use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc},
 };
 use tokio::{
     sync::RwLock,
@@ -129,10 +129,12 @@ impl TpuService {
     }
 
     pub async fn update_leader_schedule(&self) -> anyhow::Result<()> {
-        let current_slot = self.current_slot.load(Ordering::Relaxed);
-        let estimated_slot = self.estimated_slot.load(Ordering::Relaxed);
         self.leader_schedule
-            .update_leader_schedule(self.rpc_client.clone(), current_slot, estimated_slot)
+            .update_leader_schedule(
+                self.rpc_client.clone(),
+                self.ledger.clock.get_current_slot(),
+                self.ledger.clock.get_estimated_slot(),
+            )
             .await?;
         NB_OF_LEADERS_IN_SCHEDULE.set(self.leader_schedule.len().await as i64);
         NB_CLUSTER_NODES.set(self.leader_schedule.cluster_nodes_len() as i64);
@@ -173,7 +175,7 @@ impl TpuService {
                 self.broadcast_sender.clone(),
                 connections_to_keep,
                 *identity_stakes,
-                self.txs_sent_store.clone(),
+                self.ledger.clone(),
                 self.config.quic_connection_params,
             )
             .await;

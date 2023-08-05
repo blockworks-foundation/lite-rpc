@@ -22,7 +22,7 @@ pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 200_000;
 
 
 #[from_env]
-pub const MAX_RETRIES: usize = 40;
+pub const MAX_RETRIES: u16 = 40;
 
 pub const DEFAULT_RETRY_TIMEOUT: u64 = 2;
 

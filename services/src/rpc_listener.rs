@@ -1,14 +1,17 @@
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::Arc;
 
 use solana_lite_rpc_core::{
     jsonrpc_client::{JsonRpcClient, ProcessedBlock},
-    AtomicSlot,
+    slot_clock::SlotClock,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
-use tokio::sync::{broadcast, mpsc::UnboundedSender};
+use tokio::sync::{
+    mpsc::{UnboundedReceiver, UnboundedSender},
+    Semaphore,
+};
 
-const MAX_BLOCK_INDEXERS: usize = 10;
+const MAX_BLOCK_INDEXERS: usize = 20;
 
 #[derive(Clone)]
 pub struct RpcListener {
@@ -25,17 +28,13 @@ impl RpcListener {
     async fn process_slot(
         &self,
         slot: Slot,
-        atomic_current_slot: AtomicSlot,
+        slot_clock: SlotClock,
         commitment_config: CommitmentConfig,
         block_tx: UnboundedSender<ProcessedBlock>,
     ) -> anyhow::Result<()> {
         // retry the slot till it is at most 128 slots behind the current slot
-        while atomic_current_slot
-            .load(Ordering::Relaxed)
-            .saturating_sub(slot)
-            > 10
-        {
-            let Ok(processed_block) = JsonRpcClient::process(&self.rpc_client, slot, commitment_config)? else {
+        while slot_clock.get_current_slot().saturating_sub(slot) > 10 {
+            let Ok(processed_block) = JsonRpcClient::process(&self.rpc_client, slot, commitment_config).await? else {
                 // retry after 10ms
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 continue;
@@ -44,20 +43,20 @@ impl RpcListener {
             // send the processed block
             block_tx.send(processed_block)?;
         }
+
+        Ok(())
     }
 
     pub async fn listen(
         self,
-        slot_rx: broadcast::Receiver<Slot>,
+        slot_clock: SlotClock,
+        mut slot_rx: UnboundedReceiver<Slot>,
         block_tx: UnboundedSender<ProcessedBlock>,
-        commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
-        let curernt_slot = AtomicSlot::default();
-        let block_worker_semaphore = Arc::new(tokio::sync::Semaphore::new(MAX_BLOCK_INDEXERS));
+        let block_worker_semaphore = Arc::new(Semaphore::new(MAX_BLOCK_INDEXERS));
 
-        while let Some(slot) = slot_rx.recv().await {
-            // update the current slot for retry queue
-            curernt_slot.store(slot, Ordering::Relaxed);
+        loop {
+            let slot = slot_clock.set_slot(&mut slot_rx).await;
 
             log::trace!(
                 "Block indexers running {:?}/MAX_BLOCK_INDEXERS",
@@ -67,15 +66,32 @@ impl RpcListener {
             let permit = block_worker_semaphore.clone().acquire_owned().await?;
             let block_tx = block_tx.clone();
 
-            tokio::spawn(async {
-                self.process_slot(slot, curernt_slot, commitment_config, block_tx)
-                    .await
-                    .unwrap();
+            let this = self.clone();
+            let slot_clock = slot_clock.clone();
+
+            tokio::spawn(async move {
+                let prcocessed = this.process_slot(
+                    slot,
+                    slot_clock.clone(),
+                    CommitmentConfig::processed(),
+                    block_tx.clone(),
+                );
+
+                let confirmed = this.process_slot(
+                    slot,
+                    slot_clock.clone(),
+                    CommitmentConfig::confirmed(),
+                    block_tx.clone(),
+                );
+
+                let finalized =
+                    this.process_slot(slot, slot_clock, CommitmentConfig::finalized(), block_tx);
+
+                let res = tokio::join!(prcocessed, confirmed, finalized);
+                log::info!("Processed slot: {res:?}");
 
                 drop(permit);
             });
         }
-
-        Ok(())
     }
 }

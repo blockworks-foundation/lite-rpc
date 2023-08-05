@@ -1,7 +1,6 @@
-use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::{sync::atomic::Ordering, time::Duration};
 
-use tokio::sync::broadcast;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::AtomicSlot;
 
@@ -26,8 +25,8 @@ impl SlotClock {
     }
 
     // Estimates the slots, either from polled slot or by forcefully updating after every 400ms
-    // returns if the estimated slot was updated or not
-    pub async fn set_slot(&self, slot_update_notifier: &mut broadcast::Receiver<u64>) -> bool {
+    // returns the estimated slot if current slot is not updated
+    pub async fn set_slot(&self, slot_update_notifier: &mut UnboundedReceiver<u64>) -> u64 {
         let current_slot = self.current_slot.load(Ordering::Relaxed);
         let estimated_slot = self.estimated_slot.load(Ordering::Relaxed);
 
@@ -37,17 +36,16 @@ impl SlotClock {
         )
         .await
         {
-            Ok(Ok(slot)) => {
+            Ok(Some(slot)) => {
                 // slot is latest
                 if slot > current_slot {
                     self.current_slot.store(slot, Ordering::Relaxed);
                     if current_slot > estimated_slot {
                         self.estimated_slot.store(slot, Ordering::Relaxed);
-                        return true;
                     }
                 }
             }
-            Ok(Err(err)) => log::error!("failed to receive slot update: {:?}", err),
+            Ok(None) => log::error!("failed to receive slot update"),
             Err(_) => {
                 // force update the slot
                 // estimated slot should not go ahead more than 32 slots
@@ -59,6 +57,6 @@ impl SlotClock {
             }
         }
 
-        false
+        self.estimated_slot.load(Ordering::Relaxed)
     }
 }
