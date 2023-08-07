@@ -4,7 +4,6 @@ use crate::shared::ForwardPacket;
 use crate::util::timeout_fallback;
 use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail, Context};
-use fan::tokio::mpsc::FanOut;
 use futures::future::join_all;
 use log::{debug, info, warn};
 use quinn::{
@@ -19,7 +18,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::{channel, Receiver};
+use tokio::sync::mpsc::Receiver;
 
 const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
@@ -34,45 +33,64 @@ pub async fn tx_forwarder(
 
     let endpoint = new_endpoint_with_validator_identity(validator_identity).await;
 
-    let mut agents: HashMap<SocketAddr, FanOut<ForwardPacket>> = HashMap::new();
+    let (broadcast_in, _) = tokio::sync::broadcast::channel::<Arc<ForwardPacket>>(1000);
+
+    let mut agents: HashMap<SocketAddr, Vec<Arc<AtomicBool>>> = HashMap::new();
 
     loop {
         if exit_signal.load(Ordering::Relaxed) {
             bail!("exit signal received");
         }
 
-        let forward_packet = transaction_channel
-            .recv()
-            .await
-            .expect("channel closed unexpectedly");
+        let forward_packet = Arc::new(
+            transaction_channel
+                .recv()
+                .await
+                .expect("channel closed unexpectedly"),
+        );
         let tpu_address = forward_packet.tpu_address;
 
         agents.entry(tpu_address).or_insert_with(|| {
-            let mut senders = Vec::new();
+            let mut agent_exit_signals = Vec::new();
             for connection_idx in 1..PARALLEL_TPU_CONNECTION_COUNT {
-                let (sender, mut receiver) = channel::<ForwardPacket>(100_000);
-                senders.push(sender);
-                let exit_signal = exit_signal.clone();
+                let global_exit_signal = exit_signal.clone();
+                let agent_exit_signal = Arc::new(AtomicBool::new(false));
                 let endpoint_copy = endpoint.clone();
+                let agent_exit_signal_copy = agent_exit_signal.clone();
+                // by subscribing we expect to get a copy of each packet
+                let mut per_connection_receiver = broadcast_in.subscribe();
                 tokio::spawn(async move {
                     debug!(
                         "Start Quic forwarder agent #{} for TPU {}",
                         connection_idx, tpu_address
                     );
-                    if exit_signal.load(Ordering::Relaxed) {
+                    if global_exit_signal.load(Ordering::Relaxed) {
+                        warn!("Caught global exit signal - stopping agent thread");
+                        return;
+                    }
+                    if agent_exit_signal_copy.load(Ordering::Relaxed) {
+                        warn!("Caught exit signal for this agent - stopping agent thread");
                         return;
                     }
 
+                    // get a copy of the packet from broadcast channel
                     let auto_connection = AutoReconnect::new(endpoint_copy, tpu_address);
 
-                    let _exit_signal_copy = exit_signal.clone();
-                    while let Some(packet) = receiver.recv().await {
-                        assert_eq!(packet.tpu_address, tpu_address, "routing error");
+                    // TODO check exit signal (using select! or maybe replace with oneshot)
+                    let _exit_signal_copy = global_exit_signal.clone();
+                    while let Ok(packet) = per_connection_receiver.recv().await {
+                        if packet.tpu_address != tpu_address {
+                            continue;
+                        }
 
-                        let mut transactions_batch = packet.transactions;
+                        let mut transactions_batch: Vec<VersionedTransaction> =
+                            packet.transactions.clone();
 
-                        while let Ok(more) = receiver.try_recv() {
-                            transactions_batch.extend(more.transactions);
+                        while let Ok(more) = per_connection_receiver.try_recv() {
+                            if more.tpu_address != tpu_address {
+                                continue;
+                            }
+                            transactions_batch.extend(more.transactions.clone());
                         }
 
                         debug!(
@@ -105,21 +123,28 @@ pub async fn tx_forwarder(
                         }
                     } // -- while all packtes from channel
 
-                    info!(
+                    warn!(
                         "Quic forwarder agent #{} for TPU {} exited",
                         connection_idx, tpu_address
                     );
-                });
-            }
+                }); // -- spawned thread for one connection to one TPU
+                agent_exit_signals.push(agent_exit_signal);
+            } // -- for parallel connections to one TPU
 
-            FanOut::new(senders)
+            // FanOut::new(senders)
+            agent_exit_signals
         }); // -- new agent
 
-        let agent_channel = agents.get(&tpu_address).unwrap();
+        let _agent_channel = agents.get(&tpu_address).unwrap();
 
-        timeout_fallback(agent_channel.send(forward_packet))
-            .await
-            .context("send to agent channel")??;
+        if broadcast_in.len() > 5 {
+            debug!("tx-forward queue len: {}", broadcast_in.len())
+        }
+
+        // TODO use agent_exit signal to clean them up
+        broadcast_in
+            .send(forward_packet)
+            .expect("send must succeed");
     } // -- loop over transactions from upstream channels
 
     // not reachable
