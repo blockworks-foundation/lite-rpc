@@ -41,6 +41,4 @@ chrono = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
 rcgen = "0.9.3"
 spl-memo = "3.0.1"
-# tokio channel fanout
-fan = "0.1.3"
 
