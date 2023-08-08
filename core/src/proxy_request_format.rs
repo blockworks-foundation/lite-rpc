@@ -54,8 +54,8 @@ impl TpuForwardingRequest {
         self.identity_tpunode
     }
 
-    pub fn get_transactions(&self) -> Vec<VersionedTransaction> {
-        self.transactions.clone()
+    pub fn get_transactions(&self) -> &[VersionedTransaction] {
+        self.transactions.as_slice()
     }
 }
 
