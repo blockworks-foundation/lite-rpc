@@ -1,3 +1,4 @@
+use crate::outbound::sharder::Sharder;
 use crate::quic_util::SkipServerVerification;
 use crate::quinn_auto_reconnect::AutoReconnect;
 use crate::shared::ForwardPacket;
@@ -52,12 +53,15 @@ pub async fn tx_forwarder(
 
         agents.entry(tpu_address).or_insert_with(|| {
             let mut agent_exit_signals = Vec::new();
-            for connection_idx in 1..PARALLEL_TPU_CONNECTION_COUNT {
+            for connection_idx in 0..PARALLEL_TPU_CONNECTION_COUNT {
+                let sharder =
+                    Sharder::new(connection_idx as u32, PARALLEL_TPU_CONNECTION_COUNT as u32);
                 let global_exit_signal = exit_signal.clone();
                 let agent_exit_signal = Arc::new(AtomicBool::new(false));
                 let endpoint_copy = endpoint.clone();
                 let agent_exit_signal_copy = agent_exit_signal.clone();
                 // by subscribing we expect to get a copy of each packet
+
                 let mut per_connection_receiver = broadcast_in.subscribe();
                 tokio::spawn(async move {
                     debug!(
@@ -82,12 +86,18 @@ pub async fn tx_forwarder(
                         if packet.tpu_address != tpu_address {
                             continue;
                         }
+                        if !sharder.matching(packet.shard_hash()) {
+                            continue;
+                        }
 
                         let mut transactions_batch: Vec<VersionedTransaction> =
                             packet.transactions.clone();
 
                         while let Ok(more) = per_connection_receiver.try_recv() {
                             if more.tpu_address != tpu_address {
+                                continue;
+                            }
+                            if !sharder.matching(more.shard_hash()) {
                                 continue;
                             }
                             transactions_batch.extend(more.transactions.clone());
