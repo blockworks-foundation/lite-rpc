@@ -46,6 +46,20 @@ impl TpuForwardingRequest {
         }
     }
 
+    pub fn serialize_wire_format(&self) -> Vec<u8> {
+        bincode::serialize(&self).expect("Expect to serialize transactions")
+    }
+
+    pub fn deserialize_from_raw_request(raw_proxy_request: &[u8]) -> TpuForwardingRequest {
+        let request = bincode::deserialize::<TpuForwardingRequest>(raw_proxy_request)
+            .context("deserialize proxy request")
+            .unwrap();
+
+        assert_eq!(request.format_version, 2301);
+
+        request
+    }
+
     pub fn get_tpu_socket_addr(&self) -> SocketAddr {
         self.tpu_socket_addr
     }
@@ -56,29 +70,5 @@ impl TpuForwardingRequest {
 
     pub fn get_transactions(&self) -> &[VersionedTransaction] {
         self.transactions.as_slice()
-    }
-}
-
-impl TryInto<Vec<u8>> for TpuForwardingRequest {
-    type Error = anyhow::Error;
-
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        bincode::serialize(&self)
-            .context("serialize proxy request")
-            .map_err(anyhow::Error::from)
-    }
-}
-
-impl TryFrom<&[u8]> for TpuForwardingRequest {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let request = bincode::deserialize::<TpuForwardingRequest>(value)
-            .context("deserialize proxy request")
-            .map_err(anyhow::Error::from);
-        if let Ok(ref req) = request {
-            assert_eq!(req.format_version, FORMAT_VERSION1);
-        }
-        request
     }
 }
