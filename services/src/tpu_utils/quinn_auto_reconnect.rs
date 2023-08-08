@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::debug;
 
+/// copy of quic-proxy AutoReconnect - used that for reference
 pub struct AutoReconnect {
     // endoint should be configures with keep-alive and idle timeout
     endpoint: Endpoint,
