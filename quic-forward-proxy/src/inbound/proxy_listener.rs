@@ -156,10 +156,7 @@ impl ProxyListener {
                         }
                         forwarder_channel_copy
                             .send_timeout(
-                                ForwardPacket {
-                                    transactions: txs,
-                                    tpu_address,
-                                },
+                                ForwardPacket::new(txs, tpu_address),
                                 FALLBACK_TIMEOUT,
                             )
                             .await

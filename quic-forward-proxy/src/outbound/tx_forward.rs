@@ -86,7 +86,7 @@ pub async fn tx_forwarder(
                         if packet.tpu_address != tpu_address {
                             continue;
                         }
-                        if !sharder.matching(packet.shard_hash()) {
+                        if !sharder.matching(packet.shard_hash) {
                             continue;
                         }
 
@@ -97,7 +97,7 @@ pub async fn tx_forwarder(
                             if more.tpu_address != tpu_address {
                                 continue;
                             }
-                            if !sharder.matching(more.shard_hash()) {
+                            if !sharder.matching(more.shard_hash) {
                                 continue;
                             }
                             transactions_batch.extend(more.transactions.clone());

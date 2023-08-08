@@ -15,8 +15,8 @@ pub const FORMAT_VERSION1: u16 = 2302;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuForwardingRequest {
     format_version: u16,
-    tpu_socket_addr: SocketAddr, // TODO is that correct
-    identity_tpunode: Pubkey,    // note: this is only used fro
+    tpu_socket_addr: SocketAddr,
+    identity_tpunode: Pubkey,    // note: this is only used for debugging
     // TODO consider not deserializing transactions in proxy
     transactions: Vec<VersionedTransaction>,
 }
@@ -75,7 +75,7 @@ impl TpuForwardingRequest {
         self.identity_tpunode
     }
 
-    pub fn get_transactions(&self) -> Vec<VersionedTransaction> {
-        self.transactions.clone()
+    pub fn get_transactions(&self) -> &[VersionedTransaction] {
+        self.transactions.as_slice()
     }
 }
