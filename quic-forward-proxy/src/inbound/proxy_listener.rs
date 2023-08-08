@@ -133,7 +133,8 @@ impl ProxyListener {
                         let raw_request = recv_stream.read_to_end(10_000_000).await.unwrap();
 
                         let proxy_request =
-                            TpuForwardingRequest::deserialize_from_raw_request(&raw_request);
+                            TpuForwardingRequest::try_deserialize_from_wire_format(&raw_request)
+                                .unwrap();
 
                         trace!("proxy request details: {}", proxy_request);
                         let _tpu_identity = proxy_request.get_identity_tpunode();

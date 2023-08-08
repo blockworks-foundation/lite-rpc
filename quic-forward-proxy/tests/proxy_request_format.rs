@@ -20,12 +20,20 @@ fn roundtrip() {
         Pubkey::from_str("Bm8rtweCQ19ksNebrLY92H7x4bCaeDJSSmEeWqkdCeop").unwrap(),
         vec![tx.into()],
     )
-    .serialize_wire_format();
+    .try_serialize_wire_format()
+    .unwrap();
 
     println!("wire_data: {:02X?}", wire_data);
 
-    let request = TpuForwardingRequest::deserialize_from_raw_request(&wire_data);
+    let request = TpuForwardingRequest::try_deserialize_from_wire_format(&wire_data).unwrap();
 
     assert!(request.get_tpu_socket_addr().is_ipv4());
     assert_eq!(request.get_transactions().len(), 1);
+}
+
+#[test]
+fn deserialize_error() {
+    let value: &[u8] = &[1, 2, 3, 4];
+    let result = TpuForwardingRequest::try_deserialize_from_wire_format(value);
+    assert_eq!(result.unwrap_err().to_string(), "deserialize proxy request");
 }
