@@ -139,7 +139,7 @@ impl ProxyListener {
                         trace!("proxy request details: {}", proxy_request);
                         let _tpu_identity = proxy_request.get_identity_tpunode();
                         let tpu_address = proxy_request.get_tpu_socket_addr();
-                        let txs = proxy_request.get_transactions();
+                        let txs = proxy_request.get_transaction_bytes();
 
                         debug!(
                             "enqueue transaction batch of size {} to address {}",
@@ -156,7 +156,7 @@ impl ProxyListener {
                         }
                         forwarder_channel_copy
                             .send_timeout(
-                                ForwardPacket::new(txs, tpu_address),
+                                ForwardPacket::new(txs, tpu_address, proxy_request.get_hash()),
                                 FALLBACK_TIMEOUT,
                             )
                             .await

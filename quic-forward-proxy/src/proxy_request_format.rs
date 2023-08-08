@@ -1,24 +1,30 @@
 use anyhow::Context;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt;
 use std::fmt::Display;
+use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 
 ///
 /// lite-rpc to proxy wire format
 /// compat info: non-public format ATM
 /// initial version
-pub const FORMAT_VERSION1: u16 = 2302;
+pub const FORMAT_VERSION1: u16 = 2400;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TxData(Signature, Vec<u8>);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuForwardingRequest {
     format_version: u16,
     tpu_socket_addr: SocketAddr,
-    identity_tpunode: Pubkey,    // note: this is only used for debugging
-    // TODO consider not deserializing transactions in proxy
-    transactions: Vec<VersionedTransaction>,
+    identity_tpunode: Pubkey, // note: this is only used for debugging
+    transactions: Vec<TxData>,
 }
 
 impl Display for TpuForwardingRequest {
@@ -28,7 +34,7 @@ impl Display for TpuForwardingRequest {
             "TpuForwardingRequest for tpu target {} with identity {}: payload {} tx",
             &self.get_tpu_socket_addr(),
             &self.get_identity_tpunode(),
-            &self.get_transactions().len()
+            &self.get_transaction_bytes().len()
         )
     }
 }
@@ -43,8 +49,12 @@ impl TpuForwardingRequest {
             format_version: FORMAT_VERSION1,
             tpu_socket_addr,
             identity_tpunode,
-            transactions,
+            transactions: transactions.into_iter().map(Self::serialize).collect_vec(),
         }
+    }
+
+    fn serialize(tx: VersionedTransaction) -> TxData {
+        TxData(tx.signatures[0], bincode::serialize(&tx).unwrap())
     }
 
     pub fn try_serialize_wire_format(&self) -> anyhow::Result<Vec<u8>> {
@@ -75,7 +85,17 @@ impl TpuForwardingRequest {
         self.identity_tpunode
     }
 
-    pub fn get_transactions(&self) -> &[VersionedTransaction] {
-        self.transactions.as_slice()
+    pub fn get_transaction_bytes(&self) -> Vec<Vec<u8>> {
+        self.transactions
+            .iter()
+            .map(|tx| tx.1.clone())
+            .collect_vec()
+    }
+
+    pub fn get_hash(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        // note: assumes that there are transactions with >=0 signatures
+        self.transactions[0].0.hash(&mut hasher);
+        hasher.finish()
     }
 }

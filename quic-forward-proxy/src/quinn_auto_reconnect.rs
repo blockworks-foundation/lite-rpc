@@ -41,7 +41,7 @@ impl AutoReconnect {
         }
     }
 
-    pub async fn send_uni(&self, payload: Vec<u8>) -> anyhow::Result<()> {
+    pub async fn send_uni(&self, payload: &Vec<u8>) -> anyhow::Result<()> {
         let mut send_stream = timeout_fallback(self.refresh_and_get().await?.open_uni())
             .await
             .context("open uni stream for sending")??;

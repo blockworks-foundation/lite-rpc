@@ -11,7 +11,6 @@ use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
 use solana_sdk::quic::QUIC_MAX_TIMEOUT_MS;
-use solana_sdk::transaction::VersionedTransaction;
 use solana_streamer::nonblocking::quic::ALPN_TPU_PROTOCOL_ID;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
@@ -90,8 +89,7 @@ pub async fn tx_forwarder(
                             continue;
                         }
 
-                        let mut transactions_batch: Vec<VersionedTransaction> =
-                            packet.transactions.clone();
+                        let mut transactions_batch: Vec<Vec<u8>> = packet.transactions.clone();
 
                         while let Ok(more) = per_connection_receiver.try_recv() {
                             if more.tpu_address != tpu_address {
@@ -221,14 +219,11 @@ fn create_tpu_client_endpoint(
 
 // send potentially large amount of transactions to a single TPU
 #[tracing::instrument(skip_all, level = "debug")]
-async fn send_tx_batch_to_tpu(auto_connection: &AutoReconnect, txs: &[VersionedTransaction]) {
+async fn send_tx_batch_to_tpu(auto_connection: &AutoReconnect, txs: &[Vec<u8>]) {
     for chunk in txs.chunks(MAX_PARALLEL_STREAMS) {
-        let all_send_fns = chunk
-            .iter()
-            .map(|tx| bincode::serialize(tx).unwrap())
-            .map(|tx_raw| {
-                auto_connection.send_uni(tx_raw) // ignores error
-            });
+        let all_send_fns = chunk.iter().map(|tx_raw| {
+            auto_connection.send_uni(tx_raw) // ignores error
+        });
 
         join_all(all_send_fns).await;
     }

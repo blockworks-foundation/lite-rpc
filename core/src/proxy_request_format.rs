@@ -1,6 +1,8 @@
 use anyhow::Context;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
 use std::fmt;
 use std::fmt::Display;
@@ -10,24 +12,26 @@ use std::net::SocketAddr;
 /// lite-rpc to proxy wire format
 /// compat info: non-public format ATM
 /// initial version
-const FORMAT_VERSION1: u16 = 2302;
+const FORMAT_VERSION1: u16 = 2400;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TxData(Signature, Vec<u8>);
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuForwardingRequest {
     format_version: u16,
     tpu_socket_addr: SocketAddr,
-    identity_tpunode: Pubkey,
-    transactions: Vec<VersionedTransaction>,
+    identity_tpunode: Pubkey, // note: this is only used for debugging
+    transactions: Vec<TxData>,
 }
 
 impl Display for TpuForwardingRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TpuForwardingRequest for tpu target {} with identity {}: payload {} tx",
+            "TpuForwardingRequest for tpu target {} with identity {}",
             &self.get_tpu_socket_addr(),
             &self.get_identity_tpunode(),
-            &self.get_transactions().len()
         )
     }
 }
@@ -42,8 +46,12 @@ impl TpuForwardingRequest {
             format_version: FORMAT_VERSION1,
             tpu_socket_addr,
             identity_tpunode,
-            transactions,
+            transactions: transactions.iter().map(Self::serialize).collect_vec(),
         }
+    }
+
+    fn serialize(tx: &VersionedTransaction) -> TxData {
+        TxData(tx.signatures[0], bincode::serialize(&tx).unwrap())
     }
 
     pub fn serialize_wire_format(&self) -> Vec<u8> {
@@ -66,9 +74,5 @@ impl TpuForwardingRequest {
 
     pub fn get_identity_tpunode(&self) -> Pubkey {
         self.identity_tpunode
-    }
-
-    pub fn get_transactions(&self) -> &[VersionedTransaction] {
-        self.transactions.as_slice()
     }
 }
