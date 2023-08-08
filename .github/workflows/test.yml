@@ -33,7 +33,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Run Tests
-        run: cargo test
+        run: RUST_LOG=info cargo test
 
       - name: Install node deps
         run: yarn

@@ -32,6 +32,7 @@ use tokio::runtime::Builder;
 
 use tokio::task::{yield_now, JoinHandle};
 use tokio::time::sleep;
+use tracing_subscriber::EnvFilter;
 
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
@@ -360,8 +361,12 @@ fn configure_logging(verbose: bool) {
     } else {
         FmtSpan::NONE
     };
+    // EnvFilter::try_from_default_env().unwrap_or(env_filter)
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or(EnvFilter::from_str(env_filter).unwrap());
+
     let result = tracing_subscriber::fmt::fmt()
-        .with_env_filter(env_filter)
+        .with_env_filter(filter)
         .with_span_events(span_mode)
         .try_init();
     if result.is_err() {

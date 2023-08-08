@@ -31,6 +31,8 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Builder;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::EnvFilter;
 
 #[derive(Copy, Clone, Debug)]
 struct TestCaseParams {
@@ -244,12 +246,22 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
 
 fn configure_logging(verbose: bool) {
     let env_filter = if verbose {
-        "trace,rustls=info,quinn_proto=debug"
+        "debug,rustls=info,quinn=info,quinn_proto=debug,solana_streamer=debug,solana_lite_rpc_quic_forward_proxy=trace"
     } else {
-        "debug,quinn_proto=info,rustls=info,solana_streamer=debug"
+        "info,rustls=info,quinn=info,quinn_proto=info,solana_streamer=info,solana_lite_rpc_quic_forward_proxy=info"
     };
+    let span_mode = if verbose {
+        FmtSpan::CLOSE
+    } else {
+        FmtSpan::NONE
+    };
+    // EnvFilter::try_from_default_env().unwrap_or(env_filter)
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or(EnvFilter::from_str(env_filter).unwrap());
+
     let result = tracing_subscriber::fmt::fmt()
-        .with_env_filter(env_filter)
+        .with_env_filter(filter)
+        .with_span_events(span_mode)
         .try_init();
     if result.is_err() {
         println!("Logging already initialized - ignore");
