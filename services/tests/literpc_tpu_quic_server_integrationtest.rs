@@ -258,7 +258,7 @@ fn configure_panic_hook() {
         } else {
             error!("panic occurred but can't get location information...");
         }
-        // std::process::exit(1);
+        // note: we do not exit the process to allow proper test execution
     }));
 }
 
