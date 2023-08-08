@@ -8,6 +8,15 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::sync::RwLock;
 use tracing::debug;
 
+/// connection manager with automatic reconnect; designated for connection to Solana TPU nodes
+///
+/// assumptions:
+/// * connection to TPU node is reliable
+/// * manager and TPU nodes run both in data centers with fast internet connectivity
+/// * ping times vary between 50ms and 400ms depending on the location
+/// * TPU address might be wrong which then is a permanent problem
+/// * the ActiveConnection instance gets renewed on leader schedule change
+
 enum ConnectionState {
     NotConnected,
     Connection(Connection),
