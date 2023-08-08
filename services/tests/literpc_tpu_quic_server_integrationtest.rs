@@ -71,8 +71,6 @@ pub fn small_tx_batch_unstaked() {
     });
 }
 
-// fails on ci
-#[ignore]
 #[test]
 pub fn many_transactions() {
     configure_logging(false);
@@ -162,7 +160,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
         let mut count_map: CountMap<Signature> =
             CountMap::with_capacity(test_case_params.sample_tx_count as usize);
         let warmup_tx_count: u32 = test_case_params.sample_tx_count / 2;
-        while packet_count < test_case_params.sample_tx_count {
+        while (count_map.len() as u32) < test_case_params.sample_tx_count {
             if latest_tx.elapsed() > Duration::from_secs(5) {
                 warn!("abort after timeout waiting for packet from quic streamer");
                 break;
@@ -233,7 +231,6 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
             test_case_params.sample_tx_count,
             "count_map size should be equal to sample_tx_count"
         );
-        // note: this assumption will not hold as soon as test is configured to do fanout
         assert!(
             count_map.values().all(|cnt| *cnt == 1),
             "all transactions should be unique"

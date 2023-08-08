@@ -268,6 +268,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
         let mut count_map: CountMap<Signature> =
             CountMap::with_capacity(test_case_params.sample_tx_count as usize);
         let warmup_tx_count: u32 = test_case_params.sample_tx_count / 2;
+
         while (count_map.len() as u32) < test_case_params.sample_tx_count {
             if latest_tx.elapsed() > Duration::from_secs(25) {
                 warn!("abort after timeout waiting for packet from quic streamer");
