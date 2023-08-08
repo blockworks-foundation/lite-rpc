@@ -164,20 +164,7 @@ pub fn too_many_transactions() {
 
 // note: this not a tokio test as runtimes get created as part of the integration test
 fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
-    let default_panic = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        default_panic(panic_info);
-        if let Some(location) = panic_info.location() {
-            error!(
-                "panic occurred in file '{}' at line {}",
-                location.file(),
-                location.line(),
-            );
-        } else {
-            error!("panic occurred but can't get location information...");
-        }
-        // std::process::exit(1);
-    }));
+    configure_panic_hook();
 
     // value from solana - see quic streamer - see quic.rs -> rt()
     let runtime_quic1 = Builder::new_multi_thread()
@@ -348,6 +335,23 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     });
 
     packet_consumer_jh.join().unwrap();
+}
+
+fn configure_panic_hook() {
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        default_panic(panic_info);
+        if let Some(location) = panic_info.location() {
+            error!(
+                "panic occurred in file '{}' at line {}",
+                location.file(),
+                location.line(),
+            );
+        } else {
+            error!("panic occurred but can't get location information...");
+        }
+        // std::process::exit(1);
+    }));
 }
 
 fn configure_logging(verbose: bool) {
