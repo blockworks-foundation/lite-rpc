@@ -154,17 +154,17 @@ pub async fn tx_forwarder(
                             auto_connection.target_address
                         ));
 
-                        if result.is_err() {
-                            warn!(
-                                "got send_txs_to_tpu_static error {:?} - loop over errors",
-                                result
-                            );
-                        } else {
-                            debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
-                            debug!(
-                                "Outbound connection stats: {}",
-                                &auto_connection.connection_stats().await
-                            );
+                        match result {
+                            Ok(()) => {
+                                debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
+                                debug!(
+                                    "Outbound connection stats: {}",
+                                    &auto_connection.connection_stats().await
+                                );
+                            }
+                            Err(err) => {
+                                warn!("got send_txs_to_tpu_static error {} - loop over errors", err);
+                            }
                         }
                     } // -- while all packtes from channel
 
