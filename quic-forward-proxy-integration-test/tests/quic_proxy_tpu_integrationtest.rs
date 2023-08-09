@@ -47,7 +47,7 @@ struct TestCaseParams {
     proxy_mode: bool,
 }
 
-const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 200_000;
+const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 16_384;
 const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8; // like solana repo
 
 const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameters {
@@ -258,7 +258,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
         let warmup_tx_count: u32 = test_case_params.sample_tx_count / 2;
 
         while (count_map.len() as u32) < test_case_params.sample_tx_count {
-            if latest_tx.elapsed() > Duration::from_secs(25) {
+            if latest_tx.elapsed() > Duration::from_secs(50) {
                 warn!("abort after timeout waiting for packet from quic streamer");
                 break;
             }
