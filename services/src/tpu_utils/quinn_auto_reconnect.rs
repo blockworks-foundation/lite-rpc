@@ -9,9 +9,7 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::debug;
 
-
 /// copy of quic-proxy AutoReconnect - used that for reference
-
 
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -65,7 +63,11 @@ impl AutoReconnect {
             let lock = self.current.read().await;
             if let ConnectionState::Connection(conn) = &*lock {
                 if conn.close_reason().is_none() {
-                    debug!("Reuse connection {} to {}", conn.stable_id(), self.target_address);
+                    debug!(
+                        "Reuse connection {} to {}",
+                        conn.stable_id(),
+                        self.target_address
+                    );
                     return;
                 }
             }
@@ -115,7 +117,11 @@ impl AutoReconnect {
                         }
                     };
                 } else {
-                    debug!("Reuse connection {} to {} with write-lock", current.stable_id(), self.target_address);
+                    debug!(
+                        "Reuse connection {} to {} with write-lock",
+                        current.stable_id(),
+                        self.target_address
+                    );
                 }
             }
             ConnectionState::NotConnected => {
@@ -141,7 +147,10 @@ impl AutoReconnect {
             }
             ConnectionState::PermanentError => {
                 // no nothing
-                debug!("Not using connection to {} with permanent error", self.target_address);
+                debug!(
+                    "Not using connection to {} with permanent error",
+                    self.target_address
+                );
             }
         }
     }
