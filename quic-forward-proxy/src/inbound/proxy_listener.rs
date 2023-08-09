@@ -5,7 +5,7 @@ use crate::tls_config_provider_server::ProxyTlsConfigProvider;
 use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use crate::util::FALLBACK_TIMEOUT;
 use anyhow::{anyhow, bail, Context};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use quinn::{Connection, Endpoint, ServerConfig, VarInt};
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use std::net::SocketAddr;
