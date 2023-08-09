@@ -42,18 +42,21 @@ impl Display for TpuForwardingRequest {
 
 impl TpuForwardingRequest {
     pub fn new(
-        tpu_fanout_nodes: &Vec<(SocketAddr, Pubkey)>,
+        tpu_fanout_nodes: &[(SocketAddr, Pubkey)],
         transactions: Vec<VersionedTransaction>,
     ) -> Self {
         TpuForwardingRequest {
             format_version: FORMAT_VERSION1,
-            tpu_nodes: tpu_fanout_nodes.iter().map(|(tpu_addr, identity)| TpuNode {
-                tpu_socket_addr: *tpu_addr,
-                identity_tpunode: *identity,
-            }).collect_vec(),
-            transactions: transactions.iter()
-                .map(|tx| TxData(tx.signatures[0],
-                                 bincode::serialize(tx).unwrap()))
+            tpu_nodes: tpu_fanout_nodes
+                .iter()
+                .map(|(tpu_addr, identity)| TpuNode {
+                    tpu_socket_addr: *tpu_addr,
+                    identity_tpunode: *identity,
+                })
+                .collect_vec(),
+            transactions: transactions
+                .iter()
+                .map(|tx| TxData(tx.signatures[0], bincode::serialize(tx).unwrap()))
                 .collect_vec(),
         }
     }
@@ -67,5 +70,4 @@ impl TpuForwardingRequest {
     pub fn get_tpu_nodes(&self) -> &Vec<TpuNode> {
         &self.tpu_nodes
     }
-
 }

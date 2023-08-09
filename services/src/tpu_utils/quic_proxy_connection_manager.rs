@@ -9,9 +9,7 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
-use quinn::{
-    ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
-};
+use quinn::{ClientConfig, Endpoint, EndpointConfig, TokioRuntime, TransportConfig, VarInt};
 use solana_sdk::pubkey::Pubkey;
 
 use solana_sdk::transaction::VersionedTransaction;
@@ -220,13 +218,13 @@ impl QuicProxyConnectionManager {
             txs.push(tx);
         }
 
-        let tpu_data = tpu_fanout_nodes.iter()
+        let tpu_data = tpu_fanout_nodes
+            .iter()
             .map(|tpu| (tpu.tpu_address, tpu.tpu_identity))
             .collect_vec();
 
         for chunk in txs.chunks(CHUNK_SIZE_PER_STREAM) {
-            let forwarding_request =
-                TpuForwardingRequest::new(&tpu_data, chunk.into());
+            let forwarding_request = TpuForwardingRequest::new(&tpu_data, chunk.into());
             debug!("forwarding_request: {}", forwarding_request);
 
             let proxy_request_raw =
