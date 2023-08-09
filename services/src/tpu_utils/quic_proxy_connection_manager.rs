@@ -182,6 +182,11 @@ impl QuicProxyConnectionManager {
 
                     let tpu_fanout_nodes = current_tpu_nodes.read().await.clone();
 
+                    if tpu_fanout_nodes.is_empty() {
+                        warn!("No tpu nodes to send transactions to - skip");
+                        continue;
+                    }
+
                     trace!("Sending copy of transaction batch of {} txs to {} tpu nodes via quic proxy",
                             txs.len(), tpu_fanout_nodes.len());
 

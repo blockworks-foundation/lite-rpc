@@ -136,6 +136,11 @@ impl ProxyListener {
                             TpuForwardingRequest::try_deserialize_from_wire_format(&raw_request)
                                 .unwrap();
 
+                        if proxy_request.get_tpu_nodes().is_empty() {
+                            warn!("no tpu nodes in request - skip");
+                            return;
+                        }
+
                         trace!("proxy request details: {}", proxy_request);
                         let txs = proxy_request.get_transaction_bytes();
 
