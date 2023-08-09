@@ -3,7 +3,6 @@ use log::{info, warn};
 use quinn::{Connection, ConnectionError, Endpoint};
 use std::fmt;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
@@ -19,6 +18,7 @@ use tracing::debug;
 /// * the ActiveConnection instance gets renewed on leader schedule change
 
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_RETRY_ATTEMPTS: u32 = 10;
 
 enum ConnectionState {
     NotConnected,
@@ -33,7 +33,6 @@ pub struct AutoReconnect {
     current: RwLock<ConnectionState>,
     pub target_address: SocketAddr,
 }
-
 
 impl AutoReconnect {
     pub fn new(endpoint: Endpoint, target_address: SocketAddr) -> Self {
@@ -101,11 +100,11 @@ impl AutoReconnect {
                         Some(new_connection) => {
                             *lock = ConnectionState::Connection(new_connection.clone());
                             info!(
-                                    "Restored closed connection {} with {} to target {}",
-                                    old_stable_id,
-                                    new_connection.stable_id(),
-                                    self.target_address,
-                                );
+                                "Restored closed connection {} with {} to target {}",
+                                old_stable_id,
+                                new_connection.stable_id(),
+                                self.target_address,
+                            );
                         }
                         None => {
                             warn!(
@@ -135,8 +134,7 @@ impl AutoReconnect {
                         );
                     }
                     None => {
-                        warn!("Failed connect initially to target {}",
-                                    self.target_address);
+                        warn!("Failed connect initially to target {}", self.target_address);
                         *lock = ConnectionState::FailedAttempt(1);
                     }
                 };
@@ -151,12 +149,22 @@ impl AutoReconnect {
             ConnectionState::FailedAttempt(attempts) => {
                 match self.create_connection().await {
                     Some(new_connection) => {
-                        *lock = ConnectionState::Connection(new_connection.clone());
+                        *lock = ConnectionState::Connection(new_connection);
                     }
                     None => {
-                        warn!("Reconnect to {} failed",
-                                self.target_address);
-                        *lock = ConnectionState::FailedAttempt(attempts + 1);
+                        if *attempts < MAX_RETRY_ATTEMPTS {
+                            warn!(
+                                "Reconnect to {} failed (attempt {})",
+                                self.target_address, attempts
+                            );
+                            *lock = ConnectionState::FailedAttempt(attempts + 1);
+                        } else {
+                            warn!(
+                                "Reconnect to {} failed permanently (attempt {})",
+                                self.target_address, attempts
+                            );
+                            *lock = ConnectionState::PermanentError;
+                        }
                     }
                 };
             }

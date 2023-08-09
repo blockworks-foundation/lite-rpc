@@ -8,7 +8,7 @@ use anyhow::bail;
 use std::time::Duration;
 
 use itertools::Itertools;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
@@ -132,7 +132,6 @@ impl QuicProxyConnectionManager {
 
         // note: this config must be aligned with quic-proxy's server config
         let mut transport_config = TransportConfig::default();
-        let _timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         // no remotely-initiated streams required
         transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
         transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
@@ -163,7 +162,6 @@ impl QuicProxyConnectionManager {
             }
 
             tokio::select! {
-                // TODO add timeout
                 tx = transaction_receiver.recv() => {
 
                     let first_tx: Vec<u8> = match tx {
@@ -189,26 +187,26 @@ impl QuicProxyConnectionManager {
                     trace!("Sending copy of transaction batch of {} txs to {} tpu nodes via quic proxy",
                             txs.len(), tpu_fanout_nodes.len());
 
-                    for target_tpu_node in tpu_fanout_nodes {
+                    let send_result =
                         Self::send_copy_of_txs_to_quicproxy(
                             &txs, &auto_connection,
                             proxy_addr,
-                            target_tpu_node.tpu_address,
-                            target_tpu_node.tpu_identity)
-                        .await.unwrap();
+                            tpu_fanout_nodes)
+                        .await;
+                    if let Err(err) = send_result {
+                        warn!("Failed to send copy of txs to quic proxy - skip (error {})", err);
                     }
 
                 },
             };
-        }
+        } // -- loop
     }
 
     async fn send_copy_of_txs_to_quicproxy(
         raw_tx_batch: &[Vec<u8>],
         auto_connection: &AutoReconnect,
         _proxy_address: SocketAddr,
-        tpu_target_address: SocketAddr,
-        target_tpu_identity: Pubkey,
+        tpu_fanout_nodes: Vec<TpuNode>,
     ) -> anyhow::Result<()> {
         let mut txs = vec![];
 
@@ -222,9 +220,13 @@ impl QuicProxyConnectionManager {
             txs.push(tx);
         }
 
+        let tpu_data = tpu_fanout_nodes.iter()
+            .map(|tpu| (tpu.tpu_address, tpu.tpu_identity))
+            .collect_vec();
+
         for chunk in txs.chunks(CHUNK_SIZE_PER_STREAM) {
             let forwarding_request =
-                TpuForwardingRequest::new(tpu_target_address, target_tpu_identity, chunk.into());
+                TpuForwardingRequest::new(&tpu_data, chunk.into());
             debug!("forwarding_request: {}", forwarding_request);
 
             let proxy_request_raw =

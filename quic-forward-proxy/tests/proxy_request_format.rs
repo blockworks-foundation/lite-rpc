@@ -16,8 +16,10 @@ fn roundtrip() {
     let tx = Transaction::new_with_payer(&[memo_ix], Some(&payer_pubkey));
 
     let wire_data = TpuForwardingRequest::new(
-        "127.0.0.1:5454".parse().unwrap(),
-        Pubkey::from_str("Bm8rtweCQ19ksNebrLY92H7x4bCaeDJSSmEeWqkdCeop").unwrap(),
+        vec![(
+            "127.0.0.1:5454".parse().unwrap(),
+            Pubkey::from_str("Bm8rtweCQ19ksNebrLY92H7x4bCaeDJSSmEeWqkdCeop").unwrap(),
+        )],
         vec![tx.into()],
     )
     .try_serialize_wire_format()
@@ -27,7 +29,8 @@ fn roundtrip() {
 
     let request = TpuForwardingRequest::try_deserialize_from_wire_format(&wire_data).unwrap();
 
-    assert!(request.get_tpu_socket_addr().is_ipv4());
+    assert_eq!(request.get_tpu_nodes().len(), 1);
+    assert!(request.get_tpu_nodes()[0].tpu_socket_addr.is_ipv4());
     assert_eq!(request.get_transaction_bytes().len(), 1);
 }
 

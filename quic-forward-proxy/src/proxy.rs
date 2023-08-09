@@ -36,7 +36,7 @@ impl QuicForwardProxy {
     pub async fn start_services(self) -> anyhow::Result<()> {
         let exit_signal = Arc::new(AtomicBool::new(false));
 
-        let (forwarder_channel, forward_receiver) = tokio::sync::mpsc::channel(100_000);
+        let (forwarder_channel, forward_receiver) = tokio::sync::mpsc::channel(1000);
 
         let proxy_listener =
             proxy_listener::ProxyListener::new(self.proxy_listener_addr, self.tls_config);

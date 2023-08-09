@@ -137,14 +137,12 @@ impl ProxyListener {
                                 .unwrap();
 
                         trace!("proxy request details: {}", proxy_request);
-                        let _tpu_identity = proxy_request.get_identity_tpunode();
-                        let tpu_address = proxy_request.get_tpu_socket_addr();
                         let txs = proxy_request.get_transaction_bytes();
 
                         debug!(
-                            "enqueue transaction batch of size {} to address {}",
+                            "enqueue transaction batch of size {} to {} tpu nodes",
                             txs.len(),
-                            tpu_address
+                            proxy_request.get_tpu_nodes().len(),
                         );
                         if forwarder_channel_copy.capacity() < forwarder_channel_copy.max_capacity()
                         {
@@ -154,14 +152,22 @@ impl ProxyListener {
                                 forwarder_channel_copy.max_capacity()
                             );
                         }
-                        forwarder_channel_copy
-                            .send_timeout(
-                                ForwardPacket::new(txs, tpu_address, proxy_request.get_hash()),
-                                FALLBACK_TIMEOUT,
-                            )
-                            .await
-                            .context("sending internal packet from proxy to forwarder")
-                            .unwrap();
+
+                        for tpu_node in proxy_request.get_tpu_nodes() {
+                            let tpu_address = tpu_node.tpu_socket_addr;
+                            forwarder_channel_copy
+                                .send_timeout(
+                                    ForwardPacket::new(
+                                        txs.clone(),
+                                        tpu_address,
+                                        proxy_request.get_hash(),
+                                    ),
+                                    FALLBACK_TIMEOUT,
+                                )
+                                .await
+                                .context("sending internal packet from proxy to forwarder")
+                                .unwrap();
+                        }
                     });
 
                     debug!(

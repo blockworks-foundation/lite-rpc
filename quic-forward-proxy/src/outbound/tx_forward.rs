@@ -90,6 +90,9 @@ pub async fn tx_forwarder(
                     let _exit_signal_copy = global_exit_signal.clone();
                     'tx_channel_loop: loop {
                         let timeout_result = timeout_fallback(per_connection_receiver.recv()).await;
+                        if let Err(_elapsed) = timeout_result {
+                            continue 'tx_channel_loop;
+                        }
 
                         if global_exit_signal.load(Ordering::Relaxed) {
                             warn!("Caught global exit signal - stopping agent thread");
@@ -100,9 +103,6 @@ pub async fn tx_forwarder(
                             return;
                         }
 
-                        if let Err(_elapsed) = timeout_result {
-                            continue 'tx_channel_loop;
-                        }
                         let maybe_packet = timeout_result.unwrap();
 
                         if let Err(_recv_error) = maybe_packet {
@@ -116,6 +116,14 @@ pub async fn tx_forwarder(
                         }
                         if !sharder.matching(packet.shard_hash) {
                             continue 'tx_channel_loop;
+                        }
+
+                        if auto_connection.is_permanent_dead().await {
+                            warn!("Connection is considered permanently dead");
+                            // while let Ok(more) = per_connection_receiver.try_recv() {
+                            //     // drain
+                            // }
+                            // continue 'tx_channel_loop;
                         }
 
                         let mut transactions_batch: Vec<Vec<u8>> = packet.transactions.clone();
@@ -276,7 +284,7 @@ fn create_tpu_client_endpoint(
     transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
     let timeout = IdleTimeout::try_from(Duration::from_millis(QUIC_MAX_TIMEOUT_MS as u64)).unwrap();
     transport_config.max_idle_timeout(Some(timeout));
-    transport_config.keep_alive_interval(None);
+    transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
 
     config.transport_config(Arc::new(transport_config));
 
