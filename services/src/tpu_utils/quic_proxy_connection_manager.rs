@@ -230,7 +230,7 @@ impl QuicProxyConnectionManager {
             let proxy_request_raw =
                 bincode::serialize(&forwarding_request).expect("Expect to serialize transactions");
 
-            let send_result = auto_connection.send_uni(proxy_request_raw).await;
+            let send_result = auto_connection.send_uni(&proxy_request_raw).await;
 
             match send_result {
                 Ok(()) => {

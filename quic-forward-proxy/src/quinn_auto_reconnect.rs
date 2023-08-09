@@ -1,11 +1,12 @@
-use crate::util::timeout_fallback;
 use anyhow::{bail, Context};
 use log::{info, warn};
 use quinn::{Connection, ConnectionError, Endpoint};
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio::time::timeout;
 use tracing::debug;
 
 /// connection manager with automatic reconnect; designated for connection to Solana TPU nodes
@@ -16,6 +17,8 @@ use tracing::debug;
 /// * ping times vary between 50ms and 400ms depending on the location
 /// * TPU address might be wrong which then is a permanent problem
 /// * the ActiveConnection instance gets renewed on leader schedule change
+
+const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
 enum ConnectionState {
     NotConnected,
@@ -42,7 +45,7 @@ impl AutoReconnect {
     }
 
     pub async fn send_uni(&self, payload: &Vec<u8>) -> anyhow::Result<()> {
-        let mut send_stream = timeout_fallback(self.refresh_and_get().await?.open_uni())
+        let mut send_stream = timeout(SEND_TIMEOUT, self.refresh_and_get().await?.open_uni())
             .await
             .context("open uni stream for sending")??;
         send_stream.write_all(payload.as_slice()).await?;
@@ -67,7 +70,11 @@ impl AutoReconnect {
             let lock = self.current.read().await;
             if let ConnectionState::Connection(conn) = &*lock {
                 if conn.close_reason().is_none() {
-                    debug!("Reuse connection {} to {}", conn.stable_id(), self.target_address);
+                    debug!(
+                        "Reuse connection {} to {}",
+                        conn.stable_id(),
+                        self.target_address
+                    );
                     return;
                 }
             }
@@ -92,16 +99,17 @@ impl AutoReconnect {
 
                             if reconnect_count < 10 {
                                 info!(
-                                    "Replace closed connection {} with {} (retry {})",
+                                    "Replace closed connection {} with {} to target {} (retry {})",
                                     old_stable_id,
                                     new_connection.stable_id(),
+                                    self.target_address,
                                     reconnect_count
                                 );
                             } else {
                                 *lock = ConnectionState::PermanentError;
                                 warn!(
-                                    "Too many reconnect attempts {} with {} (retry {})",
-                                    old_stable_id,
+                                    "Too many reconnect attempts to {}, last one with {} (retry {})",
+                                    self.target_address,
                                     new_connection.stable_id(),
                                     reconnect_count
                                 );
@@ -116,7 +124,11 @@ impl AutoReconnect {
                         }
                     };
                 } else {
-                    debug!("Reuse connection {} to {} with write-lock", current.stable_id(), self.target_address);
+                    debug!(
+                        "Reuse connection {} to {} with write-lock",
+                        current.stable_id(),
+                        self.target_address
+                    );
                 }
             }
             ConnectionState::NotConnected => {
@@ -142,7 +154,10 @@ impl AutoReconnect {
             }
             ConnectionState::PermanentError => {
                 // no nothing
-                debug!("Not using connection to {} with permanent error", self.target_address);
+                debug!(
+                    "Not using connection to {} with permanent error",
+                    self.target_address
+                );
             }
         }
     }

@@ -1,3 +1,4 @@
+use crate::outbound::debouncer::Debouncer;
 use crate::outbound::sharder::Sharder;
 use crate::quic_util::SkipServerVerification;
 use crate::quinn_auto_reconnect::AutoReconnect;
@@ -18,24 +19,24 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use itertools::Itertools;
 use tokio::sync::mpsc::Receiver;
 
 const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
+const AGENT_SHUTDOWN_IDLE: u64 = 2500; // ms; should be 4x400ms+buffer
 
 struct AgentHandle {
     pub tpu_address: SocketAddr,
     pub agent_exit_signal: Arc<AtomicBool>,
     pub created_at: Instant,
     // relative to start
-    pub last_used_ms: AtomicU64,
+    pub age_ms: AtomicU64,
 }
 
 impl AgentHandle {
     pub fn touch(&self) {
-        let last_used_ms = Instant::now().duration_since(self.created_at).as_millis() as u64;
-        self.last_used_ms.store(last_used_ms, Ordering::Relaxed);
+        let age_ms = Instant::now().duration_since(self.created_at).as_millis() as u64;
+        self.age_ms.store(age_ms, Ordering::Relaxed);
     }
 }
 
@@ -52,6 +53,7 @@ pub async fn tx_forwarder(
     let (broadcast_in, _) = tokio::sync::broadcast::channel::<Arc<ForwardPacket>>(1000);
 
     let mut agents: HashMap<SocketAddr, AgentHandle> = HashMap::new();
+    let agent_shutdown_debouncer = Debouncer::new(Duration::from_millis(200));
 
     loop {
         if exit_signal.load(Ordering::Relaxed) {
@@ -99,7 +101,7 @@ pub async fn tx_forwarder(
                         }
 
                         if let Err(_elapsed) = timeout_result {
-                            continue;
+                            continue 'tx_channel_loop;
                         }
                         let maybe_packet = timeout_result.unwrap();
 
@@ -110,20 +112,20 @@ pub async fn tx_forwarder(
                         let packet = maybe_packet.unwrap();
 
                         if packet.tpu_address != tpu_address {
-                            continue;
+                            continue 'tx_channel_loop;
                         }
                         if !sharder.matching(packet.shard_hash) {
-                            continue;
+                            continue 'tx_channel_loop;
                         }
 
                         let mut transactions_batch: Vec<Vec<u8>> = packet.transactions.clone();
 
-                        while let Ok(more) = per_connection_receiver.try_recv() {
+                        'more: while let Ok(more) = per_connection_receiver.try_recv() {
                             if more.tpu_address != tpu_address {
-                                continue;
+                                continue 'more;
                             }
                             if !sharder.matching(more.shard_hash) {
-                                continue;
+                                continue 'more;
                             }
                             transactions_batch.extend(more.transactions.clone());
                         }
@@ -170,21 +172,21 @@ pub async fn tx_forwarder(
                 tpu_address,
                 agent_exit_signal,
                 created_at: now,
-                last_used_ms: AtomicU64::new(0),
+                age_ms: AtomicU64::new(0),
             }
         }); // -- new agent
 
         let agent = agents.get(&tpu_address).unwrap();
         agent.touch();
 
-        // TODO only call from time to time
-        cleanup_agents(&mut agents, &tpu_address);
+        if agent_shutdown_debouncer.can_fire() {
+            cleanup_agents(&mut agents, &tpu_address);
+        }
 
         if broadcast_in.len() > 5 {
             debug!("tx-forward queue len: {}", broadcast_in.len())
         }
 
-        // TODO use agent_exit signal to clean them up
         broadcast_in
             .send(forward_packet)
             .expect("send must succeed");
@@ -193,9 +195,6 @@ pub async fn tx_forwarder(
     // not reachable
 }
 
-// ms
-const AGENT_SHUTDOWN_IDLE: u64 = 5_000;
-
 fn cleanup_agents(agents: &mut HashMap<SocketAddr, AgentHandle>, current_tpu_address: &SocketAddr) {
     let mut to_shutdown = Vec::new();
     for (tpu_address, handle) in &*agents {
@@ -203,7 +202,7 @@ fn cleanup_agents(agents: &mut HashMap<SocketAddr, AgentHandle>, current_tpu_add
             continue;
         }
 
-        let last_used_ms = handle.last_used_ms.load(Ordering::Relaxed);
+        let last_used_ms = handle.age_ms.load(Ordering::Relaxed);
 
         if last_used_ms > AGENT_SHUTDOWN_IDLE {
             to_shutdown.push(tpu_address.to_owned())
@@ -211,15 +210,20 @@ fn cleanup_agents(agents: &mut HashMap<SocketAddr, AgentHandle>, current_tpu_add
     }
 
     for tpu_address in to_shutdown.iter() {
-        if let Some(removed_agent) = agents.remove(&tpu_address) {
-            if let Ok(_) = removed_agent.agent_exit_signal.compare_exchange(
-                false, true, Ordering::Relaxed, Ordering::Relaxed) {
-                let last_used_ms = removed_agent.last_used_ms.load(Ordering::Relaxed);
-                debug!("Agent for tpu node {} was IDLE for {}ms - sending exit signal", removed_agent.tpu_address, last_used_ms);
+        if let Some(removed_agent) = agents.remove(tpu_address) {
+            let was_signaled = removed_agent
+                .agent_exit_signal
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+                .is_ok();
+            if was_signaled {
+                let last_used_ms = removed_agent.age_ms.load(Ordering::Relaxed);
+                debug!(
+                    "Idle Agent for tpu node {} idle for {}ms - sending exit signal",
+                    removed_agent.tpu_address, last_used_ms
+                );
             }
         }
     }
-
 }
 
 /// takes a validator identity and creates a new QUIC client; appears as staked peer to TPU
