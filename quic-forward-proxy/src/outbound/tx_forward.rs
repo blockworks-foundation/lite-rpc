@@ -50,7 +50,7 @@ pub async fn tx_forwarder(
 
     let endpoint = new_endpoint_with_validator_identity(validator_identity).await;
 
-    let (broadcast_in, _) = tokio::sync::broadcast::channel::<Arc<ForwardPacket>>(1000);
+    let (broadcast_in, _) = tokio::sync::broadcast::channel::<Arc<ForwardPacket>>(1024);
 
     let mut agents: HashMap<SocketAddr, AgentHandle> = HashMap::new();
     let agent_shutdown_debouncer = Debouncer::new(Duration::from_millis(200));
