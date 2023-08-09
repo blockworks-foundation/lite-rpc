@@ -24,6 +24,7 @@ enum ConnectionState {
     NotConnected,
     Connection(Connection),
     PermanentError,
+    FailedAttempt(u32),
 }
 
 pub struct AutoReconnect {
@@ -31,8 +32,8 @@ pub struct AutoReconnect {
     endpoint: Endpoint,
     current: RwLock<ConnectionState>,
     pub target_address: SocketAddr,
-    reconnect_count: AtomicU32,
 }
+
 
 impl AutoReconnect {
     pub fn new(endpoint: Endpoint, target_address: SocketAddr) -> Self {
@@ -40,8 +41,12 @@ impl AutoReconnect {
             endpoint,
             current: RwLock::new(ConnectionState::NotConnected),
             target_address,
-            reconnect_count: AtomicU32::new(0),
         }
+    }
+
+    pub async fn is_permanent_dead(&self) -> bool {
+        let lock = self.current.read().await;
+        matches!(&*lock, ConnectionState::PermanentError)
     }
 
     pub async fn send_uni(&self, payload: &Vec<u8>) -> anyhow::Result<()> {
@@ -61,6 +66,7 @@ impl AutoReconnect {
             ConnectionState::NotConnected => bail!("not connected"),
             ConnectionState::Connection(conn) => Ok(conn.clone()),
             ConnectionState::PermanentError => bail!("permanent error"),
+            ConnectionState::FailedAttempt(_) => bail!("failed connection attempt"),
         }
     }
 
@@ -85,7 +91,7 @@ impl AutoReconnect {
                 if current.close_reason().is_some() {
                     let old_stable_id = current.stable_id();
                     warn!(
-                        "Connection {} to {} is closed for reason: {:?}",
+                        "Connection {} to {} is closed for reason: {:?} - reconnecting",
                         old_stable_id,
                         self.target_address,
                         current.close_reason()
@@ -94,33 +100,19 @@ impl AutoReconnect {
                     match self.create_connection().await {
                         Some(new_connection) => {
                             *lock = ConnectionState::Connection(new_connection.clone());
-                            let reconnect_count =
-                                self.reconnect_count.fetch_add(1, Ordering::SeqCst);
-
-                            if reconnect_count < 10 {
-                                info!(
-                                    "Replace closed connection {} with {} to target {} (retry {})",
+                            info!(
+                                    "Restored closed connection {} with {} to target {}",
                                     old_stable_id,
                                     new_connection.stable_id(),
                                     self.target_address,
-                                    reconnect_count
                                 );
-                            } else {
-                                *lock = ConnectionState::PermanentError;
-                                warn!(
-                                    "Too many reconnect attempts to {}, last one with {} (retry {})",
-                                    self.target_address,
-                                    new_connection.stable_id(),
-                                    reconnect_count
-                                );
-                            }
                         }
                         None => {
                             warn!(
                                 "Reconnect to {} failed for connection {}",
                                 self.target_address, old_stable_id
                             );
-                            *lock = ConnectionState::PermanentError;
+                            *lock = ConnectionState::FailedAttempt(1);
                         }
                     };
                 } else {
@@ -135,7 +127,6 @@ impl AutoReconnect {
                 match self.create_connection().await {
                     Some(new_connection) => {
                         *lock = ConnectionState::Connection(new_connection.clone());
-                        self.reconnect_count.fetch_add(1, Ordering::SeqCst);
 
                         info!(
                             "Create initial connection {} to {}",
@@ -144,11 +135,9 @@ impl AutoReconnect {
                         );
                     }
                     None => {
-                        warn!(
-                            "Initial connection to {} failed permanently",
-                            self.target_address
-                        );
-                        *lock = ConnectionState::PermanentError;
+                        warn!("Failed connect initially to target {}",
+                                    self.target_address);
+                        *lock = ConnectionState::FailedAttempt(1);
                     }
                 };
             }
@@ -158,6 +147,18 @@ impl AutoReconnect {
                     "Not using connection to {} with permanent error",
                     self.target_address
                 );
+            }
+            ConnectionState::FailedAttempt(attempts) => {
+                match self.create_connection().await {
+                    Some(new_connection) => {
+                        *lock = ConnectionState::Connection(new_connection.clone());
+                    }
+                    None => {
+                        warn!("Reconnect to {} failed",
+                                self.target_address);
+                        *lock = ConnectionState::FailedAttempt(attempts + 1);
+                    }
+                };
             }
         }
     }
@@ -199,6 +200,7 @@ impl AutoReconnect {
             ),
             ConnectionState::NotConnected => "n/c".to_string(),
             ConnectionState::PermanentError => "n/a (permanent)".to_string(),
+            ConnectionState::FailedAttempt(_) => "fail".to_string(),
         }
     }
 }
