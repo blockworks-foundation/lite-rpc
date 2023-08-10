@@ -129,7 +129,7 @@ impl ActiveConnection {
                         },
                         Err(e) => {
                             error!(
-                                "Broadcast channel error on recv for {} error {}",
+                                "Broadcast channel error on recv for {} error {} - continue",
                                 identity, e
                             );
                             continue;

@@ -62,7 +62,7 @@ const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameter
 };
 
 #[test]
-pub fn small_tx_batch_staked() {
+pub fn small_tx_batch_staked_direct() {
     configure_logging(true);
 
     wireup_and_send_txs_via_channel(TestCaseParams {
@@ -84,7 +84,7 @@ pub fn small_tx_batch_staked_proxy() {
 }
 
 #[test]
-pub fn small_tx_batch_unstaked() {
+pub fn small_tx_batch_unstake_direct() {
     configure_logging(true);
 
     wireup_and_send_txs_via_channel(TestCaseParams {
@@ -95,7 +95,7 @@ pub fn small_tx_batch_unstaked() {
 }
 
 #[test]
-pub fn with_100_transactions() {
+pub fn with_100_transactions_direct() {
     configure_logging(false);
 
     wireup_and_send_txs_via_channel(TestCaseParams {
@@ -106,7 +106,7 @@ pub fn with_100_transactions() {
 }
 
 #[test]
-pub fn with_1000_transactions() {
+pub fn with_1000_transactions_direct() {
     configure_logging(false);
 
     wireup_and_send_txs_via_channel(TestCaseParams {
@@ -130,7 +130,7 @@ pub fn bench_proxy() {
 }
 
 #[test]
-pub fn with_10000_transactions() {
+pub fn with_10000_transactions_direct() {
     configure_logging(false);
 
     wireup_and_send_txs_via_channel(TestCaseParams {
