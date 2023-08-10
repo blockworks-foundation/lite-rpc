@@ -529,11 +529,17 @@ async fn start_literpc_client_direct_mode(
         broadcast_sender.send(raw_sample_tx)?;
     }
 
-    sleep(Duration::from_secs(30)).await;
+    while !broadcast_sender.is_empty() {
+        sleep(Duration::from_millis(1000)).await;
+        warn!("broadcast channel is not empty - wait before shutdown test client thread");
+    }
+
     assert!(
         broadcast_sender.is_empty(),
         "broadcast channel must be empty"
     );
+
+    sleep(Duration::from_secs(3)).await;
 
     Ok(())
 }
@@ -646,6 +652,8 @@ async fn start_literpc_client_proxy_mode(
     );
 
     quic_proxy_connection_manager.signal_shutdown();
+
+    sleep(Duration::from_secs(3)).await;
 
     Ok(())
 }

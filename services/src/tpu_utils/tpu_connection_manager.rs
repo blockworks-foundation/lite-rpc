@@ -138,8 +138,8 @@ impl ActiveConnection {
 
                     let mut txs = vec![first_tx];
                     for _ in 1..number_of_transactions_per_unistream {
-                        if let Ok((signature, tx)) = transaction_reciever.try_recv() {
-                            if Self::check_for_confirmation(&txs_sent_store, signature) {
+                        if let Ok((sig, tx)) = transaction_reciever.try_recv() {
+                            if Self::check_for_confirmation(&txs_sent_store, sig) {
                                 continue;
                             }
                             txs.push(tx);
