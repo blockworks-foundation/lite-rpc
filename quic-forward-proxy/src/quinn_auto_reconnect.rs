@@ -149,6 +149,10 @@ impl AutoReconnect {
             ConnectionState::FailedAttempt(attempts) => {
                 match self.create_connection().await {
                     Some(new_connection) => {
+                        debug!(
+                            "Reconnected to {} succeeded after {} attempts",
+                            self.target_address, attempts
+                        );
                         *lock = ConnectionState::Connection(new_connection);
                     }
                     None => {

@@ -90,9 +90,11 @@ pub async fn tx_forwarder(
                     let _exit_signal_copy = global_exit_signal.clone();
                     'tx_channel_loop: loop {
                         let timeout_result = timeout_fallback(per_connection_receiver.recv()).await;
-                        if let Err(_elapsed) = timeout_result {
-                            continue 'tx_channel_loop;
-                        }
+
+                        let maybe_packet = match timeout_result {
+                            Ok(recv) => recv,
+                            Err(_elapsed) => continue 'tx_channel_loop,
+                        };
 
                         if global_exit_signal.load(Ordering::Relaxed) {
                             warn!("Caught global exit signal, {} remaining - stopping agent thread",
@@ -117,8 +119,6 @@ pub async fn tx_forwarder(
 
                         }
 
-                        let maybe_packet = timeout_result.unwrap();
-
                         if let Err(_recv_error) = maybe_packet {
                             break 'tx_channel_loop;
                         }
@@ -133,11 +133,10 @@ pub async fn tx_forwarder(
                         }
 
                         if auto_connection.is_permanent_dead().await {
-                            warn!("Connection is considered permanently dead");
-                            // while let Ok(more) = per_connection_receiver.try_recv() {
-                            //     // drain
-                            // }
-                            // continue 'tx_channel_loop;
+                            warn!("Agent ({} #{}) connection permanently dead, {} remaining - stopping",
+                                tpu_address, connection_idx,
+                                per_connection_receiver.len());
+                            break 'tx_channel_loop;
                         }
 
                         let mut transactions_batch: Vec<Vec<u8>> = packet.transactions.clone();
