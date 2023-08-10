@@ -202,9 +202,10 @@ impl TpuService {
             QuicProxy {
                 quic_proxy_connection_manager,
             } => {
+                let transaction_receiver = self.broadcast_sender.subscribe();
                 quic_proxy_connection_manager
                     .update_connection(
-                        self.broadcast_sender.clone(),
+                        transaction_receiver,
                         connections_to_keep,
                         self.config.quic_connection_params,
                     )

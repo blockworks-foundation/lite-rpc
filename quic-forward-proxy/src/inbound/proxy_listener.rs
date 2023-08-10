@@ -65,7 +65,7 @@ impl ProxyListener {
                     }
                     Err(err) => {
                         error!(
-                            "failed to accect connection from client: {reason} - skip",
+                            "failed to accept connection from client: {reason} - skip",
                             reason = err
                         );
                     }

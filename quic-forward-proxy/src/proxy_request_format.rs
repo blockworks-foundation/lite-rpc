@@ -28,6 +28,7 @@ pub struct TpuNode {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuForwardingRequest {
     format_version: u16,
+    // note: this data gets stale
     tpu_nodes: Vec<TpuNode>,
     transactions: Vec<TxData>,
 }

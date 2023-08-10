@@ -503,6 +503,8 @@ async fn start_literpc_client_direct_mode(
     }
 
     sleep(Duration::from_secs(30)).await;
+    assert!(broadcast_sender.is_empty(), "broadcast channel must be empty");
+
 
     Ok(())
 }
@@ -580,16 +582,14 @@ async fn start_literpc_client_proxy_mode(
     //     )
     //     .await;
 
+    let transaction_receiver = broadcast_sender.subscribe();
     quic_proxy_connection_manager
         .update_connection(
-            broadcast_sender.clone(),
+            transaction_receiver,
             connections_to_keep,
             QUIC_CONNECTION_PARAMS,
         )
         .await;
-
-    // TODO this is a race
-    sleep(Duration::from_millis(1500)).await;
 
     for i in 0..test_case_params.sample_tx_count {
         let raw_sample_tx = build_raw_sample_tx(i);
@@ -607,6 +607,8 @@ async fn start_literpc_client_proxy_mode(
     }
 
     sleep(Duration::from_secs(30)).await;
+    // TODO copy to direct_mode method
+    assert!(broadcast_sender.is_empty(), "broadcast channel must be empty");
 
     Ok(())
 }
@@ -625,8 +627,8 @@ async fn start_quic_proxy(proxy_listen_addr: SocketAddr) -> anyhow::Result<()> {
     .start_services();
 
     tokio::select! {
-        _ = proxy_service => {
-            panic!("Proxy service stopped unexpectedly")
+        res = proxy_service => {
+            panic!("Proxy service stopped unexpectedly: {:?}", res)
         },
     }
 }
