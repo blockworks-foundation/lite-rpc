@@ -20,9 +20,10 @@ use solana_streamer::packet::PacketBatch;
 use solana_streamer::quic::StreamStats;
 use solana_streamer::streamer::StakedNodes;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
+use itertools::Itertools;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
@@ -255,6 +256,8 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
         let mut packet_count2 = 0;
         let mut count_map: CountMap<Signature> =
             CountMap::with_capacity(test_case_params.sample_tx_count as usize);
+        let mut contents: HashSet<String> =
+            HashSet::with_capacity(test_case_params.sample_tx_count as usize);
         let warmup_tx_count: u32 = test_case_params.sample_tx_count / 2;
 
         while (count_map.len() as u32) < test_case_params.sample_tx_count {
@@ -296,6 +299,10 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
                     "read transaction from quic streaming server: {:?}",
                     tx.get_signature()
                 );
+                // "hi 7292   "
+                let content = String::from_utf8(tx.message.instructions()[0].data.clone()).unwrap();
+                contents.insert(content);
+
                 count_map.insert_or_increment(*tx.get_signature());
             }
 
@@ -319,6 +326,26 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
         );
 
         info!("got all expected packets - shutting down tokio runtime with lite-rpc client");
+
+        // inspect content and find missing
+        let all_numbers: HashSet<u64> = contents
+            .iter()
+            .map(|content| parse_hi(content).unwrap())
+            .sorted()
+            .collect();
+        let max_number = *all_numbers.iter().max().unwrap();
+        // OKEY: got 100000 distinct content strings with max 99999
+        info!(
+            "got {} distinct content strings with max {}",
+            contents.len(),
+            max_number
+        );
+        let missing = (0..=max_number)
+            .filter(|n| !all_numbers.contains(n))
+            .collect_vec();
+        for mi in missing {
+            info!("- missing {}", mi);
+        }
 
         assert_eq!(
             count_map.len() as u32,
@@ -699,6 +726,13 @@ pub fn build_raw_sample_tx(i: u32) -> (String, Vec<u8>) {
     let raw_tx = bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx");
 
     (tx.get_signature().to_string(), raw_tx)
+}
+
+// "hi 1234 " -> 1234
+fn parse_hi(input: &str) -> Option<u64> {
+    let input = input.trim();
+    let input = input.replace("hi ", "");
+    input.parse::<u64>().ok()
 }
 
 fn build_sample_tx(payer_keypair: &Keypair, i: u32) -> VersionedTransaction {
