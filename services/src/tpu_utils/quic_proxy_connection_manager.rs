@@ -33,6 +33,7 @@ pub struct QuicProxyConnectionManager {
     simple_thread_started: AtomicBool,
     proxy_addr: SocketAddr,
     current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>,
+    exit_signal: Arc<AtomicBool>,
 }
 
 const CHUNK_SIZE_PER_STREAM: usize = 20;
@@ -51,7 +52,12 @@ impl QuicProxyConnectionManager {
             simple_thread_started: AtomicBool::from(false),
             proxy_addr,
             current_tpu_nodes: Arc::new(RwLock::new(vec![])),
+            exit_signal: Arc::new(AtomicBool::from(false)),
         }
+    }
+
+    pub fn signal_shutdown(&self) {
+        self.exit_signal.store(true, Relaxed);
     }
 
     pub async fn update_connection(
@@ -87,8 +93,7 @@ impl QuicProxyConnectionManager {
 
         info!("Starting very simple proxy thread");
 
-        let exit_signal = Arc::new(AtomicBool::new(false));
-
+        let exit_signal = self.exit_signal.clone();
         tokio::spawn(Self::read_transactions_and_broadcast(
             broadcast_receiver,
             self.current_tpu_nodes.clone(),
@@ -141,6 +146,7 @@ impl QuicProxyConnectionManager {
         endpoint
     }
 
+    // send transactions to quic proxy
     async fn read_transactions_and_broadcast(
         mut transaction_receiver: Receiver<(String, Vec<u8>)>,
         current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>,
@@ -154,6 +160,7 @@ impl QuicProxyConnectionManager {
         loop {
             // exit signal set
             if exit_signal.load(Relaxed) {
+                warn!("Caught exit signal - stopping sending transactions to quic proxy");
                 break;
             }
 

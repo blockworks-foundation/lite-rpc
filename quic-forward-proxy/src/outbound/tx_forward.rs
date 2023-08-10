@@ -95,12 +95,22 @@ pub async fn tx_forwarder(
                         }
 
                         if global_exit_signal.load(Ordering::Relaxed) {
-                            warn!("Caught global exit signal - stopping agent thread");
-                            return;
+                            warn!("Caught global exit signal, {} remaining - stopping agent thread",
+                                per_connection_receiver.len());
+                            break 'tx_channel_loop;
                         }
+                        // gracefully drain unit queue is empty - then shut down
                         if agent_exit_signal_copy.load(Ordering::Relaxed) {
-                            warn!("Caught exit signal for this agent ({} #{}) - stopping agent thread", tpu_address, connection_idx);
-                            return;
+                            if per_connection_receiver.is_empty() {
+                                warn!("Caught exit signal for this agent ({} #{}) - stopping agent thread",
+                                    tpu_address, connection_idx);
+                                break 'tx_channel_loop;
+                            } else {
+                                warn!("Caught exit signal for this agent ({} #{}), {} remaining - continue",
+                                    tpu_address, connection_idx,
+                                    per_connection_receiver.len());
+                            }
+
                         }
 
                         let maybe_packet = timeout_result.unwrap();

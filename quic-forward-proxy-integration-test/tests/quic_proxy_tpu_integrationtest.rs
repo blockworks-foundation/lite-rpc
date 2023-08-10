@@ -635,12 +635,17 @@ async fn start_literpc_client_proxy_mode(
         }
     }
 
-    sleep(Duration::from_secs(30)).await;
-    // TODO copy to direct_mode method
+    while !broadcast_sender.is_empty() {
+        sleep(Duration::from_millis(1000)).await;
+        warn!("broadcast channel is not empty - wait before shutdown test client thread");
+    }
+
     assert!(
         broadcast_sender.is_empty(),
         "broadcast channel must be empty"
     );
+
+    quic_proxy_connection_manager.signal_shutdown();
 
     Ok(())
 }
