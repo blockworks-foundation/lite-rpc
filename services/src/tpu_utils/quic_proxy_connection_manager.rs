@@ -111,7 +111,7 @@ impl QuicProxyConnectionManager {
                     .expect("create_endpoint bind_in_range")
                     .1;
             let config = EndpointConfig::default();
-            quinn::Endpoint::new(config, None, client_socket, TokioRuntime)
+            Endpoint::new(config, None, client_socket, TokioRuntime)
                 .expect("create_endpoint quinn::Endpoint::new")
         };
 
@@ -153,7 +153,7 @@ impl QuicProxyConnectionManager {
 
         loop {
             // exit signal set
-            if exit_signal.load(Ordering::Relaxed) {
+            if exit_signal.load(Relaxed) {
                 break;
             }
 
@@ -208,7 +208,7 @@ impl QuicProxyConnectionManager {
                     }
 
                 },
-            };
+            }
         } // -- loop
     }
 

@@ -183,7 +183,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
         .expect("failed to build tokio runtime for lite-rpc-tpu-client");
 
     // quic-forward-proxy
-    let runtime_quic_proxy = tokio::runtime::Builder::new_multi_thread()
+    let runtime_quic_proxy = Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("failed to build tokio runtime for quic-forward-proxy");
