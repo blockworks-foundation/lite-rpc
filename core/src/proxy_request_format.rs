@@ -3,10 +3,10 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
-use solana_sdk::transaction::VersionedTransaction;
 use std::fmt;
 use std::fmt::Display;
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 ///
 /// lite-rpc to proxy wire format
@@ -16,6 +16,12 @@ const FORMAT_VERSION1: u16 = 2500;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TxData(Signature, Vec<u8>);
+
+impl TxData {
+    pub fn new(sig: String, tx_raw: Vec<u8>) -> Self {
+        TxData(Signature::from_str(sig.as_str()).unwrap(), tx_raw)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TpuNode {
@@ -41,10 +47,7 @@ impl Display for TpuForwardingRequest {
 }
 
 impl TpuForwardingRequest {
-    pub fn new(
-        tpu_fanout_nodes: &[(SocketAddr, Pubkey)],
-        transactions: Vec<VersionedTransaction>,
-    ) -> Self {
+    pub fn new(tpu_fanout_nodes: &[(SocketAddr, Pubkey)], transactions: &[TxData]) -> Self {
         TpuForwardingRequest {
             format_version: FORMAT_VERSION1,
             tpu_nodes: tpu_fanout_nodes
@@ -54,10 +57,7 @@ impl TpuForwardingRequest {
                     identity_tpunode: *identity,
                 })
                 .collect_vec(),
-            transactions: transactions
-                .iter()
-                .map(|tx| TxData(tx.signatures[0], bincode::serialize(tx).unwrap()))
-                .collect_vec(),
+            transactions: transactions.to_vec(),
         }
     }
 

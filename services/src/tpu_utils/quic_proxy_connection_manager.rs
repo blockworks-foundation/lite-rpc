@@ -8,15 +8,14 @@ use anyhow::bail;
 use std::time::Duration;
 
 use itertools::Itertools;
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 use quinn::{ClientConfig, Endpoint, EndpointConfig, TokioRuntime, TransportConfig, VarInt};
 use solana_sdk::pubkey::Pubkey;
 
-use solana_sdk::transaction::VersionedTransaction;
-use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
 use tokio::sync::broadcast::error::TryRecvError;
+use tokio::sync::{broadcast::Receiver, RwLock};
 
-use solana_lite_rpc_core::proxy_request_format::TpuForwardingRequest;
+use solana_lite_rpc_core::proxy_request_format::{TpuForwardingRequest, TxData};
 use solana_lite_rpc_core::quic_connection_utils::{
     QuicConnectionParameters, SkipServerVerification,
 };
@@ -161,9 +160,9 @@ impl QuicProxyConnectionManager {
             tokio::select! {
                 tx = transaction_receiver.recv() => {
 
-                    let first_tx: Vec<u8> = match tx {
-                        Ok((_sig, tx)) => {
-                            tx
+                    let first_tx: TxData = match tx {
+                        Ok((sig, tx_raw)) => {
+                            TxData::new(sig, tx_raw)
                         },
                         Err(e) => {
                             warn!("Broadcast channel error (close) on recv: {} - aborting", e);
@@ -171,11 +170,11 @@ impl QuicProxyConnectionManager {
                         }
                     };
 
-                    let mut txs = vec![first_tx];
+                    let mut txs: Vec<TxData> = vec![first_tx];
                     for _ in 1..connection_parameters.number_of_transactions_per_unistream {
                         match transaction_receiver.try_recv() {
-                            Ok((_sig, tx)) => {
-                                txs.push(tx);
+                            Ok((sig, tx_raw)) => {
+                                txs.push(TxData::new(sig, tx_raw));
                             },
                             Err(TryRecvError::Empty) => {
                                 break;
@@ -214,30 +213,18 @@ impl QuicProxyConnectionManager {
     }
 
     async fn send_copy_of_txs_to_quicproxy(
-        raw_tx_batch: &[Vec<u8>],
+        txs: &[TxData],
         auto_connection: &AutoReconnect,
         _proxy_address: SocketAddr,
         tpu_fanout_nodes: Vec<TpuNode>,
     ) -> anyhow::Result<()> {
-        let mut txs = vec![];
-
-        for raw_tx in raw_tx_batch {
-            let tx = match bincode::deserialize::<VersionedTransaction>(raw_tx) {
-                Ok(tx) => tx,
-                Err(err) => {
-                    bail!(err.to_string());
-                }
-            };
-            txs.push(tx);
-        }
-
         let tpu_data = tpu_fanout_nodes
             .iter()
             .map(|tpu| (tpu.tpu_address, tpu.tpu_identity))
             .collect_vec();
 
         for chunk in txs.chunks(CHUNK_SIZE_PER_STREAM) {
-            let forwarding_request = TpuForwardingRequest::new(&tpu_data, chunk.into());
+            let forwarding_request = TpuForwardingRequest::new(&tpu_data, chunk);
             debug!("forwarding_request: {}", forwarding_request);
 
             let proxy_request_raw =

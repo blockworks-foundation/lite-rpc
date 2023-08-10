@@ -503,8 +503,10 @@ async fn start_literpc_client_direct_mode(
     }
 
     sleep(Duration::from_secs(30)).await;
-    assert!(broadcast_sender.is_empty(), "broadcast channel must be empty");
-
+    assert!(
+        broadcast_sender.is_empty(),
+        "broadcast channel must be empty"
+    );
 
     Ok(())
 }
@@ -608,7 +610,10 @@ async fn start_literpc_client_proxy_mode(
 
     sleep(Duration::from_secs(30)).await;
     // TODO copy to direct_mode method
-    assert!(broadcast_sender.is_empty(), "broadcast channel must be empty");
+    assert!(
+        broadcast_sender.is_empty(),
+        "broadcast channel must be empty"
+    );
 
     Ok(())
 }
