@@ -73,6 +73,8 @@ pub fn small_tx_batch_unstaked() {
     });
 }
 
+// note: this tests are flakes on CI ond also local (see https://mangolana.atlassian.net/browse/MAN-59)
+#[ignore]
 #[test]
 pub fn many_transactions() {
     configure_logging(false);
@@ -83,6 +85,7 @@ pub fn many_transactions() {
     });
 }
 
+// note: this tests are flakes on CI ond also local (see https://mangolana.atlassian.net/browse/MAN-59)
 #[ignore]
 #[test]
 pub fn too_many_transactions() {
