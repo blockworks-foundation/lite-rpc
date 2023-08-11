@@ -7,7 +7,7 @@ use crate::util::timeout_fallback;
 use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail, Context};
 use futures::future::join_all;
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
