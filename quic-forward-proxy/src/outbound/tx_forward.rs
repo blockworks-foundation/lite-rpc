@@ -103,16 +103,16 @@ pub async fn tx_forwarder(
                         }
                         if agent_exit_signal_copy.load(Ordering::Relaxed) {
                             if per_connection_receiver.is_empty() {
-                                warn!("Caught exit signal for this agent ({} #{}) - stopping agent thread",
+                                debug!("Caught exit signal for this agent ({} #{}) - stopping agent thread",
                                     tpu_address, connection_idx);
                                 break 'tx_channel_loop;
                             } else if auto_connection.is_permanent_dead().await {
-                                warn!("Caught exit signal for this agent ({} #{}), {} remaining but connection is dead - stopping",
+                                info!("Caught exit signal for this agent ({} #{}), {} remaining but connection is dead - stopping",
                                 tpu_address, connection_idx,
                                 per_connection_receiver.len());
                                 break 'tx_channel_loop;
                             } else {
-                                warn!("Caught exit signal for this agent ({} #{}), {} remaining - continue",
+                                trace!("Caught exit signal for this agent ({} #{}), {} remaining - continue",
                                 tpu_address, connection_idx,
                                 per_connection_receiver.len());
                             }
