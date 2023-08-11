@@ -33,3 +33,4 @@ quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
+itertools = { workspace = true }

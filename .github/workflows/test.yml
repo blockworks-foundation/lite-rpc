@@ -24,7 +24,7 @@ jobs:
           sudo apt-get install libssl-dev openssl -y
 
       - name: Early Build
-        run: cargo build --workspace
+        run: cargo build --workspace --tests
 
       - name: Check Rust Code Format
         run:  cargo fmt -- --check
@@ -33,7 +33,7 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Run Tests
-        run: cargo test
+        run: RUST_LOG=info cargo test
 
       - name: Install node deps
         run: yarn

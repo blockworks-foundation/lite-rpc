@@ -29,4 +29,6 @@ pub struct Args {
     pub maximum_retries_per_tx: usize,
     #[arg(long, default_value_t = DEFAULT_RETRY_TIMEOUT)]
     pub transaction_retry_after_secs: u64,
+    #[arg(long)]
+    pub experimental_quic_proxy_addr: Option<String>,
 }

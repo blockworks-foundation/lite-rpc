@@ -129,7 +129,7 @@ impl ActiveConnection {
                         },
                         Err(e) => {
                             error!(
-                                "Broadcast channel error on recv for {} error {}",
+                                "Broadcast channel error on recv for {} error {} - continue",
                                 identity, e
                             );
                             continue;
@@ -138,8 +138,8 @@ impl ActiveConnection {
 
                     let mut txs = vec![first_tx];
                     for _ in 1..number_of_transactions_per_unistream {
-                        if let Ok((signature, tx)) = transaction_reciever.try_recv() {
-                            if Self::check_for_confirmation(&txs_sent_store, signature) {
+                        if let Ok((sig, tx)) = transaction_reciever.try_recv() {
+                            if Self::check_for_confirmation(&txs_sent_store, sig) {
                                 continue;
                             }
                             txs.push(tx);
@@ -224,7 +224,7 @@ impl TpuConnectionManager {
 
     pub async fn update_connections(
         &self,
-        transaction_sender: Arc<Sender<(String, Vec<u8>)>>,
+        broadcast_sender: Arc<Sender<(String, Vec<u8>)>>,
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakes,
         txs_sent_store: TxStore,
@@ -244,8 +244,8 @@ impl TpuConnectionManager {
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
                 let (sx, rx) = tokio::sync::mpsc::channel(1);
 
-                let transaction_reciever = transaction_sender.subscribe();
-                active_connection.start_listening(transaction_reciever, rx, identity_stakes);
+                let broadcast_receiver = broadcast_sender.subscribe();
+                active_connection.start_listening(broadcast_receiver, rx, identity_stakes);
                 self.identity_to_active_connection.insert(
                     *identity,
                     Arc::new(ActiveConnectionWithExitChannel {
