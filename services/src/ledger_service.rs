@@ -1,11 +1,17 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use anyhow::Context;
 use bytes::Bytes;
+use solana_lite_rpc_core::block_store::BlockMeta;
+use solana_lite_rpc_core::jsonrpc_client::ProcessedBlock;
 use solana_lite_rpc_core::{
     jsonrpc_client::JsonRpcClient, ledger::Ledger, slot_clock::SlotClock, AnyhowJoinHandle,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_sdk::transaction::TransactionError;
+use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::sync::mpsc;
 
 use crate::{grpc_listener::GrpcListener, rpc_listener::RpcListener};
@@ -67,33 +73,73 @@ impl LedgerService<RpcLedgerProvider> {
         let rpc_client = Arc::new(RpcClient::new(addr));
         let rpc_listener = RpcListener::new(rpc_client.clone());
 
-        // slot unbounded channel
-        let (slot_tx, slot_rx) = mpsc::unbounded_channel();
-
         // slot clock
         let slot_clock = SlotClock::default();
-        // channels
-        let (block_channel, _block_recv) = mpsc::unbounded_channel();
+        // slot and block channels
+        let (slot_tx, slot_rx) = mpsc::unbounded_channel();
+        let (block_channel, mut block_recv) = mpsc::unbounded_channel();
 
         // get processed slots
         let slot_lisner: AnyhowJoinHandle = tokio::spawn(async move {
-            // Todo: poll for some errors else exit
-            //loop {
-            let Err(_err) = JsonRpcClient::poll_slots(&rpc_client, slot_tx.clone(), CommitmentConfig::processed()).await else {
-                    anyhow::bail!("Rpc slot poll task unexpectedly");
-                };
-            Ok(())
-            //}
+            JsonRpcClient::poll_slots(&rpc_client, slot_tx, CommitmentConfig::confirmed())
+                .await
+                .context("Rpc slot poll task unexpectedly")
         });
 
-        let rpc_listener: AnyhowJoinHandle = tokio::spawn(rpc_listener.clone().listen(
-            slot_clock,
-            slot_rx,
-            block_channel,
-        ));
+        // listen to blocks for slots
+        let rpc_listener: AnyhowJoinHandle =
+            tokio::spawn(rpc_listener.listen(slot_clock, slot_rx, block_channel));
 
-        // Todo: process all the data
-        let processor = tokio::spawn(async move {});
+        // clone the ledger to move into the processor task
+        let ledger = self.ledger.clone();
+        // process all the data into the ledger
+        let processor = tokio::spawn(async move {
+            while let Some(ProcessedBlock {
+                txs,
+                leader_id,
+                blockhash,
+                block_height,
+                slot,
+                parent_slot,
+                block_time,
+                commitment_config,
+            }) = block_recv.recv().await
+            {
+                ledger
+                    .block_store
+                    .add_block(
+                        blockhash.clone(),
+                        BlockMeta {
+                            slot,
+                            block_height,
+                            last_valid_blockheight: block_height + MAX_RECENT_BLOCKHASHES as u64,
+                            cleanup_slot: block_height + 1000,
+                            //TODO: see why this was required
+                            processed_local_time: None,
+                        },
+                        commitment_config,
+                    )
+                    .await;
+
+                let comfirmation_status = match commitment_config.commitment {
+                    CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
+                    _ => TransactionConfirmationStatus::Confirmed,
+                };
+
+                for tx in txs {
+                    ledger.txs.update_status(
+                        &tx.signature,
+                        TransactionStatus {
+                            slot,
+                            confirmations: None,
+                            status: tx.status,
+                            err: tx.err,
+                            confirmation_status: Some(comfirmation_status.clone()),
+                        },
+                    );
+                }
+            }
+        });
 
         tokio::select! {
             slot_res = slot_lisner => {

@@ -29,6 +29,9 @@ test('send and confirm transaction BlockheightBasedTransactionConfirmationStrate
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
 
     const signature = await connection.sendTransaction(tx, [payer]);
+
+    console.log(`https://explorer.solana.com/tx/${signature}`)
+
     await connection.confirmTransaction({
         blockhash,
         lastValidBlockHeight,
@@ -36,7 +39,6 @@ test('send and confirm transaction BlockheightBasedTransactionConfirmationStrate
         abortSignal: undefined
     });
 
-    console.log(`https://explorer.solana.com/tx/${signature}`)
 });
 
 test('send and confirm transaction', async () => {

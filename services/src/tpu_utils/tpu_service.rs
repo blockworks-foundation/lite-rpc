@@ -16,7 +16,7 @@ use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::{
     net::{IpAddr, Ipv4Addr},
     str::FromStr,
-    sync::{Arc},
+    sync::Arc,
 };
 use tokio::{
     sync::RwLock,

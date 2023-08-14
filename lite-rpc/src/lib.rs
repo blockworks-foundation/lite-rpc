@@ -20,7 +20,6 @@ pub const DEFAULT_WS_ADDR: &str = "ws://0.0.0.0:8900";
 #[from_env]
 pub const DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE: usize = 200_000;
 
-
 #[from_env]
 pub const MAX_RETRIES: u16 = 40;
 

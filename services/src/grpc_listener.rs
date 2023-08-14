@@ -1,14 +1,10 @@
 use anyhow::bail;
 use bytes::Bytes;
 
-use solana_lite_rpc_core::{grpc_client::GrpcClient};
+use solana_lite_rpc_core::grpc_client::GrpcClient;
 use solana_sdk::slot_history::Slot;
-use tokio::sync::mpsc::{UnboundedSender};
-use yellowstone_grpc_proto::{
-    prelude::{
-        CommitmentLevel, SubscribeUpdateTransaction,
-    },
-};
+use tokio::sync::mpsc::UnboundedSender;
+use yellowstone_grpc_proto::prelude::{CommitmentLevel, SubscribeUpdateTransaction};
 
 pub struct GrpcListener;
 

@@ -14,7 +14,9 @@ use solana_transaction_status::{
     option_serializer::OptionSerializer, RewardType, TransactionDetails, UiTransactionEncoding,
     UiTransactionStatusMeta,
 };
-use tokio::sync::{mpsc::UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
+
+use crate::slot_clock::AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS;
 
 #[derive(Debug)]
 pub struct TransactionInfo {
@@ -32,8 +34,10 @@ pub struct ProcessedBlock {
     pub leader_id: Option<String>,
     pub blockhash: String,
     pub block_height: u64,
+    pub slot: Slot,
     pub parent_slot: Slot,
     pub block_time: u64,
+    pub commitment_config: CommitmentConfig,
 }
 
 pub enum BlockProcessorError {
@@ -61,6 +65,8 @@ impl JsonRpcClient {
             )
             .await
             .context("failed to get block")?;
+
+        // println!("slot {slot:?} block: {:?}", block);
 
         let Some(block_height) = block.block_height else {
             return Ok(Err(BlockProcessorError::Incomplete));
@@ -165,8 +171,10 @@ impl JsonRpcClient {
             block_height,
             leader_id,
             blockhash,
+            slot,
             parent_slot,
             block_time,
+            commitment_config,
         }))
     }
 
@@ -175,15 +183,26 @@ impl JsonRpcClient {
         slot_tx: UnboundedSender<Slot>,
         commitment_config: CommitmentConfig,
     ) -> anyhow::Result<()> {
-        let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));
+        let mut poll_frequency = tokio::time::interval(Duration::from_millis(
+            AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS - 100,
+        ));
+
+        let mut last_slot = 0;
 
         loop {
             let slot = rpc_client
                 .get_slot_with_commitment(commitment_config)
                 .await
                 .context("Error getting slot")?;
-            // send
-            slot_tx.send(slot).context("Error sending slot")?;
+
+            // send if slot is greater than last slot
+            if slot > last_slot {
+                slot_tx.send(slot).context("Error sending slot")?;
+            }
+
+            // overwrite last slot
+            last_slot = slot;
+
             // wait for next poll i.e at least 50ms
             poll_frequency.tick().await;
         }

@@ -20,7 +20,7 @@ use solana_rpc_client_api::{
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use solana_transaction_status::TransactionStatus;
 
-use tokio::{net::ToSocketAddrs};
+use tokio::net::ToSocketAddrs;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -47,7 +47,7 @@ pub struct LiteBridge {
 
 impl LiteBridge {
     /// List for `JsonRpc` requests
-    pub async fn start_services<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
+    pub async fn start<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
         self,
         http_addr: T,
         ws_addr: T,
@@ -130,12 +130,17 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let Block {
+        let Some(Block {
             blockhash,
             meta: BlockMeta {
                 block_height, slot, ..
             },
-        } = self.ledger.block_store.get_latest_block(&commitment_config);
+        }) = self
+            .ledger
+            .block_store
+            .get_latest_block(&commitment_config).await else {
+            return Err(jsonrpsee::core::Error::Custom("Blockstore empty".to_string()));
+            };
 
         log::info!("glb {blockhash} {slot} {block_height}");
 

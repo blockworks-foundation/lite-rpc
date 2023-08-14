@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use log::info;
+use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -22,7 +24,8 @@ pub struct BlockMeta {
 #[derive(Default, Clone, Debug)]
 pub struct BlockStore {
     blocks: Arc<DashMap<String, BlockMeta>>,
-    latest_block: Arc<DashMap<CommitmentConfig, Block>>,
+    latest_confirmed_block: Arc<RwLock<Option<Block>>>,
+    latest_finalized_block: Arc<RwLock<Option<Block>>>,
 }
 
 impl BlockStore {
@@ -32,19 +35,42 @@ impl BlockStore {
             .map(|info| info.value().to_owned())
     }
 
-    pub fn get_latest_block(&self, commitment_config: &CommitmentConfig) -> Block {
-        self.latest_block
-            .get(commitment_config)
-            .expect("Blockstore is empty")
-            .to_owned()
+    pub async fn get_latest_block(&self, commitment_config: &CommitmentConfig) -> Option<Block> {
+        if commitment_config.is_confirmed() {
+            self.latest_confirmed_block.read().await.to_owned()
+        } else if commitment_config.is_finalized() {
+            self.latest_finalized_block.read().await.to_owned()
+        } else {
+            None
+        }
     }
 
-    pub fn get_latest_blockhash(&self, commitment_config: &CommitmentConfig) -> String {
-        self.get_latest_block(commitment_config).blockhash
+    pub async fn insert_latest_block(&self, commitment_config: &CommitmentConfig, block: Block) {
+        if commitment_config.is_confirmed() {
+            *self.latest_confirmed_block.write().await = Some(block);
+        } else if commitment_config.is_finalized() {
+            *self.latest_finalized_block.write().await = Some(block);
+        } else {
+            panic!("Attempted to insert latest block with invalid commitment level");
+        }
     }
 
-    pub fn get_latest_block_meta(&self, commitment_config: &CommitmentConfig) -> BlockMeta {
-        self.get_latest_block(commitment_config).meta
+    pub async fn get_latest_blockhash(
+        &self,
+        commitment_config: &CommitmentConfig,
+    ) -> Option<String> {
+        self.get_latest_block(commitment_config)
+            .await
+            .map(|block| block.blockhash)
+    }
+
+    pub async fn get_latest_block_meta(
+        &self,
+        commitment_config: &CommitmentConfig,
+    ) -> Option<BlockMeta> {
+        self.get_latest_block(commitment_config)
+            .await
+            .map(|block| block.meta)
     }
 
     pub fn cotains_block(&self, blockhash: &str) -> bool {
@@ -71,18 +97,28 @@ impl BlockStore {
         self.blocks.insert(blockhash.clone(), meta);
 
         // update latest block
-        let latest_block_slot = self.get_latest_block_meta(&commitment_config).slot;
-        if slot > latest_block_slot {
-            self.latest_block
-                .insert(commitment_config, Block { blockhash, meta });
+        if let Some(latest_block_slot) = self.get_latest_block_meta(&commitment_config).await {
+            if slot < latest_block_slot.slot {
+                return;
+            }
         }
+
+        self.insert_latest_block(&commitment_config, Block { blockhash, meta })
+            .await;
     }
 
     pub async fn clean(&self) {
-        let finalized_block_information =
-            self.get_latest_block_meta(&CommitmentConfig::finalized());
-
         let before_length = self.blocks.len();
+
+        if before_length == 0 {
+            return;
+        }
+
+        let Some(finalized_block_information) =
+            self.get_latest_block_meta(&CommitmentConfig::finalized()).await else {
+                return ;
+            };
+
         self.blocks
             .retain(|_, v| v.last_valid_blockheight >= finalized_block_information.block_height);
 

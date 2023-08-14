@@ -2,7 +2,7 @@ use crate::tpu_utils::tpu_service::TpuService;
 use anyhow::bail;
 use log::error;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use solana_lite_rpc_core::{ledger::Ledger};
+use solana_lite_rpc_core::ledger::Ledger;
 use std::time::Duration;
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},

@@ -16,12 +16,14 @@ pub struct Ledger {
 
 impl Ledger {
     pub async fn clean(&self, ttl_duration: std::time::Duration) {
-        self.block_store.clean().await;
-        self.txs.clean(
-            self.block_store
-                .get_latest_block_meta(&CommitmentConfig::finalized())
-                .block_height,
-        );
+        if let Some(latest_finalized_block) = self
+            .block_store
+            .get_latest_block_meta(&CommitmentConfig::finalized()).await
+        {
+            self.block_store.clean().await;
+            self.txs.clean(latest_finalized_block.block_height);
+        }
+
         self.tx_subs.clean(ttl_duration);
     }
 }

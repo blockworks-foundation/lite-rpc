@@ -45,14 +45,14 @@ impl SlotClock {
                     }
                 }
             }
-            Ok(None) => log::error!("failed to receive slot update"),
-            Err(_) => {
+            Ok(None) => log::error!("got nothing from slot update notifier"),
+            Err(err) => {
+                log::error!("failed to receive slot update: {err}");
                 // force update the slot
                 // estimated slot should not go ahead more than 32 slots
                 // this is because it may be a slot block
                 if estimated_slot < current_slot + 32 {
-                    self.estimated_slot
-                        .store(estimated_slot + 1, Ordering::Relaxed);
+                    self.estimated_slot.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }

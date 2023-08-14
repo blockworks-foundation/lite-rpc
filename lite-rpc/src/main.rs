@@ -4,12 +4,9 @@ use std::{sync::Arc, time::Duration};
 
 use clap::Parser;
 use dotenv::dotenv;
-use lite_rpc::postgres::Postgres;
-use lite_rpc::{bridge::LiteBridge, cli::Args};
+use lite_rpc::{bridge::LiteBridge, cli::Args, postgres::Postgres};
 
-use solana_lite_rpc_core::ledger::Ledger;
-use solana_lite_rpc_core::notifications::NotificationSender;
-use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_lite_rpc_core::{ledger::Ledger, notifications::NotificationSender, AnyhowJoinHandle};
 use solana_lite_rpc_services::{spawner::Spawner, tx_service::TxServiceConfig};
 use solana_sdk::signature::Keypair;
 use std::env;
@@ -108,31 +105,30 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         addr,
         tx_service_config,
         rpc_addr,
-        ledger: Ledger::default(),
+        ledger: ledger.clone(), 
         notification_channel,
     };
     // start services
-    let leger_service = spawner.spawn_ledger_service();
+    let ledger_service = spawner.spawn_ledger_service();
     let (tx_sender, tx_services) = spawner.spawn_tx_service().await?;
     let support_service = spawner.spawn_support_services();
 
     // lite bridge
-    let lite_bridge = LiteBridge { ledger, tx_sender };
-
-    let bridge_serivce = lite_bridge.start_services(lite_rpc_ws_addr, lite_rpc_http_addr);
+    let bridge_serivce =
+        LiteBridge { ledger, tx_sender }.start(lite_rpc_http_addr, lite_rpc_ws_addr);
 
     tokio::select! {
-        leger_service = leger_service => {
-            anyhow::bail!("{leger_service:?}")
+        res = ledger_service => {
+            anyhow::bail!("Ledger Service {res:?}")
         }
-        tx_service = tx_services => {
-            anyhow::bail!("{tx_service:?}")
+        res = tx_services => {
+            anyhow::bail!("Tx Services {res:?}")
         }
-        support_service = support_service => {
-            anyhow::bail!("{support_service:?}")
+        res = support_service => {
+            anyhow::bail!("Support Services {res:?}")
         }
-        bridge_serivce = bridge_serivce => {
-            anyhow::bail!("{bridge_serivce:?}")
+        res = bridge_serivce => {
+            anyhow::bail!("Server {res:?}")
         }
         res = postgres => {
             anyhow::bail!("Postgres service {res:?}");

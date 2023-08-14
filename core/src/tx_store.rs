@@ -13,6 +13,12 @@ pub struct TxMeta {
 pub struct TxStore(Arc<DashMap<String, TxMeta>>);
 
 impl TxStore {
+    pub fn update_status(&self, signature: &str, status: TransactionStatus) {
+        if let Some(mut meta) = self.get_mut(signature) {
+            meta.status = Some(status);
+        }
+    }
+
     pub fn clean(&self, current_finalized_blochash: u64) {
         let length_before = self.len();
         self.retain(|_k, v| {

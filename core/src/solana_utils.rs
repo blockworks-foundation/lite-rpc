@@ -2,15 +2,9 @@ use crate::structures::identity_stakes::IdentityStakes;
 
 use log::info;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{pubkey::Pubkey};
+use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
-use std::{
-    collections::HashMap,
-    sync::{
-        Arc,
-    },
-};
-
+use std::{collections::HashMap, sync::Arc};
 
 pub struct SolanaUtils;
 
