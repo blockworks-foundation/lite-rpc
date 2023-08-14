@@ -10,7 +10,7 @@ use solana_lite_rpc_core::{
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
-use solana_sdk::transaction::TransactionError;
+
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::sync::mpsc;
 
@@ -96,12 +96,12 @@ impl LedgerService<RpcLedgerProvider> {
         let processor = tokio::spawn(async move {
             while let Some(ProcessedBlock {
                 txs,
-                leader_id,
+                leader_id: _,
                 blockhash,
                 block_height,
                 slot,
-                parent_slot,
-                block_time,
+                parent_slot: _,
+                block_time: _,
                 commitment_config,
             }) = block_recv.recv().await
             {

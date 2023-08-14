@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use log::info;
-use solana_sdk::commitment_config::CommitmentLevel;
+
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use std::sync::Arc;
 use tokio::sync::RwLock;
