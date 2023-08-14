@@ -121,22 +121,25 @@ impl LedgerService<RpcLedgerProvider> {
                     )
                     .await;
 
-                let comfirmation_status = match commitment_config.commitment {
+                let confirmation_status = match commitment_config.commitment {
                     CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
                     _ => TransactionConfirmationStatus::Confirmed,
                 };
 
                 for tx in txs {
+                    //
                     ledger.txs.update_status(
                         &tx.signature,
                         TransactionStatus {
                             slot,
                             confirmations: None,
-                            status: tx.status,
-                            err: tx.err,
-                            confirmation_status: Some(comfirmation_status.clone()),
+                            status: tx.status.clone(),
+                            err: tx.err.clone(),
+                            confirmation_status: Some(confirmation_status.clone()),
                         },
                     );
+                    // notify
+                    ledger.tx_subs.notify_tx(slot, &tx, commitment_config).await;
                 }
             }
         });
