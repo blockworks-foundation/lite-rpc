@@ -51,5 +51,5 @@ rustls = { version = "=0.20.8", default-features = false }
 solana-lite-rpc-services = {path = "services", version="0.2.2"}
 solana-lite-rpc-core = {path = "core", version="0.2.2"}
 async-trait = "0.1.68"
-yellowstone-grpc-client = "1.6.0"
-yellowstone-grpc-proto = "1.6.0"
+yellowstone-grpc-client = "1.9.0"
+yellowstone-grpc-proto = "1.9.0"

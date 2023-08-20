@@ -52,8 +52,7 @@ impl LedgerService<GrpcLedgerProvider> {
         let (finalized_tx, _finalized_rx) = mpsc::unbounded_channel();
 
         // do some error counting
-        let _grpc_listener: AnyhowJoinHandle = tokio::spawn(async move {
-            //loop {
+        let grpc_listener: AnyhowJoinHandle = tokio::spawn(async move {
             let Err(_err) = GrpcListener::listen(addr, slot_tx, processed_tx, confirmed_tx, finalized_tx).await else {
                     anyhow::bail!("GrpcListner exited unexpectedly");
                 };
@@ -62,9 +61,18 @@ impl LedgerService<GrpcLedgerProvider> {
         });
 
         // process all the data
-        let _processor = tokio::spawn(async move {});
+        let _processor = tokio::spawn(async move {
+            futures::future::pending::<()>().await;
+        });
 
-        Ok(())
+        tokio::select! {
+            grpc_res = grpc_listener => {
+                anyhow::bail!("GrpcListner exited unexpectedly {grpc_res:?}");
+            }
+            processor_res = _processor => {
+                anyhow::bail!("Processor stream closed unexpectedly {processor_res:?}");
+            }
+        }
     }
 }
 

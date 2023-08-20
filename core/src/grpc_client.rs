@@ -16,7 +16,7 @@ use yellowstone_grpc_proto::{
 };
 
 pub const GRPC_VERSION: &str = "1.16.1";
-pub const DEFAULT_GRPC_ADDR: &str = "http://127.0.0.0:10000";
+pub const DEFAULT_GRPC_ADDR: &str = "http://127.0.0.1:10000";
 
 pub struct GrpcClient;
 
@@ -67,6 +67,7 @@ impl GrpcClient {
                 slots,
                 Default::default(),
                 txs,
+                Default::default(),
                 Default::default(),
                 Default::default(),
                 commitment,

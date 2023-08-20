@@ -74,7 +74,7 @@ impl Spawner {
         TxService {
             ledger: self.ledger.clone(),
             config: self.tx_service_config.clone(),
-            rpc_client: Arc::new(RpcClient::new(self.addr.clone())),
+            rpc_client: Arc::new(RpcClient::new(self.rpc_addr.clone())),
         }
         .spawn(self.notification_channel.clone())
         .await
