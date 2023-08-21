@@ -25,6 +25,7 @@ enum ConnectionState {
     Connection(Connection),
     PermanentError,
     FailedAttempt(u32),
+    ShuttingDown,
 }
 
 pub struct AutoReconnect {
@@ -66,6 +67,7 @@ impl AutoReconnect {
             ConnectionState::Connection(conn) => Ok(conn.clone()),
             ConnectionState::PermanentError => bail!("permanent error"),
             ConnectionState::FailedAttempt(_) => bail!("failed connection attempt"),
+            ConnectionState::ShuttingDown => bail!("shutting down"),
         }
     }
 
@@ -172,6 +174,13 @@ impl AutoReconnect {
                     }
                 };
             }
+            ConnectionState::ShuttingDown => {
+                // no nothing
+                debug!(
+                    "Not using connection to {} that's shutting down",
+                    self.target_address
+                );
+            }
         }
     }
 
@@ -194,6 +203,21 @@ impl AutoReconnect {
         }
     }
 
+    /// close connection without any sophisticated handling; assumes that send buffers were flushed by .send etc.
+    pub async fn force_shutdown(&self) {
+        let mut lock = self.current.write().await;
+        match &*lock {
+            ConnectionState::Connection(conn) => {
+                conn.close(0u32.into(), b"client_shutdown");
+                *lock = ConnectionState::ShuttingDown;
+            }
+            ConnectionState::NotConnected => *lock = ConnectionState::ShuttingDown,
+            ConnectionState::PermanentError => *lock = ConnectionState::ShuttingDown,
+            ConnectionState::FailedAttempt(_) => *lock = ConnectionState::ShuttingDown,
+            ConnectionState::ShuttingDown => *lock = ConnectionState::ShuttingDown,
+        }
+    }
+
     //  stable_id 140266619216912, rtt=2.156683ms,
     // stats FrameStats { ACK: 3, CONNECTION_CLOSE: 0, CRYPTO: 3,
     // DATA_BLOCKED: 0, DATAGRAM: 0, HANDSHAKE_DONE: 1, MAX_DATA: 0,
@@ -213,6 +237,7 @@ impl AutoReconnect {
             ConnectionState::NotConnected => "n/c".to_string(),
             ConnectionState::PermanentError => "n/a (permanent)".to_string(),
             ConnectionState::FailedAttempt(_) => "fail".to_string(),
+            ConnectionState::ShuttingDown => "shutdown".to_string(),
         }
     }
 }
