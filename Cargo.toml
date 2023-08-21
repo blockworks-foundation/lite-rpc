@@ -4,7 +4,7 @@ members = [
     "services",
     "lite-rpc",
     "quic-forward-proxy",
-    "quic-forward-proxy-integration-test",
+    "integration-test",
     "bench"
 ]
 

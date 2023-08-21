@@ -1,4 +1,4 @@
-// lib definition is only required for 'quic-forward-proxy-integration-test' to work
+// lib definition is only required for 'integration-test' to work
 
 mod cli;
 mod inbound;
