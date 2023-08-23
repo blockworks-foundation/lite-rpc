@@ -1407,6 +1407,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
 
 [[package]]
+name = "fan"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73353b3e9d86ba3d1f2cb930cc04e951ffce0a011877dea8db3f4f9c7ced502f"
+dependencies = [
+ "futures",
+ "tokio",
+]
+
+[[package]]
 name = "fastrand"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3210,6 +3220,18 @@ dependencies = [
 
 [[package]]
 name = "rcgen"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6413f3de1edee53342e6138e75b56d32e7bc6e332b3bd62d497b1929d4cfbcdd"
+dependencies = [
+ "pem",
+ "ring",
+ "time 0.3.20",
+ "yasna",
+]
+
+[[package]]
+name = "rcgen"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ffbe84efe2f38dea12e9bfc1f65377fdf03e53a18cb3b995faedf7934c7e785b"
@@ -4028,11 +4050,91 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-lite-rpc-quic-forward-proxy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "base64 0.21.0",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "clap 4.2.4",
+ "dashmap",
+ "dotenv",
+ "fan",
+ "futures",
+ "itertools",
+ "lazy_static",
+ "log",
+ "native-tls",
+ "prometheus",
+ "quinn",
+ "rcgen 0.9.3",
+ "rustls 0.20.8",
+ "serde",
+ "serde_json",
+ "solana-net-utils",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "spl-memo",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "solana-lite-rpc-quic-forward-proxy-integration-test"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "base64 0.21.0",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "clap 4.2.4",
+ "countmap",
+ "crossbeam-channel",
+ "dashmap",
+ "dotenv",
+ "futures",
+ "itertools",
+ "lazy_static",
+ "log",
+ "native-tls",
+ "prometheus",
+ "quinn",
+ "rcgen 0.9.3",
+ "rustls 0.20.8",
+ "serde",
+ "serde_json",
+ "solana-lite-rpc-core",
+ "solana-lite-rpc-quic-forward-proxy",
+ "solana-lite-rpc-services",
+ "solana-net-utils",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "spl-memo",
+ "thiserror",
+ "tokio",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "solana-lite-rpc-services"
 version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-channel",
+ "async-trait",
  "base64 0.21.0",
  "bincode",
  "bs58",
@@ -4042,6 +4144,7 @@ dependencies = [
  "crossbeam-channel",
  "dashmap",
  "futures",
+ "itertools",
  "lazy_static",
  "log",
  "prometheus",
@@ -4461,7 +4564,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rand 0.7.3",
- "rcgen",
+ "rcgen 0.10.0",
  "rustls 0.20.8",
  "solana-metrics",
  "solana-perf",
