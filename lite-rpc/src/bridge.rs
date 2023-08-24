@@ -38,6 +38,8 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionStatus;
 use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
+
+use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use tokio::{
     net::ToSocketAddrs,
     sync::mpsc::{self, Sender},
@@ -78,9 +80,10 @@ impl LiteBridge {
         rpc_url: String,
         _ws_addr: String,
         fanout_slots: u64,
-        identity: Keypair,
+        validator_identity: Arc<Keypair>,
         retry_after: Duration,
         max_retries: usize,
+        tpu_connection_path: TpuConnectionPath,
     ) -> anyhow::Result<Self> {
         let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
         let current_slot = rpc_client
@@ -104,13 +107,14 @@ impl LiteBridge {
                 max_number_of_connections: 10,
                 unistream_timeout: Duration::from_millis(500),
                 write_timeout: Duration::from_secs(1),
-                number_of_transactions_per_unistream: 10,
+                number_of_transactions_per_unistream: 8,
             },
+            tpu_connection_path,
         };
 
         let tpu_service = TpuService::new(
             tpu_config,
-            Arc::new(identity),
+            validator_identity,
             current_slot,
             rpc_client.clone(),
             tx_store.clone(),

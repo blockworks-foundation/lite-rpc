@@ -107,8 +107,10 @@ impl BlockStore {
                 },
             )
             .await
-            .context(format!("failed to fetch latest '{}' blockhash (slot {})",
-                             commitment_config.commitment.to_string(), slot))?;
+            .context(format!(
+                "failed to fetch latest '{}' blockhash (slot {})",
+                commitment_config.commitment, slot
+            ))?;
 
         let latest_block_hash = block.blockhash;
         let block_height = block
