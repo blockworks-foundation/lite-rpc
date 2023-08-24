@@ -15,8 +15,8 @@ sleep 20 && solana airdrop 10000
 echo "Starting LiteRpc"
 cargo run &
 
-echo "Waiting 20s for startup"
-sleep 20
+echo "Running cargo tests in 20s"
+sleep 20 && cargo test
 
 echo "Running yarn tests"
 yarn test
