@@ -26,7 +26,10 @@ impl SlotClock {
 
     // Estimates the slots, either from polled slot or by forcefully updating after every 400ms
     // returns the estimated slot if current slot is not updated
-    pub async fn set_slot(&self, slot_update_notifier: &mut UnboundedReceiver<u64>) -> u64 {
+    pub async fn subscribe_reciever(
+        &self,
+        slot_update_notifier: &mut UnboundedReceiver<u64>,
+    ) -> u64 {
         let current_slot = self.current_slot.load(Ordering::Relaxed);
         let estimated_slot = self.estimated_slot.load(Ordering::Relaxed);
 

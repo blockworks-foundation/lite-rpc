@@ -1,7 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
-use solana_lite_rpc_core::{data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle};
+use solana_lite_rpc_core::{
+    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle,
+};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Keypair;
 use tokio::sync::mpsc;
@@ -29,7 +31,7 @@ pub struct TxServiceConfig {
 }
 
 pub struct TxService {
-    pub ledger: DataCache,
+    pub data_cache: DataCache,
     // TODO: remove this dependency when get vote accounts is figured out for grpc
     pub rpc_client: Arc<RpcClient>,
     // config
@@ -39,7 +41,7 @@ pub struct TxService {
 impl TxService {
     pub async fn create_tx_services(&self) -> anyhow::Result<(TpuService, TxBatchFwd, TxReplayer)> {
         let TxService {
-            ledger,
+            data_cache,
             config,
             rpc_client,
         } = self;
@@ -52,19 +54,19 @@ impl TxService {
             },
             config.identity.clone(),
             rpc_client.clone(),
-            ledger.clone(),
+            data_cache.clone(),
         )
         .await
         .context("Error initializing TPU Service")?;
         // tx batch forwarder to TPU
         let tx_batch_fwd = TxBatchFwd {
-            ledger: ledger.clone(),
+            data_cache: data_cache.clone(),
             tpu_service: tpu_service.clone(),
         };
         // tx replayer
         let tx_replayer = TxReplayer {
             tpu_service: tpu_service.clone(),
-            ledger: ledger.clone(),
+            data_cache: data_cache.clone(),
             retry_after: config.retry_after,
         };
 
@@ -103,7 +105,7 @@ impl TxService {
             TxSender {
                 tx_channel,
                 replay_channel,
-                ledger: self.ledger,
+                data_cache: self.data_cache,
                 max_retries: self.config.max_retries,
                 retry_after: self.config.retry_after,
             },

@@ -19,7 +19,7 @@ use super::{tx_batch_fwd::TxInfo, tx_replayer::TxReplay};
 pub struct TxSender {
     pub tx_channel: Sender<TxInfo>,
     pub replay_channel: UnboundedSender<TxReplay>,
-    pub ledger: DataCache,
+    pub data_cache: DataCache,
     pub max_retries: u16,
     pub retry_after: Duration,
 }
@@ -41,7 +41,7 @@ impl TxSender {
         let signature = tx.signatures[0];
         let blockhash = tx.get_recent_blockhash().to_string();
 
-        let Some(BlockMeta { slot, last_valid_blockheight, .. }) = self.ledger.block_store.get_block_info(&blockhash) else {
+        let Some(BlockMeta { slot, last_valid_blockheight, .. }) = self.data_cache.block_store.get_block_info(&blockhash) else {
             bail!("Blockhash not found in block store");
         };
 

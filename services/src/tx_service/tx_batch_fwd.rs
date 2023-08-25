@@ -51,7 +51,7 @@ pub struct TxInfo {
 #[derive(Clone)]
 pub struct TxBatchFwd {
     /// Tx(s) forwarded to tpu
-    pub ledger: DataCache,
+    pub data_cache: DataCache,
     /// TpuClient to call the tpu port
     pub tpu_service: TpuService,
 }
@@ -72,7 +72,7 @@ impl TxBatchFwd {
 
         for transaction_info in &transaction_infos {
             log::trace!("sending transaction {}", transaction_info.signature);
-            self.ledger.txs.insert(
+            self.data_cache.txs.insert(
                 transaction_info.signature.clone(),
                 TxMeta {
                     status: None,
@@ -81,12 +81,12 @@ impl TxBatchFwd {
             );
         }
 
-        let forwarded_slot = self.ledger.clock.get_estimated_slot();
+        let forwarded_slot = self.data_cache.clock.get_estimated_slot();
         let forwarded_local_time = Utc::now();
 
         let mut quic_responses = vec![];
         for transaction_info in transaction_infos.iter() {
-            self.ledger.txs.insert(
+            self.data_cache.txs.insert(
                 transaction_info.signature.clone(),
                 TxMeta {
                     last_valid_blockheight: transaction_info.last_valid_blockheight,
@@ -158,7 +158,11 @@ impl TxBatchFwd {
                                 TXS_IN_CHANNEL.dec();
 
                                 // duplicate transaction
-                                if self.ledger.txs.contains_key(&transaction_info.signature) {
+                                if self
+                                    .data_cache
+                                    .txs
+                                    .contains_key(&transaction_info.signature)
+                                {
                                     continue;
                                 }
                                 transaction_infos.push(transaction_info);

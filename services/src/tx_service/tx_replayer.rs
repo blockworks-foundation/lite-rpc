@@ -26,7 +26,7 @@ pub struct TxReplay {
 
 pub struct TxReplayer {
     pub tpu_service: TpuService,
-    pub ledger: DataCache,
+    pub data_cache: DataCache,
     pub retry_after: Duration,
 }
 
@@ -41,7 +41,7 @@ impl TxReplayer {
             if Instant::now() < tx_replay.replay_at {
                 tokio::time::sleep_until(tx_replay.replay_at).await;
             }
-            if let Some(tx) = self.ledger.txs.get(&tx_replay.signature) {
+            if let Some(tx) = self.data_cache.txs.get(&tx_replay.signature) {
                 if tx.status.is_some() {
                     // transaction has been confirmed / no retry needed
                     continue;

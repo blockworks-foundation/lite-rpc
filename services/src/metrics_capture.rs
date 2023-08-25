@@ -26,7 +26,7 @@ lazy_static::lazy_static! {
 /// Background worker which captures metrics
 #[derive(Clone)]
 pub struct MetricsCapture {
-    ledger: DataCache,
+    data_cache: DataCache,
     metrics: Arc<RwLock<Metrics>>,
 }
 
@@ -41,9 +41,9 @@ pub struct Metrics {
 }
 
 impl MetricsCapture {
-    pub fn new(ledger: DataCache) -> Self {
+    pub fn new(data_cache: DataCache) -> Self {
         Self {
-            ledger,
+            data_cache,
             metrics: Default::default(),
         }
     }
@@ -64,11 +64,11 @@ impl MetricsCapture {
         loop {
             one_second.tick().await;
 
-            let txs_sent = self.ledger.txs.len();
+            let txs_sent = self.data_cache.txs.len();
             let mut txs_confirmed: usize = 0;
             let mut txs_finalized: usize = 0;
 
-            for tx in self.ledger.txs.iter() {
+            for tx in self.data_cache.txs.iter() {
                 if let Some(tx) = &tx.value().status {
                     match tx.confirmation_status() {
                         TransactionConfirmationStatus::Confirmed => txs_confirmed += 1,

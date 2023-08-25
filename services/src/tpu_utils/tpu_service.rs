@@ -3,7 +3,7 @@ use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 use solana_lite_rpc_core::{
-    leader_schedule::LeaderSchedule, data_cache::DataCache,
+    data_cache::DataCache, leader_schedule::LeaderSchedule,
     quic_connection_utils::QuicConnectionParameters, solana_utils::SolanaUtils,
     structures::identity_stakes::IdentityStakes,
 };
@@ -72,7 +72,7 @@ impl Default for TpuServiceConfig {
 
 #[derive(Clone)]
 pub struct TpuService {
-    ledger: DataCache,
+    data_cache: DataCache,
     rpc_client: Arc<RpcClient>,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
@@ -88,7 +88,7 @@ impl TpuService {
         identity: Arc<Keypair>,
         // TODO: remove this dependency when get vote accounts is figured out for grpc
         rpc_client: Arc<RpcClient>,
-        ledger: DataCache,
+        data_cache: DataCache,
     ) -> anyhow::Result<Self> {
         let (sender, _) = tokio::sync::broadcast::channel(config.maximum_transaction_in_queue);
         let (certificate, key) = new_self_signed_tls_certificate(
@@ -101,7 +101,7 @@ impl TpuService {
             TpuConnectionManager::new(certificate, key, config.fanout_slots as usize).await;
 
         Ok(Self {
-            ledger,
+            data_cache,
             leader_schedule: Arc::new(LeaderSchedule::new(config.number_of_leaders_to_cache)),
             rpc_client,
             broadcast_sender: Arc::new(sender),
@@ -132,8 +132,8 @@ impl TpuService {
         self.leader_schedule
             .update_leader_schedule(
                 self.rpc_client.clone(),
-                self.ledger.clock.get_current_slot(),
-                self.ledger.clock.get_estimated_slot(),
+                self.data_cache.clock.get_current_slot(),
+                self.data_cache.clock.get_estimated_slot(),
             )
             .await?;
         NB_OF_LEADERS_IN_SCHEDULE.set(self.leader_schedule.len().await as i64);
@@ -142,8 +142,8 @@ impl TpuService {
     }
 
     async fn update_quic_connections(&self) {
-        let estimated_slot = self.ledger.clock.get_estimated_slot();
-        let current_slot = self.ledger.clock.get_current_slot();
+        let estimated_slot = self.data_cache.clock.get_estimated_slot();
+        let current_slot = self.data_cache.clock.get_current_slot();
 
         let load_slot = if estimated_slot <= current_slot {
             current_slot
@@ -175,7 +175,7 @@ impl TpuService {
                 self.broadcast_sender.clone(),
                 connections_to_keep,
                 *identity_stakes,
-                self.ledger.clone(),
+                self.data_cache.clone(),
                 self.config.quic_connection_params,
             )
             .await;

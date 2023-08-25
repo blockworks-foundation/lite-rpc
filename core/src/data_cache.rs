@@ -1,7 +1,9 @@
 use solana_sdk::commitment_config::CommitmentConfig;
 
 use crate::subscription_store::SubscriptionStore;
-use crate::{block_information_store::BlockInformationStore, slot_clock::SlotClock, tx_store::TxStore};
+use crate::{
+    block_information_store::BlockInformationStore, slot_clock::SlotClock, tx_store::TxStore,
+};
 
 pub type TxSubKey = (String, CommitmentConfig);
 
@@ -18,7 +20,8 @@ impl DataCache {
     pub async fn clean(&self, ttl_duration: std::time::Duration) {
         if let Some(latest_finalized_block) = self
             .block_store
-            .get_latest_block(&CommitmentConfig::finalized()).await
+            .get_latest_block(&CommitmentConfig::finalized())
+            .await
         {
             self.block_store.clean().await;
             self.txs.clean(latest_finalized_block.block_height);

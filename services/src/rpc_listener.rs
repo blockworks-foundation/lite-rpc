@@ -56,7 +56,7 @@ impl RpcListener {
         let block_worker_semaphore = Arc::new(Semaphore::new(MAX_BLOCK_INDEXERS));
 
         loop {
-            let slot = slot_clock.set_slot(&mut slot_rx).await;
+            let slot = slot_clock.subscribe_reciever(&mut slot_rx).await;
             log::trace!("Processing slot: {}", slot);
 
             log::info!(

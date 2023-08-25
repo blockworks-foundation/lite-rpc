@@ -6,7 +6,9 @@ use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args, postgres::Postgres};
 
-use solana_lite_rpc_core::{data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle};
+use solana_lite_rpc_core::{
+    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle,
+};
 use solana_lite_rpc_services::{spawner::Spawner, tx_service::TxServiceConfig};
 use solana_sdk::signature::Keypair;
 use std::env;
@@ -96,7 +98,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     let (notification_channel, postgres) = start_postgres(enable_postgres).await?;
 
     // setup ledger
-    let ledger = DataCache::default();
+    let data_cache = DataCache::default();
 
     // spawner
     let spawner = Spawner {
@@ -105,7 +107,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         addr,
         tx_service_config,
         rpc_addr,
-        ledger: ledger.clone(), 
+        data_cache: data_cache.clone(),
         notification_channel,
     };
     // start services
@@ -114,8 +116,11 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     let support_service = spawner.spawn_support_services();
 
     // lite bridge
-    let bridge_serivce =
-        LiteBridge { ledger, tx_sender }.start(lite_rpc_http_addr, lite_rpc_ws_addr);
+    let bridge_serivce = LiteBridge {
+        data_cache,
+        tx_sender,
+    }
+    .start(lite_rpc_http_addr, lite_rpc_ws_addr);
 
     tokio::select! {
         res = ledger_service => {

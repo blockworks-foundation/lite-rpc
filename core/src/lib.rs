@@ -1,10 +1,10 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
 pub mod block_information_store;
+pub mod data_cache;
 pub mod grpc_client;
 pub mod jsonrpc_client;
 pub mod leader_schedule;
-pub mod data_cache;
 pub mod notifications;
 pub mod quic_connection;
 pub mod quic_connection_utils;

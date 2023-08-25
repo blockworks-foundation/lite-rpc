@@ -5,7 +5,7 @@ use bytes::Bytes;
 use solana_lite_rpc_core::block_information_store::BlockMeta;
 use solana_lite_rpc_core::jsonrpc_client::ProcessedBlock;
 use solana_lite_rpc_core::{
-    jsonrpc_client::JsonRpcClient, data_cache::DataCache, slot_clock::SlotClock, AnyhowJoinHandle,
+    data_cache::DataCache, jsonrpc_client::JsonRpcClient, slot_clock::SlotClock, AnyhowJoinHandle,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
@@ -25,7 +25,7 @@ pub struct GrpcLedgerProvider;
 /// Get's ledger data from various services
 #[derive(Default)]
 pub struct LedgerService<Provider> {
-    ledger: DataCache,
+    data_cache: DataCache,
     // Todo: add postgres stuff
     provider: PhantomData<Provider>,
 }
@@ -33,7 +33,7 @@ pub struct LedgerService<Provider> {
 impl<Provider> From<DataCache> for LedgerService<Provider> {
     fn from(value: DataCache) -> Self {
         Self {
-            ledger: value,
+            data_cache: value,
             provider: PhantomData,
         }
     }
@@ -99,7 +99,7 @@ impl LedgerService<RpcLedgerProvider> {
             tokio::spawn(rpc_listener.listen(slot_clock, slot_rx, block_channel));
 
         // clone the ledger to move into the processor task
-        let ledger = self.ledger.clone();
+        let data_cache = self.data_cache.clone();
         // process all the data into the ledger
         let processor = tokio::spawn(async move {
             while let Some(ProcessedBlock {
@@ -113,7 +113,7 @@ impl LedgerService<RpcLedgerProvider> {
                 commitment_config,
             }) = block_recv.recv().await
             {
-                ledger
+                data_cache
                     .block_store
                     .add_block(
                         BlockMeta {
@@ -136,7 +136,7 @@ impl LedgerService<RpcLedgerProvider> {
 
                 for tx in txs {
                     //
-                    ledger.txs.update_status(
+                    data_cache.txs.update_status(
                         &tx.signature,
                         TransactionStatus {
                             slot,
@@ -147,7 +147,10 @@ impl LedgerService<RpcLedgerProvider> {
                         },
                     );
                     // notify
-                    ledger.tx_subs.notify_tx(slot, &tx, commitment_config).await;
+                    data_cache
+                        .tx_subs
+                        .notify_tx(slot, &tx, commitment_config)
+                        .await;
                 }
             }
         });

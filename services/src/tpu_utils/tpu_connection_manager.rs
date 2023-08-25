@@ -38,7 +38,7 @@ struct ActiveConnection {
     identity: Pubkey,
     tpu_address: SocketAddr,
     exit_signal: Arc<AtomicBool>,
-    ledger: DataCache,
+    data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
 }
 
@@ -47,7 +47,7 @@ impl ActiveConnection {
         endpoints: RotatingQueue<Endpoint>,
         tpu_address: SocketAddr,
         identity: Pubkey,
-        ledger: DataCache,
+        data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) -> Self {
         Self {
@@ -55,13 +55,13 @@ impl ActiveConnection {
             tpu_address,
             identity,
             exit_signal: Arc::new(AtomicBool::new(false)),
-            ledger,
+            data_cache,
             connection_parameters,
         }
     }
 
-    fn check_for_confirmation(ledger: &DataCache, signature: String) -> bool {
-        match ledger.txs.get(&signature) {
+    fn check_for_confirmation(data_cache: &DataCache, signature: String) -> bool {
+        match data_cache.txs.get(&signature) {
             Some(props) => props.status.is_some(),
             None => false,
         }
@@ -74,7 +74,7 @@ impl ActiveConnection {
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         addr: SocketAddr,
         identity_stakes: IdentityStakes,
-        ledger: DataCache,
+        data_cache: DataCache,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
@@ -121,7 +121,7 @@ impl ActiveConnection {
 
                     let first_tx: Vec<u8> = match tx {
                         Ok((sig, tx)) => {
-                            if Self::check_for_confirmation(&ledger, sig) {
+                            if Self::check_for_confirmation(&data_cache, sig) {
                                 // transaction is already confirmed/ no need to send
                                 continue;
                             }
@@ -139,7 +139,7 @@ impl ActiveConnection {
                     let mut txs = vec![first_tx];
                     for _ in 1..number_of_transactions_per_unistream {
                         if let Ok((signature, tx)) = transaction_reciever.try_recv() {
-                            if Self::check_for_confirmation(&ledger, signature) {
+                            if Self::check_for_confirmation(&data_cache, signature) {
                                 continue;
                             }
                             txs.push(tx);
@@ -181,7 +181,7 @@ impl ActiveConnection {
         identity_stakes: IdentityStakes,
     ) {
         let addr = self.tpu_address;
-        let txs_sent_store = self.ledger.clone();
+        let txs_sent_store = self.data_cache.clone();
         let this = self.clone();
         tokio::spawn(async move {
             this.listen(
@@ -227,7 +227,7 @@ impl TpuConnectionManager {
         transaction_sender: Arc<Sender<(String, Vec<u8>)>>,
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakes,
-        ledger: DataCache,
+        data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
@@ -238,7 +238,7 @@ impl TpuConnectionManager {
                     self.endpoints.clone(),
                     *socket_addr,
                     *identity,
-                    ledger.clone(),
+                    data_cache.clone(),
                     connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever

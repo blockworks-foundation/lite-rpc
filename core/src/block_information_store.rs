@@ -30,7 +30,10 @@ impl BlockInformationStore {
             .map(|info| info.value().to_owned())
     }
 
-    pub async fn get_latest_block(&self, commitment_config: &CommitmentConfig) -> Option<BlockMeta> {
+    pub async fn get_latest_block(
+        &self,
+        commitment_config: &CommitmentConfig,
+    ) -> Option<BlockMeta> {
         if commitment_config.is_confirmed() {
             self.latest_confirmed_block.read().await.to_owned()
         } else if commitment_config.is_finalized() {
@@ -40,7 +43,11 @@ impl BlockInformationStore {
         }
     }
 
-    pub async fn insert_latest_block(&self, commitment_config: &CommitmentConfig, block: BlockMeta) {
+    pub async fn insert_latest_block(
+        &self,
+        commitment_config: &CommitmentConfig,
+        block: BlockMeta,
+    ) {
         if commitment_config.is_confirmed() {
             *self.latest_confirmed_block.write().await = Some(block);
         } else if commitment_config.is_finalized() {
@@ -63,11 +70,7 @@ impl BlockInformationStore {
         self.blocks.contains_key(blockhash)
     }
 
-    pub async fn add_block(
-        &self,
-        mut meta: BlockMeta,
-        commitment_config: CommitmentConfig,
-    ) {
+    pub async fn add_block(&self, mut meta: BlockMeta, commitment_config: CommitmentConfig) {
         // override timestamp from previous value, so we always keep the earliest (processed) timestamp around
         if let Some(processed_block) = self.get_block_info(&meta.blockhash) {
             meta.processed_local_time = processed_block.processed_local_time;
@@ -88,8 +91,7 @@ impl BlockInformationStore {
             }
         }
 
-        self.insert_latest_block(&commitment_config, meta)
-            .await;
+        self.insert_latest_block(&commitment_config, meta).await;
     }
 
     pub async fn clean(&self) {

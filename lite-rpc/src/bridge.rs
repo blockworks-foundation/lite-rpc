@@ -5,9 +5,7 @@ use crate::{
 };
 
 use solana_lite_rpc_core::{
-    block_information_store::BlockMeta,
-    data_cache::DataCache,
-    AnyhowJoinHandle,
+    block_information_store::BlockMeta, data_cache::DataCache, AnyhowJoinHandle,
 };
 use solana_lite_rpc_services::tx_service::{tx_batch_fwd::TXS_IN_CHANNEL, tx_sender::TxSender};
 
@@ -41,7 +39,7 @@ lazy_static::lazy_static! {
 
 /// A bridge between clients and tpu
 pub struct LiteBridge {
-    pub ledger: DataCache,
+    pub data_cache: DataCache,
     pub tx_sender: TxSender,
 }
 
@@ -133,7 +131,7 @@ impl LiteRpcServer for LiteBridge {
         let Some(BlockMeta {
                 block_height, slot, blockhash, ..
         }) = self
-            .ledger
+            .data_cache
             .block_store
             .get_latest_block(&commitment_config).await else {
             return Err(jsonrpsee::core::Error::Custom("Blockstore empty".to_string()));
@@ -203,12 +201,12 @@ impl LiteRpcServer for LiteBridge {
 
         let sig_statuses = sigs
             .iter()
-            .map(|sig| self.ledger.txs.get(sig).and_then(|v| v.status.clone()))
+            .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status.clone()))
             .collect();
 
         Ok(RpcResponse {
             context: RpcResponseContext {
-                slot: self.ledger.clock.get_current_slot(),
+                slot: self.data_cache.clock.get_current_slot(),
                 api_version: None,
             },
             value: sig_statuses,
@@ -274,7 +272,7 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        Ok(self.ledger.clock.get_current_slot())
+        Ok(self.data_cache.clock.get_current_slot())
     }
 
     async fn signature_subscribe(
@@ -288,7 +286,7 @@ impl LiteRpcServer for LiteBridge {
 
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink(sink);
 
-        self.ledger
+        self.data_cache
             .tx_subs
             .subscribe((signature, commitment_config), Box::new(jsonrpsee_sink));
 

@@ -10,7 +10,7 @@ use solana_lite_rpc_core::data_cache::DataCache;
 /// Background worker which cleans up memory  
 #[derive(Clone)]
 pub struct Cleaner {
-    pub ledger: DataCache,
+    pub data_cache: DataCache,
 }
 
 impl Cleaner {
@@ -21,7 +21,7 @@ impl Cleaner {
             ttl.tick().await;
 
             log::info!("Cleaning memory");
-            self.ledger.clean(ttl_duration).await;
+            self.data_cache.clean(ttl_duration).await;
         }
     }
 }

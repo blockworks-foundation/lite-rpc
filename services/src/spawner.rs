@@ -1,6 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
-use solana_lite_rpc_core::{data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle};
+use solana_lite_rpc_core::{
+    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle,
+};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
 use crate::{
@@ -22,7 +24,7 @@ pub struct Spawner {
     // this is temporary, we will remove this when we have a way to get vote accounts from grpc
     pub rpc_addr: String,
     // internal
-    pub ledger: DataCache,
+    pub data_cache: DataCache,
     pub notification_channel: Option<NotificationSender>,
 }
 
@@ -31,11 +33,11 @@ impl Spawner {
     pub async fn spawn_ledger_service(&self) -> anyhow::Result<()> {
         // TODO: add error loop
         if self.grpc {
-            LedgerService::<GrpcLedgerProvider>::from(self.ledger.clone())
+            LedgerService::<GrpcLedgerProvider>::from(self.data_cache.clone())
                 .listen(self.addr.clone())
                 .await
         } else {
-            LedgerService::<RpcLedgerProvider>::from(self.ledger.clone())
+            LedgerService::<RpcLedgerProvider>::from(self.data_cache.clone())
                 .listen(self.addr.clone())
                 .await
         }
@@ -47,13 +49,13 @@ impl Spawner {
         let prometheus = PrometheusSync::sync(self.prometheus_addr.clone());
 
         // spawn metrics capture
-        let metrics = MetricsCapture::new(self.ledger.clone()).capture();
+        let metrics = MetricsCapture::new(self.data_cache.clone()).capture();
 
         // spawn cleaner
         // transactions get invalid in around 1 mins, because the block hash expires in 150 blocks so 150 * 400ms = 60s
         // Setting it to two to give some margin of error / as not all the blocks are filled.
         let cleaner = Cleaner {
-            ledger: self.ledger.clone(),
+            data_cache: self.data_cache.clone(),
         }
         .start(Duration::from_secs(120));
 
@@ -72,7 +74,7 @@ impl Spawner {
 
     pub async fn spawn_tx_service(&self) -> anyhow::Result<(TxSender, AnyhowJoinHandle)> {
         TxService {
-            ledger: self.ledger.clone(),
+            data_cache: self.data_cache.clone(),
             config: self.tx_service_config.clone(),
             rpc_client: Arc::new(RpcClient::new(self.rpc_addr.clone())),
         }
