@@ -11,14 +11,16 @@ Implements these calls:
  * getEpochInfo
  * getSlot
  * getSignatureStatuses at process commitment.
+ * new tx sent: call by the SendTx module when a Tx is processed by sendTx module.
 
 Provide these subscription:
  * Full block
  * BLock info
  * Slots
  * Leader schedule
+ * sent Tx at confirmed and / or finalized: notify when a Tx sent is confirmed or finalized. 
 
-A new subscription can be implemented by this module: SendTx confirmed. Tx send by the SendTx module that are confirmed (or finalized) are notified on this subscription.
+A new subscription is added: Sent Tx confirmed/ finalized. SendTx module send Tx signature to the consensus module and when a Tx sent is confirmed (or finalized), it is notified on this subscription.
 
 It avoids to call getSignatureStatuses in a pull mode.
 
@@ -93,9 +95,11 @@ flowchart TD
     Consensus<== "At Process getSignaturesForAddress/getSignatureStatuses" ==>RPC
     Consensus-- "Block Info Sub" -->SendTx
     Consensus-- "Leader Schedule Sub" -->SendTx
+    Consensus-- "Sent Tx confirmed Sub" -->SendTx
     Cluster-- "Cluster info Sub" -->SendTx
     Consensus-- "Full Block Sub" -->History
     RPC== "SendTx" ==> SendTx
+    SendTx== "A new Tx to send" ==> Consensus
     History<== "At confirm getBlock(s)/getSignaturesForAddress/getSignatureStatuses" ==> RPC
     History<-. "getBlock(s)/getSignaturesForAddress" .-> Faithfull
     History<-. "Store Blocks + Txs" .-> Storage
@@ -184,32 +188,32 @@ To be done
 ## Deployment example
 ```mermaid
 flowchart TD
-    SendTx1("Send Tx")
-    SendTx2("Send Tx")
-    subgraph Data instance 1
+    SendTx1("Send Tx Host")
+    SendTx2("Send Tx Host")
+    subgraph Data_instance1
         History1("History + bootstrap")
         Cluster1("Cluster Info")
     end
-    subgraph Data instance 2
+    subgraph Data_instance2
         History2("History + bootstrap")
         Cluster2("Cluster Info")
     end
-    subgraph Data instance 3
+    subgraph Data_instance3
         History3("History + bootstrap")
         Cluster3("Cluster Info")
     end
 
-    subgraph Validator1 Host
+    subgraph Validator1_Host
         Validator1["Validator"]
         Consensus1("Consensus + bootstrap")
     end
-    subgraph Validator2 Host
+    subgraph Validator2_Host
         Validator2["Validator"]
         Consensus2("Consensus + bootstrap")
     end
 
-    RPC["Proxy entry point
-        dispatch on started server"]
+    RPC["RPC entry point
+        dispatch on started servers"]
 
     Stream("Stream")
 
@@ -245,9 +249,13 @@ flowchart TD
     classDef redgray fill:#62524F, color:#fff
     classDef greengray fill:#4F625B, color:#fff
 
-    class SendTx sendtx
-    class History redgray
-    class Consensus consensus
+    class SendTx1 sendtx
+    class SendTx2 sendtx
+    class Data_instance1 redgray
+    class Data_instance2 redgray
+    class Data_instance3 redgray
+    class Validator1_Host consensus
+    class Validator2_Host consensus
     class Cluster greengray
 ```
 
