@@ -11,7 +11,7 @@ use tokio::{sync::mpsc::Receiver, task::JoinHandle};
 
 use crate::tpu_utils::tpu_service::TpuService;
 use solana_lite_rpc_core::{
-    ledger::Ledger,
+    data_cache::DataCache,
     notifications::{NotificationMsg, NotificationSender, TransactionNotification},
     tx_store::TxMeta,
     WireTx,
@@ -51,7 +51,7 @@ pub struct TxInfo {
 #[derive(Clone)]
 pub struct TxBatchFwd {
     /// Tx(s) forwarded to tpu
-    pub ledger: Ledger,
+    pub ledger: DataCache,
     /// TpuClient to call the tpu port
     pub tpu_service: TpuService,
 }

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use solana_lite_rpc_core::ledger::Ledger;
+use solana_lite_rpc_core::data_cache::DataCache;
 
 //use prometheus::{core::GenericGauge, opts, register_int_gauge};
 //lazy_static::lazy_static! {
@@ -10,7 +10,7 @@ use solana_lite_rpc_core::ledger::Ledger;
 /// Background worker which cleans up memory  
 #[derive(Clone)]
 pub struct Cleaner {
-    pub ledger: Ledger,
+    pub ledger: DataCache,
 }
 
 impl Cleaner {

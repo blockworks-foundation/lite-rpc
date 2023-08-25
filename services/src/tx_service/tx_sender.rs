@@ -5,7 +5,7 @@ use crate::tx_service::tx_replayer::MESSAGES_IN_REPLAY_QUEUE;
 use std::time::Duration;
 
 use anyhow::bail;
-use solana_lite_rpc_core::{block_information_store::BlockMeta, ledger::Ledger};
+use solana_lite_rpc_core::{block_information_store::BlockMeta, data_cache::DataCache};
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::{
@@ -19,7 +19,7 @@ use super::{tx_batch_fwd::TxInfo, tx_replayer::TxReplay};
 pub struct TxSender {
     pub tx_channel: Sender<TxInfo>,
     pub replay_channel: UnboundedSender<TxReplay>,
-    pub ledger: Ledger,
+    pub ledger: DataCache,
     pub max_retries: u16,
     pub retry_after: Duration,
 }

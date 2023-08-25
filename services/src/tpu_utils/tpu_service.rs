@@ -3,7 +3,7 @@ use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::nonblocking::rpc_client::RpcClient;
 
 use solana_lite_rpc_core::{
-    leader_schedule::LeaderSchedule, ledger::Ledger,
+    leader_schedule::LeaderSchedule, data_cache::DataCache,
     quic_connection_utils::QuicConnectionParameters, solana_utils::SolanaUtils,
     structures::identity_stakes::IdentityStakes,
 };
@@ -72,7 +72,7 @@ impl Default for TpuServiceConfig {
 
 #[derive(Clone)]
 pub struct TpuService {
-    ledger: Ledger,
+    ledger: DataCache,
     rpc_client: Arc<RpcClient>,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
@@ -88,7 +88,7 @@ impl TpuService {
         identity: Arc<Keypair>,
         // TODO: remove this dependency when get vote accounts is figured out for grpc
         rpc_client: Arc<RpcClient>,
-        ledger: Ledger,
+        ledger: DataCache,
     ) -> anyhow::Result<Self> {
         let (sender, _) = tokio::sync::broadcast::channel(config.maximum_transaction_in_queue);
         let (certificate, key) = new_self_signed_tls_certificate(

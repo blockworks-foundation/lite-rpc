@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use serde::{Deserialize, Serialize};
-use solana_lite_rpc_core::ledger::Ledger;
+use solana_lite_rpc_core::data_cache::DataCache;
 
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::sync::RwLock;
@@ -26,7 +26,7 @@ lazy_static::lazy_static! {
 /// Background worker which captures metrics
 #[derive(Clone)]
 pub struct MetricsCapture {
-    ledger: Ledger,
+    ledger: DataCache,
     metrics: Arc<RwLock<Metrics>>,
 }
 
@@ -41,7 +41,7 @@ pub struct Metrics {
 }
 
 impl MetricsCapture {
-    pub fn new(ledger: Ledger) -> Self {
+    pub fn new(ledger: DataCache) -> Self {
         Self {
             ledger,
             metrics: Default::default(),

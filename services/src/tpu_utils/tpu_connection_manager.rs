@@ -3,7 +3,7 @@ use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
-    ledger::Ledger,
+    data_cache::DataCache,
     quic_connection::QuicConnectionPool,
     quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
     rotating_queue::RotatingQueue,
@@ -38,7 +38,7 @@ struct ActiveConnection {
     identity: Pubkey,
     tpu_address: SocketAddr,
     exit_signal: Arc<AtomicBool>,
-    ledger: Ledger,
+    ledger: DataCache,
     connection_parameters: QuicConnectionParameters,
 }
 
@@ -47,7 +47,7 @@ impl ActiveConnection {
         endpoints: RotatingQueue<Endpoint>,
         tpu_address: SocketAddr,
         identity: Pubkey,
-        ledger: Ledger,
+        ledger: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) -> Self {
         Self {
@@ -60,7 +60,7 @@ impl ActiveConnection {
         }
     }
 
-    fn check_for_confirmation(ledger: &Ledger, signature: String) -> bool {
+    fn check_for_confirmation(ledger: &DataCache, signature: String) -> bool {
         match ledger.txs.get(&signature) {
             Some(props) => props.status.is_some(),
             None => false,
@@ -74,7 +74,7 @@ impl ActiveConnection {
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         addr: SocketAddr,
         identity_stakes: IdentityStakes,
-        ledger: Ledger,
+        ledger: DataCache,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
@@ -227,7 +227,7 @@ impl TpuConnectionManager {
         transaction_sender: Arc<Sender<(String, Vec<u8>)>>,
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakes,
-        ledger: Ledger,
+        ledger: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);

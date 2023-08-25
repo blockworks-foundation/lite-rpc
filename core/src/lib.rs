@@ -4,7 +4,7 @@ pub mod block_information_store;
 pub mod grpc_client;
 pub mod jsonrpc_client;
 pub mod leader_schedule;
-pub mod ledger;
+pub mod data_cache;
 pub mod notifications;
 pub mod quic_connection;
 pub mod quic_connection_utils;

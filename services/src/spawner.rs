@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use solana_lite_rpc_core::{ledger::Ledger, notifications::NotificationSender, AnyhowJoinHandle};
+use solana_lite_rpc_core::{data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
 use crate::{
@@ -22,7 +22,7 @@ pub struct Spawner {
     // this is temporary, we will remove this when we have a way to get vote accounts from grpc
     pub rpc_addr: String,
     // internal
-    pub ledger: Ledger,
+    pub ledger: DataCache,
     pub notification_channel: Option<NotificationSender>,
 }
 

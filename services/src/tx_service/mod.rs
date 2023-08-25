@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
-use solana_lite_rpc_core::{ledger::Ledger, notifications::NotificationSender, AnyhowJoinHandle};
+use solana_lite_rpc_core::{data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Keypair;
 use tokio::sync::mpsc;
@@ -29,7 +29,7 @@ pub struct TxServiceConfig {
 }
 
 pub struct TxService {
-    pub ledger: Ledger,
+    pub ledger: DataCache,
     // TODO: remove this dependency when get vote accounts is figured out for grpc
     pub rpc_client: Arc<RpcClient>,
     // config

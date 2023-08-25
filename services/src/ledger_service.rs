@@ -5,7 +5,7 @@ use bytes::Bytes;
 use solana_lite_rpc_core::block_information_store::BlockMeta;
 use solana_lite_rpc_core::jsonrpc_client::ProcessedBlock;
 use solana_lite_rpc_core::{
-    jsonrpc_client::JsonRpcClient, ledger::Ledger, slot_clock::SlotClock, AnyhowJoinHandle,
+    jsonrpc_client::JsonRpcClient, data_cache::DataCache, slot_clock::SlotClock, AnyhowJoinHandle,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
@@ -25,13 +25,13 @@ pub struct GrpcLedgerProvider;
 /// Get's ledger data from various services
 #[derive(Default)]
 pub struct LedgerService<Provider> {
-    ledger: Ledger,
+    ledger: DataCache,
     // Todo: add postgres stuff
     provider: PhantomData<Provider>,
 }
 
-impl<Provider> From<Ledger> for LedgerService<Provider> {
-    fn from(value: Ledger) -> Self {
+impl<Provider> From<DataCache> for LedgerService<Provider> {
+    fn from(value: DataCache) -> Self {
         Self {
             ledger: value,
             provider: PhantomData,

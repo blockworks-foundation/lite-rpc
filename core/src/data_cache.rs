@@ -7,14 +7,14 @@ pub type TxSubKey = (String, CommitmentConfig);
 
 /// The central data store for all data from the cluster.
 #[derive(Default, Clone)]
-pub struct Ledger {
+pub struct DataCache {
     pub block_store: BlockInformationStore,
     pub clock: SlotClock,
     pub txs: TxStore,
     pub tx_subs: SubscriptionStore<TxSubKey>,
 }
 
-impl Ledger {
+impl DataCache {
     pub async fn clean(&self, ttl_duration: std::time::Duration) {
         if let Some(latest_finalized_block) = self
             .block_store

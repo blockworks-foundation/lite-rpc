@@ -3,7 +3,7 @@ use crossbeam_channel::Sender;
 
 use log::{debug, info, trace, warn};
 
-use solana_lite_rpc_core::ledger::Ledger;
+use solana_lite_rpc_core::data_cache::DataCache;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
@@ -325,7 +325,7 @@ async fn start_literpc_client(
             connections_to_keep,
             identity_stakes,
             // note: tx_store is useless in this scenario as it is never changed; it's only used to check for duplicates
-            Ledger::default(),
+            DataCache::default(),
             QUIC_CONNECTION_PARAMS,
         )
         .await;

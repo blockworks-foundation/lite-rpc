@@ -6,7 +6,7 @@ use crate::{
 
 use solana_lite_rpc_core::{
     block_information_store::BlockMeta,
-    ledger::Ledger,
+    data_cache::DataCache,
     AnyhowJoinHandle,
 };
 use solana_lite_rpc_services::tx_service::{tx_batch_fwd::TXS_IN_CHANNEL, tx_sender::TxSender};
@@ -41,7 +41,7 @@ lazy_static::lazy_static! {
 
 /// A bridge between clients and tpu
 pub struct LiteBridge {
-    pub ledger: Ledger,
+    pub ledger: DataCache,
     pub tx_sender: TxSender,
 }
 

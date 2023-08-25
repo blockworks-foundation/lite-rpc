@@ -6,7 +6,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args, postgres::Postgres};
 
-use solana_lite_rpc_core::{ledger::Ledger, notifications::NotificationSender, AnyhowJoinHandle};
+use solana_lite_rpc_core::{data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle};
 use solana_lite_rpc_services::{spawner::Spawner, tx_service::TxServiceConfig};
 use solana_sdk::signature::Keypair;
 use std::env;
@@ -96,7 +96,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     let (notification_channel, postgres) = start_postgres(enable_postgres).await?;
 
     // setup ledger
-    let ledger = Ledger::default();
+    let ledger = DataCache::default();
 
     // spawner
     let spawner = Spawner {
