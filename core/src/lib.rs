@@ -1,6 +1,6 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
-pub mod block_store;
+pub mod block_information_store;
 pub mod grpc_client;
 pub mod jsonrpc_client;
 pub mod leader_schedule;

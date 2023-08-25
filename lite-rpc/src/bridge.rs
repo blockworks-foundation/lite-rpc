@@ -5,7 +5,7 @@ use crate::{
 };
 
 use solana_lite_rpc_core::{
-    block_store::{Block, BlockMeta},
+    block_information_store::BlockMeta,
     ledger::Ledger,
     AnyhowJoinHandle,
 };
@@ -130,11 +130,8 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let Some(Block {
-            blockhash,
-            meta: BlockMeta {
-                block_height, slot, ..
-            },
+        let Some(BlockMeta {
+                block_height, slot, blockhash, ..
         }) = self
             .ledger
             .block_store

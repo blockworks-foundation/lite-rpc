@@ -5,7 +5,7 @@ use crate::tx_service::tx_replayer::MESSAGES_IN_REPLAY_QUEUE;
 use std::time::Duration;
 
 use anyhow::bail;
-use solana_lite_rpc_core::{block_store::BlockMeta, ledger::Ledger};
+use solana_lite_rpc_core::{block_information_store::BlockMeta, ledger::Ledger};
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::{

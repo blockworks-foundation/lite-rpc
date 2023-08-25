@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::Context;
 use bytes::Bytes;
-use solana_lite_rpc_core::block_store::BlockMeta;
+use solana_lite_rpc_core::block_information_store::BlockMeta;
 use solana_lite_rpc_core::jsonrpc_client::ProcessedBlock;
 use solana_lite_rpc_core::{
     jsonrpc_client::JsonRpcClient, ledger::Ledger, slot_clock::SlotClock, AnyhowJoinHandle,
@@ -116,7 +116,6 @@ impl LedgerService<RpcLedgerProvider> {
                 ledger
                     .block_store
                     .add_block(
-                        blockhash.clone(),
                         BlockMeta {
                             slot,
                             block_height,
@@ -124,6 +123,7 @@ impl LedgerService<RpcLedgerProvider> {
                             cleanup_slot: block_height + 1000,
                             //TODO: see why this was required
                             processed_local_time: None,
+                            blockhash,
                         },
                         commitment_config,
                     )
