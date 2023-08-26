@@ -2,13 +2,13 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use solana_lite_rpc_core::{
-    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle,
+    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle, leader_schedule::LeaderSchedule,
 };
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use solana_sdk::signature::Keypair;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, broadcast::Receiver};
 
-use crate::tpu_utils::tpu_service::{TpuService, TpuServiceConfig};
+use crate::tpu_utils::{tpu_service::TpuService, tpu_service_config::TpuServiceConfig};
 
 use self::{tx_batch_fwd::TxBatchFwd, tx_replayer::TxReplayer, tx_sender::TxSender};
 
@@ -33,7 +33,7 @@ pub struct TxServiceConfig {
 pub struct TxService {
     pub data_cache: DataCache,
     // TODO: remove this dependency when get vote accounts is figured out for grpc
-    pub rpc_client: Arc<RpcClient>,
+    pub leader_schedule: Arc<LeaderSchedule>,
     // config
     pub config: TxServiceConfig,
 }
@@ -43,7 +43,8 @@ impl TxService {
         let TxService {
             data_cache,
             config,
-            rpc_client,
+            leader_schedule,
+            ..
         } = self;
 
         // setup TPU
@@ -53,7 +54,7 @@ impl TxService {
                 ..Default::default()
             },
             config.identity.clone(),
-            rpc_client.clone(),
+            leader_schedule.clone(),
             data_cache.clone(),
         )
         .await
@@ -75,6 +76,7 @@ impl TxService {
 
     pub async fn spawn(
         self,
+        rpc_vote_account_streamer: Receiver<RpcVoteAccountStatus>,
         notifier: Option<NotificationSender>,
     ) -> anyhow::Result<(TxSender, AnyhowJoinHandle)> {
         let (tpu_service, tx_batch_fwd, tx_replayer) = self.create_tx_services().await?;
@@ -82,7 +84,7 @@ impl TxService {
         let (tx_channel, tx_recv) = mpsc::channel(self.config.max_nb_txs_in_queue);
         let (replay_channel, replay_recv) = mpsc::unbounded_channel();
 
-        let tpu_service = tpu_service.start();
+        let tpu_service = tokio::spawn( tpu_service.start(rpc_vote_account_streamer));
         let tx_batch_fwd = tx_batch_fwd.execute(tx_recv, notifier);
         let tx_replayer = tx_replayer.start_service(replay_channel.clone(), replay_recv);
 

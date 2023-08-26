@@ -4223,7 +4223,6 @@ dependencies = [
  "solana-client",
  "solana-net-utils",
  "solana-pubsub-client",
- "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",
  "solana-streamer",

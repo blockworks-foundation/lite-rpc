@@ -1,19 +1,20 @@
 use crate::structures::identity_stakes::IdentityStakes;
 
 use log::info;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
-use std::{collections::HashMap, sync::Arc};
+use tokio::sync::broadcast::Receiver;
+use std::collections::HashMap;
 
 pub struct SolanaUtils;
 
 impl SolanaUtils {
     pub async fn get_stakes_for_identity(
-        rpc_client: Arc<RpcClient>,
+        rpc_vote_account_streamer: &mut Receiver<RpcVoteAccountStatus>,
         identity: Pubkey,
     ) -> anyhow::Result<IdentityStakes> {
-        let vote_accounts = rpc_client.get_vote_accounts().await?;
+        let vote_accounts = rpc_vote_account_streamer.recv().await?;
         let map_of_stakes: HashMap<String, u64> = vote_accounts
             .current
             .iter()

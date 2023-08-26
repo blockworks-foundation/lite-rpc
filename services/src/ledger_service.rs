@@ -11,11 +11,9 @@ use solana_lite_rpc_core::processed_block::ProcessedBlock;
 use solana_lite_rpc_core::slot_clock::SlotClock;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
-
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
-use tokio::sync::mpsc::{self, UnboundedReceiver};
-
-use crate::rpc_listener::RpcListener;
+use tokio::sync::mpsc;
+use crate::{grpc_listener::GrpcListener, rpc_listener::RpcListener};
 
 /// Rpc LedgerProvider Marker
 pub struct RpcLedgerProvider;

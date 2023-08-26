@@ -1,16 +1,10 @@
-use anyhow::Context;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use solana_client::nonblocking::rpc_client::RpcClient;
-
 use solana_lite_rpc_core::{
-    data_cache::DataCache, leader_schedule::LeaderSchedule,
-    quic_connection_utils::QuicConnectionParameters, solana_utils::SolanaUtils,
-    structures::identity_stakes::IdentityStakes,
+    data_cache::DataCache, leader_schedule::LeaderSchedule, solana_utils::SolanaUtils,
+    structures::identity_stakes::IdentityStakes
 };
-
-use crate::DEFAULT_FANOUT_SIZE;
-
-use super::tpu_connection_manager::TpuConnectionManager;
+use solana_rpc_client_api::response::RpcVoteAccountStatus;
+use super::{tpu_connection_manager::TpuConnectionManager, tpu_service_config::TpuServiceConfig};
 use solana_sdk::{pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, signer::Signer};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::{
@@ -19,8 +13,8 @@ use std::{
     sync::Arc,
 };
 use tokio::{
-    sync::RwLock,
-    time::{Duration, Instant},
+    sync::{RwLock, broadcast::Receiver},
+    time::Instant,
 };
 
 lazy_static::lazy_static! {
@@ -37,43 +31,9 @@ lazy_static::lazy_static! {
     register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
 }
 
-#[derive(Clone, Copy)]
-pub struct TpuServiceConfig {
-    pub fanout_slots: u64,
-    pub number_of_leaders_to_cache: usize,
-    pub clusterinfo_refresh_time: Duration,
-    pub leader_schedule_update_frequency: Duration,
-    pub maximum_transaction_in_queue: usize,
-    pub maximum_number_of_errors: usize,
-    pub quic_connection_params: QuicConnectionParameters,
-}
-
-impl Default for TpuServiceConfig {
-    fn default() -> Self {
-        Self {
-            fanout_slots: DEFAULT_FANOUT_SIZE,
-            number_of_leaders_to_cache: 1024,
-            clusterinfo_refresh_time: Duration::from_secs(60 * 60),
-            leader_schedule_update_frequency: Duration::from_secs(10),
-            maximum_transaction_in_queue: 20000,
-            maximum_number_of_errors: 10,
-            quic_connection_params: QuicConnectionParameters {
-                connection_timeout: Duration::from_secs(1),
-                connection_retry_count: 10,
-                finalize_timeout: Duration::from_millis(200),
-                max_number_of_connections: 10,
-                unistream_timeout: Duration::from_millis(500),
-                write_timeout: Duration::from_secs(1),
-                number_of_transactions_per_unistream: 8,
-            },
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct TpuService {
     data_cache: DataCache,
-    rpc_client: Arc<RpcClient>,
     broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
     tpu_connection_manager: Arc<TpuConnectionManager>,
     identity_stakes: Arc<RwLock<IdentityStakes>>,
@@ -86,8 +46,7 @@ impl TpuService {
     pub async fn new(
         config: TpuServiceConfig,
         identity: Arc<Keypair>,
-        // TODO: remove this dependency when get vote accounts is figured out for grpc
-        rpc_client: Arc<RpcClient>,
+        leader_schedule: Arc<LeaderSchedule>,
         data_cache: DataCache,
     ) -> anyhow::Result<Self> {
         let (sender, _) = tokio::sync::broadcast::channel(config.maximum_transaction_in_queue);
@@ -102,8 +61,7 @@ impl TpuService {
 
         Ok(Self {
             data_cache,
-            leader_schedule: Arc::new(LeaderSchedule::new(config.number_of_leaders_to_cache)),
-            rpc_client,
+            leader_schedule,
             broadcast_sender: Arc::new(sender),
             tpu_connection_manager: Arc::new(tpu_connection_manager),
             identity_stakes: Arc::new(RwLock::new(IdentityStakes::default())),
@@ -112,12 +70,12 @@ impl TpuService {
         })
     }
 
-    pub async fn update_current_stakes(&self) -> anyhow::Result<()> {
+    pub async fn update_current_stakes(&self, rpc_vote_account_streamer: &mut Receiver<RpcVoteAccountStatus>) -> anyhow::Result<()> {
         // update stakes for identity
         // update stakes for the identity
         {
             let mut lock = self.identity_stakes.write().await;
-            *lock = SolanaUtils::get_stakes_for_identity(self.rpc_client.clone(), self.identity)
+            *lock = SolanaUtils::get_stakes_for_identity(rpc_vote_account_streamer, self.identity)
                 .await?;
         }
         Ok(())
@@ -131,13 +89,11 @@ impl TpuService {
     pub async fn update_leader_schedule(&self) -> anyhow::Result<()> {
         self.leader_schedule
             .update_leader_schedule(
-                self.rpc_client.clone(),
                 self.data_cache.clock.get_current_slot(),
                 self.data_cache.clock.get_estimated_slot(),
             )
             .await?;
         NB_OF_LEADERS_IN_SCHEDULE.set(self.leader_schedule.len().await as i64);
-        NB_CLUSTER_NODES.set(self.leader_schedule.cluster_nodes_len() as i64);
         Ok(())
     }
 
@@ -181,13 +137,9 @@ impl TpuService {
             .await;
     }
 
-    pub async fn start(self) -> anyhow::Result<()> {
+    pub async fn start(self, mut rpc_vote_account_streamer: Receiver<RpcVoteAccountStatus>) -> anyhow::Result<()> {
         // setup
-        self.leader_schedule
-            .load_cluster_info(self.rpc_client.clone())
-            .await
-            .context("failed to load initial cluster info")?;
-        self.update_current_stakes().await?;
+        self.update_current_stakes(&mut rpc_vote_account_streamer).await?;
         self.update_leader_schedule().await?;
         self.update_quic_connections().await;
 
@@ -205,7 +157,7 @@ impl TpuService {
             }
 
             if last_cluster_info_update.elapsed() > cluster_info_update_interval {
-                if self.update_current_stakes().await.is_err() {
+                if self.update_current_stakes(&mut rpc_vote_account_streamer).await.is_err() {
                     log::error!("Unable to update cluster infos");
                 } else {
                     last_cluster_info_update = Instant::now();

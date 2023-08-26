@@ -9,7 +9,6 @@ license = "AGPL"
 
 [dependencies]
 solana-sdk = { workspace = true }
-solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-transaction-status = { workspace = true }
 solana-version = { workspace = true }

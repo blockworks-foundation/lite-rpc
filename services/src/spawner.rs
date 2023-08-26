@@ -1,9 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use solana_lite_rpc_core::{
-    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle,
+    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle, leader_schedule::LeaderSchedule,
 };
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::response::RpcVoteAccountStatus;
+use tokio::sync::broadcast::Receiver;
 
 use crate::{
     cleaner::Cleaner,
@@ -72,13 +73,16 @@ impl Spawner {
         }
     }
 
-    pub async fn spawn_tx_service(&self) -> anyhow::Result<(TxSender, AnyhowJoinHandle)> {
+    pub async fn spawn_tx_service(&self, 
+        leader_schedule: Arc<LeaderSchedule>,
+        rpc_vote_account_streamer: Receiver<RpcVoteAccountStatus>,
+    ) -> anyhow::Result<(TxSender, AnyhowJoinHandle)> {
         TxService {
             data_cache: self.data_cache.clone(),
             config: self.tx_service_config.clone(),
-            rpc_client: Arc::new(RpcClient::new(self.rpc_addr.clone())),
+            leader_schedule,
         }
-        .spawn(self.notification_channel.clone())
+        .spawn(rpc_vote_account_streamer, self.notification_channel.clone())
         .await
     }
 }

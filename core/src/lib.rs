@@ -15,7 +15,8 @@ pub mod structures;
 pub mod subscription_sink;
 pub mod subscription_store;
 pub mod tx_store;
-pub mod processed_block;
+pub mod traits;
+pub mod cluster_info;
 
 pub type WireTx = Vec<u8>;
 
