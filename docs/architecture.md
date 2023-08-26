@@ -91,13 +91,13 @@ flowchart TD
     Validator-- "geyser Stakes and Votes account Sub" -->Consensus
     Validator== "geyser getBlockHeight" ==>RPC
     Validator-- "geyser Cluster info Sub" -->Cluster
-    Consensus<== "GetVoteAccounts/getLeaderSchedule/getEpochInfo/getSlot" ==>RPC
+    Consensus<== "getVoteAccounts/getLeaderSchedule/getEpochInfo/getSlot" ==>RPC
     Consensus<== "At Process getSignaturesForAddress/getSignatureStatuses" ==>RPC
     Consensus-- "Block Info Sub" -->SendTx
     Consensus-- "Leader Schedule Sub" -->SendTx
     Consensus-- "Sent Tx confirmed Sub" -->SendTx
     Cluster-- "Cluster info Sub" -->SendTx
-    Consensus-- "Full Block Sub" -->History
+    Consensus-- "Full Block / Epoch Sub" -->History
     RPC== "SendTx" ==> SendTx
     SendTx== "A new Tx to send" ==> Consensus
     History<== "At confirm getBlock(s)/getSignaturesForAddress/getSignatureStatuses" ==> RPC
@@ -192,24 +192,23 @@ flowchart TD
     SendTx2("Send Tx Host")
     subgraph Data_instance1
         History1("History + bootstrap")
-        Cluster1("Cluster Info")
     end
     subgraph Data_instance2
         History2("History + bootstrap")
-        Cluster2("Cluster Info")
     end
     subgraph Data_instance3
         History3("History + bootstrap")
-        Cluster3("Cluster Info")
     end
 
     subgraph Validator1_Host
         Validator1["Validator"]
         Consensus1("Consensus + bootstrap")
+        Cluster1("Cluster Info")
     end
     subgraph Validator2_Host
         Validator2["Validator"]
         Consensus2("Consensus + bootstrap")
+        Cluster2("Cluster Info")
     end
 
     RPC["RPC entry point
@@ -219,29 +218,34 @@ flowchart TD
 
     RPC== "Send sendTx" ==>SendTx1
     RPC== "Send sendTx" ==>SendTx2
-    SendTx1-- "Send Tx send" -->Stream
-    SendTx2-- "Send Tx send" -->Stream
+    SendTx1-- "Send Tx sent" -->Stream
+    SendTx2-- "Send Tx sent" -->Stream
     Stream-- "Block Info" -->SendTx1
     Stream-- "Block Info" -->SendTx2
+    Stream-- "Cluster Schedule" -->SendTx1
+    Stream-- "Cluster Schedule" -->SendTx2
 
     Consensus1-- "Send consensus data" -->Stream
     Consensus2-- "Send consensus data" -->Stream
-    RPC== "Send sendTx" ==>Consensus1
-    RPC== "Send sendTx" ==>Consensus2
+    RPC<== "getVoteAccounts" ==>Consensus1
+    RPC<== "getVoteAccounts" ==>Consensus2
 
-    History1-- "Block sub" -->Stream
-    History2-- "Block sub" -->Stream
-    History3-- "Block sub" -->Stream
+    Stream-- "Block sub" -->History1
+    Stream-- "Block sub" -->History2
+    Stream-- "Block sub" -->History3
     RPC<== "getBlock" ==>History1
     RPC<== "getBlock" ==>History2
     RPC<== "getBlock" ==>History3
 
-    Cluster1-- "Block sub" -->Stream
-    Cluster2-- "Block sub" -->Stream
-    Cluster3-- "Block sub" -->Stream
+    Cluster1-- "Send Cluster info" -->Stream
+    Cluster2-- "Send Cluster info" -->Stream
     RPC<== "getClusterNodes" ==>Cluster1
     RPC<== "getClusterNodes" ==>Cluster2
-    RPC<== "getClusterNodes" ==>Cluster3
+
+    Validator1-- "Geyser data" -->Consensus1
+    Validator1-- "Geyser data" -->Cluster1
+    Validator2-- "Geyser data" -->Consensus2
+    Validator2-- "Geyser data" -->Cluster2
 
     classDef consensus fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef history fill:#666,stroke:#0b4884,color:#ffffff
