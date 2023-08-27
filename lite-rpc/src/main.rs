@@ -2,14 +2,21 @@ mod rpc_tester;
 
 use std::{sync::Arc, time::Duration};
 
+use anyhow::{bail, Context};
 use clap::Parser;
 use dotenv::dotenv;
 use lite_rpc::{bridge::LiteBridge, cli::Args, postgres::Postgres};
 
+use solana_lite_rpc_cluster_endpoints::{
+    json_rpc_leaders_getter::JsonRpcLeaderGetter,
+    json_rpc_subscription::create_json_rpc_polling_subscription,
+};
 use solana_lite_rpc_core::{
-    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle,
+    cluster_info::ClusterInfo, data_cache::DataCache, leader_schedule::LeaderSchedule,
+    notifications::NotificationSender, slot_clock::SlotClock, AnyhowJoinHandle,
 };
 use solana_lite_rpc_services::{spawner::Spawner, tx_service::TxServiceConfig};
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Keypair;
 use std::env;
 use tokio::sync::mpsc;
@@ -97,22 +104,81 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     // postgres
     let (notification_channel, postgres) = start_postgres(enable_postgres).await?;
 
+    // rpc client
+    let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
+    if let Err(e) = rpc_client.get_version().await {
+        bail!("Error connecting to rpc client {e:?}");
+    }
+
+    let current_slot = rpc_client
+        .get_slot()
+        .await
+        .expect("RpcClient should get slot");
+
     // setup ledger
     let data_cache = DataCache::default();
 
     // spawner
     let spawner = Spawner {
         prometheus_addr,
-        grpc: use_grpc,
         addr,
         tx_service_config,
         rpc_addr,
         data_cache: data_cache.clone(),
         notification_channel,
     };
+    let subscriptions = create_json_rpc_polling_subscription()?;
+
+    let cluster_info = ClusterInfo::default();
+    let cluster_info_jh: AnyhowJoinHandle = {
+        let cluster_info: ClusterInfo = cluster_info.clone();
+        let cluster_info_subsription = subscriptions.cluster_info_notifier.resubscribe();
+        tokio::spawn(async move {
+            let mut cluster_info_subsription = cluster_info_subsription;
+            loop {
+                cluster_info
+                    .load_cluster_info(&mut cluster_info_subsription)
+                    .await
+                    .context("Failed to load cluster info")?;
+            }
+        })
+    };
+
+    // implement leader getter
+    let leader_getter = Arc::new(JsonRpcLeaderGetter {
+        rpc_client: rpc_client.clone(),
+    });
+
+    let slot_clock = SlotClock::new(current_slot);
+
+    // leader schedule
+    let leader_schedule = Arc::new(LeaderSchedule::new(1024, leader_getter, cluster_info));
+    let leader_schedule_update_task: AnyhowJoinHandle = {
+        let leader_schedule = leader_schedule.clone();
+        let slot_clock = slot_clock.clone();
+        let slot_subscription = subscriptions.slot_notifier.resubscribe();
+        tokio::spawn(async move {
+            let mut slot_subscription = slot_subscription;
+            loop {
+                // update slot subscription
+                slot_clock
+                    .update_slots_from_subscription(&mut slot_subscription)
+                    .await;
+                leader_schedule
+                    .update_leader_schedule(
+                        slot_clock.get_current_slot(),
+                        slot_clock.get_estimated_slot(),
+                    )
+                    .await?;
+            }
+        })
+    };
+
     // start services
-    let ledger_service = spawner.spawn_ledger_service();
-    let (tx_sender, tx_services) = spawner.spawn_tx_service().await?;
+    let vote_account_notifier = subscriptions.vote_account_notifier.resubscribe();
+    let (tx_sender, tx_services) = spawner
+        .spawn_tx_service(leader_schedule, vote_account_notifier)
+        .await?;
     let support_service = spawner.spawn_support_services();
 
     // lite bridge
@@ -122,10 +188,8 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     }
     .start(lite_rpc_http_addr, lite_rpc_ws_addr);
 
+    drop(subscriptions);
     tokio::select! {
-        res = ledger_service => {
-            anyhow::bail!("Ledger Service {res:?}")
-        }
         res = tx_services => {
             anyhow::bail!("Tx Services {res:?}")
         }
@@ -137,6 +201,12 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         }
         res = postgres => {
             anyhow::bail!("Postgres service {res:?}");
+        }
+        res = cluster_info_jh => {
+            anyhow::bail!("Contact info update service failed {res:?}")
+        }
+        res = leader_schedule_update_task => {
+            anyhow::bail!("Leader schedule update task failed {res:?}")
         }
     }
 }

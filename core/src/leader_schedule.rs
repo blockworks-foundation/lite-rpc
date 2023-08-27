@@ -1,10 +1,10 @@
+use crate::{cluster_info::ClusterInfo, traits::slot_leaders_getter::SlotLeadersGetter};
 use anyhow::Context;
-use std::{collections::VecDeque, sync::Arc};
 use log::warn;
 use solana_rpc_client_api::response::RpcContactInfo;
 use solana_sdk::slot_history::Slot;
+use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
-use crate::{traits::slot_leaders_getter::SlotLeadersGetter, cluster_info::ClusterInfo};
 
 pub struct LeaderData {
     pub contact_info: Arc<RpcContactInfo>,
@@ -18,7 +18,11 @@ pub struct LeaderSchedule {
 }
 
 impl LeaderSchedule {
-    pub fn new(leaders_to_cache_count: usize, slot_leader_getter: Arc<dyn SlotLeadersGetter>, cluster_info: ClusterInfo) -> Self {
+    pub fn new(
+        leaders_to_cache_count: usize,
+        slot_leader_getter: Arc<dyn SlotLeadersGetter>,
+        cluster_info: ClusterInfo,
+    ) -> Self {
         Self {
             leader_schedule: RwLock::new(VecDeque::new()),
             leaders_to_cache_count,
@@ -55,7 +59,11 @@ impl LeaderSchedule {
         if last_slot_needed > queue_end_slot + 1 {
             let first_slot_to_fetch = queue_end_slot + 1;
 
-            let leaders = self.slot_leaders_getter.get_slot_leaders(first_slot_to_fetch, last_slot_needed).await.context("failed to get slot leaders")?;
+            let leaders = self
+                .slot_leaders_getter
+                .get_slot_leaders(first_slot_to_fetch, last_slot_needed)
+                .await
+                .context("failed to get slot leaders")?;
 
             let mut leader_queue = self.leader_schedule.write().await;
             for i in first_slot_to_fetch..last_slot_needed {

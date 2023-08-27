@@ -1,7 +1,13 @@
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use solana_sdk::slot_history::Slot;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::broadcast::Receiver;
 
 use crate::AtomicSlot;
 
@@ -17,6 +23,13 @@ pub struct SlotClock {
 }
 
 impl SlotClock {
+    pub fn new(slot: Slot) -> Self {
+        Self {
+            current_slot: Arc::new(AtomicU64::new(slot)),
+            estimated_slot: Arc::new(AtomicU64::new(slot)),
+        }
+    }
+
     pub fn get_current_slot(&self) -> u64 {
         self.current_slot.load(Ordering::Relaxed)
     }
@@ -27,7 +40,14 @@ impl SlotClock {
 
     // Estimates the slots, either from polled slot or by forcefully updating after every 400ms
     // returns the estimated slot if current slot is not updated
+<<<<<<< HEAD
     pub async fn set_slot(&self, slot_update_notifier: &mut UnboundedReceiver<Slot>) -> Slot {
+=======
+    pub async fn update_slots_from_subscription(
+        &self,
+        slot_update_notifier: &mut Receiver<Slot>,
+    ) -> u64 {
+>>>>>>> 9d7eab2 (Creating a new library for cluster endpoings, Some more refactoring,)
         let current_slot = self.current_slot.load(Ordering::Relaxed);
         let estimated_slot = self.estimated_slot.load(Ordering::Relaxed);
 
@@ -37,7 +57,7 @@ impl SlotClock {
         )
         .await
         {
-            Ok(Some(slot)) => {
+            Ok(Ok(slot)) => {
                 // slot is latest
                 if slot > current_slot {
                     self.current_slot.store(slot, Ordering::Relaxed);
@@ -46,7 +66,7 @@ impl SlotClock {
                     }
                 }
             }
-            Ok(None) => log::error!("got nothing from slot update notifier"),
+            Ok(Err(_)) => log::error!("got nothing from slot update notifier"),
             Err(err) => {
                 log::warn!("failed to receive slot update: {err}");
                 // force update the slot

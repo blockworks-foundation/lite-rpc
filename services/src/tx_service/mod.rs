@@ -2,11 +2,12 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use solana_lite_rpc_core::{
-    data_cache::DataCache, notifications::NotificationSender, AnyhowJoinHandle, leader_schedule::LeaderSchedule,
+    data_cache::DataCache, leader_schedule::LeaderSchedule, notifications::NotificationSender,
+    AnyhowJoinHandle,
 };
 use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use solana_sdk::signature::Keypair;
-use tokio::sync::{mpsc, broadcast::Receiver};
+use tokio::sync::{broadcast::Receiver, mpsc};
 
 use crate::tpu_utils::{tpu_service::TpuService, tpu_service_config::TpuServiceConfig};
 
@@ -84,7 +85,7 @@ impl TxService {
         let (tx_channel, tx_recv) = mpsc::channel(self.config.max_nb_txs_in_queue);
         let (replay_channel, replay_recv) = mpsc::unbounded_channel();
 
-        let tpu_service = tokio::spawn( tpu_service.start(rpc_vote_account_streamer));
+        let tpu_service = tokio::spawn(tpu_service.start(rpc_vote_account_streamer));
         let tx_batch_fwd = tx_batch_fwd.execute(tx_recv, notifier);
         let tx_replayer = tx_replayer.start_service(replay_channel.clone(), replay_recv);
 

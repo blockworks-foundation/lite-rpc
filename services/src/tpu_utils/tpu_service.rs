@@ -1,10 +1,10 @@
+use super::{tpu_connection_manager::TpuConnectionManager, tpu_service_config::TpuServiceConfig};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::{
     data_cache::DataCache, leader_schedule::LeaderSchedule, solana_utils::SolanaUtils,
-    structures::identity_stakes::IdentityStakes
+    structures::identity_stakes::IdentityStakes,
 };
 use solana_rpc_client_api::response::RpcVoteAccountStatus;
-use super::{tpu_connection_manager::TpuConnectionManager, tpu_service_config::TpuServiceConfig};
 use solana_sdk::{pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair, signer::Signer};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::{
@@ -13,7 +13,7 @@ use std::{
     sync::Arc,
 };
 use tokio::{
-    sync::{RwLock, broadcast::Receiver},
+    sync::{broadcast::Receiver, RwLock},
     time::Instant,
 };
 
@@ -70,7 +70,10 @@ impl TpuService {
         })
     }
 
-    pub async fn update_current_stakes(&self, rpc_vote_account_streamer: &mut Receiver<RpcVoteAccountStatus>) -> anyhow::Result<()> {
+    pub async fn update_current_stakes(
+        &self,
+        rpc_vote_account_streamer: &mut Receiver<RpcVoteAccountStatus>,
+    ) -> anyhow::Result<()> {
         // update stakes for identity
         // update stakes for the identity
         {
@@ -137,9 +140,13 @@ impl TpuService {
             .await;
     }
 
-    pub async fn start(self, mut rpc_vote_account_streamer: Receiver<RpcVoteAccountStatus>) -> anyhow::Result<()> {
+    pub async fn start(
+        self,
+        mut rpc_vote_account_streamer: Receiver<RpcVoteAccountStatus>,
+    ) -> anyhow::Result<()> {
         // setup
-        self.update_current_stakes(&mut rpc_vote_account_streamer).await?;
+        self.update_current_stakes(&mut rpc_vote_account_streamer)
+            .await?;
         self.update_leader_schedule().await?;
         self.update_quic_connections().await;
 
@@ -157,7 +164,11 @@ impl TpuService {
             }
 
             if last_cluster_info_update.elapsed() > cluster_info_update_interval {
-                if self.update_current_stakes(&mut rpc_vote_account_streamer).await.is_err() {
+                if self
+                    .update_current_stakes(&mut rpc_vote_account_streamer)
+                    .await
+                    .is_err()
+                {
                     log::error!("Unable to update cluster infos");
                 } else {
                     last_cluster_info_update = Instant::now();

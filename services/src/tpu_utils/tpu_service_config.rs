@@ -1,6 +1,6 @@
-use std::time::Duration;
-use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use crate::DEFAULT_FANOUT_SIZE;
+use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
+use std::time::Duration;
 
 #[derive(Clone, Copy)]
 pub struct TpuServiceConfig {

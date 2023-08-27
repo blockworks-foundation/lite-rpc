@@ -39,6 +39,7 @@ async-channel = { workspace = true }
 quinn = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-services = { workspace = true }
+solana-lite-rpc-cluster-endpoints = {workspace = true}
 async-trait = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }

@@ -2443,6 +2443,7 @@ dependencies = [
  "quinn",
  "serde",
  "serde_json",
+ "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
  "solana-lite-rpc-services",
  "solana-rpc-client",
@@ -4202,6 +4203,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-lite-rpc-cluster-endpoints"
+version = "0.2.2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.0",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "derive_more",
+ "futures",
+ "log",
+ "quinn",
+ "rustls 0.20.8",
+ "serde",
+ "serde_json",
+ "solana-client",
+ "solana-lite-rpc-core",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "solana-lite-rpc-core"
 version = "0.2.2"
 dependencies = [
@@ -4230,8 +4263,6 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
- "yellowstone-grpc-client",
- "yellowstone-grpc-proto",
 ]
 
 [[package]]
@@ -4257,6 +4288,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-client",
+ "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
  "solana-net-utils",
  "solana-pubsub-client",

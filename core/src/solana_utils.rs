@@ -4,8 +4,8 @@ use log::info;
 use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
-use tokio::sync::broadcast::Receiver;
 use std::collections::HashMap;
+use tokio::sync::broadcast::Receiver;
 
 pub struct SolanaUtils;
 

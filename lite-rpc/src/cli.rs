@@ -1,6 +1,5 @@
-use crate::{DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR, MAX_RETRIES};
+use crate::{DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR, MAX_RETRIES};
 use clap::Parser;
-use solana_lite_rpc_core::grpc_client::DEFAULT_GRPC_ADDR;
 use solana_lite_rpc_services::DEFAULT_FANOUT_SIZE;
 
 #[derive(Parser, Debug, Clone)]
