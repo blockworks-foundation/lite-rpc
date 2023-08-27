@@ -5,7 +5,12 @@ members = [
     "lite-rpc",
     "quic-forward-proxy",
     "quic-forward-proxy-integration-test",
-    "bench"
+    "bench",
+    "allinonerpc",
+    "modules/cluster",
+    "modules/consensus",
+    "modules/history",
+    "modules/sendtx"
 ]
 
 [workspace.package]

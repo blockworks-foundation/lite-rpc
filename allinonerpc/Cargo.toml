@@ -1,0 +1,25 @@
+[package]
+name = "stream"
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+solana-transaction-status = { workspace = true }
+solana-sdk = { workspace = true }
+solana-lite-rpc-core = { workspace = true }
+anyhow = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+
+tokio = { version = "1.*", features = ["macros"] }
+tokio-stream = { version = "0.1.*", features = ["sync"] }
+
+history = {path = "../modules/history"}
+consensus = {path = "../modules/consensus"}
+sendtx = {path = "../modules/sendtx"}

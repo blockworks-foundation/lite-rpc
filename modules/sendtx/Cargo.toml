@@ -1,0 +1,16 @@
+[package]
+name = "sendtx"
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+solana-transaction-status = { workspace = true }
+tokio = { version = "1.*" }
+futures = { workspace = true }
+
+solana-lite-rpc-core = { workspace = true }

@@ -1,0 +1,25 @@
+[package]
+name = "consensus"
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+solana-transaction-status = { workspace = true }
+solana-sdk = { workspace = true }
+tokio = { version = "1.*" }
+futures = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+
+
+yellowstone-grpc-client = "1.8.0+solana.1.16.1"
+yellowstone-grpc-proto = "1.8.0+solana.1.16.1"
+
+futures-util = "0.3.28"
+
+solana-lite-rpc-core = { workspace = true }
