@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use solana_lite_rpc_core::{
-    jsonrpc_client::{JsonRpcClient, ProcessedBlock},
-    slot_clock::SlotClock,
+    jsonrpc_client::JsonRpcClient, processed_block::ProcessedBlock, slot_clock::SlotClock,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
@@ -34,7 +33,9 @@ impl RpcListener {
     ) -> anyhow::Result<()> {
         // retry the slot till it is at most 128 slots behind the current slot
         while slot_clock.get_current_slot().saturating_sub(slot) < 128 {
-            let Ok(Ok(processed_block)) = JsonRpcClient::process(&self.rpc_client, slot, commitment_config).await else {
+            let Ok(Ok(processed_block)) =
+                JsonRpcClient::process(&self.rpc_client, slot, commitment_config).await
+            else {
                 // retry after 10ms
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
                 continue;

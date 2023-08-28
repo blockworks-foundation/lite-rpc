@@ -3,46 +3,17 @@ use std::time::Duration;
 use anyhow::Context;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{
-    borsh::try_from_slice_unchecked,
-    commitment_config::CommitmentConfig,
-    compute_budget::{self, ComputeBudgetInstruction},
-    slot_history::Slot,
-    transaction::TransactionError,
-};
-use solana_transaction_status::{
-    option_serializer::OptionSerializer, RewardType, TransactionDetails, UiTransactionEncoding,
-    UiTransactionStatusMeta,
-};
+use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
+use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::slot_clock::AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS;
-
-#[derive(Debug)]
-pub struct TransactionInfo {
-    pub signature: String,
-    pub err: Option<TransactionError>,
-    pub status: Result<(), TransactionError>,
-    pub cu_requested: Option<u32>,
-    pub prioritization_fees: Option<u64>,
-    pub cu_consumed: Option<u64>,
-}
-
-#[derive(Default, Debug)]
-pub struct ProcessedBlock {
-    pub txs: Vec<TransactionInfo>,
-    pub leader_id: Option<String>,
-    pub blockhash: String,
-    pub block_height: u64,
-    pub slot: Slot,
-    pub parent_slot: Slot,
-    pub block_time: u64,
-    pub commitment_config: CommitmentConfig,
-}
-
-pub enum BlockProcessorError {
-    Incomplete,
-}
+use crate::{
+    processed_block::{
+        BlockProcessorError, FilteredBlock, FilteredTransaction, FilteredTransactionMeta,
+        ProcessedBlock,
+    },
+    slot_clock::AVERAGE_SLOT_CHANGE_TIME_IN_MILLIS,
+};
 
 pub struct JsonRpcClient;
 
@@ -66,116 +37,40 @@ impl JsonRpcClient {
             .await
             .context("failed to get block")?;
 
-        // println!("slot {slot:?} block: {:?}", block);
+        let transactions = block.transactions.map(|txs| {
+            txs.into_iter()
+                .filter_map(|tx| {
+                    let Some(transaction) = tx.transaction.decode() else {
+                        log::info!("Tx could not be decoded");
+                        return None;
+                    };
 
-        let Some(block_height) = block.block_height else {
-            return Ok(Err(BlockProcessorError::Incomplete));
-        };
+                    Some(FilteredTransaction {
+                        transaction,
+                        meta: tx.meta.map(|meta| FilteredTransactionMeta {
+                            err: meta.err.map(|err| err.to_string()),
+                            compute_units_consumed: meta.compute_units_consumed.into(),
+                            fee: meta.fee,
+                            pre_balances: meta.pre_balances,
+                            post_balances: meta.post_balances,
+                        }),
+                    })
+                })
+                .collect()
+        });
 
-        let Some(txs) = block.transactions else {
-            return Ok(Err(BlockProcessorError::Incomplete));
-         };
-
-        let blockhash = block.blockhash;
-        let parent_slot = block.parent_slot;
-
-        let txs = txs.into_iter().filter_map(|tx| {
-            let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
-                log::info!("Tx with no meta");
-                return None;
-            };
-
-            let Some(tx) = tx.transaction.decode() else {
-                log::info!("Tx could not be decoded");
-                return None;
-            };
-
-            let signature = tx.signatures[0].to_string();
-            let cu_consumed = match compute_units_consumed {
-                OptionSerializer::Some(cu_consumed) => Some(cu_consumed),
-                _ => None,
-            };
-
-            let legacy_compute_budget = tx.message.instructions().iter().find_map(|i| {
-                if i.program_id(tx.message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                        units,
-                        additional_fee,
-                    }) = try_from_slice_unchecked(i.data.as_slice())
-                    {
-                        return Some((units, additional_fee));
-                    }
-                }
-                None
-            });
-
-            let mut cu_requested = tx.message.instructions().iter().find_map(|i| {
-                if i.program_id(tx.message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                        try_from_slice_unchecked(i.data.as_slice())
-                    {
-                        return Some(limit);
-                    }
-                }
-                None
-            });
-
-            let mut prioritization_fees = tx.message.instructions().iter().find_map(|i| {
-                if i.program_id(tx.message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                        try_from_slice_unchecked(i.data.as_slice())
-                    {
-                        return Some(price);
-                    }
-                }
-
-                None
-            });
-
-            if let Some((units, additional_fee)) = legacy_compute_budget {
-                cu_requested = Some(units);
-                if additional_fee > 0 {
-                    prioritization_fees = Some(((units * 1000) / additional_fee).into())
-                }
-            };
-
-            Some(TransactionInfo {
-                signature,
-                err,
-                status,
-                cu_requested,
-                prioritization_fees,
-                cu_consumed,
-            })
-        }).collect();
-
-        let leader_id = if let Some(rewards) = block.rewards {
-            rewards
-                .iter()
-                .find(|reward| Some(RewardType::Fee) == reward.reward_type)
-                .map(|leader_reward| leader_reward.pubkey.clone())
-        } else {
-            None
-        };
-
-        let block_time = block.block_time.unwrap_or(0) as u64;
-
-        Ok(Ok(ProcessedBlock {
-            txs,
-            block_height,
-            leader_id,
-            blockhash,
-            slot,
-            parent_slot,
-            block_time,
+        Ok(ProcessedBlock::process(
+            FilteredBlock {
+                blockhash: block.blockhash,
+                block_height: block.block_height,
+                block_time: block.block_time,
+                slot,
+                parent_slot: block.parent_slot,
+                rewards: block.rewards,
+                transactions,
+            },
             commitment_config,
-        }))
+        ))
     }
 
     pub async fn poll_slots(

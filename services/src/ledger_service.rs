@@ -2,19 +2,13 @@ use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::Context;
 use bytes::Bytes;
-use solana_lite_rpc_core::block_information_store::BlockMeta;
-use solana_lite_rpc_core::jsonrpc_client::ProcessedBlock;
-use solana_lite_rpc_core::{
-    data_cache::DataCache, jsonrpc_client::JsonRpcClient, slot_clock::SlotClock, AnyhowJoinHandle,
-};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 
-use crate::{grpc_listener::GrpcListener, rpc_listener::RpcListener};
+use crate::rpc_listener::RpcListener;
 
 /// Rpc LedgerProvider Marker
 pub struct RpcLedgerProvider;
@@ -39,37 +33,122 @@ impl<Provider> From<DataCache> for LedgerService<Provider> {
     }
 }
 
+impl<T> LedgerService<T> {
+    pub async fn process_block(
+        self,
+        mut block_recv: UnboundedReceiver<ProcessedBlock>,
+    ) -> anyhow::Result<()> {
+        while let Some(ProcessedBlock {
+            txs,
+            leader_id: _,
+            blockhash,
+            block_height,
+            slot,
+            parent_slot: _,
+            block_time: _,
+            commitment_config,
+        }) = block_recv.recv().await
+        {
+            self.data_cache
+                .block_store
+                .add_block(
+                    blockhash.clone(),
+                    BlockMeta::new(slot, block_height),
+                    commitment_config,
+                )
+                .await;
+
+            let confirmation_status = match commitment_config.commitment {
+                CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
+                _ => TransactionConfirmationStatus::Confirmed,
+            };
+
+            for tx in txs {
+                //
+                self.data_cache.txs.update_status(
+                    &tx.signature,
+                    TransactionStatus {
+                        slot,
+                        confirmations: None,
+                        status: tx.status.clone(),
+                        err: tx.err.clone(),
+                        confirmation_status: Some(confirmation_status.clone()),
+                    },
+                );
+                // notify
+                self.data_cache
+                    .tx_subs
+                    .notify_tx(slot, &tx, commitment_config)
+                    .await;
+            }
+        }
+
+        anyhow::bail!("Block stream closed unexpectedly");
+    }
+}
+
 impl LedgerService<GrpcLedgerProvider> {
     pub async fn listen(
         self,
         addr: impl Into<Bytes> + Sync + Send + Clone + 'static,
     ) -> anyhow::Result<()> {
+        // slot clock
+        let slot_clock = SlotClock::default();
         // slot unbounded channel
-        let (slot_tx, _slot_rx) = mpsc::unbounded_channel();
-        // tx ubouded channel
-        let (processed_tx, _processed_rx) = mpsc::unbounded_channel();
-        let (confirmed_tx, _confirmed_rx) = mpsc::unbounded_channel();
-        let (finalized_tx, _finalized_rx) = mpsc::unbounded_channel();
+        let (slot_channel, mut slot_rx) = mpsc::unbounded_channel();
+        let (block_tx, mut block_rx) = mpsc::unbounded_channel();
 
-        // do some error counting
-        let grpc_listener: AnyhowJoinHandle = tokio::spawn(async move {
-            let Err(_err) = GrpcListener::listen(addr, slot_tx, processed_tx, confirmed_tx, finalized_tx).await else {
-                    anyhow::bail!("GrpcListner exited unexpectedly");
-                };
-            Ok(())
-            // }
+        // slot producer
+        let slot_sub: AnyhowJoinHandle = tokio::spawn(GrpcClient::subscribe(
+            GrpcClient::create_client(addr.clone()).await?,
+            Some(slot_channel),
+            None,
+            None,
+            CommitmentConfig::processed(),
+        ));
+
+        // confirmed block producer
+        let confirmed_block_producer: AnyhowJoinHandle = tokio::spawn(GrpcClient::subscribe(
+            GrpcClient::create_client(addr.clone()).await?,
+            None,
+            None,
+            Some(block_tx),
+            CommitmentConfig::confirmed(),
+        ));
+
+        // finalized block producer
+        let finalized_block_producer: AnyhowJoinHandle = tokio::spawn(GrpcClient::subscribe(
+            GrpcClient::create_client(addr.clone()).await?,
+            None,
+            None,
+            Some(block_tx),
+            CommitmentConfig::finalized(),
+        ));
+
+        // slot processor
+        let slot_processor: AnyhowJoinHandle = tokio::spawn(async move {
+            loop {
+                slot_clock.set_slot(&mut slot_rx).await;
+            }
         });
 
-        // process all the data
-        let _processor = tokio::spawn(async move {
-            futures::future::pending::<()>().await;
-        });
+        // block processor
+        let processor = tokio::spawn(self.process_block(block_rx));
 
         tokio::select! {
-            grpc_res = grpc_listener => {
-                anyhow::bail!("GrpcListner exited unexpectedly {grpc_res:?}");
+            slot_res = slot_sub => {
+                anyhow::bail!("Slot stream closed unexpectedly {slot_res:?}");
             }
-            processor_res = _processor => {
+            slot_processor_res = slot_processor => {
+                anyhow::bail!("Slot processor stream closed unexpectedly {slot_processor_res:?}");
+            }
+            confirmed_block_res = confirmed_block_producer => {
+                anyhow::bail!("Confirmed block stream closed unexpectedly {confirmed_block_res:?}");
+            }
+            finalized_block_res = finalized_block_producer => {
+                anyhow::bail!("Finalized block stream closed unexpectedly {finalized_block_res:?}");
+            }
+            processor_res = processor => {
                 anyhow::bail!("Processor stream closed unexpectedly {processor_res:?}");
             }
         }
@@ -84,76 +163,22 @@ impl LedgerService<RpcLedgerProvider> {
         // slot clock
         let slot_clock = SlotClock::default();
         // slot and block channels
-        let (slot_tx, slot_rx) = mpsc::unbounded_channel();
-        let (block_channel, mut block_recv) = mpsc::unbounded_channel();
+        let (slot_channel, slot_recv) = mpsc::unbounded_channel();
+        let (block_channel, block_recv) = mpsc::unbounded_channel();
 
         // get processed slots
         let slot_lisner: AnyhowJoinHandle = tokio::spawn(async move {
-            JsonRpcClient::poll_slots(&rpc_client, slot_tx, CommitmentConfig::confirmed())
+            JsonRpcClient::poll_slots(&rpc_client, slot_channel, CommitmentConfig::confirmed())
                 .await
                 .context("Rpc slot poll task unexpectedly")
         });
 
         // listen to blocks for slots
         let rpc_listener: AnyhowJoinHandle =
-            tokio::spawn(rpc_listener.listen(slot_clock, slot_rx, block_channel));
+            tokio::spawn(rpc_listener.listen(slot_clock, slot_recv, block_channel));
 
-        // clone the ledger to move into the processor task
-        let data_cache = self.data_cache.clone();
         // process all the data into the ledger
-        let processor = tokio::spawn(async move {
-            while let Some(ProcessedBlock {
-                txs,
-                leader_id: _,
-                blockhash,
-                block_height,
-                slot,
-                parent_slot: _,
-                block_time: _,
-                commitment_config,
-            }) = block_recv.recv().await
-            {
-                data_cache
-                    .block_store
-                    .add_block(
-                        BlockMeta {
-                            slot,
-                            block_height,
-                            last_valid_blockheight: block_height + MAX_RECENT_BLOCKHASHES as u64,
-                            cleanup_slot: block_height + 1000,
-                            //TODO: see why this was required
-                            processed_local_time: None,
-                            blockhash,
-                        },
-                        commitment_config,
-                    )
-                    .await;
-
-                let confirmation_status = match commitment_config.commitment {
-                    CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
-                    _ => TransactionConfirmationStatus::Confirmed,
-                };
-
-                for tx in txs {
-                    //
-                    data_cache.txs.update_status(
-                        &tx.signature,
-                        TransactionStatus {
-                            slot,
-                            confirmations: None,
-                            status: tx.status.clone(),
-                            err: tx.err.clone(),
-                            confirmation_status: Some(confirmation_status.clone()),
-                        },
-                    );
-                    // notify
-                    data_cache
-                        .tx_subs
-                        .notify_tx(slot, &tx, commitment_config)
-                        .await;
-                }
-            }
-        });
+        let processor = tokio::spawn(self.process_block(block_recv));
 
         tokio::select! {
             slot_res = slot_lisner => {

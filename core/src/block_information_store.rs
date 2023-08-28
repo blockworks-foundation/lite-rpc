@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use log::info;
 
+use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -14,6 +15,19 @@ pub struct BlockMeta {
     pub cleanup_slot: Slot,
     pub processed_local_time: Option<DateTime<Utc>>,
     pub blockhash: String,
+}
+
+impl BlockMeta {
+    pub fn new(slot: u64, block_height: u64) -> Self {
+        Self {
+            slot,
+            block_height,
+            last_valid_blockheight: block_height + MAX_RECENT_BLOCKHASHES as u64,
+            cleanup_slot: block_height + 1000,
+            //TODO: see why this was required
+            processed_local_time: None,
+        }
+    }
 }
 
 #[derive(Default, Clone, Debug)]
