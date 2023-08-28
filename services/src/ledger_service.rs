@@ -2,6 +2,13 @@ use std::{marker::PhantomData, sync::Arc};
 
 use anyhow::Context;
 use bytes::Bytes;
+use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_lite_rpc_core::block_information_store::BlockMeta;
+use solana_lite_rpc_core::data_cache::DataCache;
+use solana_lite_rpc_core::grpc_client::GrpcClient;
+use solana_lite_rpc_core::jsonrpc_client::JsonRpcClient;
+use solana_lite_rpc_core::processed_block::ProcessedBlock;
+use solana_lite_rpc_core::slot_clock::SlotClock;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
@@ -52,8 +59,7 @@ impl<T> LedgerService<T> {
             self.data_cache
                 .block_store
                 .add_block(
-                    blockhash.clone(),
-                    BlockMeta::new(slot, block_height),
+                    BlockMeta::new(slot, block_height, blockhash),
                     commitment_config,
                 )
                 .await;

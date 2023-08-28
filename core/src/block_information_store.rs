@@ -18,7 +18,7 @@ pub struct BlockMeta {
 }
 
 impl BlockMeta {
-    pub fn new(slot: u64, block_height: u64) -> Self {
+    pub fn new(slot: u64, block_height: u64, blockhash: String) -> Self {
         Self {
             slot,
             block_height,
@@ -26,6 +26,7 @@ impl BlockMeta {
             cleanup_slot: block_height + 1000,
             //TODO: see why this was required
             processed_local_time: None,
+            blockhash,
         }
     }
 }
@@ -116,9 +117,10 @@ impl BlockInformationStore {
         }
 
         let Some(finalized_block_information) =
-            self.get_latest_block(&CommitmentConfig::finalized()).await else {
-                return ;
-            };
+            self.get_latest_block(&CommitmentConfig::finalized()).await
+        else {
+            return;
+        };
 
         self.blocks
             .retain(|_, v| v.last_valid_blockheight >= finalized_block_information.block_height);
