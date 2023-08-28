@@ -86,7 +86,7 @@ impl BlockProcessor {
 
         let Some(transactions) = block.transactions else {
             return Ok(BlockProcessorResult::invalid());
-         };
+        };
 
         let blockhash = block.blockhash;
         let parent_slot = block.parent_slot;
@@ -110,7 +110,13 @@ impl BlockProcessor {
         let mut transaction_infos = vec![];
         transaction_infos.reserve(transactions.len());
         for tx in transactions {
-            let Some(UiTransactionStatusMeta { err, status, compute_units_consumed ,.. }) = tx.meta else {
+            let Some(UiTransactionStatusMeta {
+                err,
+                status,
+                compute_units_consumed,
+                ..
+            }) = tx.meta
+            else {
                 info!("tx with no meta");
                 continue;
             };
