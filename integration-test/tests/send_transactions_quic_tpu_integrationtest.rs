@@ -144,6 +144,8 @@ pub fn with_10000_transactions_direct() {
     });
 }
 
+// note: this tests are flakes on CI ond also local (see https://mangolana.atlassian.net/browse/MAN-59)
+#[ignore]
 #[test]
 pub fn with_10000_transactions_proxy() {
     configure_logging(false);
@@ -155,6 +157,8 @@ pub fn with_10000_transactions_proxy() {
     });
 }
 
+// note: this tests are flakes on CI ond also local (see https://mangolana.atlassian.net/browse/MAN-59)
+#[ignore]
 #[test]
 pub fn many_transactions_proxy() {
     configure_logging(false);

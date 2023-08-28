@@ -181,8 +181,10 @@ pub async fn tx_forwarder(
                         }
                     } // -- while all packtes from channel
 
+
+                    auto_connection.force_shutdown().await;
                     warn!(
-                        "Quic forwarder agent #{} for TPU {} exited",
+                        "Quic forwarder agent #{} for TPU {} exited; shut down connection",
                         connection_idx, tpu_address
                     );
                 }); // -- spawned thread for one connection to one TPU
