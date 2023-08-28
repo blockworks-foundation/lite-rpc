@@ -1,4 +1,5 @@
 use crate::stream::BlockInfokStreamConnector;
+use crate::stream::EpochStreamConnector;
 use crate::stream::FullblockStreamConnector;
 use crate::stream::SlotStreamConnector;
 use tokio_stream::StreamExt;
@@ -26,13 +27,21 @@ pub async fn main() -> anyhow::Result<()> {
     let block_sink = block_stream.get_sender_sink();
     let block_info_stream = BlockInfokStreamConnector::new();
     let block_info_sink = block_info_stream.get_sender_sink();
-    let history_handle = history::start_module(block_stream.subscribe()).await;
-    let send_tx_handle = sendtx::start_module(block_info_stream.subscribe()).await;
+    let epoch_stream = EpochStreamConnector::new();
+    let epoch_sink = epoch_stream.get_sender_sink();
+    let history_handle =
+        history::start_module(block_stream.subscribe(), epoch_stream.subscribe()).await;
+    let send_tx_handle = sendtx::start_module(
+        block_info_stream.subscribe(),
+        slot_connector.subscribe_slot(),
+    )
+    .await;
     let consensus_handle = consensus::start_module(
         GRPC_URL.to_string(),
         slot_sender,
         block_sink,
         block_info_sink,
+        epoch_sink,
     )
     .await;
 

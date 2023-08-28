@@ -3,6 +3,7 @@ use futures::Sink;
 use futures::SinkExt;
 use futures_util::StreamExt;
 use solana_lite_rpc_core::block_store::BlockInformation;
+use solana_sdk::epoch_info::EpochInfo;
 use solana_transaction_status::EncodedConfirmedBlock;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -36,6 +37,7 @@ pub async fn start_module(
     block_info_sinck: impl Sink<BlockInformation, Error = FuturesSendError>
         + std::marker::Send
         + 'static,
+    epoch_sinck: impl Sink<EpochInfo, Error = FuturesSendError> + std::marker::Send + 'static,
 ) -> JoinHandle<Result<(), HistoryError>> {
     let handle = tokio::spawn(async move {
         pin!(full_block_sinck);
@@ -107,6 +109,9 @@ pub async fn start_module(
                                         Some(UpdateOneof::Account(account)) => {
                                         }
                                         Some(UpdateOneof::Slot(slot)) => {
+                                            //convert slot and send on slot sink.
+
+                                            //at epoch change send new epoch on epoch sink.
                                         }
                                         Some(UpdateOneof::Ping(_)) => (),
                                         bad_msg => {

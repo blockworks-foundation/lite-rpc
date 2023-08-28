@@ -1877,6 +1877,7 @@ name = "history"
 version = "0.2.2"
 dependencies = [
  "futures",
+ "solana-sdk",
  "solana-transaction-status",
  "tokio",
 ]
@@ -3836,6 +3837,7 @@ dependencies = [
  "solana-lite-rpc-core",
  "solana-transaction-status",
  "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

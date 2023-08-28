@@ -63,7 +63,7 @@ impl SlotStreamConnector {
         SlotStreamConnector { slot_sender }
     }
 
-    pub fn subscribe_slot(&mut self) -> impl Stream<Item = Result<Slot, BroadcastStreamRecvError>> {
+    pub fn subscribe_slot(&self) -> impl Stream<Item = Result<Slot, BroadcastStreamRecvError>> {
         BroadcastStream::new(self.slot_sender.subscribe())
     }
 
