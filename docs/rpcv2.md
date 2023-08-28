@@ -114,7 +114,7 @@ Method calls:
   - [getvoteaccounts](https://docs.solana.com/api/http#getvoteaccounts) not in geyser plugin no other possibility. First call to add
   - [getrecentperformancesamples](https://docs.solana.com/api/http#getrecentperformancesamples) not in geyser plugin
 
-##### Block - slot recent data
+##### Consensus - slot recent data
  - [getslot](https://docs.solana.com/api/http#getslot) Need top add 2 new commitment level for first shred seen and half confirm (1/3 of the stake has voted on the block)
  - [getBlockHeight](https://docs.solana.com/api/http#getblockheight)
  - [getblocktime](https://docs.solana.com/api/http#getblocktime) based on voting. Algo to define
@@ -124,7 +124,7 @@ Method calls:
  - [isblockhashvalid](https://docs.solana.com/api/http#isblockhashvalid)
  - [getblockcommitment](https://docs.solana.com/api/http#getblockcommitment) only for the last 150 blocks. Based on vote aggregation. Constructed from votes and stake. Algo to define
 
-##### Transaction
+##### Send transaction
  - [sendtransaction](https://docs.solana.com/api/http#sendtransaction) done by Lite-RPC
  - [gettransaction](https://docs.solana.com/api/http#gettransaction) need shred transaction and not only the confirmed one.
  - [getsignaturestatuses](https://docs.solana.com/api/http#getsignaturestatuses) not in Faithful rpc api
@@ -295,84 +295,27 @@ Algo:
  - batch the Tx:  wait 50 ms to accumullate send Tx
  - send the batch to the TPU port of the current slot leader and next slot leader
 
-###### getSignatureStatuses
-    - Returns the statuses of a list of signatures. Each signature must be a txid, the first signature of a transaction.
 
-info: Unless the searchTransactionHistory configuration parameter is included, this method only searches the recent status cache of signatures, which retains statuses for all active slots plus MAX_RECENT_BLOCKHASHES rooted slots.
+#### Domain Consensus
+This domain concerns the connected validator activity. It get and process data that are generated inside the validator (LeaderSchedule) or concerning current block processing (update stake account).
 
-    - Parameters:
-        * An optional array of transaction signatures to confirm, as base-58 encoded strings (up to a maximum of 256)
-        * Configuration optional object containing the following fields:
-        * searchTransactionHistory bool optional: if true - a Solana node will search its ledger cache for any signatures not found in the recent status cache
-    
-    - Result: An array of RpcResponse<object> consisting of either:
-        * <null> - Unknown transaction, or
-        * <object>
-            * slot: <u64> - The slot the transaction was processed
-            * confirmations: <usize|null> - Number of blocks since signature confirmation, null if rooted, as well as finalized by a supermajority of the cluster
-            * err: <object|null> - Error if transaction failed, null if transaction succeeded. See TransactionError definitions
-            * confirmationStatus: <string|null> - The transaction's cluster confirmation status; Either processed, confirmed, or finalized. See Commitment for more on optimistic confirmation.
-            * DEPRECATED: status: <object> - Transaction status
-                "Ok": <null> - Transaction was successful
-                "Err": <ERR> - Transaction failed with TransactionError
+##### Data
+ * slot: a time interval during which a block can be produced by a leader.
+ * epoch: A set of slot that aggregate a set of processed data. The RPC server can manage 2 or more epoch. Define by the configuration.
+ * block: a block created by a leader and notified by the trusted validator geyser plugin.
+ * Commitment: a step in the block lifetime. Commitment managed are Processed, Confirmed, Finalized.
+ * Vote Tx: A tx that contains a vote for a block by a validator.
+ * A block Tx: the other non Vote Tx contains by a block.
+ * Tx account: the public address of an account involved in a Tx.
+ * Current data: Data that represent the state of Solana blockchain: current blocks, current slot, ...
 
-Sources:
-geyser plugin subscribe full block with Tx. The plugin must be changed to get *processed* status block notification.
 
-Discussion to avoid to send several time the same data, the processed block notification can only contains the signature hahs and not the content for example. 
+##### Modules
+ * Validator access: A trusted validator connected to the cluster. Provide the geyser plugin access
+ * Block Processing: Process each block pushed by the connected Validator geyser plugin.
+ * Block storage: Store the block and associated index for each managed epoch. Use as a cache to avoid to query history for pass epoch. That why the server can manage more than 2 epoch if the user wants more cache. All RPC history RPC call use this cache before queering the history.
 
-Algo:
-The Tx info of the managed epoch are store locally. The cashed Tx in memory correspond to the last MAX_RECENT_BLOCKHASHES (300) block processed.
-If the  searchTransactionHistory is set to true:
- * the local storage is search first
- * if not found the Faithful plugin is queried using getTransaction.
-
-###### getTransaction
-    - Returns transaction details for a confirmed transaction
-    - Parameters:
-        * Transaction signature, as base-58 encoded string
-        * Configuration optional object containing the following fields:
-            * commitment string optional
-            * maxSupportedTransactionVersion number optional: Set the max transaction version to return in responses. If the requested transaction is a higher version, an error will be returned. If this parameter is omitted, only legacy transactions will be returned, and any versioned transaction will prompt the error.
-            * encoding string optionalDefault: json, Encoding for the returned Transaction, Values: jsonjsonParsedbase64base58
-    - Result:
-        * <null> - if transaction is not found or not confirmed
-        * <object> - if transaction is confirmed, an object with the following fields:
-            * slot: <u64> - the slot this transaction was processed in
-            * transaction: <object|[string,encoding]> - Transaction object, either in JSON format or encoded binary data, depending on encoding parameter
-            * blockTime: <i64|null> - estimated production time, as Unix timestamp (seconds since the Unix epoch) of when the transaction was processed. null if not available
-            * meta: <object|null> - transaction status metadata object:
-                * err: <object|null> - Error if transaction failed, null if transaction succeeded. TransactionError definitions
-                * fee: <u64> - fee this transaction was charged, as u64 integer
-                * preBalances: <array> - array of u64 account balances from before the transaction was processed
-                * postBalances: <array> - array of u64 account balances after the transaction was processed
-                * innerInstructions: <array|null> - List of inner instructions or null if inner instruction recording was not enabled during this transaction
-                * preTokenBalances: <array|undefined> - List of token balances from before the transaction was processed or omitted if token balance recording was not yet enabled during this transaction
-                * postTokenBalances: <array|undefined> - List of token balances from after the transaction was processed or omitted if token balance recording was not yet enabled during this transaction
-                * logMessages: <array|null> - array of string log messages or null if log message recording was not enabled during this transaction
-                * DEPRECATED: status: <object> - Transaction status
-                    * "Ok": <null> - Transaction was successful
-                    * "Err": <ERR> - Transaction failed with TransactionError
-                * rewards: <array|null> - transaction-level rewards, populated if rewards are requested; an array of JSON objects containing:
-                    * pubkey: <string> - The public key, as base-58 encoded string, of the account that received the reward
-                    * lamports: <i64>- number of reward lamports credited or debited by the account, as a i64
-                    * postBalance: <u64> - account balance in lamports after the reward was applied
-                    * rewardType: <string> - type of reward: currently only "rent", other types may be added in the future
-                    * commission: <u8|undefined> - vote account commission when the reward was credited, only present for voting and staking rewards
-                * loadedAddresses: <object|undefined> - Transaction addresses loaded from address lookup tables. Undefined if maxSupportedTransactionVersion is not set in request params, or if jsonParsed encoding is set in request params.
-                    * writable: <array[string]> - Ordered list of base-58 encoded addresses for writable loaded accounts
-                    * readonly: <array[string]> - Ordered list of base-58 encoded addresses for readonly loaded accounts
-                * returnData: <object|undefined> - the most-recent return data generated by an instruction in the transaction, with the following fields:
-                    * programId: <string> - the program that generated the return data, as base-58 encoded Pubkey
-                    * data: <[string, encoding]> - the return data itself, as base-64 encoded binary data
-                * computeUnitsConsumed: <u64|undefined> - number of compute units consumed by the transaction
-            * version: <"legacy"|number|undefined> - Transaction version. Undefined if maxSupportedTransactionVersion is not set in request params.
-
-Sources
-For local epoch search in the storage, if not found use faithful plugin.
-
-Algo
-Search in the local storage then if not found in the history.
+##### Process
 
 ###### getRecentPrioritizationFees
     - Returns a list of prioritization fees from recent blocks. info: Currently, a node's prioritization-fee cache stores data from up to 150 blocks.
@@ -392,367 +335,6 @@ The last 150 blocks are cached so the default epoch storage is enough.
 Algo:
 
 Query the PrioritizationFeeCache like in the current Solana validator impl. The cache is updated by the full block notification process.
-
-
-#### Domain Block Processing
-This domain concerns the current blockchain activity. It integrate all the process done on produced block.
-
-##### Data
- * slot: a time interval during which a block can be produced by a leader.
- * epoch: A set of slot that aggregate a set of processed data. The RPC server can manage 2 or more epoch. Define by the configuration.
- * block: a block created by a leader and notified by the trusted validator geyser plugin.
- * Commitment: a step in the block lifetime. Commitment managed are Processed, Confirmed, Finalized.
- * Vote Tx: A tx that contains a vote for a block by a validator.
- * A block Tx: the other non Vote Tx contains by a block.
- * Tx account: the public address of an account involved in a Tx.
- * Current data: Data that represent the state of Solana blockchain: current blocks, current slot, ...
-
-
-##### Modules
- * Validator access: A trusted validator connected to the cluster. Provide the geyser plugin access
- * Block Processing: Process each block pushed by the connected Validator geyser plugin.
- * Block storage: Store the block and associated index for each managed epoch. Use as a cache to avoid to query history for pass epoch. That why the server can manage more than 2 epoch if the user wants more cache. All RPC history RPC call use this cache before queering the history.
-
-##### Process
-###### Block storage
-One database is created per epoch. This way went an epoch become to old, the db file are removed in one write access. It's the easier way to clean all epoch data (more than 1go of data).
-To query the data, all managed epoch database are open and the query is send to all database concerned by the query.
-
-For example if the getBLocks query overlap 2 epoch (define by the start and end slot), the query is processed on the 2 epoch database and the result aggregated. 
-
-The block storage provide a sort of cached data for all RPC calls. Database query is faster than Faythful service query.
-
-The storage is using a disk IO that are not very well optimized by Tokio. If will use its own thread to process query.
-
-###### Process block
-A block can be notified in 3 commitment. Each notified block are process before being stored. New block process depend on the other modules. For example Tx replay get newly confirmed Tx, getSignatureStatuses use a cache of MAX_RECENT_BLOCKHASHES Tx.
-Block process update local current data.
-
-The process block module cache the recent block to accelerate some other module processing (Tx domain for example). The size of the cache has to be defined.
-
-###### Change epoch
-When the epoch change, these actions are done:
- * update current data with new epoch one.
- * create ne epoch database
- * remove old epoch database
- * process notified epoch data from the geyser plugin: Vote accounts (Cluster domain), start/end slot, ...
-
-###### getslot
-    - Returns the slot that has reached the given or default commitment level
-    - Parameters:
-        * Configuration optional object containing the following fields:
-            * commitment string optional
-            * minContextSlot number optional: The minimum slot that the request can be evaluated at
-    - Result:
-        * <u64> - Current slot
-Sources:
-
-The geyser plugin slot subscription. In the current impl the processed commitment is not notified. Need the plugin in update.
-
-Algo:
-
-Current slot for all commitment are store in memory and updated by the geyser plugin slot subscription.
-
-###### getBlockHeight:
-    - Returns: the current block height of the 
-    - Configuration: object containing the following fields:
-        * commitment string optional
-        * minContextSlot number optional: The minimum slot that the request can be evaluated at
-    - Result:
-        * <u64> - Current block height
-
-Sources: geyser::get_block_height
-
-###### getBlockTime
-    - Returns the estimated production time of a block.
-
-info: Each validator reports their UTC time to the ledger on a regular interval by intermittently adding a timestamp to a Vote for a particular block. A requested block's time is calculated from the stake-weighted mean of the Vote timestamps in a set of recent blocks recorded on the ledger.
-    
-    - Parameters:
-        * block number u64, identified by Slot
-    - Result:
-        * <i64> - estimated production time, as Unix timestamp (seconds since the Unix epoch)
-
-Sources:
-
-Use block.blockTime value. Use local storage and history storage.
-
-
-Algo:
-
-Get the block and return the block.blockTime value.
-
-###### getFirstAvailableBlock
-
-    - Returns the slot of the lowest confirmed block that has not been purged from the ledger
-    - Parameters:
-        * None
-    - Result:
-        * <u64> - Slot
-
-Sources
-The faithful plugin if present or local storage.
-
-Algo
-If the faithful plugin is activated return the first block of Faiful history otherwise the first block of the first epoch store in the local storage.
-
-###### getLatestBlockhash
-    - Returns the latest blockhash
-    - Parameters:
-        * Configuration optional object containing the following fields:
-            * commitment string optional
-            * minContextSlot number optional:  The minimum slot that the request can be evaluated at
-    - Result:
-        * RpcResponse<object> - RpcResponse JSON object with value field set to a JSON object including:
-            * blockhash: <string> - a Hash as base-58 encoded string
-            * lastValidBlockHeight: <u64> - last block height at which the blockhash will be valid
-
-Sources:
-
-The geyser plugin. 
-
-Algo:
-
-Call geyser plugin.
-
-###### isBlockhashValid
-    - Returns whether a blockhash is still valid or not
-    - Parameters:
-        * the blockhash of the block to evauluate, as base-58 encoded string required
-        * Configuration optional object containing the following fields:
-            * commitment string optional
-            * minContextSlot number optional. The minimum slot that the request can be evaluated at
-    - Result:
-        * <bool> - true if the blockhash is still valid
-
-Sources:
-
-The geyser plugin. 
-
-Algo:
-
-Call geyser plugin.
-
-###### getBlockCommitment
-    - Returns commitment for particular block
-    - Parameters:
-        * block number u64, identified by Slot
-    - Result: The result field will be a JSON object containing:
-        * commitment - commitment, comprising either:
-            * <null> - Unknown block
-            * <array> - commitment, array of u64 integers logging the amount of cluster stake in lamports that has voted on the block at each depth from 0 to MAX_LOCKOUT_HISTORY + 1
-        * totalStake - total active stake, in lamports, of the current epoch
-
-Sources
-
-Need vote account and stake and vote tx to calculate the commitment on each block. See BlockCommitmentService::aggregate_commitment().
-
-For totalStake can be calculated or get from the epoch subscription.
-
-Need processed commitment in the block subscription.
-
-Algo
-
-Calculate the block commitment using the validator algo.
-
-
-#### Domain History
-This domain include all function related to get past data of the blockchain.
-
-The data of this domain is divided in 2 sources:
- * Faithful plugin history data access (yellowstone-faithful project). It contains all the block data associated to past finished epoch.
- * current epoch data: managed by the block processing module storage. It contains the current not finished epoch data + 1 (at least) epoch currently processed by Faithful plugin.
-
-##### Data
- * slot: a time interval during which a block can be produced by a leader.
- * epoch: A set of slot that aggregate a set of processed data (432,000 slots). The RPC server can manage 2 or more epoch. Define by the configuration.
-
-##### Process
-###### Query process
-Each call can get part or all the data from the block processing service or Faithful plugin. The common query pattern is:
- * query the block processing for the requested service.
- * if the query return an answer and doesn't need more data, the service return the anwser
- * query the Faithful plugin
- * Aggregate the 2 calls answer.
-
-###### getBlock
-    - Returns identity and transaction information about a confirmed block in the ledger
-    - Parameters:
-        * slot number, as u64 integer required
-        * Configuration optional object containing the following fields:
-            - commitment: string optional default: finalized processed is not supported.
-            - encoding string optional default: json
-            - encoding format for each returned Transaction, values: jsonjsonParsedbase58base64
-            - transactionDetails string optional default: full
-            - level of transaction detail to return, values: fullaccountssignaturesnone
-            - maxSupportedTransactionVersion number optional
-            - rewards bool optional, whether to populate the `rewards` array. If parameter not provided, the default includes rewards.
-Result:
-
-The result field will be an object with the following fields:
-
-    - <null> - if specified block is not confirmed
-    - <object> - if block is confirmed, an object with the following fields:
-        * blockhash: <string> - the blockhash of this block, as base-58 encoded string
-        * previousBlockhash: <string> - the blockhash of this block's parent, as base-58 encoded string; if the parent block is not available due to ledger cleanup, this field will return "11111111111111111111111111111111"
-        * parentSlot: <u64> - the slot index of this block's parent
-        * transactions: <array> - present if "full" transaction details are requested; an array of JSON objects containing:
-            - transaction: <object|[string,encoding]> - Transaction object, either in JSON format or encoded binary data, depending on encoding parameter
-            - meta: <object> - transaction status metadata object, containing null or:
-                - err: <object|null> - Error if transaction failed, null if transaction succeeded. TransactionError definitions
-                - fee: <u64> - fee this transaction was charged, as u64 integer
-                - preBalances: <array> - array of u64 account balances from before the transaction was processed
-                - postBalances: <array> - array of u64 account balances after the transaction was processed
-                - innerInstructions: <array|null> - List of inner instructions or null if inner instruction recording was not enabled during this transaction
-                - preTokenBalances: <array|undefined> - List of token balances from before the transaction was processed or omitted if token balance recording was not yet enabled during this transaction
-                - postTokenBalances: <array|undefined> - List of token balances from after the transaction was processed or omitted if token balance recording was not yet enabled during this transaction
-                - logMessages: <array|null> - array of string log messages or null if log message recording was not enabled during this transaction
-                - rewards: <array|null> - transaction-level rewards, populated if rewards are requested; an array of JSON objects containing:
-                    - pubkey: <string> - The public key, as base-58 encoded string, of the account that received the reward
-                    - lamports: <i64>- number of reward lamports credited or debited by the account, as a i64
-                    - postBalance: <u64> - account balance in lamports after the reward was applied
-                    - rewardType: <string|undefined> - type of reward: "fee", "rent", "voting", "staking"
-                    - commission: <u8|undefined> - vote account commission when the reward was credited, only present for voting and staking rewards
-                - DEPRECATED: status: <object> - Transaction status
-                    - "Ok": <null> - Transaction was successful
-                    - "Err": <ERR> - Transaction failed with TransactionError
-                - loadedAddresses: <object|undefined> - Transaction addresses loaded from address lookup tables. Undefined if maxSupportedTransactionVersion is not set in request params, or if jsonParsed encoding is set in request params.
-                    - writable: <array[string]> - Ordered list of base-58 encoded addresses for writable loaded accounts
-                    - readonly: <array[string]> - Ordered list of base-58 encoded addresses for readonly loaded accounts
-                - returnData: <object|undefined> - the most-recent return data generated by an instruction in the transaction, with the following fields:
-                    - programId: <string> - the program that generated the return data, as base-58 encoded Pubkey
-                    - data: <[string, encoding]> - the return data itself, as base-64 encoded binary data
-                - computeUnitsConsumed: <u64|undefined> - number of compute units consumed by the transaction
-            - version: <"legacy"|number|undefined> - Transaction version. Undefined if maxSupportedTransactionVersion is not set in request params.
-        * signatures: <array> - present if "signatures" are requested for transaction details; an array of signatures strings, corresponding to the transaction order in the block
-        * rewards: <array|undefined> - block-level rewards, present if rewards are requested; an array of JSON objects containing:
-            - pubkey: <string> - The public key, as base-58 encoded string, of the account that received the reward
-            - lamports: <i64>- number of reward lamports credited or debited by the account, as a i64
-            - postBalance: <u64> - account balance in lamports after the reward was applied
-            - rewardType: <string|undefined> - type of reward: "fee", "rent", "voting", "staking"
-            - commission: <u8|undefined> - vote account commission when the reward was credited, only present for voting and staking rewards
-        * blockTime: <i64|null> - estimated production time, as Unix timestamp (seconds since the Unix epoch). null if not available
-        * blockHeight: <u64|null> - the number of blocks beneath this block
-
-Sources: geyser::subscribe full block + Faithful service for old block
-
-Algo: 
- * subscribe to geyser full block. when a block is notified store it in the local storage.
- * if requested slot number is in the local storage epoch query the local storage, otherwise query Faithful history service.
-
-Return data (see: https://github.com/rpcpool/yellowstone-grpc/blob/master/yellowstone-grpc-proto/proto/solana-storage.proto):
-
-
-###### getblocks 
-    - Returns a list of confirmed blocks between two slots
-    - Parameters:
-        * start_slot, as u64 integer
-        * end_slot, as u64 integer (must be no more than 500,000 blocks higher than the `start_slot`)
-        * Configuration object optional containing the following fields:
-            - commitment string optionalDefault: finalized, "processed" is not supported
-
-    - Result: The result field will be an array of u64 integers listing confirmed blocks between start_slot and either end_slot - if provided, or latest confirmed block, inclusive. Max range allowed is 500,000 slots.
-
-Sources: not provided by Faithful service.
-Use geyser plugin to index current blocks. For history need block index. Can be managed by the RPC server or by Faithfull service.
-
-Algo: 
- - subscribe to geyser full block. when a block is notified store it in the local storage.
- - For current epoch query local storage is start and end slot are in the local storage epoch.
- - For history 2 possibilities:
-    * use Faithfull blocks index and query the index to get the slot list, the use getblock with the slots.
-    * implement the function in Faithfull plugin and use getblock with the slots.
-
-
-###### getSignaturesForAddress
-    - Returns signatures for confirmed transactions that include the given address in their accountKeys list. Returns signatures backwards in time from the provided signature or most recent confirmed block
-    - Parameters:
-        * Account address as base-58 encoded string required
-        * Configuration optionalobject containing the following fields:
-            * commitment string optional
-            * minContextSlot number optional, The minimum slot that the request can be evaluated at
-            * limit number optionalDefault: 1000 : maximum transaction signatures to return (between 1 and 1,000).
-            * before string optional: start searching backwards from this transaction signature. If not provided the search starts from the top of the highest max confirmed block.
-            * until string optional: search until this transaction signature, if found before limit reached
-    - Result: An array of <object>, ordered from newest to oldest transaction, containing transaction signature information with the following fields:
-        * signature: <string> - transaction signature as base-58 encoded string
-        * slot: <u64> - The slot that contains the block with the transaction
-        * err: <object|null> - Error if transaction failed, null if transaction succeeded. See TransactionError definitions for more info.
-        * memo: <string|null> - Memo associated with the transaction, null if no memo is present
-        * blockTime: <i64|null> - estimated production time, as Unix timestamp (seconds since the Unix epoch) of when transaction was processed. null if not available.
-        * confirmationStatus: <string|null> - The transaction's cluster confirmation status; Either processed, confirmed, or finalized. See Commitment for more on optimistic confirmation.
-
-Sources:
-
-Constructed from the full block notification. The block Tx signature are indexed for all account address for all managed epoch.
-
-Faithfull plugin for past transaction.
-
-Algos:
-
-Depending on the slot parameters, Query the local store and the faithful plugin and aggregate the result.
-
-Remarks:
-
-This function need some evolutions with the current implementation: 
-    - (V2 and better response time + pagination)
-    - Tx execution is not done in the same order on each validador. Need more investigation.
-    - get signature of not completed block is not indicated in the current API.
-    - order by block time should be better. Add a CommitmentLevel fields in the answer?
-    - can get the same signature twice (fork).
-
-
-#### Domain Cluster
-Manage all data related to the solana validator cluster.
-
-##### Data
- * Cluster: define at the beginning of the epoch all cluster's validator data (ip and port) 
- * Leader schedule: define for all epoch slot the validator that will be leader.
- * Epoch data: data related to the epoch.
- * Vote account: Account data (staking) at the beginning of the epoch for all account that can vote for the blocks.
-
-##### Process
-##### Cluster storage
-Store all cluster data per epoch like for block processing module.
-
-##### Cluster processing
-Process epoch data to extract cluster data (ex: Total staking from the vote accounts).
-
-See the CLuster RPC call to have more details.
-
-###### getclusternodes
-    - Returns information about all the nodes participating in the cluster
-    - Parameters: None
-    - Result: The result field will be an array of JSON objects, each with the following sub fields:
-        * pubkey: <string> - Node public key, as base-58 encoded string
-        * gossip: <string|null> - Gossip network address for the node
-        * tpu: <string|null> - TPU network address for the node
-        * rpc: <string|null> - JSON RPC network address for the node, or null if the JSON RPC service is not enabled
-        * version: <string|null> - The software version of the node, or null if the version information is not available
-        * featureSet: <u32|null > - The unique identifier of the node's feature set
-        * shredVersion: <u16|null> - The shred version the node has been configured to use
-
-Sources: not provided by geyser plugin.
-
-In Solana the cluster data are stored in the ClusterInfo share struct 
-
-1) Geyser (currently not accepted by Solana) :
-  * a) propose the same get_cluster_nodes impl to get the cluster a any time
-  * b) notify at the beginning of the epoch. Change the call name, enough for us but perhaps not for every user: change notifier to add a ClusterInfo notifier like BlockMetadataNotifier for block metadata.
-    Need to change the plugin interface, add notify_cluster_at_epoch. We can notify every time the cluster info is changed but not sure Solana will accept (too much data).
-2) Use gossip and use the GossipService impl like the bootstrap::start_gossip_node() function. Need to use ClusterInfo struct that use BankForks to get staked_nodes.
-For node info it seems that the stake is not needed. The gossip process is:
- * For shred data: crds_gossip::new_push_messages() -> crds::insert() that update peers with CrdsData::LegacyContactInfo(node). So by getting gossip message with LegacyContactInfo we can update the cluster node info.
- * For peers data. 
-    GossipService start ClusterInfo::Listen()
-    -> ClusterInfo::listen()
-    -> ClusterInfo::run_listen()
-    -> ClusterInfo::process_packets()
-    -> ClusterInfo::handle_batch_pull_responses(
-    -> ClusterInfo::handle_pull_response()
-    -> CrdsGossip::filter_pull_responses()
-    -> crdsgossip_pull::filter_pull_responses()
-    -> crds::upserts() update the cluster table.
 
 
 ###### getepochinfo
@@ -847,6 +429,456 @@ Add a subscription method to geyser plugin the notify the current vote accounts 
 
 Source: not provided by geyser plugin.
 Add the same call to geyser plugin. The data can only be retrieve from the validator.
+
+
+
+###### getslot
+    - Returns the slot that has reached the given or default commitment level
+    - Parameters:
+        * Configuration optional object containing the following fields:
+            * commitment string optional
+            * minContextSlot number optional: The minimum slot that the request can be evaluated at
+    - Result:
+        * <u64> - Current slot
+Sources:
+
+The geyser plugin slot subscription. In the current impl the processed commitment is not notified. Need the plugin in update.
+
+Algo:
+
+Current slot for all commitment are store in memory and updated by the geyser plugin slot subscription.
+
+###### getBlockHeight:
+    - Returns: the current block height of the 
+    - Configuration: object containing the following fields:
+        * commitment string optional
+        * minContextSlot number optional: The minimum slot that the request can be evaluated at
+    - Result:
+        * <u64> - Current block height
+
+Sources: geyser::get_block_height
+
+###### getBlockTime
+    - Returns the estimated production time of a block.
+
+info: Each validator reports their UTC time to the ledger on a regular interval by intermittently adding a timestamp to a Vote for a particular block. A requested block's time is calculated from the stake-weighted mean of the Vote timestamps in a set of recent blocks recorded on the ledger.
+    
+    - Parameters:
+        * block number u64, identified by Slot
+    - Result:
+        * <i64> - estimated production time, as Unix timestamp (seconds since the Unix epoch)
+
+Sources:
+
+Use block.blockTime value. Use local storage and history storage.
+
+
+Algo:
+
+Get the block and return the block.blockTime value.
+
+###### getFirstAvailableBlock
+
+    - Returns the slot of the lowest confirmed block that has not been purged from the ledger
+    - Parameters:
+        * None
+    - Result:
+        * <u64> - Slot
+
+Sources
+The faithful plugin if present or local storage.
+
+Algo
+If the faithful plugin is activated return the first block of Faiful history otherwise the first block of the first epoch store in the local storage.
+
+###### getLatestBlockhash
+    - Returns the latest blockhash
+    - Parameters:
+        * Configuration optional object containing the following fields:
+            * commitment string optional
+            * minContextSlot number optional:  The minimum slot that the request can be evaluated at
+    - Result:
+        * RpcResponse<object> - RpcResponse JSON object with value field set to a JSON object including:
+            * blockhash: <string> - a Hash as base-58 encoded string
+            * lastValidBlockHeight: <u64> - last block height at which the blockhash will be valid
+
+Sources:
+
+The geyser plugin. 
+
+Algo:
+
+Call geyser plugin.
+
+###### isBlockhashValid
+    - Returns whether a blockhash is still valid or not
+    - Parameters:
+        * the blockhash of the block to evaluate, as base-58 encoded string required
+        * Configuration optional object containing the following fields:
+            * commitment string optional
+            * minContextSlot number optional. The minimum slot that the request can be evaluated at
+    - Result:
+        * <bool> - true if the blockhash is still valid
+
+Sources:
+
+The geyser plugin. 
+
+Algo:
+
+Call geyser plugin.
+
+#### Domain History
+This domain include all function related to get past data of the blockchain.
+
+If manage block/Tx at confirmed/finalized commitment.
+
+The data of this domain is divided in 2 sources:
+ * Faithful plugin history data access (yellowstone-faithful project). It contains all the block data associated to past finished epoch.
+ * current epoch data: managed by the block processing module storage. It contains the current not finished epoch data + 1 (at least) epoch currently processed by Faithful plugin.
+
+##### Data
+ * slot: a time interval during which a block can be produced by a leader.
+ * epoch: A set of slot that aggregate a set of processed data (432,000 slots). The RPC server can manage 2 or more epoch. Define by the configuration.
+
+##### storage
+Only finalized data are store. Confirmed data are store in a cache until it get finalized. If the data hasn't been finalized after sometime it's removed.
+
+One database is created per epoch. This way went an epoch become to old, the db file are removed in one write access. It's the easier way to clean all epoch data (more than 1go of data).
+
+To query the data, all managed epoch database are open and the query is send to all database concerned by the query.
+
+For example if the getBLocks query overlap 2 epoch (define by the start and end slot), the query is processed on the 2 epoch database and the result aggregated. 
+
+The storage is using a disk IO that are not very well optimized by Tokio. If will use its own thread to process query.
+
+###### Data Model
+For the first impl, we'll use Key/value store to store finalized data.
+
+Confirmed data will be cached using a LRU cache. When a data is finalized the cache is updated before the storage udpate.
+
+2 key/value collection will defined:
+ * Block collection:
+    - Data: `solana_transaction_status::EncodedConfirmedBlock` 
+    - indexes: 
+        - slot -> Block
+ * Tx collection:
+    - Data: `solana_transaction_status::EncodedTransactionWithStatusMeta`
+    - Indexes:
+        - Tx sign -> Tx
+        - Tx slot -> Vec<Tx>
+        - account -> Vec<Tx>
+ 
+
+###### Change epoch
+When the epoch change, these actions are done:
+ * update current data with new epoch one.
+ * create ne epoch database
+ * remove old epoch database
+ * process notified epoch data from the geyser plugin: Vote accounts (Cluster domain), start/end slot, ...
+
+
+##### Process
+###### Query process
+Each call can get part or all the data from the block processing service or Faithful plugin. The common query pattern is:
+ * query the block processing for the requested service.
+ * if the query return an answer and doesn't need more data, the service return the anwser
+ * query the Faithful plugin
+ * Aggregate the 2 calls answer.
+
+###### getBlock
+    - Returns identity and transaction information about a confirmed block in the ledger
+    - Parameters:
+        * slot number, as u64 integer required
+        * Configuration optional object containing the following fields:
+            - commitment: string optional default: finalized processed is not supported.
+            - encoding string optional default: json
+            - encoding format for each returned Transaction, values: jsonjsonParsedbase58base64
+            - transactionDetails string optional default: full
+            - level of transaction detail to return, values: fullaccountssignaturesnone
+            - maxSupportedTransactionVersion number optional
+            - rewards bool optional, whether to populate the `rewards` array. If parameter not provided, the default includes rewards.
+Result:
+
+The result field will be an object with the following fields:
+
+    - <null> - if specified block is not confirmed
+    - <object> - if block is confirmed, an object with the following fields:
+        * blockhash: <string> - the blockhash of this block, as base-58 encoded string
+        * previousBlockhash: <string> - the blockhash of this block's parent, as base-58 encoded string; if the parent block is not available due to ledger cleanup, this field will return "11111111111111111111111111111111"
+        * parentSlot: <u64> - the slot index of this block's parent
+        * transactions: <array> - present if "full" transaction details are requested; an array of JSON objects containing:
+            - transaction: <object|[string,encoding]> - Transaction object, either in JSON format or encoded binary data, depending on encoding parameter
+            - meta: <object> - transaction status metadata object, containing null or:
+                - err: <object|null> - Error if transaction failed, null if transaction succeeded. TransactionError definitions
+                - fee: <u64> - fee this transaction was charged, as u64 integer
+                - preBalances: <array> - array of u64 account balances from before the transaction was processed
+                - postBalances: <array> - array of u64 account balances after the transaction was processed
+                - innerInstructions: <array|null> - List of inner instructions or null if inner instruction recording was not enabled during this transaction
+                - preTokenBalances: <array|undefined> - List of token balances from before the transaction was processed or omitted if token balance recording was not yet enabled during this transaction
+                - postTokenBalances: <array|undefined> - List of token balances from after the transaction was processed or omitted if token balance recording was not yet enabled during this transaction
+                - logMessages: <array|null> - array of string log messages or null if log message recording was not enabled during this transaction
+                - rewards: <array|null> - transaction-level rewards, populated if rewards are requested; an array of JSON objects containing:
+                    - pubkey: <string> - The public key, as base-58 encoded string, of the account that received the reward
+                    - lamports: <i64>- number of reward lamports credited or debited by the account, as a i64
+                    - postBalance: <u64> - account balance in lamports after the reward was applied
+                    - rewardType: <string|undefined> - type of reward: "fee", "rent", "voting", "staking"
+                    - commission: <u8|undefined> - vote account commission when the reward was credited, only present for voting and staking rewards
+                - DEPRECATED: status: <object> - Transaction status
+                    - "Ok": <null> - Transaction was successful
+                    - "Err": <ERR> - Transaction failed with TransactionError
+                - loadedAddresses: <object|undefined> - Transaction addresses loaded from address lookup tables. Undefined if maxSupportedTransactionVersion is not set in request params, or if jsonParsed encoding is set in request params.
+                    - writable: <array[string]> - Ordered list of base-58 encoded addresses for writable loaded accounts
+                    - readonly: <array[string]> - Ordered list of base-58 encoded addresses for readonly loaded accounts
+                - returnData: <object|undefined> - the most-recent return data generated by an instruction in the transaction, with the following fields:
+                    - programId: <string> - the program that generated the return data, as base-58 encoded Pubkey
+                    - data: <[string, encoding]> - the return data itself, as base-64 encoded binary data
+                - computeUnitsConsumed: <u64|undefined> - number of compute units consumed by the transaction
+            - version: <"legacy"|number|undefined> - Transaction version. Undefined if maxSupportedTransactionVersion is not set in request params.
+        * signatures: <array> - present if "signatures" are requested for transaction details; an array of signatures strings, corresponding to the transaction order in the block
+        * rewards: <array|undefined> - block-level rewards, present if rewards are requested; an array of JSON objects containing:
+            - pubkey: <string> - The public key, as base-58 encoded string, of the account that received the reward
+            - lamports: <i64>- number of reward lamports credited or debited by the account, as a i64
+            - postBalance: <u64> - account balance in lamports after the reward was applied
+            - rewardType: <string|undefined> - type of reward: "fee", "rent", "voting", "staking"
+            - commission: <u8|undefined> - vote account commission when the reward was credited, only present for voting and staking rewards
+        * blockTime: <i64|null> - estimated production time, as Unix timestamp (seconds since the Unix epoch). null if not available
+        * blockHeight: <u64|null> - the number of blocks beneath this block
+
+Sources: geyser::subscribe full block + Faithful service for old block
+
+Algo: 
+ * subscribe to geyser full block. when a block is notified store it in the local storage.
+ * if requested slot number is in the local storage epoch query the local storage, otherwise query Faithful history service.
+
+Return data (see: https://github.com/rpcpool/yellowstone-grpc/blob/master/yellowstone-grpc-proto/proto/solana-storage.proto):
+
+###### getblocks 
+    - Returns a list of confirmed blocks between two slots
+    - Parameters:
+        * start_slot, as u64 integer
+        * end_slot, as u64 integer (must be no more than 500,000 blocks higher than the `start_slot`)
+        * Configuration object optional containing the following fields:
+            - commitment string optionalDefault: finalized, "processed" is not supported
+
+    - Result: The result field will be an array of u64 integers listing confirmed blocks between start_slot and either end_slot - if provided, or latest confirmed block, inclusive. Max range allowed is 500,000 slots.
+
+Sources: not provided by Faithful service.
+Use geyser plugin to index current blocks. For history need block index. Can be managed by the RPC server or by Faithfull service.
+
+Algo: 
+ - subscribe to geyser full block. when a block is notified store it in the local storage.
+ - For current epoch query local storage is start and end slot are in the local storage epoch.
+ - For history 2 possibilities:
+    * use Faithfull blocks index and query the index to get the slot list, the use getblock with the slots.
+    * implement the function in Faithfull plugin and use getblock with the slots.
+
+###### getTransaction
+    - Returns transaction details for a confirmed transaction
+    - Parameters:
+        * Transaction signature, as base-58 encoded string
+        * Configuration optional object containing the following fields:
+            * commitment string optional
+            * maxSupportedTransactionVersion number optional: Set the max transaction version to return in responses. If the requested transaction is a higher version, an error will be returned. If this parameter is omitted, only legacy transactions will be returned, and any versioned transaction will prompt the error.
+            * encoding string optionalDefault: json, Encoding for the returned Transaction, Values: jsonjsonParsedbase64base58
+    - Result:
+        * <null> - if transaction is not found or not confirmed
+        * <object> - if transaction is confirmed, an object with the following fields:
+            * slot: <u64> - the slot this transaction was processed in
+            * transaction: <object|[string,encoding]> - Transaction object, either in JSON format or encoded binary data, depending on encoding parameter
+            * blockTime: <i64|null> - estimated production time, as Unix timestamp (seconds since the Unix epoch) of when the transaction was processed. null if not available
+            * meta: <object|null> - transaction status metadata object:
+                * err: <object|null> - Error if transaction failed, null if transaction succeeded. TransactionError definitions
+                * fee: <u64> - fee this transaction was charged, as u64 integer
+                * preBalances: <array> - array of u64 account balances from before the transaction was processed
+                * postBalances: <array> - array of u64 account balances after the transaction was processed
+                * innerInstructions: <array|null> - List of inner instructions or null if inner instruction recording was not enabled during this transaction
+                * preTokenBalances: <array|undefined> - List of token balances from before the transaction was processed or omitted if token balance recording was not yet enabled during this transaction
+                * postTokenBalances: <array|undefined> - List of token balances from after the transaction was processed or omitted if token balance recording was not yet enabled during this transaction
+                * logMessages: <array|null> - array of string log messages or null if log message recording was not enabled during this transaction
+                * DEPRECATED: status: <object> - Transaction status
+                    * "Ok": <null> - Transaction was successful
+                    * "Err": <ERR> - Transaction failed with TransactionError
+                * rewards: <array|null> - transaction-level rewards, populated if rewards are requested; an array of JSON objects containing:
+                    * pubkey: <string> - The public key, as base-58 encoded string, of the account that received the reward
+                    * lamports: <i64>- number of reward lamports credited or debited by the account, as a i64
+                    * postBalance: <u64> - account balance in lamports after the reward was applied
+                    * rewardType: <string> - type of reward: currently only "rent", other types may be added in the future
+                    * commission: <u8|undefined> - vote account commission when the reward was credited, only present for voting and staking rewards
+                * loadedAddresses: <object|undefined> - Transaction addresses loaded from address lookup tables. Undefined if maxSupportedTransactionVersion is not set in request params, or if jsonParsed encoding is set in request params.
+                    * writable: <array[string]> - Ordered list of base-58 encoded addresses for writable loaded accounts
+                    * readonly: <array[string]> - Ordered list of base-58 encoded addresses for readonly loaded accounts
+                * returnData: <object|undefined> - the most-recent return data generated by an instruction in the transaction, with the following fields:
+                    * programId: <string> - the program that generated the return data, as base-58 encoded Pubkey
+                    * data: <[string, encoding]> - the return data itself, as base-64 encoded binary data
+                * computeUnitsConsumed: <u64|undefined> - number of compute units consumed by the transaction
+            * version: <"legacy"|number|undefined> - Transaction version. Undefined if maxSupportedTransactionVersion is not set in request params.
+
+Sources
+For local epoch search in the storage, if not found use faithful plugin.
+
+Algo
+Search in the local storage then if not found in the history.
+
+###### getSignaturesForAddress
+    - Returns signatures for confirmed transactions that include the given address in their accountKeys list. Returns signatures backwards in time from the provided signature or most recent confirmed block
+    - Parameters:
+        * Account address as base-58 encoded string required
+        * Configuration optionalobject containing the following fields:
+            * commitment string optional
+            * minContextSlot number optional, The minimum slot that the request can be evaluated at
+            * limit number optionalDefault: 1000 : maximum transaction signatures to return (between 1 and 1,000).
+            * before string optional: start searching backwards from this transaction signature. If not provided the search starts from the top of the highest max confirmed block.
+            * until string optional: search until this transaction signature, if found before limit reached
+    - Result: An array of <object>, ordered from newest to oldest transaction, containing transaction signature information with the following fields:
+        * signature: <string> - transaction signature as base-58 encoded string
+        * slot: <u64> - The slot that contains the block with the transaction
+        * err: <object|null> - Error if transaction failed, null if transaction succeeded. See TransactionError definitions for more info.
+        * memo: <string|null> - Memo associated with the transaction, null if no memo is present
+        * blockTime: <i64|null> - estimated production time, as Unix timestamp (seconds since the Unix epoch) of when transaction was processed. null if not available.
+        * confirmationStatus: <string|null> - The transaction's cluster confirmation status; Either processed, confirmed, or finalized. See Commitment for more on optimistic confirmation.
+
+Sources:
+
+Constructed from the full block notification. The block Tx signature are indexed for all account address for all managed epoch.
+
+Faithfull plugin for past transaction.
+
+Algos:
+
+Depending on the slot parameters, Query the local store and the faithful plugin and aggregate the result.
+
+Remarks:
+
+This function need some evolutions with the current implementation: 
+    - (V2 and better response time + pagination)
+    - Tx execution is not done in the same order on each validador. Need more investigation.
+    - get signature of not completed block is not indicated in the current API.
+    - order by block time should be better. Add a CommitmentLevel fields in the answer?
+    - can get the same signature twice (fork).
+
+
+### Domain Cluster
+Manage all data related to the solana validator cluster.
+
+##### Data
+ * Cluster: define at the beginning of the epoch all cluster's validator data (ip and port) 
+ * Leader schedule: define for all epoch slot the validator that will be leader.
+ * Epoch data: data related to the epoch.
+ * Vote account: Account data (staking) at the beginning of the epoch for all account that can vote for the blocks.
+
+##### Process
+##### Cluster storage
+Store all cluster data per epoch like for block processing module.
+
+##### Cluster processing
+Process epoch data to extract cluster data (ex: Total staking from the vote accounts).
+
+See the CLuster RPC call to have more details.
+
+###### getclusternodes
+    - Returns information about all the nodes participating in the cluster
+    - Parameters: None
+    - Result: The result field will be an array of JSON objects, each with the following sub fields:
+        * pubkey: <string> - Node public key, as base-58 encoded string
+        * gossip: <string|null> - Gossip network address for the node
+        * tpu: <string|null> - TPU network address for the node
+        * rpc: <string|null> - JSON RPC network address for the node, or null if the JSON RPC service is not enabled
+        * version: <string|null> - The software version of the node, or null if the version information is not available
+        * featureSet: <u32|null > - The unique identifier of the node's feature set
+        * shredVersion: <u16|null> - The shred version the node has been configured to use
+
+Sources: not provided by geyser plugin.
+
+In Solana the cluster data are stored in the ClusterInfo share struct 
+
+1) Geyser (currently not accepted by Solana) :
+  * a) propose the same get_cluster_nodes impl to get the cluster a any time
+  * b) notify at the beginning of the epoch. Change the call name, enough for us but perhaps not for every user: change notifier to add a ClusterInfo notifier like BlockMetadataNotifier for block metadata.
+    Need to change the plugin interface, add notify_cluster_at_epoch. We can notify every time the cluster info is changed but not sure Solana will accept (too much data).
+2) Use gossip and use the GossipService impl like the bootstrap::start_gossip_node() function. Need to use ClusterInfo struct that use BankForks to get staked_nodes.
+For node info it seems that the stake is not needed. The gossip process is:
+ * For shred data: crds_gossip::new_push_messages() -> crds::insert() that update peers with CrdsData::LegacyContactInfo(node). So by getting gossip message with LegacyContactInfo we can update the cluster node info.
+ * For peers data. 
+    GossipService start ClusterInfo::Listen()
+    -> ClusterInfo::listen()
+    -> ClusterInfo::run_listen()
+    -> ClusterInfo::process_packets()
+    -> ClusterInfo::handle_batch_pull_responses(
+    -> ClusterInfo::handle_pull_response()
+    -> CrdsGossip::filter_pull_responses()
+    -> crdsgossip_pull::filter_pull_responses()
+    -> crds::upserts() update the cluster table.
+
+#### Cross domain Consensus/History
+
+Some function are implemented inside several domain. THe main reason is because the RPC call aggregate teh 2 domains.
+The concerned doma in are:
+ * Consensus for answer at process
+ * History for answer at confirm and finalized.
+
+###### getSignatureStatuses
+    - Returns the statuses of a list of signatures. Each signature must be a txid, the first signature of a transaction.
+
+info: Unless the searchTransactionHistory configuration parameter is included, this method only searches the recent status cache of signatures, which retains statuses for all active slots plus MAX_RECENT_BLOCKHASHES rooted slots.
+
+    - Parameters:
+        * An optional array of transaction signatures to confirm, as base-58 encoded strings (up to a maximum of 256)
+        * Configuration optional object containing the following fields:
+        * searchTransactionHistory bool optional: if true - a Solana node will search its ledger cache for any signatures not found in the recent status cache
+    
+    - Result: An array of RpcResponse<object> consisting of either:
+        * <null> - Unknown transaction, or
+        * <object>
+            * slot: <u64> - The slot the transaction was processed
+            * confirmations: <usize|null> - Number of blocks since signature confirmation, null if rooted, as well as finalized by a supermajority of the cluster
+            * err: <object|null> - Error if transaction failed, null if transaction succeeded. See TransactionError definitions
+            * confirmationStatus: <string|null> - The transaction's cluster confirmation status; Either processed, confirmed, or finalized. See Commitment for more on optimistic confirmation.
+            * DEPRECATED: status: <object> - Transaction status
+                "Ok": <null> - Transaction was successful
+                "Err": <ERR> - Transaction failed with TransactionError
+
+Sources:
+For consensus domain:
+
+geyser plugin subscribe full block with Tx. The plugin must be changed to get *processed* status block notification or subscribe to Tx at process.
+
+For history:
+
+Get the data from the storage and confirm cache.
+
+Algo:
+The Tx info of the managed epoch are store locally. The cashed Tx in memory correspond to the last MAX_RECENT_BLOCKHASHES (300) block processed.
+If the  searchTransactionHistory is set to true:
+ * the local storage is search first
+ * if not found the Faithful plugin is queried using getTransaction.
+
+
+###### getBlockCommitment
+    - Returns commitment for particular block
+    - Parameters:
+        * block number u64, identified by Slot
+    - Result: The result field will be a JSON object containing:
+        * commitment - commitment, comprising either:
+            * <null> - Unknown block
+            * <array> - commitment, array of u64 integers logging the amount of cluster stake in lamports that has voted on the block at each depth from 0 to MAX_LOCKOUT_HISTORY + 1
+        * totalStake - total active stake, in lamports, of the current epoch
+
+Sources
+
+For block in Consensus.
+Need vote account and stake and vote tx to calculate the commitment on each block. See BlockCommitmentService::aggregate_commitment().
+
+For totalStake can be calculated or get from the epoch subscription.
+
+Need processed commitment in the block subscription.
+
+For block in history with confirm and finalized commitment, the answer is the stored commitment.
+
+Algo
+
+Calculate the block commitment using the validator algo.
+
 
 
 #### Domain bootstrap
