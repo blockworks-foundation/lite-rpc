@@ -166,7 +166,7 @@ pub fn poll_block(
     let (block_schedule_queue_sx, block_schedule_queue_rx) =
         async_channel::unbounded::<(Slot, CommitmentConfig)>();
 
-    for _i in 0..8 {
+    for _i in 0..16 {
         let block_notification_sender = block_notification_sender.clone();
         let rpc_client = rpc_client.clone();
         let block_schedule_queue_rx = block_schedule_queue_rx.clone();
@@ -187,7 +187,7 @@ pub fn poll_block(
                         // schedule to get finalized commitment
                         if commitment_config.commitment != CommitmentLevel::Finalized {
                             let retry_at = tokio::time::Instant::now()
-                                .checked_add(Duration::from_secs(5))
+                                .checked_add(Duration::from_secs(2))
                                 .unwrap();
                             slot_retry_queue_sx
                                 .send(((slot, CommitmentConfig::finalized()), retry_at))
