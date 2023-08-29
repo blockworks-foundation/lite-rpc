@@ -155,7 +155,11 @@ impl TransactionService {
         };
         let signature = tx.signatures[0];
 
-        let Some(BlockInformation { slot, last_valid_blockheight, .. }) = self
+        let Some(BlockInformation {
+            slot,
+            last_valid_blockheight,
+            ..
+        }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {
