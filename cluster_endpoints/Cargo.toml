@@ -34,4 +34,5 @@ rustls = { workspace = true }
 async-trait = { workspace = true }
 derive_more = "0.99.17"
 
+async-channel = { workspace = true }
 solana-lite-rpc-core = { workspace = true }

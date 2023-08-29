@@ -4207,6 +4207,7 @@ name = "solana-lite-rpc-cluster-endpoints"
 version = "0.2.2"
 dependencies = [
  "anyhow",
+ "async-channel",
  "async-trait",
  "base64 0.21.0",
  "bincode",
