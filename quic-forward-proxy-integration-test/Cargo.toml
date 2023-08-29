@@ -1,5 +1,5 @@
 [package]
-name = "integration-test"
+name = "solana-lite-rpc-quic-forward-proxy-integration-test"
 version = "0.1.0"
 edition = "2021"
 description = "Integration test for quic proxy "
