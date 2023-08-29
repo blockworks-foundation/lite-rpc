@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{structures::{processed_block::ProcessedBlock, transaction_info::TransactionInfo, slot_notification::SlotNotification}, AnyhowJoinHandle, AtomicSlot};
 use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{slot_history::Slot, commitment_config::CommitmentConfig, compute_budget::{self, ComputeBudgetInstruction}, borsh::try_from_slice_unchecked};
+use solana_sdk::{slot_history::Slot, commitment_config::{CommitmentConfig, CommitmentLevel}, compute_budget::{self, ComputeBudgetInstruction}, borsh::try_from_slice_unchecked};
 use solana_transaction_status::{TransactionDetails, UiTransactionEncoding, UiTransactionStatusMeta, option_serializer::OptionSerializer, RewardType};
 use anyhow::{Context, bail};
 use tokio::sync::broadcast::{Sender, Receiver};
@@ -160,11 +160,11 @@ pub fn poll_block(rpc_client: Arc<RpcClient>, block_notification_sender: Sender<
                     Some(processed_block) => {
                         block_notification_sender.send(processed_block).context("Processed block should be sent")?;
                         // schedule to get finalized commitment
-                        if commitment_config != CommitmentConfig::finalized() {
+                        if commitment_config.commitment != CommitmentLevel::Finalized {
                             let retry_at = tokio::time::Instant::now()
                             .checked_add(Duration::from_secs(5))
                             .unwrap();
-                            slot_retry_queue_sx.send(((slot, CommitmentConfig::finalized()), retry_at)).context("should be able to rescheduled for replay")?;
+                            slot_retry_queue_sx.send(((slot, CommitmentConfig::finalized()), retry_at)).context("Failed to reschedule fetch of finalized block")?;
                         }
                     },
                     None => {
@@ -209,6 +209,8 @@ pub fn poll_block(rpc_client: Arc<RpcClient>, block_notification_sender: Sender<
     //slot poller
     let slot_poller = tokio::spawn(async move {
         log::info!("block listner started");
+        let current_slot = rpc_client.get_slot().await.context("Should get current slot")?;
+        recent_slot.store(current_slot, std::sync::atomic::Ordering::Relaxed);
         let mut slot_notification = slot_notification;
         loop {
             let SlotNotification{
@@ -217,7 +219,7 @@ pub fn poll_block(rpc_client: Arc<RpcClient>, block_notification_sender: Sender<
             } = slot_notification.recv().await.context("Should get slot notification")?;
             let last_slot = recent_slot.load(std::sync::atomic::Ordering::Relaxed);
             if last_slot < estimated_processed_slot {
-                recent_slot.store(last_slot, std::sync::atomic::Ordering::Relaxed);
+                recent_slot.store(estimated_processed_slot, std::sync::atomic::Ordering::Relaxed);
                 for slot in last_slot+1..estimated_processed_slot+1 {
                     block_schedule_queue_sx.send((slot, CommitmentConfig::confirmed())).await.context("Should be able to schedule message")?;
                 };
