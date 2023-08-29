@@ -1,12 +1,10 @@
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
 
-use crate::AtomicSlot;
 use crate::structures::slot_notification::SlotNotification;
 use crate::subscription_store::SubscriptionStore;
-use crate::{
-    block_information_store::BlockInformationStore, tx_store::TxStore,
-};
+use crate::AtomicSlot;
+use crate::{block_information_store::BlockInformationStore, tx_store::TxStore};
 
 pub type TxSubKey = (String, CommitmentConfig);
 
@@ -46,11 +44,18 @@ impl SlotCache {
     }
 
     pub fn get_estimated_slot(&self) -> Slot {
-        self.estimated_slot.load(std::sync::atomic::Ordering::Relaxed)
+        self.estimated_slot
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn update(&self, slot_notification: SlotNotification) {
-        self.current_slot.store(slot_notification.processed_slot, std::sync::atomic::Ordering::Relaxed);
-        self.estimated_slot.store(slot_notification.estimated_processed_slot, std::sync::atomic::Ordering::Relaxed);
+        self.current_slot.store(
+            slot_notification.processed_slot,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        self.estimated_slot.store(
+            slot_notification.estimated_processed_slot,
+            std::sync::atomic::Ordering::Relaxed,
+        );
     }
 }

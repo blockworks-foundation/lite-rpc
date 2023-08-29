@@ -15,7 +15,9 @@ use solana_lite_rpc_core::{
     cluster_info::ClusterInfo, data_cache::DataCache, leader_schedule::LeaderSchedule,
     notifications::NotificationSender, AnyhowJoinHandle,
 };
-use solana_lite_rpc_services::{spawner::Spawner, tx_service::TxServiceConfig, data_caching_service::DataCachingService};
+use solana_lite_rpc_services::{
+    data_caching_service::DataCachingService, spawner::Spawner, tx_service::TxServiceConfig,
+};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Keypair;
 use std::env;
@@ -122,7 +124,8 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         data_cache: data_cache.clone(),
         notification_channel,
     };
-    let (subscriptions, cluster_endpoint_tasks) = create_json_rpc_polling_subscription(rpc_client.clone())?;
+    let (subscriptions, cluster_endpoint_tasks) =
+        create_json_rpc_polling_subscription(rpc_client.clone())?;
 
     let cluster_info = ClusterInfo::default();
     let cluster_info_jh: AnyhowJoinHandle = {
@@ -161,8 +164,8 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
                                 slot_notification.estimated_processed_slot,
                             )
                             .await?;
-                    },
-                    Err(e)=> {
+                    }
+                    Err(e) => {
                         bail!("Error updating leader schdule {e:?}");
                     }
                 }
@@ -171,10 +174,13 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     };
 
     // data caching service
-    let data_caching_service = DataCachingService{
-        data_cache: data_cache.clone()
+    let data_caching_service = DataCachingService {
+        data_cache: data_cache.clone(),
     };
-    let data_caching_service_jhs = data_caching_service.listen(subscriptions.blocks_notifier.resubscribe(), subscriptions.slot_notifier.resubscribe());
+    let data_caching_service_jhs = data_caching_service.listen(
+        subscriptions.blocks_notifier.resubscribe(),
+        subscriptions.slot_notifier.resubscribe(),
+    );
 
     // start services
     let vote_account_notifier = subscriptions.vote_account_notifier.resubscribe();

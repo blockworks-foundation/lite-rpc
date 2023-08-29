@@ -1,4 +1,6 @@
-use solana_lite_rpc_core::structures::{processed_block::ProcessedBlock, slot_notification::SlotNotification};
+use solana_lite_rpc_core::structures::{
+    processed_block::ProcessedBlock, slot_notification::SlotNotification,
+};
 use solana_rpc_client_api::response::{RpcContactInfo, RpcVoteAccountStatus};
 use tokio::sync::broadcast::Receiver;
 pub struct EndpointStreaming {

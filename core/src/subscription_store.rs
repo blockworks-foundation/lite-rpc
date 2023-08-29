@@ -7,7 +7,7 @@ use tokio::time::Instant;
 use solana_rpc_client_api::response::{Response as RpcResponse, RpcResponseContext};
 
 use crate::data_cache::TxSubKey;
-use crate::processed_block::TransactionInfo;
+use crate::structures::transaction_info::TransactionInfo;
 use crate::subscription_sink::SubscriptionSink;
 
 pub type Subscriber = (Box<dyn SubscriptionSink>, Instant);

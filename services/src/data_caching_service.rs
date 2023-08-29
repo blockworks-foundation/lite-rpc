@@ -1,8 +1,8 @@
 use anyhow::bail;
-use solana_lite_rpc_core::{AnyhowJoinHandle, structures::slot_notification::SlotNotification};
 use solana_lite_rpc_core::block_information_store::BlockMeta;
 use solana_lite_rpc_core::data_cache::DataCache;
 use solana_lite_rpc_core::structures::processed_block::ProcessedBlock;
+use solana_lite_rpc_core::{structures::slot_notification::SlotNotification, AnyhowJoinHandle};
 use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
@@ -86,7 +86,7 @@ impl DataCachingService {
                 match slot_notification.recv().await {
                     Ok(slot_notification) => {
                         data_cache.slot_cache.update(slot_notification);
-                    },
+                    }
                     Err(e) => {
                         bail!("Error in slot notification {e:?}");
                     }
