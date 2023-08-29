@@ -13,9 +13,9 @@ use solana_lite_rpc_cluster_endpoints::{
 };
 use solana_lite_rpc_core::{
     cluster_info::ClusterInfo, data_cache::DataCache, leader_schedule::LeaderSchedule,
-    notifications::NotificationSender, slot_clock::SlotClock, AnyhowJoinHandle,
+    notifications::NotificationSender, AnyhowJoinHandle,
 };
-use solana_lite_rpc_services::{spawner::Spawner, tx_service::TxServiceConfig};
+use solana_lite_rpc_services::{spawner::Spawner, tx_service::TxServiceConfig, data_caching_service::DataCachingService};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Keypair;
 use std::env;
@@ -110,11 +110,6 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         bail!("Error connecting to rpc client {e:?}");
     }
 
-    let current_slot = rpc_client
-        .get_slot()
-        .await
-        .expect("RpcClient should get slot");
-
     // setup ledger
     let data_cache = DataCache::default();
 
@@ -127,7 +122,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         data_cache: data_cache.clone(),
         notification_channel,
     };
-    let subscriptions = create_json_rpc_polling_subscription()?;
+    let (subscriptions, cluster_endpoint_tasks) = create_json_rpc_polling_subscription(rpc_client.clone())?;
 
     let cluster_info = ClusterInfo::default();
     let cluster_info_jh: AnyhowJoinHandle = {
@@ -149,30 +144,37 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         rpc_client: rpc_client.clone(),
     });
 
-    let slot_clock = SlotClock::new(current_slot);
-
     // leader schedule
     let leader_schedule = Arc::new(LeaderSchedule::new(1024, leader_getter, cluster_info));
     let leader_schedule_update_task: AnyhowJoinHandle = {
         let leader_schedule = leader_schedule.clone();
-        let slot_clock = slot_clock.clone();
         let slot_subscription = subscriptions.slot_notifier.resubscribe();
         tokio::spawn(async move {
             let mut slot_subscription = slot_subscription;
             loop {
-                // update slot subscription
-                slot_clock
-                    .update_slots_from_subscription(&mut slot_subscription)
-                    .await;
-                leader_schedule
-                    .update_leader_schedule(
-                        slot_clock.get_current_slot(),
-                        slot_clock.get_estimated_slot(),
-                    )
-                    .await?;
+                let slot_notification = slot_subscription.recv().await;
+                match slot_notification {
+                    Ok(slot_notification) => {
+                        leader_schedule
+                            .update_leader_schedule(
+                                slot_notification.processed_slot,
+                                slot_notification.estimated_processed_slot,
+                            )
+                            .await?;
+                    },
+                    Err(e)=> {
+                        bail!("Error updating leader schdule {e:?}");
+                    }
+                }
             }
         })
     };
+
+    // data caching service
+    let data_caching_service = DataCachingService{
+        data_cache: data_cache.clone()
+    };
+    let data_caching_service_jhs = data_caching_service.listen(subscriptions.blocks_notifier.resubscribe(), subscriptions.slot_notifier.resubscribe());
 
     // start services
     let vote_account_notifier = subscriptions.vote_account_notifier.resubscribe();
@@ -188,6 +190,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     }
     .start(lite_rpc_http_addr, lite_rpc_ws_addr);
 
+    let cluster_endpoint_tasks = futures::future::select_all(cluster_endpoint_tasks);
     drop(subscriptions);
     tokio::select! {
         res = tx_services => {
@@ -207,6 +210,12 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         }
         res = leader_schedule_update_task => {
             anyhow::bail!("Leader schedule update task failed {res:?}")
+        }
+        res = futures::future::select_all(data_caching_service_jhs) => {
+            anyhow::bail!("Data caching service failed {res:?}")
+        }
+        res = cluster_endpoint_tasks => {
+            anyhow::bail!("cluster endpoint failure {res:?}")
         }
     }
 }

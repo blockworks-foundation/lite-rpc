@@ -92,8 +92,8 @@ impl TpuService {
     pub async fn update_leader_schedule(&self) -> anyhow::Result<()> {
         self.leader_schedule
             .update_leader_schedule(
-                self.data_cache.clock.get_current_slot(),
-                self.data_cache.clock.get_estimated_slot(),
+                self.data_cache.slot_cache.get_current_slot(),
+                self.data_cache.slot_cache.get_estimated_slot(),
             )
             .await?;
         NB_OF_LEADERS_IN_SCHEDULE.set(self.leader_schedule.len().await as i64);
@@ -101,8 +101,8 @@ impl TpuService {
     }
 
     async fn update_quic_connections(&self) {
-        let estimated_slot = self.data_cache.clock.get_estimated_slot();
-        let current_slot = self.data_cache.clock.get_current_slot();
+        let estimated_slot = self.data_cache.slot_cache.get_estimated_slot();
+        let current_slot = self.data_cache.slot_cache.get_current_slot();
 
         let load_slot = if estimated_slot <= current_slot {
             current_slot

@@ -206,7 +206,7 @@ impl LiteRpcServer for LiteBridge {
 
         Ok(RpcResponse {
             context: RpcResponseContext {
-                slot: self.data_cache.clock.get_current_slot(),
+                slot: self.data_cache.slot_cache.get_current_slot(),
                 api_version: None,
             },
             value: sig_statuses,
@@ -272,7 +272,7 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        Ok(self.data_cache.clock.get_current_slot())
+        Ok(self.data_cache.slot_cache.get_current_slot())
     }
 
     async fn signature_subscribe(

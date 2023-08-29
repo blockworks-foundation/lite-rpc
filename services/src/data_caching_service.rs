@@ -1,3 +1,5 @@
+use anyhow::bail;
+use solana_lite_rpc_core::{AnyhowJoinHandle, structures::slot_notification::SlotNotification};
 use solana_lite_rpc_core::block_information_store::BlockMeta;
 use solana_lite_rpc_core::data_cache::DataCache;
 use solana_lite_rpc_core::structures::processed_block::ProcessedBlock;
@@ -5,7 +7,6 @@ use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::sync::broadcast::Receiver;
-use tokio::task::JoinHandle;
 
 /// Get's ledger data from various services
 #[derive(Default)]
@@ -14,14 +15,15 @@ pub struct DataCachingService {
 }
 
 impl DataCachingService {
-    pub async fn listen(
+    pub fn listen(
         self,
         block_notifier: Receiver<ProcessedBlock>,
-    ) -> anyhow::Result<JoinHandle<()>> {
+        slot_notification: Receiver<SlotNotification>,
+    ) -> Vec<AnyhowJoinHandle> {
         // clone the ledger to move into the processor task
-        let data_cache = self.data_cache;
+        let data_cache = self.data_cache.clone();
         // process all the data into the ledger
-        let jh = tokio::spawn(async move {
+        let block_cache_jh = tokio::spawn(async move {
             let mut block_notifier = block_notifier;
             loop {
                 let ProcessedBlock {
@@ -76,6 +78,21 @@ impl DataCachingService {
                 }
             }
         });
-        Ok(jh)
+
+        let data_cache = self.data_cache;
+        let slot_cache_jh = tokio::spawn(async move {
+            let mut slot_notification = slot_notification;
+            loop {
+                match slot_notification.recv().await {
+                    Ok(slot_notification) => {
+                        data_cache.slot_cache.update(slot_notification);
+                    },
+                    Err(e) => {
+                        bail!("Error in slot notification {e:?}");
+                    }
+                }
+            }
+        });
+        vec![slot_cache_jh, block_cache_jh]
     }
 }

@@ -81,7 +81,7 @@ impl TxBatchFwd {
             );
         }
 
-        let forwarded_slot = self.data_cache.clock.get_estimated_slot();
+        let forwarded_slot = self.data_cache.slot_cache.get_estimated_slot();
         let forwarded_local_time = Utc::now();
 
         let mut quic_responses = vec![];

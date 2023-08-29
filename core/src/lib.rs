@@ -8,7 +8,6 @@ pub mod notifications;
 pub mod quic_connection;
 pub mod quic_connection_utils;
 pub mod rotating_queue;
-pub mod slot_clock;
 pub mod solana_utils;
 pub mod structures;
 pub mod subscription_sink;
