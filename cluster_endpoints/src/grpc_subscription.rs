@@ -1,4 +1,7 @@
-use crate::endpoint_stremers::EndpointStreaming;
+use crate::{
+    endpoint_stremers::EndpointStreaming,
+    rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
+};
 use anyhow::{bail, Context};
 use futures::StreamExt;
 use itertools::Itertools;
@@ -26,10 +29,11 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
+use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::prelude::{
-    subscribe_update::UpdateOneof, CommitmentLevel, RewardType as GrpcRewardType,
-    SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots, SubscribeUpdateBlock,
+    subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
+    SubscribeRequestFilterSlots, SubscribeUpdateBlock,
 };
 
 fn process_block(
@@ -82,7 +86,11 @@ fn process_block(
                 account_keys: message
                     .account_keys
                     .into_iter()
-                    .map(|key| Pubkey::new(&key))
+                    .map(|key| {
+                        let bytes: [u8; 32] =
+                            key.try_into().unwrap_or(Pubkey::default().to_bytes());
+                        Pubkey::new_from_array(bytes)
+                    })
                     .collect(),
                 recent_blockhash: Hash::new(&message.recent_blockhash),
                 instructions: message
@@ -97,10 +105,16 @@ fn process_block(
                 address_table_lookups: message
                     .address_table_lookups
                     .into_iter()
-                    .map(|table| MessageAddressTableLookup {
-                        account_key: Pubkey::new(&table.account_key),
-                        writable_indexes: table.writable_indexes,
-                        readonly_indexes: table.readonly_indexes,
+                    .map(|table| {
+                        let bytes: [u8; 32] = table
+                            .account_key
+                            .try_into()
+                            .unwrap_or(Pubkey::default().to_bytes());
+                        MessageAddressTableLookup {
+                            account_key: Pubkey::new_from_array(bytes),
+                            writable_indexes: table.writable_indexes,
+                            readonly_indexes: table.readonly_indexes,
+                        }
                     })
                     .collect(),
             });
@@ -156,7 +170,7 @@ fn process_block(
 
             Some(TransactionInfo {
                 signature: signature.to_string(),
-                err: err.clone(),
+                err,
                 status,
                 cu_requested,
                 prioritization_fees,
@@ -212,6 +226,70 @@ fn process_block(
     }
 }
 
+pub fn create_block_processing_task(
+    grpc_addr: String,
+    block_sx: Sender<ProcessedBlock>,
+    commitment_level: CommitmentLevel,
+) -> AnyhowJoinHandle {
+    let mut blocks_subs = HashMap::new();
+    blocks_subs.insert(
+        "client".to_string(),
+        SubscribeRequestFilterBlocks {
+            account_include: Default::default(),
+            include_transactions: Some(true),
+            include_accounts: Some(false),
+            include_entries: Some(false),
+        },
+    );
+
+    let commitment_config = match commitment_level {
+        CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
+        CommitmentLevel::Finalized => CommitmentConfig::finalized(),
+        CommitmentLevel::Processed => CommitmentConfig::processed(),
+    };
+
+    tokio::spawn(async move {
+        // connect to grpc
+        let mut client = GeyserGrpcClient::connect(grpc_addr, None::<&'static str>, None)?;
+        let mut stream = client
+            .subscribe_once(
+                HashMap::new(),
+                Default::default(),
+                HashMap::new(),
+                Default::default(),
+                blocks_subs,
+                Default::default(),
+                Some(commitment_level),
+                Default::default(),
+            )
+            .await?;
+
+        while let Some(message) = stream.next().await {
+            let message = message?;
+
+            let Some(update) = message.update_oneof else {
+                continue;
+            };
+
+            match update {
+                UpdateOneof::Block(block) => {
+                    let block = process_block(block, commitment_config);
+                    block_sx
+                        .send(block)
+                        .context("Grpc failed to send a block")?;
+                }
+                UpdateOneof::Ping(_) => {
+                    log::trace!("GRPC Ping");
+                }
+                k => {
+                    bail!("Unexpected update: {k:?}");
+                }
+            };
+        }
+        bail!("gyser slot stream ended");
+    })
+}
+
 pub async fn create_grpc_subscription(
     rpc_client: Arc<RpcClient>,
     grpc_addr: String,
@@ -224,17 +302,6 @@ pub async fn create_grpc_subscription(
 
     let mut slots = HashMap::new();
     slots.insert("client".to_string(), SubscribeRequestFilterSlots {});
-
-    let mut blocks_subs = HashMap::new();
-    blocks_subs.insert(
-        "client".to_string(),
-        SubscribeRequestFilterBlocks {
-            account_include: Default::default(),
-            include_transactions: Some(true),
-            include_accounts: Some(false),
-            include_entries: Some(false),
-        },
-    );
 
     let grpc_addr_cp = grpc_addr.clone();
     let slot_task: AnyhowJoinHandle = tokio::spawn(async move {
@@ -289,51 +356,16 @@ pub async fn create_grpc_subscription(
         bail!("gyser slot stream ended");
     });
 
-    let block_confirmed_task: AnyhowJoinHandle = {
-        let grpc_addr = grpc_addr.clone();
-        let block_sx = block_sx.clone();
-        let blocks_subs = blocks_subs;
-        tokio::spawn(async move {
-            // connect to grpc
-            let mut client = GeyserGrpcClient::connect(grpc_addr, None::<&'static str>, None)?;
-            let mut stream = client
-                .subscribe_once(
-                    HashMap::new(),
-                    Default::default(),
-                    HashMap::new(),
-                    Default::default(),
-                    blocks_subs,
-                    Default::default(),
-                    Some(CommitmentLevel::Confirmed),
-                    Default::default(),
-                )
-                .await?;
+    let block_confirmed_task: AnyhowJoinHandle = create_block_processing_task(
+        grpc_addr.clone(),
+        block_sx.clone(),
+        CommitmentLevel::Confirmed,
+    );
+    let block_finalized_task: AnyhowJoinHandle =
+        create_block_processing_task(grpc_addr, block_sx, CommitmentLevel::Finalized);
 
-            while let Some(message) = stream.next().await {
-                let message = message?;
-
-                let Some(update) = message.update_oneof else {
-                    continue;
-                };
-
-                match update {
-                    UpdateOneof::Block(block) => {
-                        let block = process_block(block, CommitmentConfig::confirmed());
-                        block_sx
-                            .send(block)
-                            .context("Grpc failed to send a block")?;
-                    }
-                    UpdateOneof::Ping(_) => {
-                        log::trace!("GRPC Ping");
-                    }
-                    k => {
-                        bail!("Unexpected update: {k:?}");
-                    }
-                };
-            }
-            bail!("gyser slot stream ended");
-        })
-    };
+    let cluster_info_polling =
+        poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
 
     let streamers = EndpointStreaming {
         blocks_notifier,
@@ -342,6 +374,11 @@ pub async fn create_grpc_subscription(
         vote_account_notifier,
     };
 
-    let endpoint_tasks = vec![slot_task, block_confirmed_task];
+    let endpoint_tasks = vec![
+        slot_task,
+        block_confirmed_task,
+        block_finalized_task,
+        cluster_info_polling,
+    ];
     Ok((streamers, endpoint_tasks))
 }
