@@ -50,7 +50,7 @@ pub async fn process_block(
 
     let Some(txs) = block.transactions else {
         return None;
-     };
+    };
 
     let blockhash = block.blockhash;
     let parent_slot = block.parent_slot;
@@ -58,15 +58,20 @@ pub async fn process_block(
     let txs = txs
         .into_iter()
         .filter_map(|tx| {
-            let Some(UiTransactionStatusMeta { err, compute_units_consumed ,.. }) = tx.meta else {
-            log::info!("Tx with no meta");
-            return None;
-        };
+            let Some(UiTransactionStatusMeta {
+                err,
+                compute_units_consumed,
+                ..
+            }) = tx.meta
+            else {
+                log::info!("Tx with no meta");
+                return None;
+            };
 
             let Some(tx) = tx.transaction.decode() else {
-            log::info!("Tx could not be decoded");
-            return None;
-        };
+                log::info!("Tx could not be decoded");
+                return None;
+            };
 
             let signature = tx.signatures[0].to_string();
             let cu_consumed = match compute_units_consumed {
