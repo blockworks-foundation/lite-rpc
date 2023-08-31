@@ -1,8 +1,8 @@
 [package]
-name = "solana-lite-rpc-services"
+name = "solana-lite-rpc-cluster-endpoints"
 version = "0.2.3"
 edition = "2021"
-description = "Services used by solana lite rpc"
+description = "Core classes and methods used by solana lite rpc"
 rust-version = "1.67.1"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
@@ -26,22 +26,15 @@ thiserror = { workspace = true }
 futures = { workspace = true }
 bytes = { workspace = true }
 anyhow = { workspace = true }
-itertools = { workspace = true }
-async-trait = { workspace = true }
 log = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 dashmap = { workspace = true }
-prometheus = { workspace = true }
-lazy_static = { workspace = true }
-async-channel = { workspace = true }
 quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
+async-trait = { workspace = true }
+derive_more = "0.99.17"
+async-channel = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
-
-[dev-dependencies]
-tracing = { workspace = true }
-# note: version 0.5.6 has a known bug
-crossbeam-channel = "0.5.6"
-countmap = "0.2.0"
+yellowstone-grpc-client = { workspace = true }
+yellowstone-grpc-proto = { workspace = true }
+itertools = {workspace = true}

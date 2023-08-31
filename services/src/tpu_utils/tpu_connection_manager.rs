@@ -6,7 +6,7 @@ use solana_lite_rpc_core::{
     quic_connection::QuicConnectionPool,
     quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
     rotating_queue::RotatingQueue,
-    structures::identity_stakes::IdentityStakes,
+    structures::identity_stakes::IdentityStakesData,
     tx_store::TxStore,
 };
 use solana_sdk::pubkey::Pubkey;
@@ -73,7 +73,7 @@ impl ActiveConnection {
         transaction_reciever: Receiver<(String, Vec<u8>)>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         addr: SocketAddr,
-        identity_stakes: IdentityStakes,
+        identity_stakes: IdentityStakesData,
         txs_sent_store: TxStore,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
@@ -178,7 +178,7 @@ impl ActiveConnection {
         &self,
         transaction_reciever: Receiver<(String, Vec<u8>)>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
-        identity_stakes: IdentityStakes,
+        identity_stakes: IdentityStakesData,
     ) {
         let addr = self.tpu_address;
         let txs_sent_store = self.txs_sent_store.clone();
@@ -226,7 +226,7 @@ impl TpuConnectionManager {
         &self,
         broadcast_sender: Arc<Sender<(String, Vec<u8>)>>,
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
-        identity_stakes: IdentityStakes,
+        identity_stakes: IdentityStakesData,
         txs_sent_store: TxStore,
         connection_parameters: QuicConnectionParameters,
     ) {

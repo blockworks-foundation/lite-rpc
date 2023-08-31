@@ -5,7 +5,7 @@ use log::{debug, error, info, trace, warn};
 
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::solana_utils::SerializableTransaction;
-use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
+use solana_lite_rpc_core::structures::identity_stakes::IdentityStakesData;
 use solana_lite_rpc_core::tx_store::empty_tx_store;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
 use solana_sdk::hash::Hash;
@@ -499,7 +499,7 @@ async fn start_literpc_client_direct_mode(
 
     // get information about the optional validator identity stake
     // populated from get_stakes_for_identity()
-    let identity_stakes = IdentityStakes {
+    let identity_stakes = IdentityStakesData {
         peer_type: ConnectionPeerType::Staked,
         stakes: if test_case_params.stake_connection {
             30
@@ -599,7 +599,7 @@ async fn start_literpc_client_proxy_mode(
 
     // get information about the optional validator identity stake
     // populated from get_stakes_for_identity()
-    let _identity_stakes = IdentityStakes {
+    let _identity_stakes = IdentityStakesData {
         peer_type: ConnectionPeerType::Staked,
         stakes: if test_case_params.stake_connection {
             30

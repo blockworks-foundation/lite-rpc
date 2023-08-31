@@ -5,11 +5,12 @@ members = [
     "lite-rpc",
     "quic-forward-proxy",
     "quic-forward-proxy-integration-test",
+    "cluster-endpoints",
     "bench"
 ]
 
 [workspace.package]
-version = "0.2.2"
+version = "0.2.3"
 authors = ["gmgalactus <gmgalactus@mango.markets>", "Aniket Prajapati <contact@aniketprajapati.me>"]
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
@@ -51,6 +52,10 @@ dotenv = "0.15.0"
 async-channel = "1.8.0"
 quinn = "0.9.3"
 rustls = { version = "=0.20.8", default-features = false }
-solana-lite-rpc-services = {path = "services", version="0.2.2"}
-solana-lite-rpc-core = {path = "core", version="0.2.2"}
+solana-lite-rpc-services = {path = "services", version="0.2.3"}
+solana-lite-rpc-core = {path = "core", version="0.2.3"}
+solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.3"}
+
 async-trait = "0.1.68"
+yellowstone-grpc-client = "1.9.0"
+yellowstone-grpc-proto = "1.9.0"
