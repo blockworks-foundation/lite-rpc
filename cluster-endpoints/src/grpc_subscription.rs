@@ -286,7 +286,7 @@ pub fn create_block_processing_task(
     })
 }
 
-pub async fn create_grpc_subscription(
+pub fn create_grpc_subscription(
     rpc_client: Arc<RpcClient>,
     grpc_addr: String,
     expected_grpc_version: String,

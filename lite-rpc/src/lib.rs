@@ -34,3 +34,9 @@ pub const DEFAULT_RETRY_TIMEOUT: u64 = 2;
 pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 5 * 60 * 1000; // five minute
 pub const DEFAULT_TRANSACTION_CONFIRMATION_STATUS: TransactionConfirmationStatus =
     TransactionConfirmationStatus::Finalized;
+
+#[from_env]
+pub const DEFAULT_GRPC_ADDR: &str = "http://127.0.0.0:10000";
+
+#[from_env]
+pub const GRPC_VERSION: &str = "1.16.1";
