@@ -51,7 +51,7 @@ impl JsonRpcLeaderGetter {
                 .get_slot_leaders(first_slot_to_fetch, last_slot_needed - first_slot_to_fetch)
                 .await
                 .context("failed to get slot leaders")?;
-            
+
             for leader_slot in first_slot_to_fetch..last_slot_needed {
                 let current_leader = (leader_slot - first_slot_to_fetch) as usize;
                 let pubkey = leaders[current_leader];

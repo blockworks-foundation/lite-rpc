@@ -5,10 +5,10 @@ use std::time::Duration;
 use anyhow::bail;
 use clap::Parser;
 use dotenv::dotenv;
-use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
 use lite_rpc::postgres::Postgres;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
+use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
 
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
@@ -120,8 +120,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
 
     // rpc client
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
-    let (subscriptions, cluster_endpoint_tasks) = if use_grpc 
-    {
+    let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?
     } else {
         create_json_rpc_polling_subscription(rpc_client.clone())?
