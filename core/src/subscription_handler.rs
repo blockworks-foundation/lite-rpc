@@ -7,7 +7,7 @@ use solana_sdk::{
 };
 use tokio::time::Instant;
 
-use crate::{block_processor::TransactionInfo, subscription_sink::SubscriptionSink};
+use crate::{structures::processed_block::TransactionInfo, subscription_sink::SubscriptionSink};
 
 pub type SubscptionHanderSink = Arc<dyn SubscriptionSink>;
 

@@ -1,5 +1,6 @@
 use crate::{
-    DEFAULT_FANOUT_SIZE, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR, MAX_RETRIES,
+    DEFAULT_FANOUT_SIZE, DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
+    DEFAULT_WS_ADDR, MAX_RETRIES,
 };
 use clap::Parser;
 
@@ -31,4 +32,9 @@ pub struct Args {
     pub transaction_retry_after_secs: u64,
     #[arg(long)]
     pub experimental_quic_proxy_addr: Option<String>,
+    #[arg(short = 'g', long)]
+    pub use_grpc: bool,
+    /// grpc address
+    #[arg(long, default_value_t = String::from(DEFAULT_GRPC_ADDR))]
+    pub grpc_addr: String,
 }
