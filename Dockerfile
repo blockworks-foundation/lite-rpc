@@ -1,6 +1,6 @@
 # syntax = docker/dockerfile:1.2
 FROM rust:1.67.1 as base
-RUN cargo install cargo-chef
+RUN cargo install cargo-chef --locked
 RUN rustup component add rustfmt
 RUN apt-get update && apt-get install -y clang cmake ssh
 WORKDIR /app
