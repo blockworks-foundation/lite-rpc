@@ -10,6 +10,16 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features:
 
+## [0.2.3] - 
+
+commit : TODO
+
+- core : Refactored out solana rpc client from the core library.
+- services : Refactored out solana rpc client from the services library.
+- cluster-endpoints : Created cluster endpoint library and added rpc polling
+- cluster-endpoints : Added grpc support in cluster endpoints.
+- proxy : Added lite-rpc quic proxy which will act as a TPU forwarding proxy for multiple lite-rpc clients.
+
 ## [0.2.2] - 2023-06-23
 
 commit : 70eb250b103c64a0e5a3159c9493e87003d046a4
@@ -51,3 +61,5 @@ Initial release.
 - core: Core library,
 - services: Services library
 - lite-rpc: The lite rpc binary
+- cluster-endpoints : Cluster endpoints library.
+- proxy : Lite-rpc QUIC proxy to act as a forwarder
