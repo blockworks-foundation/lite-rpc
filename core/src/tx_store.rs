@@ -25,9 +25,12 @@ pub struct TxStore {
 }
 
 impl TxStore {
-    pub fn update_status(&self, signature: &str, status: TransactionStatus) {
+    pub fn update_status(&self, signature: &str, status: TransactionStatus) -> bool {
         if let Some(mut meta) = self.store.get_mut(signature) {
             meta.status = Some(status);
+            true
+        } else {
+            false
         }
     }
 

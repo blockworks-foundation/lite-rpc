@@ -1,6 +1,8 @@
 use std::time::Duration;
 
 use anyhow::{bail, Context};
+use prometheus::core::GenericGauge;
+use prometheus::{register_int_gauge, opts, IntCounter, register_int_counter};
 use solana_lite_rpc_core::block_information_store::BlockInformation;
 use solana_lite_rpc_core::data_cache::DataCache;
 use solana_lite_rpc_core::streams::{
@@ -9,6 +11,27 @@ use solana_lite_rpc_core::streams::{
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
+
+
+lazy_static::lazy_static! {
+    static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_nb_cluster_nodes", "Number of cluster nodes in saved")).unwrap();
+
+    static ref CURRENT_SLOT: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_current_slot", "Current slot seen by last rpc")).unwrap();
+
+    static ref ESTIMATED_SLOT: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
+
+    static ref TXS_CONFIRMED: IntCounter =
+    register_int_counter!(opts!("literpc_txs_confirmed", "Number of Transactions Confirmed")).unwrap();
+    
+    static ref TXS_FINALIZED: IntCounter =
+    register_int_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
+    
+    static ref TXS_PROCESSED: IntCounter =
+    register_int_counter!(opts!("literpc_txs_processed", "Number of Transactions Processed")).unwrap();
+}
 
 pub struct DataCachingService {
     pub data_cache: DataCache,
@@ -40,12 +63,13 @@ impl DataCachingService {
 
                 let confirmation_status = match block.commitment_config.commitment {
                     CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
-                    _ => TransactionConfirmationStatus::Confirmed,
+                    CommitmentLevel::Confirmed => TransactionConfirmationStatus::Confirmed,
+                    _ => TransactionConfirmationStatus::Processed,
+
                 };
 
                 for tx in block.txs {
-                    //
-                    data_cache.txs.update_status(
+                    if data_cache.txs.update_status(
                         &tx.signature,
                         TransactionStatus {
                             slot: block.slot,
@@ -54,7 +78,20 @@ impl DataCachingService {
                             err: tx.err.clone(),
                             confirmation_status: Some(confirmation_status.clone()),
                         },
-                    );
+                    ) {
+                        // transaction updated
+                        match confirmation_status {
+                            TransactionConfirmationStatus::Finalized => {
+                                TXS_FINALIZED.inc();
+                            },
+                            TransactionConfirmationStatus::Confirmed => {
+                                TXS_CONFIRMED.inc();
+                            },
+                            TransactionConfirmationStatus::Processed => {
+                                TXS_PROCESSED.inc();
+                            },
+                        }
+                    }
                     // notify
                     data_cache
                         .tx_subs
@@ -70,6 +107,8 @@ impl DataCachingService {
             loop {
                 match slot_notification.recv().await {
                     Ok(slot_notification) => {
+                        CURRENT_SLOT.set(slot_notification.processed_slot as i64);
+                        ESTIMATED_SLOT.set(slot_notification.estimated_processed_slot as i64);
                         data_cache.slot_cache.update(slot_notification);
                     }
                     Err(e) => {
@@ -87,6 +126,7 @@ impl DataCachingService {
                     .cluster_info
                     .load_cluster_info(&mut cluster_info_notification)
                     .await?;
+                NB_CLUSTER_NODES.set(data_cache.cluster_info.cluster_nodes.len() as i64);
             }
         });
 
