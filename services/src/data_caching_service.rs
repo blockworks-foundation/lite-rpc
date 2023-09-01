@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use prometheus::core::GenericGauge;
-use prometheus::{register_int_gauge, opts, IntCounter, register_int_counter};
+use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter};
 use solana_lite_rpc_core::block_information_store::BlockInformation;
 use solana_lite_rpc_core::data_cache::DataCache;
 use solana_lite_rpc_core::streams::{
@@ -11,7 +11,6 @@ use solana_lite_rpc_core::streams::{
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
-
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -25,10 +24,10 @@ lazy_static::lazy_static! {
 
     static ref TXS_CONFIRMED: IntCounter =
     register_int_counter!(opts!("literpc_txs_confirmed", "Number of Transactions Confirmed")).unwrap();
-    
+
     static ref TXS_FINALIZED: IntCounter =
     register_int_counter!(opts!("literpc_txs_finalized", "Number of Transactions Finalized")).unwrap();
-    
+
     static ref TXS_PROCESSED: IntCounter =
     register_int_counter!(opts!("literpc_txs_processed", "Number of Transactions Processed")).unwrap();
 }
@@ -65,7 +64,6 @@ impl DataCachingService {
                     CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
                     CommitmentLevel::Confirmed => TransactionConfirmationStatus::Confirmed,
                     _ => TransactionConfirmationStatus::Processed,
-
                 };
 
                 for tx in block.txs {
@@ -83,13 +81,13 @@ impl DataCachingService {
                         match confirmation_status {
                             TransactionConfirmationStatus::Finalized => {
                                 TXS_FINALIZED.inc();
-                            },
+                            }
                             TransactionConfirmationStatus::Confirmed => {
                                 TXS_CONFIRMED.inc();
-                            },
+                            }
                             TransactionConfirmationStatus::Processed => {
                                 TXS_PROCESSED.inc();
-                            },
+                            }
                         }
                     }
                     // notify
