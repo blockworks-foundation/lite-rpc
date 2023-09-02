@@ -100,21 +100,6 @@ impl ProxyListener {
         loop {
             let maybe_stream = client_connection.accept_uni().await;
             match maybe_stream {
-                Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
-                    debug!("connection closed by client - reason: {:?}", reason);
-                    if reason.error_code != VarInt::from_u32(0) {
-                        return Err(anyhow!(
-                            "connection closed by client with unexpected reason: {:?}",
-                            reason
-                        ));
-                    }
-                    debug!("connection gracefully closed by client");
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!("failed to accept stream: {}", e);
-                    bail!("error accepting stream");
-                }
                 Ok(recv_stream) => {
                     let forwarder_channel_copy = forwarder_channel.clone();
                     tokio::spawn(async move {
@@ -167,6 +152,21 @@ impl ProxyListener {
                         "Inbound connection stats: {}",
                         connection_stats(&client_connection)
                     );
+                }
+                Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
+                    debug!("connection closed by client - reason: {:?}", reason);
+                    if reason.error_code != VarInt::from_u32(0) {
+                        return Err(anyhow!(
+                            "connection closed by client with unexpected reason: {:?}",
+                            reason
+                        ));
+                    }
+                    debug!("connection gracefully closed by client");
+                    return Ok(());
+                }
+                Err(e) => {
+                    error!("failed to accept stream: {}", e);
+                    bail!("error accepting stream");
                 }
             }; // -- result
         } // -- loop
