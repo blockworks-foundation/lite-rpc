@@ -6,7 +6,7 @@ use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use crate::util::FALLBACK_TIMEOUT;
 use anyhow::{anyhow, bail, Context};
 use log::{debug, error, info, trace, warn};
-use quinn::{Connection, Endpoint, ServerConfig, VarInt};
+use quinn::{Connecting, Endpoint, ServerConfig, VarInt};
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -46,8 +46,7 @@ impl ProxyListener {
         while let Some(connecting) = endpoint.accept().await {
             let forwarder_channel_copy = forwarder_channel.clone();
             tokio::spawn(async move {
-                let connection = connecting.await.context("handshake").unwrap();
-                match Self::accept_client_connection(connection, forwarder_channel_copy).await {
+                match Self::accept_client_connection(connecting, forwarder_channel_copy).await {
                     Ok(()) => {
                         debug!("connection handles correctly");
                     }
@@ -88,9 +87,11 @@ impl ProxyListener {
 
     #[tracing::instrument(skip_all, level = "debug")]
     async fn accept_client_connection(
-        client_connection: Connection,
+        client_conn_handshake: Connecting,
         forwarder_channel: Sender<ForwardPacket>,
     ) -> anyhow::Result<()> {
+        let client_connection = client_conn_handshake.await.context("handshake")?;
+
         debug!(
             "inbound connection established, client {}",
             client_connection.remote_address()
