@@ -32,36 +32,14 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::env;
 use std::sync::Arc;
+use solana_sdk::signature::Keypair;
 use tokio::sync::mpsc;
+use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 
 use crate::rpc_tester::RpcTester;
-
-async fn get_identity_keypair(identity_from_cli: &str) -> Keypair {
-    if let Ok(identity_env_var) = env::var("IDENTITY") {
-        if let Ok(identity_bytes) = serde_json::from_str::<Vec<u8>>(identity_env_var.as_str()) {
-            Keypair::from_bytes(identity_bytes.as_slice()).unwrap()
-        } else {
-            // must be a file
-            let identity_file = tokio::fs::read_to_string(identity_env_var.as_str())
-                .await
-                .expect("Cannot find the identity file provided");
-            let identity_bytes: Vec<u8> = serde_json::from_str(&identity_file).unwrap();
-            Keypair::from_bytes(identity_bytes.as_slice()).unwrap()
-        }
-    } else if identity_from_cli.is_empty() {
-        Keypair::new()
-    } else {
-        let identity_file = tokio::fs::read_to_string(identity_from_cli)
-            .await
-            .expect("Cannot find the identity file provided");
-        let identity_bytes: Vec<u8> = serde_json::from_str(&identity_file).unwrap();
-        Keypair::from_bytes(identity_bytes.as_slice()).unwrap()
-    }
-}
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -112,7 +90,8 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         ..
     } = args;
 
-    let validator_identity = Arc::new(get_identity_keypair(&identity_keypair).await);
+    let validator_identity = Arc::new(load_identity_keypair(&identity_keypair)
+        .await.unwrap_or_else(|| Keypair::new()));
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 

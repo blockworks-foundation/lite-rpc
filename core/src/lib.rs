@@ -13,5 +13,6 @@ pub mod structures;
 pub mod subscription_handler;
 pub mod subscription_sink;
 pub mod tx_store;
+pub mod keypair_loader;
 
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;
