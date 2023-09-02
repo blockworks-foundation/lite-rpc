@@ -106,7 +106,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         identity_keypair,
         maximum_retries_per_tx,
         transaction_retry_after_secs,
-        experimental_quic_proxy_addr,
+        quic_proxy_addr,
         use_grpc,
         grpc_addr,
         ..
@@ -116,7 +116,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 
-    let tpu_connection_path = configure_tpu_connection_path(experimental_quic_proxy_addr);
+    let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
     // rpc client
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
@@ -278,10 +278,8 @@ pub async fn main() -> anyhow::Result<()> {
     }
 }
 
-fn configure_tpu_connection_path(
-    experimental_quic_proxy_addr: Option<String>,
-) -> TpuConnectionPath {
-    match experimental_quic_proxy_addr {
+fn configure_tpu_connection_path(quic_proxy_addr: Option<String>) -> TpuConnectionPath {
+    match quic_proxy_addr {
         None => TpuConnectionPath::QuicDirectPath,
         Some(prox_address) => TpuConnectionPath::QuicForwardProxyPath {
             // e.g. "127.0.0.1:11111"

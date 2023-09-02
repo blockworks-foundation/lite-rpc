@@ -28,7 +28,7 @@ RUST_LOG=debug cargo run --bin solana-lite-rpc-quic-forward-proxy -- --proxy-lis
 ```
 2. run lite-rpc
 ```bash
-RUST_LOG=debug cargo run --bin lite-rpc -- --experimental-quic-proxy-addr 127.0.0.1:11111
+RUST_LOG=debug cargo run --bin lite-rpc -- --quic-proxy-addr 127.0.0.1:11111
 ```
 3. run rust bench tool in _lite-rpc_
 ```bash
