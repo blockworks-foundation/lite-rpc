@@ -283,7 +283,7 @@ fn configure_tpu_connection_path(quic_proxy_addr: Option<String>) -> TpuConnecti
         None => TpuConnectionPath::QuicDirectPath,
         Some(prox_address) => TpuConnectionPath::QuicForwardProxyPath {
             // e.g. "127.0.0.1:11111"
-            forward_proxy_address: prox_address.parse().unwrap(),
+            forward_proxy_address: prox_address.parse().expect("Invalid proxy address"),
         },
     }
 }
