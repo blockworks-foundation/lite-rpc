@@ -17,6 +17,7 @@ use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_po
 use solana_lite_rpc_core::block_information_store::{BlockInformation, BlockInformationStore};
 use solana_lite_rpc_core::cluster_info::ClusterInfo;
 use solana_lite_rpc_core::data_cache::{DataCache, SlotCache};
+use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::notifications::NotificationSender;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::streams::BlockStream;
@@ -32,12 +33,11 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::env;
 use std::sync::Arc;
-use solana_sdk::signature::Keypair;
 use tokio::sync::mpsc;
-use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 
 use crate::rpc_tester::RpcTester;
 
@@ -90,8 +90,11 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         ..
     } = args;
 
-    let validator_identity = Arc::new(load_identity_keypair(&identity_keypair)
-        .await.unwrap_or_else(|| Keypair::new()));
+    let validator_identity = Arc::new(
+        load_identity_keypair(&identity_keypair)
+            .await
+            .unwrap_or_else(Keypair::new),
+    );
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 

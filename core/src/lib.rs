@@ -1,6 +1,7 @@
 pub mod block_information_store;
 pub mod cluster_info;
 pub mod data_cache;
+pub mod keypair_loader;
 pub mod leaders_fetcher_trait;
 pub mod notifications;
 pub mod proxy_request_format;
@@ -13,6 +14,5 @@ pub mod structures;
 pub mod subscription_handler;
 pub mod subscription_sink;
 pub mod tx_store;
-pub mod keypair_loader;
 
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;

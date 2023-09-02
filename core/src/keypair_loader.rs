@@ -1,5 +1,5 @@
-use std::env;
 use solana_sdk::signature::Keypair;
+use std::env;
 
 // note this is duplicated from lite-rpc module
 pub async fn load_identity_keypair(identity_from_cli: &String) -> Option<Keypair> {
