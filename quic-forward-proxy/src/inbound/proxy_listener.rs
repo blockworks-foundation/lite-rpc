@@ -9,7 +9,6 @@ use log::{debug, error, info, trace, warn};
 use quinn::{Connection, Endpoint, ServerConfig, VarInt};
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
@@ -34,11 +33,7 @@ impl ProxyListener {
         }
     }
 
-    pub async fn listen(
-        &self,
-        exit_signal: Arc<AtomicBool>,
-        forwarder_channel: &Sender<ForwardPacket>,
-    ) -> anyhow::Result<()> {
+    pub async fn listen(&self, forwarder_channel: &Sender<ForwardPacket>) -> anyhow::Result<()> {
         info!(
             "TPU Quic Proxy server listening on {}",
             self.proxy_listener_addr
@@ -49,17 +44,10 @@ impl ProxyListener {
                 .await;
 
         while let Some(connecting) = endpoint.accept().await {
-            let exit_signal = exit_signal.clone();
             let forwarder_channel_copy = forwarder_channel.clone();
             tokio::spawn(async move {
                 let connection = connecting.await.context("handshake").unwrap();
-                match Self::accept_client_connection(
-                    connection,
-                    forwarder_channel_copy,
-                    exit_signal,
-                )
-                .await
-                {
+                match Self::accept_client_connection(connection, forwarder_channel_copy).await {
                     Ok(()) => {
                         debug!("connection handles correctly");
                     }
@@ -102,7 +90,6 @@ impl ProxyListener {
     async fn accept_client_connection(
         client_connection: Connection,
         forwarder_channel: Sender<ForwardPacket>,
-        _exit_signal: Arc<AtomicBool>,
     ) -> anyhow::Result<()> {
         debug!(
             "inbound connection established, client {}",
