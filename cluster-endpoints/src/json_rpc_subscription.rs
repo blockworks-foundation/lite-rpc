@@ -18,13 +18,8 @@ pub fn create_json_rpc_polling_subscription(
     let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(10);
     let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
 
-    let mut endpoint_tasks = vec![];
-    let slot_polling_task = tokio::spawn(poll_slots(
-        rpc_client.clone(),
-        CommitmentConfig::processed(),
-        slot_sx,
-    ));
-    endpoint_tasks.push(slot_polling_task);
+    let mut endpoint_tasks =
+        poll_slots(rpc_client.clone(), CommitmentConfig::processed(), slot_sx)?;
 
     let mut block_polling_tasks =
         poll_block(rpc_client.clone(), block_sx, slot_notifier.resubscribe());
