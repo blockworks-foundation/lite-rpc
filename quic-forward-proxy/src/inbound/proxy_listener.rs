@@ -46,13 +46,13 @@ impl ProxyListener {
         while let Some(connecting) = endpoint.accept().await {
             let forwarder_channel_copy = forwarder_channel.clone();
             tokio::spawn(async move {
-                match Self::accept_client_connection(connecting, forwarder_channel_copy).await {
+                match Self::handle_client_connection(connecting, forwarder_channel_copy).await {
                     Ok(()) => {
-                        debug!("connection handles correctly");
+                        debug!("connection handled correctly");
                     }
                     Err(err) => {
                         error!(
-                            "failed to accept connection from client: {reason} - skip",
+                            "failed handling connection from client: {reason} - skip",
                             reason = err
                         );
                     }
@@ -86,7 +86,7 @@ impl ProxyListener {
     }
 
     #[tracing::instrument(skip_all, level = "debug")]
-    async fn accept_client_connection(
+    async fn handle_client_connection(
         client_conn_handshake: Connecting,
         forwarder_channel: Sender<ForwardPacket>,
     ) -> anyhow::Result<()> {
