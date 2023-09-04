@@ -63,7 +63,7 @@ fn process_block(
             let signatures = transaction
                 .signatures
                 .into_iter()
-                .map(|sig| Signature::new(&sig))
+                .map(|sig| Signature::try_from(sig).expect("valid sig from tx"))
                 .collect_vec();
 
             let err = meta.err.map(|x| {
