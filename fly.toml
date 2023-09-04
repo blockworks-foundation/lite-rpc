@@ -5,6 +5,7 @@ kill_timeout = 5
 [env]
   PORT_HTTP = "8890"
   PORT_WS = "8891"
+  RUST_LOG = "info"
 
 [[services]]
   internal_port = 9000
