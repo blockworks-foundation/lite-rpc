@@ -4,20 +4,18 @@
 use std::time::Duration;
 
 use crate::{
-    block_listenser::BlockListener,
-    cleaner::Cleaner,
     tpu_utils::tpu_service::TpuService,
     transaction_replayer::{TransactionReplay, TransactionReplayer, MESSAGES_IN_REPLAY_QUEUE},
     tx_sender::{TransactionInfo, TxSender},
 };
 use anyhow::bail;
-use solana_lite_rpc_core::solana_utils::SerializableTransaction;
 use solana_lite_rpc_core::{
-    block_store::{BlockInformation, BlockStore},
+    block_information_store::{BlockInformation, BlockInformationStore},
     notifications::NotificationSender,
     AnyhowJoinHandle,
 };
-use solana_sdk::{commitment_config::CommitmentConfig, transaction::VersionedTransaction};
+use solana_lite_rpc_core::{solana_utils::SerializableTransaction, streams::SlotStream};
+use solana_sdk::transaction::VersionedTransaction;
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
     time::Instant,
@@ -27,7 +25,6 @@ use tokio::{
 pub struct TransactionServiceBuilder {
     tx_sender: TxSender,
     tx_replayer: TransactionReplayer,
-    block_listner: BlockListener,
     tpu_service: TpuService,
     max_nb_txs_in_queue: usize,
 }
@@ -36,7 +33,6 @@ impl TransactionServiceBuilder {
     pub fn new(
         tx_sender: TxSender,
         tx_replayer: TransactionReplayer,
-        block_listner: BlockListener,
         tpu_service: TpuService,
         max_nb_txs_in_queue: usize,
     ) -> Self {
@@ -44,7 +40,6 @@ impl TransactionServiceBuilder {
             tx_sender,
             tx_replayer,
             tpu_service,
-            block_listner,
             max_nb_txs_in_queue,
         }
     }
@@ -52,46 +47,26 @@ impl TransactionServiceBuilder {
     pub fn start(
         self,
         notifier: Option<NotificationSender>,
-        block_store: BlockStore,
+        block_store: BlockInformationStore,
         max_retries: usize,
+        slot_notifications: SlotStream,
     ) -> (TransactionService, AnyhowJoinHandle) {
         let (transaction_channel, tx_recv) = mpsc::channel(self.max_nb_txs_in_queue);
         let (replay_channel, replay_reciever) = tokio::sync::mpsc::unbounded_channel();
 
         let jh_services: AnyhowJoinHandle = {
             let tx_sender = self.tx_sender.clone();
-            let block_listner = self.block_listner.clone();
             let tx_replayer = self.tx_replayer.clone();
             let tpu_service = self.tpu_service.clone();
             let replay_channel_task = replay_channel.clone();
-            let block_store_t = block_store.clone();
 
             tokio::spawn(async move {
-                let tpu_service_fx = tpu_service.start();
+                let tpu_service_fx = tpu_service.start(slot_notifications);
 
                 let tx_sender_jh = tx_sender.clone().execute(tx_recv, notifier.clone());
 
                 let replay_service =
                     tx_replayer.start_service(replay_channel_task, replay_reciever);
-
-                let finalized_block_listener = block_listner.clone().listen(
-                    CommitmentConfig::finalized(),
-                    notifier.clone(),
-                    tpu_service.get_estimated_slot_holder(),
-                );
-
-                let confirmed_block_listener = block_listner.clone().listen(
-                    CommitmentConfig::confirmed(),
-                    None,
-                    tpu_service.get_estimated_slot_holder(),
-                );
-
-                let processed_block_listener = block_listner.clone().listen_processed();
-
-                // transactions get invalid in around 1 mins, because the block hash expires in 150 blocks so 150 * 400ms = 60s
-                // Setting it to two to give some margin of error / as not all the blocks are filled.
-                let cleaner = Cleaner::new(tx_sender.clone(), block_listner.clone(), block_store_t)
-                    .start(Duration::from_secs(120));
 
                 tokio::select! {
                     res = tpu_service_fx => {
@@ -100,20 +75,8 @@ impl TransactionServiceBuilder {
                     res = tx_sender_jh => {
                         bail!("Tx Sender {res:?}")
                     },
-                    res = finalized_block_listener => {
-                        bail!("Finalized Block Listener {res:?}")
-                    },
-                    res = confirmed_block_listener => {
-                        bail!("Confirmed Block Listener {res:?}")
-                    },
-                    res = processed_block_listener => {
-                        bail!("Processed Block Listener {res:?}")
-                    },
                     res = replay_service => {
                         bail!("Replay Service {res:?}")
-                    },
-                    res = cleaner => {
-                        bail!("Cleaner {res:?}")
                     },
                 }
             })
@@ -136,7 +99,7 @@ impl TransactionServiceBuilder {
 pub struct TransactionService {
     pub transaction_channel: Sender<TransactionInfo>,
     pub replay_channel: UnboundedSender<TransactionReplay>,
-    pub block_store: BlockStore,
+    pub block_store: BlockInformationStore,
     pub max_retries: usize,
     pub replay_after: Duration,
 }
@@ -155,7 +118,11 @@ impl TransactionService {
         };
         let signature = tx.signatures[0];
 
-        let Some(BlockInformation { slot, last_valid_blockheight, .. }) = self
+        let Some(BlockInformation {
+            slot,
+            last_valid_blockheight,
+            ..
+        }) = self
             .block_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {

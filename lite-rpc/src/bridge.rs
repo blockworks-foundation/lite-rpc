@@ -1,31 +1,19 @@
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
-    postgres::Postgres,
     rpc::LiteRpcServer,
-    DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
 };
 
 use solana_lite_rpc_services::{
-    block_listenser::BlockListener,
-    metrics_capture::MetricsCapture,
-    prometheus_sync::PrometheusSync,
-    tpu_utils::tpu_service::{TpuService, TpuServiceConfig},
-    transaction_replayer::TransactionReplayer,
-    transaction_service::{TransactionService, TransactionServiceBuilder},
-    tx_sender::WireTransaction,
-    tx_sender::{TxSender, TXS_IN_CHANNEL},
+    transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
-use log::{error, info};
+use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
-    block_store::{BlockInformation, BlockStore},
-    quic_connection_utils::QuicConnectionParameters,
-    tx_store::{empty_tx_store, TxStore},
-    AnyhowJoinHandle,
+    block_information_store::BlockInformation, data_cache::DataCache, AnyhowJoinHandle,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
@@ -33,17 +21,11 @@ use solana_rpc_client_api::{
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
-    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
-    slot_history::Slot,
+    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, slot_history::Slot,
 };
 use solana_transaction_status::TransactionStatus;
-use std::{ops::Deref, str::FromStr, sync::Arc, time::Duration};
-
-use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
-use tokio::{
-    net::ToSocketAddrs,
-    sync::mpsc::{self, Sender},
-};
+use std::{str::FromStr, sync::Arc};
+use tokio::net::ToSocketAddrs;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -64,185 +46,64 @@ lazy_static::lazy_static! {
 
 /// A bridge between clients and tpu
 pub struct LiteBridge {
-    pub rpc_client: Arc<RpcClient>,
-    pub tx_store: TxStore,
-    // None if LiteBridge is not executed
-    pub tx_send_channel: Option<Sender<(String, WireTransaction, u64)>>,
-    pub block_store: BlockStore,
-    pub max_retries: usize,
-    pub transaction_service_builder: TransactionServiceBuilder,
-    pub transaction_service: Option<TransactionService>,
-    pub block_listner: BlockListener,
+    data_cache: DataCache,
+    // should be removed
+    rpc_client: Arc<RpcClient>,
+    transaction_service: TransactionService,
 }
 
 impl LiteBridge {
-    pub async fn new(
-        rpc_url: String,
-        _ws_addr: String,
-        fanout_slots: u64,
-        validator_identity: Arc<Keypair>,
-        retry_after: Duration,
-        max_retries: usize,
-        tpu_connection_path: TpuConnectionPath,
-    ) -> anyhow::Result<Self> {
-        let rpc_client = Arc::new(RpcClient::new(rpc_url.clone()));
-        let current_slot = rpc_client
-            .get_slot()
-            .await
-            .context("failed to get initial slot")?;
-
-        let tx_store = empty_tx_store();
-
-        let tpu_config = TpuServiceConfig {
-            fanout_slots,
-            number_of_leaders_to_cache: 1024,
-            clusterinfo_refresh_time: Duration::from_secs(60 * 60),
-            leader_schedule_update_frequency: Duration::from_secs(10),
-            maximum_transaction_in_queue: 20000,
-            maximum_number_of_errors: 10,
-            quic_connection_params: QuicConnectionParameters {
-                connection_timeout: Duration::from_secs(1),
-                connection_retry_count: 10,
-                finalize_timeout: Duration::from_millis(200),
-                max_number_of_connections: 10,
-                unistream_timeout: Duration::from_millis(500),
-                write_timeout: Duration::from_secs(1),
-                number_of_transactions_per_unistream: 8,
-            },
-            tpu_connection_path,
-        };
-
-        let tpu_service = TpuService::new(
-            tpu_config,
-            validator_identity,
-            current_slot,
-            rpc_client.clone(),
-            tx_store.clone(),
-        )
-        .await?;
-
-        let tx_sender = TxSender::new(tx_store.clone(), tpu_service.clone());
-
-        let block_store = BlockStore::new(&rpc_client).await?;
-
-        let block_listner =
-            BlockListener::new(rpc_client.clone(), tx_store.clone(), block_store.clone());
-
-        let tx_replayer =
-            TransactionReplayer::new(tpu_service.clone(), tx_store.clone(), retry_after);
-
-        let transaction_manager = TransactionServiceBuilder::new(
-            tx_sender,
-            tx_replayer,
-            block_listner.clone(),
-            tpu_service,
-            DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
-        );
-
-        Ok(Self {
+    pub fn new(
+        rpc_client: Arc<RpcClient>,
+        data_cache: DataCache,
+        transaction_service: TransactionService,
+    ) -> Self {
+        Self {
             rpc_client,
-            tx_store,
-            tx_send_channel: None,
-            block_store,
-            max_retries,
-            transaction_service_builder: transaction_manager,
-            transaction_service: None,
-            block_listner,
-        })
+            data_cache,
+            transaction_service,
+        }
     }
 
     /// List for `JsonRpc` requests
-    #[allow(clippy::too_many_arguments)]
-    pub async fn start_services<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
-        mut self,
+    pub async fn start<T: ToSocketAddrs + std::fmt::Debug + 'static + Send + Clone>(
+        self,
         http_addr: T,
         ws_addr: T,
-        enable_postgres: bool,
-        prometheus_addr: T,
     ) -> anyhow::Result<()> {
-        let (postgres, postgres_send) = if enable_postgres {
-            let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
-            let postgres = Postgres::new().await?;
-            let postgres = postgres.start(postgres_recv);
-
-            (Some(postgres), Some(postgres_send))
-        } else {
-            (None, None)
-        };
-
-        let metrics_capture = MetricsCapture::new(self.tx_store.clone()).capture();
-        let prometheus_sync = PrometheusSync::sync(prometheus_addr);
-
-        // transaction services
-        let (transaction_service, jh_transaction_services) = self
-            .transaction_service_builder
-            .clone()
-            .start(postgres_send, self.block_store.clone(), self.max_retries);
-
-        self.transaction_service = Some(transaction_service);
-
         let rpc = self.into_rpc();
 
-        let (ws_server, http_server) = {
-            let ws_server_handle = ServerBuilder::default()
-                .ws_only()
-                .build(ws_addr.clone())
-                .await?
-                .start(rpc.clone())?;
+        let ws_server_handle = ServerBuilder::default()
+            .ws_only()
+            .build(ws_addr.clone())
+            .await?
+            .start(rpc.clone())?;
 
-            let http_server_handle = ServerBuilder::default()
-                .http_only()
-                .build(http_addr.clone())
-                .await?
-                .start(rpc)?;
+        let http_server_handle = ServerBuilder::default()
+            .http_only()
+            .build(http_addr.clone())
+            .await?
+            .start(rpc)?;
 
-            let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
-                info!("Websocket Server started at {ws_addr:?}");
-                ws_server_handle.stopped().await;
-                error!("Websocket server stopped");
-                bail!("Websocket server stopped");
-            });
+        let ws_server: AnyhowJoinHandle = tokio::spawn(async move {
+            log::info!("Websocket Server started at {ws_addr:?}");
+            ws_server_handle.stopped().await;
+            anyhow::bail!("Websocket server stopped");
+        });
 
-            let http_server: AnyhowJoinHandle = tokio::spawn(async move {
-                info!("HTTP Server started at {http_addr:?}");
-                http_server_handle.stopped().await;
-                error!("HTTP server stopped");
-                bail!("HTTP server stopped");
-            });
-
-            (ws_server, http_server)
-        };
-
-        let postgres = tokio::spawn(async {
-            let Some(postgres) = postgres else {
-                std::future::pending::<()>().await;
-                unreachable!();
-            };
-
-            let res = postgres.await;
-            error!("postgres server stopped");
-            res
+        let http_server: AnyhowJoinHandle = tokio::spawn(async move {
+            log::info!("HTTP Server started at {http_addr:?}");
+            http_server_handle.stopped().await;
+            anyhow::bail!("HTTP server stopped");
         });
 
         tokio::select! {
             res = ws_server => {
-                bail!("WebSocket server {res:?}");
+                anyhow::bail!("WebSocket server {res:?}");
             },
             res = http_server => {
-                bail!("HTTP server {res:?}");
+                anyhow::bail!("HTTP server {res:?}");
             },
-            res = metrics_capture => {
-                bail!("Metrics Capture {res:?}");
-            },
-            res = prometheus_sync => {
-                bail!("Prometheus Service {res:?}");
-            },
-            res = postgres => {
-                bail!("Postgres service {res:?}");
-            },
-            res = jh_transaction_services => {
-                bail!("Transaction service {res:?}");
-            }
         }
     }
 }
@@ -268,12 +129,8 @@ impl LiteRpcServer for LiteBridge {
             }
         };
 
-        let transaction_service = self
+        match self
             .transaction_service
-            .clone()
-            .expect("Transaction Service should have been initialized");
-
-        match transaction_service
             .send_transaction(raw_tx, max_retries)
             .await
         {
@@ -296,12 +153,16 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (
+        let BlockInformation {
+            slot,
+            block_height,
             blockhash,
-            BlockInformation {
-                slot, block_height, ..
-            },
-        ) = self.block_store.get_latest_block(commitment_config).await;
+            ..
+        } = self
+            .data_cache
+            .block_store
+            .get_latest_block(commitment_config)
+            .await;
 
         info!("glb {blockhash} {slot} {block_height}");
 
@@ -347,6 +208,7 @@ impl LiteRpcServer for LiteBridge {
         };
 
         let slot = self
+            .data_cache
             .block_store
             .get_latest_block_info(commitment)
             .await
@@ -370,12 +232,13 @@ impl LiteRpcServer for LiteBridge {
 
         let sig_statuses = sigs
             .iter()
-            .map(|sig| self.tx_store.get(sig).and_then(|v| v.status.clone()))
+            .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status))
             .collect();
 
         Ok(RpcResponse {
             context: RpcResponseContext {
                 slot: self
+                    .data_cache
                     .block_store
                     .get_latest_block_info(CommitmentConfig::finalized())
                     .await
@@ -428,7 +291,7 @@ impl LiteRpcServer for LiteBridge {
             .await
             .context("failed to get latest blockhash")
         {
-            self.tx_store.insert(
+            self.data_cache.txs.insert(
                 airdrop_sig.clone(),
                 solana_lite_rpc_core::tx_store::TxProps {
                     status: None,
@@ -444,8 +307,11 @@ impl LiteRpcServer for LiteBridge {
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
 
-        let (_, BlockInformation { slot, .. }) =
-            self.block_store.get_latest_block(commitment_config).await;
+        let BlockInformation { slot, .. } = self
+            .data_cache
+            .block_store
+            .get_latest_block(commitment_config)
+            .await;
         Ok(slot)
     }
 
@@ -459,20 +325,12 @@ impl LiteRpcServer for LiteBridge {
         let sink = pending.accept().await?;
 
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
-        self.block_listner.signature_subscribe(
+        self.data_cache.tx_subs.signature_subscribe(
             signature,
             commitment_config,
             Arc::new(jsonrpsee_sink),
         );
 
         Ok(())
-    }
-}
-
-impl Deref for LiteBridge {
-    type Target = RpcClient;
-
-    fn deref(&self) -> &Self::Target {
-        &self.rpc_client
     }
 }

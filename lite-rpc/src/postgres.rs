@@ -480,7 +480,7 @@ impl Postgres {
                 let Ok(session) = session else {
                     POSTGRES_SESSION_ERRORS.inc();
 
-                    const TIME_OUT:Duration = Duration::from_millis(1000);
+                    const TIME_OUT: Duration = Duration::from_millis(1000);
                     warn!("Unable to get postgres session. Retrying in {TIME_OUT:?}");
                     tokio::time::sleep(TIME_OUT).await;
 
