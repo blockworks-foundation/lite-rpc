@@ -44,7 +44,7 @@ impl PrometheusSync {
             let listener = TcpListener::bind(addr).await?;
 
             loop {
-                let Ok((mut stream, _addr)) =  listener.accept().await else {
+                let Ok((mut stream, _addr)) = listener.accept().await else {
                     error!("Error accepting prometheus stream");
                     tokio::time::sleep(Duration::from_millis(1)).await;
                     continue;

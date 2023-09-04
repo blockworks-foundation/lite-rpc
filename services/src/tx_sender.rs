@@ -2,19 +2,21 @@ use std::time::{Duration, Instant};
 
 use anyhow::bail;
 use chrono::Utc;
-use log::{info, trace, warn};
+use log::{trace, warn};
 
 use prometheus::{
     core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
     register_int_gauge, Histogram, IntCounter,
 };
 use solana_sdk::slot_history::Slot;
-use tokio::{sync::mpsc::Receiver, task::JoinHandle};
+use tokio::sync::mpsc::Receiver;
 
 use crate::tpu_utils::tpu_service::TpuService;
 use solana_lite_rpc_core::{
+    data_cache::DataCache,
     notifications::{NotificationMsg, NotificationSender, TransactionNotification},
-    tx_store::{TxProps, TxStore},
+    tx_store::TxProps,
+    AnyhowJoinHandle,
 };
 
 lazy_static::lazy_static! {
@@ -50,17 +52,16 @@ const MAX_BATCH_SIZE_IN_PER_INTERVAL: usize = 2000;
 /// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
 #[derive(Clone)]
 pub struct TxSender {
-    /// Tx(s) forwarded to tpu
-    txs_sent_store: TxStore,
     /// TpuClient to call the tpu port
     tpu_service: TpuService,
+    data_cache: DataCache,
 }
 
 impl TxSender {
-    pub fn new(txs_sent_store: TxStore, tpu_service: TpuService) -> Self {
+    pub fn new(data_cache: DataCache, tpu_service: TpuService) -> Self {
         Self {
             tpu_service,
-            txs_sent_store,
+            data_cache,
         }
     }
 
@@ -78,7 +79,7 @@ impl TxSender {
         let start = Instant::now();
 
         let tpu_client = self.tpu_service.clone();
-        let txs_sent = self.txs_sent_store.clone();
+        let txs_sent = self.data_cache.txs.clone();
 
         for transaction_info in &transaction_infos {
             trace!("sending transaction {}", transaction_info.signature);
@@ -91,7 +92,7 @@ impl TxSender {
             );
         }
 
-        let forwarded_slot = tpu_client.get_estimated_slot();
+        let forwarded_slot = self.data_cache.slot_cache.get_current_slot();
         let forwarded_local_time = Utc::now();
 
         let mut quic_responses = vec![];
@@ -147,7 +148,7 @@ impl TxSender {
         self,
         mut recv: Receiver<TransactionInfo>,
         notifier: Option<NotificationSender>,
-    ) -> JoinHandle<anyhow::Result<()>> {
+    ) -> AnyhowJoinHandle {
         tokio::spawn(async move {
             loop {
                 let mut transaction_infos = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
@@ -166,7 +167,8 @@ impl TxSender {
 
                                 // duplicate transaction
                                 if self
-                                    .txs_sent_store
+                                    .data_cache
+                                    .txs
                                     .contains_key(&transaction_info.signature)
                                 {
                                     continue;
@@ -197,20 +199,5 @@ impl TxSender {
                 self.forward_txs(transaction_infos, notifier.clone()).await;
             }
         })
-    }
-
-    pub fn cleanup(&self, current_finalized_blochash: u64) {
-        let length_before = self.txs_sent_store.len();
-        self.txs_sent_store.retain(|_k, v| {
-            let retain = v.last_valid_blockheight >= current_finalized_blochash;
-            if !retain && v.status.is_none() {
-                TX_TIMED_OUT.inc();
-            }
-            retain
-        });
-        info!(
-            "Cleaned {} transactions",
-            length_before - self.txs_sent_store.len()
-        );
     }
 }

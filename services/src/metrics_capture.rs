@@ -69,7 +69,7 @@ impl MetricsCapture {
                 let mut txs_confirmed: usize = 0;
                 let mut txs_finalized: usize = 0;
 
-                for tx in self.txs_store.iter() {
+                for tx in self.txs_store.store.iter() {
                     if let Some(tx) = &tx.value().status {
                         match tx.confirmation_status() {
                             TransactionConfirmationStatus::Confirmed => txs_confirmed += 1,
