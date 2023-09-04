@@ -63,7 +63,16 @@ fn process_block(
             let signatures = transaction
                 .signatures
                 .into_iter()
-                .map(|sig| Signature::try_from(sig).expect("valid sig from tx"))
+                .filter_map(|sig| match Signature::try_from(sig) {
+                    Ok(sig) => Some(sig),
+                    Err(_) => {
+                        log::warn!(
+                            "Failed to read signature from transaction in block {} - skipping",
+                            block.blockhash
+                        );
+                        None
+                    }
+                })
                 .collect_vec();
 
             let err = meta.err.map(|x| {
