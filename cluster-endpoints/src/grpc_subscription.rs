@@ -14,7 +14,7 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_sdk::{
-    borsh::try_from_slice_unchecked,
+    borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
     hash::Hash,
