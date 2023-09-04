@@ -11,7 +11,7 @@ use log::{debug, info, trace, warn};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
-use solana_sdk::quic::QUIC_MAX_TIMEOUT_MS;
+use solana_sdk::quic::QUIC_MAX_TIMEOUT;
 use solana_streamer::nonblocking::quic::ALPN_TPU_PROTOCOL_ID;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
@@ -297,7 +297,7 @@ fn create_tpu_client_endpoint(
     // no remotely-initiated streams required
     transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
     transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
-    let timeout = IdleTimeout::try_from(Duration::from_millis(QUIC_MAX_TIMEOUT_MS as u64)).unwrap();
+    let timeout = IdleTimeout::try_from(QUIC_MAX_TIMEOUT).unwrap();
     transport_config.max_idle_timeout(Some(timeout));
     transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
 
