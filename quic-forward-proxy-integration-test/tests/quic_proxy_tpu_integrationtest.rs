@@ -210,18 +210,14 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
     runtime_quic1.block_on(async {
         // setup solana Quic streamer
         // see log "Start quic server on UdpSocket { addr: 127.0.0.1:xxxxx, fd: 10 }"
-        let stakes_map = Arc::new(
-            if test_case_params.stake_connection {
-                let mut map = HashMap::new();
-                map.insert(literpc_validator_identity.pubkey(), 30);
-                map
-            } else {
-                HashMap::default()
-            });
-        let staked_nodes = StakedNodes::new(
-            stakes_map,
-            Default::default()
-        );
+        let stakes_map = Arc::new(if test_case_params.stake_connection {
+            let mut map = HashMap::new();
+            map.insert(literpc_validator_identity.pubkey(), 30);
+            map
+        } else {
+            HashMap::default()
+        });
+        let staked_nodes = StakedNodes::new(stakes_map, Default::default());
 
         let _solana_quic_streamer = SolanaQuicStreamer::new_start_listening(
             udp_listen_socket,

@@ -125,19 +125,14 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
 
     runtime_quic1.block_on(async {
         // see log "Start quic server on UdpSocket { addr: 127.0.0.1:xxxxx, fd: 10 }"
-        let staked_nodes = StakedNodes {
-            total_stake: 100,
-            max_stake: 40,
-            min_stake: 0,
-            ip_stake_map: Default::default(),
-            pubkey_stake_map: if test_case_params.stake_connection {
-                let mut map = HashMap::new();
-                map.insert(literpc_validator_identity.pubkey(), 30);
-                map
-            } else {
-                HashMap::default()
-            },
-        };
+        let stakes_map = Arc::new(if test_case_params.stake_connection {
+            let mut map = HashMap::new();
+            map.insert(literpc_validator_identity.pubkey(), 30);
+            map
+        } else {
+            HashMap::default()
+        });
+        let staked_nodes = StakedNodes::new(stakes_map, Default::default());
 
         let _solana_quic_streamer = SolanaQuicStreamer::new_start_listening(
             udp_listen_socket,
@@ -384,8 +379,8 @@ async fn solana_quic_streamer_start() {
     let keypair = Keypair::new();
     // gossip_host is used in the server certificate
     let gossip_host = "127.0.0.1".parse().unwrap();
-    let stats = Arc::new(StreamStats::default());
-    let (_, t) = solana_streamer::nonblocking::quic::spawn_server(
+    let (_, stats, t) = solana_streamer::nonblocking::quic::spawn_server(
+        "test-quic-server",
         sock.try_clone().unwrap(),
         &keypair,
         gossip_host,
@@ -395,8 +390,8 @@ async fn solana_quic_streamer_start() {
         staked_nodes,
         10,
         10,
-        stats.clone(),
-        1000,
+        Duration::from_millis(1000),
+        Duration::from_millis(1000),
     )
     .unwrap();
 
@@ -409,7 +404,7 @@ async fn solana_quic_streamer_start() {
     exit.store(true, Ordering::Relaxed);
     t.await.unwrap();
 
-    stats.report();
+    stats.report("test-streamer");
 }
 
 struct SolanaQuicStreamer {
@@ -431,8 +426,8 @@ impl SolanaQuicStreamer {
         let keypair = Keypair::new();
         // gossip_host is used in the server certificate
         let gossip_host = "127.0.0.1".parse().unwrap();
-        let stats = Arc::new(StreamStats::default());
-        let (_, jh) = solana_streamer::nonblocking::quic::spawn_server(
+        let (_, stats, jh) = solana_streamer::nonblocking::quic::spawn_server(
+            "test-quic-server",
             udp_socket.try_clone().unwrap(),
             &keypair,
             gossip_host,
@@ -442,8 +437,8 @@ impl SolanaQuicStreamer {
             staked_nodes,
             10,
             10,
-            stats.clone(),
-            1000,
+            Duration::from_millis(1000),
+            Duration::from_millis(1000),
         )
         .unwrap();
 
