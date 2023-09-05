@@ -6,10 +6,9 @@ use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use crate::util::FALLBACK_TIMEOUT;
 use anyhow::{anyhow, bail, Context};
 use log::{debug, error, info, trace, warn};
-use quinn::{Connection, Endpoint, ServerConfig, VarInt};
+use quinn::{Connecting, Endpoint, ServerConfig, VarInt};
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
@@ -34,11 +33,7 @@ impl ProxyListener {
         }
     }
 
-    pub async fn listen(
-        &self,
-        exit_signal: Arc<AtomicBool>,
-        forwarder_channel: &Sender<ForwardPacket>,
-    ) -> anyhow::Result<()> {
+    pub async fn listen(&self, forwarder_channel: &Sender<ForwardPacket>) -> anyhow::Result<()> {
         info!(
             "TPU Quic Proxy server listening on {}",
             self.proxy_listener_addr
@@ -49,23 +44,15 @@ impl ProxyListener {
                 .await;
 
         while let Some(connecting) = endpoint.accept().await {
-            let exit_signal = exit_signal.clone();
             let forwarder_channel_copy = forwarder_channel.clone();
             tokio::spawn(async move {
-                let connection = connecting.await.context("handshake").unwrap();
-                match Self::accept_client_connection(
-                    connection,
-                    forwarder_channel_copy,
-                    exit_signal,
-                )
-                .await
-                {
+                match Self::handle_client_connection(connecting, forwarder_channel_copy).await {
                     Ok(()) => {
-                        debug!("connection handles correctly");
+                        debug!("connection handled correctly");
                     }
                     Err(err) => {
                         error!(
-                            "failed to accept connection from client: {reason} - skip",
+                            "failed handling connection from client: {reason} - skip",
                             reason = err
                         );
                     }
@@ -99,11 +86,12 @@ impl ProxyListener {
     }
 
     #[tracing::instrument(skip_all, level = "debug")]
-    async fn accept_client_connection(
-        client_connection: Connection,
+    async fn handle_client_connection(
+        client_conn_handshake: Connecting,
         forwarder_channel: Sender<ForwardPacket>,
-        _exit_signal: Arc<AtomicBool>,
     ) -> anyhow::Result<()> {
+        let client_connection = client_conn_handshake.await.context("handshake")?;
+
         debug!(
             "inbound connection established, client {}",
             client_connection.remote_address()
@@ -112,21 +100,6 @@ impl ProxyListener {
         loop {
             let maybe_stream = client_connection.accept_uni().await;
             match maybe_stream {
-                Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
-                    debug!("connection closed by client - reason: {:?}", reason);
-                    if reason.error_code != VarInt::from_u32(0) {
-                        return Err(anyhow!(
-                            "connection closed by client with unexpected reason: {:?}",
-                            reason
-                        ));
-                    }
-                    debug!("connection gracefully closed by client");
-                    return Ok(());
-                }
-                Err(e) => {
-                    error!("failed to accept stream: {}", e);
-                    bail!("error accepting stream");
-                }
                 Ok(recv_stream) => {
                     let forwarder_channel_copy = forwarder_channel.clone();
                     tokio::spawn(async move {
@@ -179,6 +152,21 @@ impl ProxyListener {
                         "Inbound connection stats: {}",
                         connection_stats(&client_connection)
                     );
+                }
+                Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
+                    debug!("connection closed by client - reason: {:?}", reason);
+                    if reason.error_code != VarInt::from_u32(0) {
+                        return Err(anyhow!(
+                            "connection closed by client with unexpected reason: {:?}",
+                            reason
+                        ));
+                    }
+                    debug!("connection gracefully closed by client");
+                    return Ok(());
+                }
+                Err(e) => {
+                    error!("failed to accept stream: {}", e);
+                    bail!("error accepting stream");
                 }
             }; // -- result
         } // -- loop

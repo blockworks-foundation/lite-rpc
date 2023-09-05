@@ -76,7 +76,7 @@ Use integrated testing in __quic_proxy_tpu_integrationtest.rs__ for fast feedbac
     ```
 3. run lite-rpc
     ```bash
-    RUST_LOG=debug cargo run --bin lite-rpc -- --experimental-quic-proxy-addr 127.0.0.1:11111
+    RUST_LOG=debug cargo run --bin lite-rpc -- --quic-proxy-addr 127.0.0.1:11111
     ```
 4. run rust bench tool in _lite-rpc_
     ```bash

@@ -9,7 +9,7 @@ use solana_lite_rpc_core::{
 };
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{
-    borsh::try_from_slice_unchecked,
+    borsh0_10::try_from_slice_unchecked,
     commitment_config::{CommitmentConfig, CommitmentLevel},
     compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
