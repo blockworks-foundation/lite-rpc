@@ -45,6 +45,73 @@ Provide the subscription: cluster info.
 ### RPC
 It's an entry point for all call and dispatch the call to the right function.
 
+## Summary diagram
+
+```mermaid
+flowchart TD
+    subgraph Send Tx Domain
+        SendTx("SendTx API
+
+              send_transaction()")
+    end
+
+    subgraph History Domain
+        History("History API
+
+        at confirm/finalized
+            getBlock()
+            getBlocks()
+            getSignaturesForAddress()
+            getSignatureStatuses()
+            getTransaction()")
+        Faithfull["Faithfull Service"]
+        Storage["2 epoch Storage"]
+    end
+
+    subgraph Validator Host
+        Validator["Validator
+            Validator process
+            + GRPC Geyser"]
+        
+        Consensus("Consensus API
+
+            getVoteAccounts()
+            getLeaderSchedule()
+            getEpochInfo()
+            getSlot()...
+        At process:
+            getSignaturesForAddress()
+            getSignatureStatuses()
+
+              ")
+        Cluster("Cluster API
+            
+           getClusterNodes()")
+    end
+    
+
+    Validator-- "geyser data" -->Consensus
+    Validator-- "Cluster info" -->Cluster
+    Consensus-- "Block Info/Leader Schedule" -->SendTx
+    Consensus-- "confirmed Tx" -->SendTx
+    Cluster-- "Cluster info" -->SendTx
+    Consensus-- "Full Block / Epoch" -->History
+    History<-. "old data" .-> Faithfull
+    History<-. "recent data" .-> Storage
+
+    classDef consensus fill:#1168bd,stroke:#0b4884,color:#ffffff
+    classDef history fill:#666,stroke:#0b4884,color:#ffffff
+    classDef sendtx fill:#08427b,stroke:#052e56,color:#ffffff
+    classDef redgray fill:#62524F, color:#fff
+    classDef greengray fill:#4F625B, color:#fff
+
+    class SendTx sendtx
+    class History redgray
+    class Consensus consensus
+    class Cluster greengray
+```
+
+
 ## Interaction diagram
 
 ```mermaid
@@ -53,7 +120,7 @@ flowchart TD
            [Domain]
         
           Send Tx to cluster")
-    subgraph Hisotry
+    subgraph History
         History("History
                    [Domain]
                 
