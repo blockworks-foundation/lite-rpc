@@ -4317,6 +4317,7 @@ dependencies = [
  "rustls 0.20.8",
  "serde",
  "serde_json",
+ "solana-lite-rpc-core",
  "solana-net-utils",
  "solana-sdk",
  "solana-streamer",
