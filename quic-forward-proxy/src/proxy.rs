@@ -41,10 +41,9 @@ impl QuicForwardProxy {
         let proxy_listener =
             proxy_listener::ProxyListener::new(self.proxy_listener_addr, self.tls_config);
 
-        let exit_signal_clone = exit_signal.clone();
         let quic_proxy = tokio::spawn(async move {
             proxy_listener
-                .listen(exit_signal_clone.clone(), &forwarder_channel)
+                .listen(&forwarder_channel)
                 .await
                 .expect("proxy listen service");
         });

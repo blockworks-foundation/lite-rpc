@@ -14,7 +14,7 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_sdk::{
-    borsh::try_from_slice_unchecked,
+    borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
     hash::Hash,
@@ -63,7 +63,16 @@ fn process_block(
             let signatures = transaction
                 .signatures
                 .into_iter()
-                .map(|sig| Signature::new(&sig))
+                .filter_map(|sig| match Signature::try_from(sig) {
+                    Ok(sig) => Some(sig),
+                    Err(_) => {
+                        log::warn!(
+                            "Failed to read signature from transaction in block {} - skipping",
+                            block.blockhash
+                        );
+                        None
+                    }
+                })
                 .collect_vec();
 
             let err = meta.err.map(|x| {

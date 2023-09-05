@@ -11,32 +11,31 @@ use log::{debug, info, trace, warn};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
-use solana_sdk::quic::QUIC_MAX_TIMEOUT_MS;
+use solana_sdk::quic::QUIC_MAX_TIMEOUT;
 use solana_streamer::nonblocking::quic::ALPN_TPU_PROTOCOL_ID;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::RwLock;
 
 const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
-const AGENT_SHUTDOWN_IDLE: u64 = 2500; // ms; should be 4x400ms+buffer
+const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(2500); // ms; should be 4x400ms+buffer
 
 struct AgentHandle {
     pub tpu_address: SocketAddr,
     pub agent_exit_signal: Arc<AtomicBool>,
-    pub created_at: Instant,
-    // relative to start
-    pub age_ms: AtomicU64,
+    pub last_used_at: Arc<RwLock<Instant>>,
 }
 
 impl AgentHandle {
-    pub fn touch(&self) {
-        let age_ms = Instant::now().duration_since(self.created_at).as_millis() as u64;
-        self.age_ms.store(age_ms, Ordering::Relaxed);
+    pub async fn touch(&self) {
+        let mut timestamp = self.last_used_at.write().await;
+        *timestamp = Instant::now();
     }
 }
 
@@ -194,16 +193,15 @@ pub async fn tx_forwarder(
             AgentHandle {
                 tpu_address,
                 agent_exit_signal,
-                created_at: now,
-                age_ms: AtomicU64::new(0),
+                last_used_at: Arc::new(RwLock::new(now))
             }
         }); // -- new agent
 
         let agent = agents.get(&tpu_address).unwrap();
-        agent.touch();
+        agent.touch().await;
 
         if agent_shutdown_debouncer.can_fire() {
-            cleanup_agents(&mut agents, &tpu_address);
+            cleanup_agents(&mut agents, &tpu_address).await;
         }
 
         if broadcast_in.len() > 5 {
@@ -218,16 +216,23 @@ pub async fn tx_forwarder(
     // not reachable
 }
 
-fn cleanup_agents(agents: &mut HashMap<SocketAddr, AgentHandle>, current_tpu_address: &SocketAddr) {
+async fn cleanup_agents(
+    agents: &mut HashMap<SocketAddr, AgentHandle>,
+    current_tpu_address: &SocketAddr,
+) {
+    let now = Instant::now();
     let mut to_shutdown = Vec::new();
     for (tpu_address, handle) in &*agents {
         if tpu_address == current_tpu_address {
             continue;
         }
 
-        let last_used_ms = handle.age_ms.load(Ordering::Relaxed);
+        let unused_period = {
+            let last_used_at = handle.last_used_at.read().await;
+            now - *last_used_at
+        };
 
-        if last_used_ms > AGENT_SHUTDOWN_IDLE {
+        if unused_period > AGENT_SHUTDOWN_IDLE {
             to_shutdown.push(tpu_address.to_owned())
         }
     }
@@ -239,10 +244,14 @@ fn cleanup_agents(agents: &mut HashMap<SocketAddr, AgentHandle>, current_tpu_add
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
                 .is_ok();
             if was_signaled {
-                let last_used_ms = removed_agent.age_ms.load(Ordering::Relaxed);
+                let unused_period = {
+                    let last_used_ts = removed_agent.last_used_at.read().await;
+                    Instant::now() - *last_used_ts
+                };
                 debug!(
                     "Idle Agent for tpu node {} idle for {}ms - sending exit signal",
-                    removed_agent.tpu_address, last_used_ms
+                    removed_agent.tpu_address,
+                    unused_period.as_millis()
                 );
             }
         }
@@ -297,7 +306,7 @@ fn create_tpu_client_endpoint(
     // no remotely-initiated streams required
     transport_config.max_concurrent_uni_streams(VarInt::from_u32(0));
     transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
-    let timeout = IdleTimeout::try_from(Duration::from_millis(QUIC_MAX_TIMEOUT_MS as u64)).unwrap();
+    let timeout = IdleTimeout::try_from(QUIC_MAX_TIMEOUT).unwrap();
     transport_config.max_idle_timeout(Some(timeout));
     transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
 

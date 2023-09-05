@@ -18,6 +18,7 @@ use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_po
 use solana_lite_rpc_core::block_information_store::{BlockInformation, BlockInformationStore};
 use solana_lite_rpc_core::cluster_info::ClusterInfo;
 use solana_lite_rpc_core::data_cache::{DataCache, SlotCache};
+use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::notifications::NotificationSender;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::streams::BlockStream;
@@ -40,29 +41,6 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use crate::rpc_tester::RpcTester;
-
-async fn get_identity_keypair(identity_from_cli: &str) -> Keypair {
-    if let Ok(identity_env_var) = env::var("IDENTITY") {
-        if let Ok(identity_bytes) = serde_json::from_str::<Vec<u8>>(identity_env_var.as_str()) {
-            Keypair::from_bytes(identity_bytes.as_slice()).unwrap()
-        } else {
-            // must be a file
-            let identity_file = tokio::fs::read_to_string(identity_env_var.as_str())
-                .await
-                .expect("Cannot find the identity file provided");
-            let identity_bytes: Vec<u8> = serde_json::from_str(&identity_file).unwrap();
-            Keypair::from_bytes(identity_bytes.as_slice()).unwrap()
-        }
-    } else if identity_from_cli.is_empty() {
-        Keypair::new()
-    } else {
-        let identity_file = tokio::fs::read_to_string(identity_from_cli)
-            .await
-            .expect("Cannot find the identity file provided");
-        let identity_bytes: Vec<u8> = serde_json::from_str(&identity_file).unwrap();
-        Keypair::from_bytes(identity_bytes.as_slice()).unwrap()
-    }
-}
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -107,7 +85,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         identity_keypair,
         maximum_retries_per_tx,
         transaction_retry_after_secs,
-        experimental_quic_proxy_addr,
+        quic_proxy_addr,
         use_grpc,
         grpc_addr,
         ..
@@ -123,11 +101,15 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         lite_rpc_http_addr, lite_rpc_ws_addr
     );
 
-    let validator_identity = Arc::new(get_identity_keypair(&identity_keypair).await);
+    let validator_identity = Arc::new(
+        load_identity_keypair(&identity_keypair)
+            .await
+            .unwrap_or_else(Keypair::new),
+    );
 
     let retry_after = Duration::from_secs(transaction_retry_after_secs);
 
-    let tpu_connection_path = configure_tpu_connection_path(experimental_quic_proxy_addr);
+    let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
     // rpc client
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
@@ -289,14 +271,12 @@ pub async fn main() -> anyhow::Result<()> {
     }
 }
 
-fn configure_tpu_connection_path(
-    experimental_quic_proxy_addr: Option<String>,
-) -> TpuConnectionPath {
-    match experimental_quic_proxy_addr {
+fn configure_tpu_connection_path(quic_proxy_addr: Option<String>) -> TpuConnectionPath {
+    match quic_proxy_addr {
         None => TpuConnectionPath::QuicDirectPath,
         Some(prox_address) => TpuConnectionPath::QuicForwardProxyPath {
             // e.g. "127.0.0.1:11111"
-            forward_proxy_address: prox_address.parse().unwrap(),
+            forward_proxy_address: prox_address.parse().expect("Invalid proxy address"),
         },
     }
 }

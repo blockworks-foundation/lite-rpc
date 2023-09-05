@@ -31,7 +31,7 @@ pub struct Args {
     #[arg(long, default_value_t = DEFAULT_RETRY_TIMEOUT)]
     pub transaction_retry_after_secs: u64,
     #[arg(long)]
-    pub experimental_quic_proxy_addr: Option<String>,
+    pub quic_proxy_addr: Option<String>,
     #[arg(short = 'g', long)]
     pub use_grpc: bool,
     /// grpc address
