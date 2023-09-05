@@ -25,7 +25,7 @@ use solana_lite_rpc_core::stores::{
 };
 use solana_lite_rpc_core::structures::{
     identity_stakes::IdentityStakes, notifications::NotificationSender,
-    processed_block::ProcessedBlock,
+    produced_block::ProducedBlock,
 };
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -48,7 +48,7 @@ use crate::rpc_tester::RpcTester;
 async fn get_latest_block(
     mut block_stream: BlockStream,
     commitment_config: CommitmentConfig,
-) -> ProcessedBlock {
+) -> ProducedBlock {
     while let Ok(block) = block_stream.recv().await {
         if block.commitment_config == commitment_config {
             return block;
