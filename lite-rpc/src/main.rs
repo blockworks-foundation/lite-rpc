@@ -245,8 +245,8 @@ pub async fn main() -> anyhow::Result<()> {
 
     tokio::select! {
         err = rpc_tester => {
-            // This should never happen
-            unreachable!("{err:?}")
+            log::error!("{err:?}");
+            Ok(())
         }
         res = main => {
             // This should never happen
@@ -255,7 +255,6 @@ pub async fn main() -> anyhow::Result<()> {
         }
         _ = ctrl_c_signal => {
             log::info!("Received ctrl+c signal");
-
             Ok(())
         }
     }
