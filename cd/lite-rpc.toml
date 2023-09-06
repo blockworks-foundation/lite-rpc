@@ -2,6 +2,12 @@ app = "solana-lite-rpc"
 kill_signal = "SIGINT"
 kill_timeout = 5
 
+[build]
+  dockerfile = "../Dockerfile"
+
+[experimental]
+  cmd = ["lite-rpc", "--rpc-addr", "$RPC_URL", "--ws-addr", "$WS_URL"]
+
 [env]
   PORT_HTTP = "8890"
   PORT_WS = "8891"

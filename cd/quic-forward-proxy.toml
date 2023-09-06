@@ -1,0 +1,23 @@
+app = "solana-quic-forward-proxy"
+kill_signal = "SIGINT"
+kill_timeout = 5
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[experimental]
+  cmd = ["solana-lite-rpc-quic-forward-proxy"]
+
+[env]
+  PROXY_LISTEN_ADDR = "0.0.0.0:11111"
+  RUST_LOG = "info"
+
+[[services]]
+  internal_port = 11111
+  processes = ["app"]
+  protocol = "tcp"
+
+  [services.concurrency]
+    hard_limit = 1024
+    soft_limit = 1024
+    type = "connections"
