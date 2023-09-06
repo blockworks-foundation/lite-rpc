@@ -36,6 +36,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::env;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -263,9 +264,27 @@ pub async fn main() -> anyhow::Result<()> {
 fn configure_tpu_connection_path(quic_proxy_addr: Option<String>) -> TpuConnectionPath {
     match quic_proxy_addr {
         None => TpuConnectionPath::QuicDirectPath,
-        Some(prox_address) => TpuConnectionPath::QuicForwardProxyPath {
-            // e.g. "127.0.0.1:11111"
-            forward_proxy_address: prox_address.parse().expect("Invalid proxy address"),
-        },
+        Some(prox_address) => {
+            let proxy_socket_addr = parse_host_port_to_ipv4(prox_address.as_str()).unwrap();
+            TpuConnectionPath::QuicForwardProxyPath {
+                // e.g. "127.0.0.1:11111"
+                forward_proxy_address: proxy_socket_addr,
+            }
+        }
+    }
+}
+
+fn parse_host_port_to_ipv4(host_port: &str) -> Result<SocketAddr, String> {
+    let addrs: Vec<_> = host_port
+        .to_socket_addrs()
+        .map_err(|err| format!("Unable to resolve host {host_port}: {err}"))?
+        .filter(|addr| addr.is_ipv4())
+        .collect();
+    if addrs.is_empty() {
+        Err(format!("Unable to resolve host: {host_port}"))
+    } else if addrs.len() > 1 {
+        Err(format!("Multiple addresses resolved for host: {host_port}"))
+    } else {
+        Ok(addrs[0])
     }
 }
