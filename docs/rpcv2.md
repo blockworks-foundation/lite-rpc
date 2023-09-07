@@ -128,7 +128,7 @@ Value is defined
 
 ### Domain
 
-#### Domain TX send
+#### TX send Domain
 This domain reference the all the process to send a Tx to a validator so that it's added to a block.
 
 It represent the lifecycle of a Tx before it's added to a block.
@@ -147,7 +147,7 @@ It represent the lifecycle of a Tx before it's added to a block.
 
 
 ##### Process
-###### Tx processing
+###### Description
 This module manage the Tx RPC calls *sendtransaction*.
 
 The send Tx process is:
@@ -172,25 +172,6 @@ Define what we do when a Tx is not confirmed after it has been send the replay t
 
 
 ###### sendtransaction call
-
-**Scenario**:
-
-Send a Tx to the current and next leader using the TPU port. Need a stake account. Use a proxy that hold the stake account private key to connect to the next leader.
-
-**Given**:
-* The *Solana* network is working.
-* The *RPC operator* has installed all the infra and software needed.
-* The *RPC service* is started: *Lite-RPC* and *proxy* are started
-
-**Scenario**:
-- **When** The *user* send a transaction
-- **Then** The *Lite-RPC* and  get the transaction
-- **And** The *Lite-RPC* do some verification on the tx (to be defined)
-- **And** The *Lite-RPC* reply to the user request.
-- **And** The *Lite-RPC* get the current and next leader
-- **And** The *Lite-RPC* send the Tx to the proxy: Tx + current and next leader
-- **And** The *proxy* are started send the Tx to the current and next leader.
-
 
 Submits a signed transaction to the cluster for processing.
 
@@ -233,7 +214,7 @@ Algo:
  - send the batch to the TPU port of the current slot leader and next slot leader
 
 
-#### Domain Consensus
+#### Consensus Domain
 This domain concerns the connected validator activity. It get and process data that are generated inside the validator (LeaderSchedule) or concerning current block processing (update stake account).
 
 ##### Data
@@ -465,7 +446,7 @@ Algo:
 
 Call geyser plugin.
 
-#### Domain History
+#### History domain
 This domain include all function related to get past data of the blockchain.
 
 If manage block/Tx at confirmed/finalized commitment.
@@ -695,7 +676,7 @@ This function need some evolutions with the current implementation:
     - can get the same signature twice (fork).
 
 
-### Domain Cluster
+### Cluster domain
 Manage all data related to the solana validator cluster.
 
 ##### Data
@@ -777,10 +758,12 @@ info: Unless the searchTransactionHistory configuration parameter is included, t
 
 Sources:
 For consensus domain:
+Get data at process
 
-geyser plugin subscribe full block with Tx. The plugin must be changed to get *processed* status block notification or subscribe to Tx at process.
+geyser plugin subscribe to Tx at process.
 
 For history:
+Get data at confirm and finalized.
 
 Get the data from the storage and confirm cache.
 
@@ -837,187 +820,6 @@ This domain is not part of the RPC service functionalities. Another project will
 
 ##### Data
  * Account: Solana account identified by a public key.
-
-
-### Architecture
-
-Main architecture
-
-``` mermaid
-flowchart TB
-    rpc(RPC access)
-    sup(Supervisor loop)
-    sol(Solana connector)
-    block(block processor)
-    blstore(Block storage)
-    tx(Tx processing)
-    sendtx(Send TX TPU)
-    clus(Cluster processing)
-    clusstore(Cluster Storage)
-    histo(History Processing)
-    faith(Faithful service)
-    subgraph Main loop
-    rpc --> |new request| sup
-    end
-    subgraph Solana
-    direction TB
-    sol --> |new block-slot|sup
-    sol --> |new epoch|sup
-    sup --> |geyser call| sol
-    end
-    subgraph Block
-    direction TB
-    sup --> |update block-block| block
-    block --> |get data| sup
-    block --> |query block| blstore
-    end
-    subgraph History
-    direction TB
-    sup --> |query| histo
-    histo --> |get data| block
-    histo --> |get data| faith
-    end
-    subgraph Tx
-    direction TB
-    sup --> |update block|tx
-    sup --> |send Tx request|tx
-    tx --> |get data| sup
-    tx --> |send Tx| sendtx
-    end
-    subgraph Cluster
-    direction TB
-    sup --> |update epoch|clus
-    clus --> |get data| sup
-    clus --> |store data|clusstore
-    end
-```
-
-send_transaction
-
-``` mermaid
-flowchart TB
-    user(Web3 User)
-    lite(Lite RPC)
-    cluster(Cluster module)
-    proxy(TPU Proxy)
-    solana(Solana Cluster)
-    validator(validator with geyser plugin)
-    user -->|rpc send_transaction| lite
-    lite -->|forward to leader| proxy
-    proxy -->|send Tx to leader| solana
-    validator --> |push block data| lite
-    lite --> |confirm Tx| user  
-    cluster -->|forward epoch info:stake, slots| lite
-    cluster -->|forward epoch info: stake| proxy
-```
-
-getblocks
-
-``` mermaid
-flowchart TB
-    user(Web3 User)
-    block(Block processing)
-    blockdb(Current epoch block DB)
-    validator(validator with geyser plugin)
-    history(History access)
-    triton(Faithful Service)
-    user -->|getblocks rpc call| history
-    block <--> |Store epoch data| blockdb
-    validator --> |push block data| block
-    history <--> |getblocks for current epoch| block
-    history <--> |getblocks for past epoch| triton
-    
-```
-
-### Task definition
-
-```mermaid
-stateDiagram
-    a1: Architecture skeleton
-    c1: geyser connector
-    c2: Faithful connector
-    c22: Triton block index
-    c3: TPU connector
-    c4: gossip listening
-    s1: Data model
-    s2: Storage definition
-    s3: Block storage
-    s4: Cluster storage
-    b1: Block processing
-    b5: Block RPC call
-    t1: Tx processing
-    t3: Sendtransacton
-    t4: Tx RPC call
-    h1: History getBlock
-    h2: History getBlocks
-    h3: History calls
-    cl1: Cluster processing
-    cl2: cluster RPC solana
-    cl6: cluster RPC call
-
-    
-    [*] --> a1
-    [*] --> c1
-    [*] --> c2
-    c2 --> c22
-    [*] --> c3
-    [*] --> c4
-    [*] --> s1
-    [*] --> cl1
-    s1 --> s2
-    s2 --> s3
-    s2 --> s4
-    a1 --> s2
-    a1 --> b1
-    b1 --> b5
-    a1 --> t1
-    t1 --> t3
-    t1 --> t4
-    cl1 --> cl2
-    cl1 --> cl6
-    s3 --> h1
-    c22 --> h1
-    b1 --> h1
-    h1 --> h2
-    h2 --> h3
-```
-
-
-#### Tasks list
-
-- Architecture skeleton: do the mimimun code to define the first version of the architecture implementation.
-- geyser connector: Geyser connector code to all geyser data. Data not available use the current RPC access.
-- Faithful connector: connect to the Faithful service to query their method.
-- Triton block index: research task on do we use the triton block index and how.
-- TPU connector: manage TPU connection and connect to a specified validator's TPU port and send Tx batch
-- gossip listening: Listen to validator gossip and extract data.
-- Data model: define the stored data model + indexes for block and Cluster.
-- Storage definition: implement the storage infra to host block and cluster data query.
-- Block storage: implement block storage with epoch switch
-- Cluster storage: implement cluster storage with epoch switch
-- Block processing: implement block processing management. Base task:
-    - Update block: update block process
-    - get block: get block from cache and storage.
-    - get current data: get block current data
-- Block RPC call: implements block RPC call.
-- Tx processing: implement Tx processing algo
-    - notify Tx: notify Tx to other modules
-    - update Tx cache
-- Sendtransacton
-    - send Tx
-    - confirm Tx
-    - replay Tx
-- Tx RPC call: get Tx + Status
-- History getBlock: integrate block index or/and call Faithful service
-- History getBlocks: query indexes or add Faithful service call.
-- History other calls: implements the other history call.
-- Cluster processing: cluster data processing implementation.
-    - cluster data
-    - cluster epoch update
-    - cluster info
-    - cluster epoch notification
-- Cluster RPC solana
-- Cluster RPC call
 
 
 
