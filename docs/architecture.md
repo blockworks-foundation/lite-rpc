@@ -120,7 +120,7 @@ flowchart TD
            [Domain]
         
           Send Tx to cluster")
-    subgraph History
+    subgraph History 
         History("History
                    [Domain]
                 
