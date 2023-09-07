@@ -1,24 +1,17 @@
-use std::net::SocketAddr;
-
 use lite_rpc::cli::Args;
 use prometheus::{opts, register_gauge, Gauge};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
 lazy_static::lazy_static! {
     static ref RPC_RESPONDING: Gauge =
-    register_gauge!(opts!("literpc_rpc_responding", "If LiteRpc is responding")).unwrap();
+    register_gauge!(opts!("literpc_rpc_responding", "If RPC is responding")).unwrap();
 }
 
 pub struct RpcTester(RpcClient);
 
 impl From<&Args> for RpcTester {
     fn from(value: &Args) -> Self {
-        let addr: SocketAddr = value
-            .lite_rpc_http_addr
-            .parse()
-            .expect("Invalid literpc http address");
-
-        RpcTester(RpcClient::new(format!("http://0.0.0.0:{}", addr.port())))
+        RpcTester(RpcClient::new(value.rpc_addr.clone()))
     }
 }
 
