@@ -30,14 +30,12 @@ pub enum HistoryError {
 
 pub async fn start_module(
     grpc_url: String,
-    slot_sinck: impl Sink<u64, Error = FuturesSendError> + std::marker::Send + 'static,
-    full_block_sinck: impl Sink<EncodedConfirmedBlock, Error = FuturesSendError>
+    slot_sink: impl Sink<u64, Error = FuturesSendError> + std::marker::Send + 'static,
+    full_block_sink: impl Sink<EncodedConfirmedBlock, Error = FuturesSendError>
         + std::marker::Send
         + 'static,
-    block_info_sinck: impl Sink<BlockInformation, Error = FuturesSendError>
-        + std::marker::Send
-        + 'static,
-    epoch_sinck: impl Sink<EpochInfo, Error = FuturesSendError> + std::marker::Send + 'static,
+    block_info_sink: impl Sink<BlockInformation, Error = FuturesSendError> + std::marker::Send + 'static,
+    epoch_sink: impl Sink<EpochInfo, Error = FuturesSendError> + std::marker::Send + 'static,
 ) -> JoinHandle<Result<(), HistoryError>> {
     let handle = tokio::spawn(async move {
         pin!(full_block_sinck);
