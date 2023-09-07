@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
@@ -112,7 +112,7 @@ impl QuicProxyConnectionManager {
 
         let mut endpoint = {
             let client_socket =
-                solana_net_utils::bind_in_range(IpAddr::V4(Ipv4Addr::UNSPECIFIED), (8000, 10000))
+                solana_net_utils::bind_in_range(IpAddr::V6(Ipv6Addr::UNSPECIFIED), (8000, 10000))
                     .expect("create_endpoint bind_in_range")
                     .1;
             let config = EndpointConfig::default();
