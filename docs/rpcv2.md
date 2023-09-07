@@ -124,10 +124,10 @@ Method calls:
   - [getvoteaccounts](https://docs.solana.com/api/http#getvoteaccounts) not in geyser plugin no other possibility. First call to add
   - [getrecentperformancesamples](https://docs.solana.com/api/http#getrecentperformancesamples) not in geyser plugin
   - [getsignaturestatuses](https://docs.solana.com/api/http#getsignaturestatuses) not in Faithful rpc api
+  - [getrecentprioritizationfees](https://docs.solana.com/api/http#getrecentprioritizationfees)not in geyser plugin. Algo to define
 
 ##### Send transaction
  - [sendtransaction](https://docs.solana.com/api/http#sendtransaction) done by Lite-RPC
- - [getrecentprioritizationfees](https://docs.solana.com/api/http#getrecentprioritizationfees)not in geyser plugin. Algo to define
 
 ##### Geyser update:
  Update the Yellostone plugin to notify on Process.
