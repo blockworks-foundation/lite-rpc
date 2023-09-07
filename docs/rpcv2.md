@@ -104,6 +104,7 @@ Method calls:
       + get signature of not completed block is not indicated in the current API.
       + order by block time should be better. Add a CommitmentLevel fields in the answer?
       + can get the same signature twice (fork).
+ - [gettransaction](https://docs.solana.com/api/http#gettransaction) need shred transaction and not only the confirmed one.
 
 ##### Cluster info 
   - [getclusternodes](https://docs.solana.com/api/http#getclusternodes) not in geyser plugin can be get from gossip. Try to update gyser first.
@@ -122,11 +123,10 @@ Method calls:
 
   - [getvoteaccounts](https://docs.solana.com/api/http#getvoteaccounts) not in geyser plugin no other possibility. First call to add
   - [getrecentperformancesamples](https://docs.solana.com/api/http#getrecentperformancesamples) not in geyser plugin
+  - [getsignaturestatuses](https://docs.solana.com/api/http#getsignaturestatuses) not in Faithful rpc api
 
 ##### Send transaction
  - [sendtransaction](https://docs.solana.com/api/http#sendtransaction) done by Lite-RPC
- - [gettransaction](https://docs.solana.com/api/http#gettransaction) need shred transaction and not only the confirmed one.
- - [getsignaturestatuses](https://docs.solana.com/api/http#getsignaturestatuses) not in Faithful rpc api
  - [getrecentprioritizationfees](https://docs.solana.com/api/http#getrecentprioritizationfees)not in geyser plugin. Algo to define
 
 ##### Geyser update:
