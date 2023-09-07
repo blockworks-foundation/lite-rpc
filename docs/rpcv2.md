@@ -87,11 +87,11 @@ Method calls:
 
 #####  Task to do:
 
- getvoteaccounts: need geyser plugin update. First point to start with. Need to develop the PR. See the issue https://github.com/solana-labs/solana/issues/31446 
+ getvoteaccounts: Stream from geyser. See the issue https://github.com/solana-labs/solana/issues/31446 
 
- -> getleaderschedule  can be define from vote accounts. Define the Algo
+ getleaderschedule: Stream from geyser
 
- getclusternodes: next one or gossip. See how they publish their port and ip. See gossip protocol and on the RPC v1 code
+ getclusternodes: Geuser or gossip.
 
 #### Removed RPC calls
 
