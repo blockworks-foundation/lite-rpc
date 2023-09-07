@@ -6,32 +6,12 @@ kill_timeout = 5
   dockerfile = "../Dockerfile"
 
 [experimental]
-  cmd = ["lite-rpc", "--rpc-addr", "$RPC_URL", "--ws-addr", "$WS_URL"]
+  cmd = ["sh", "-c", "lite-rpc --rpc-addr $RPC_URL --ws-addr $WS_URL --quic-proxy-addr solana-quic-forward-proxy.internal:11111"]
 
 [env]
   PORT_HTTP = "8890"
   PORT_WS = "8891"
   RUST_LOG = "info"
-
-[[services]]
-  internal_port = 9000
-  processes = ["app"]
-  protocol = "tcp"
-
-  [services.concurrency]
-    hard_limit = 1024
-    soft_limit = 1024
-    type = "connections"
-
-[[services]]
-  internal_port = 9001
-  processes = ["app"]
-  protocol = "tcp"
-
-  [services.concurrency]
-    hard_limit = 1024
-    soft_limit = 1024
-    type = "connections"
 
  [metrics]
    path = "/metrics"
