@@ -87,11 +87,11 @@ Method calls:
 
 #####  Task to do:
 
- getvoteaccounts: Stream from geyser. See the issue https://github.com/solana-labs/solana/issues/31446 
+ getvoteaccounts: Stream from geyser
 
- getleaderschedule: Stream from geyser
+ getleaderschedule: Stream from geyser. See the issue https://github.com/solana-labs/solana/issues/31446 
 
- getclusternodes: Geuser or gossip.
+ getclusternodes: Geyser or gossip.
 
 #### Removed RPC calls
 
