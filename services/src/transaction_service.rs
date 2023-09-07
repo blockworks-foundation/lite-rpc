@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::{
     tpu_utils::tpu_service::TpuService,
-    transaction_replayer::{TransactionReplay, TransactionReplayer, MESSAGES_IN_REPLAY_QUEUE},
+    transaction_replayer::{TransactionReplay, TransactionReplayer},
     tx_sender::{TransactionInfo, TxSender},
 };
 use anyhow::bail;
@@ -148,19 +148,13 @@ impl TransactionService {
         }
         let replay_at = Instant::now() + self.replay_after;
         // ignore error for replay service
-        if self
-            .replay_channel
-            .send(TransactionReplay {
-                signature: signature.to_string(),
-                tx: raw_tx_clone,
-                replay_count: 0,
-                max_replay,
-                replay_at,
-            })
-            .is_ok()
-        {
-            MESSAGES_IN_REPLAY_QUEUE.inc();
-        }
+        let _ = self.replay_channel.send(TransactionReplay {
+            signature: signature.to_string(),
+            tx: raw_tx_clone,
+            replay_count: 0,
+            max_replay,
+            replay_at,
+        });
         Ok(signature.to_string())
     }
 }
