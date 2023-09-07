@@ -107,13 +107,6 @@ Method calls:
 
 ##### Cluster info 
   - [getclusternodes](https://docs.solana.com/api/http#getclusternodes) not in geyser plugin can be get from gossip. Try to update gyser first.
-  - [getepochinfo](https://docs.solana.com/api/http#getepochinfo) not in geyser plugin based on voting. Algo to define
-  - [getleaderschedule](https://docs.solana.com/api/http#getleaderschedule) not in geyser plugin base on stake aggregate in the bank
-    leader schedule exists for epoch-4, current, epoch+1 (total=6). Get from geyser plugin. . Algo to define
-
-  - [getvoteaccounts](https://docs.solana.com/api/http#getvoteaccounts) not in geyser plugin no other possibility. First call to add
-  - [getrecentperformancesamples](https://docs.solana.com/api/http#getrecentperformancesamples) not in geyser plugin
-
 ##### Consensus - slot recent data
  - [getslot](https://docs.solana.com/api/http#getslot) Need top add 2 new commitment level for first shred seen and half confirm (1/3 of the stake has voted on the block)
  - [getBlockHeight](https://docs.solana.com/api/http#getblockheight)
@@ -123,6 +116,12 @@ Method calls:
  - [getlatestblockhash](https://docs.solana.com/api/http#getlatestblockhash)
  - [isblockhashvalid](https://docs.solana.com/api/http#isblockhashvalid)
  - [getblockcommitment](https://docs.solana.com/api/http#getblockcommitment) only for the last 150 blocks. Based on vote aggregation. Constructed from votes and stake. Algo to define
+  - [getepochinfo](https://docs.solana.com/api/http#getepochinfo) not in geyser plugin based on voting. Algo to define
+  - [getleaderschedule](https://docs.solana.com/api/http#getleaderschedule) not in geyser plugin base on stake aggregate in the bank
+    leader schedule exists for epoch-4, current, epoch+1 (total=6). Get from geyser plugin. . Algo to define
+
+  - [getvoteaccounts](https://docs.solana.com/api/http#getvoteaccounts) not in geyser plugin no other possibility. First call to add
+  - [getrecentperformancesamples](https://docs.solana.com/api/http#getrecentperformancesamples) not in geyser plugin
 
 ##### Send transaction
  - [sendtransaction](https://docs.solana.com/api/http#sendtransaction) done by Lite-RPC
