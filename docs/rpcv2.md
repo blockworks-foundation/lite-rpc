@@ -21,59 +21,6 @@ This specification is done based on these prerequisite:
  * The RPC user trust the RPC service. This assumption will be removed when the [SIMD-0052](https://github.com/solana-foundation/solana-improvement-documents/pull/52) will be implemented.
  * The validator don't have any RPC service. Only the geyser plugin push subscription can be use to get validator data.
 
-## Needs definition
-
-### Personas
-
-*Solana*: Developer of the code that run Solana blockchain.
-
-*RPC operator*: Run a RPC service (Triton).
-
-*RPC user*: Use the RPC service (Mango).
-
-*Developer*: Rust developer of an application that access the RPC service.
-
-### User stories
-
-0) As a <>, I want to ... so that ...
-
-1) As *Solana*, I want to remove the RPC service from the validator so that the RPC processing doesn't use CPU/Memory load on the validator.
-2) As a *RPC operator*, I want to be able to start a RPC service in my infra so that I can propose the service a any moment.
-3) As a *RPC operator*, I want to restart the service after a crash so that I can be productive fast.
-4) As a *RPC operator*, I want the RPC service to be reliable so that I can propose it in my service. (Common availability solution can be apply to the service)
-5) As a *RPC user*,  I want to send a Tx and get a confirmation so that I know when the Tx has been processed.
-6) As a *RPC user*,  I want to get my Tx history so that I can know all my account Tx.
-7) As a *RPC user*,  I want to see log event with low latency so that I'm informed of unusual SC use or SC error.
-8) As a *RPC user*,  I want to get log event of an SC in the past so that I can study my SC activity.
-9) As a *Developer*, I want to use a Rust SDK that hide internal detail on how to access the RPC service so that it's easier to develop.
-
-## Scenarios
-
-### A RPC operator start a RPC service
-**Given**:
-* The *Solana* network is working.
-* The *RPC operator* can access a trusted validator
-* The *RPC operator* has installed all the infra and software needed.
-* The *RPC service* has already been started or it's the first time.
-
-**Scenario**:
-- **When** The *RPC operator* want to start the RPC Service
-- **Then** The RPC node start.
-<-- Update History data (if all data are managed by Faithful plugin this step can be bypass) -->
-- **And** The RPC node call the bootstrap node to get the last db snapshot (snapshot of the previous epoch)
-- **And** The RPC node update its db with the snapshot if needed (until last epoch).
-<-- Update current epoch data catch up until current block -->
-- **And** The RPC node call the bootstrap node to get current epoch data (until last block). One or several bootstrap node can be defined. Only one is connected at a time.
-- **And** The RPC node update its db with the data (update missing block data).
-- **And** The RPC node connect to the validator geyser plugin to get current block production.
-<-- main block processing loop  -->
-- **And** The RPC node get a new block.
-- **But** If the block is not the successor of last database block.
-- **Then** The RPC node query the bootstrap node for the missing block.
-- **And** The RPC node add the missing block to the wait block list. The wait block list is ordered from the last to the most recent.
-- **And** The RPC node get a new block from the validator and put it in the wait block list.
-- **And** The RPC node process the first block of the waiting list.
-<-- End main block processing loop --> 
 
 ## Specifications
 
@@ -82,7 +29,7 @@ This specification is done based on these prerequisite:
 #### RPC calls kept in the new service
 
 
-##### History
+##### History Domain
 
 General changes:
 
@@ -106,9 +53,9 @@ Method calls:
       + can get the same signature twice (fork).
  - [gettransaction](https://docs.solana.com/api/http#gettransaction) need shred transaction and not only the confirmed one.
 
-##### Cluster info 
+##### Cluster info Domain
   - [getclusternodes](https://docs.solana.com/api/http#getclusternodes) not in geyser plugin can be get from gossip. Try to update gyser first.
-##### Consensus - slot recent data
+##### Consensus Domain
  - [getslot](https://docs.solana.com/api/http#getslot) Need top add 2 new commitment level for first shred seen and half confirm (1/3 of the stake has voted on the block)
  - [getBlockHeight](https://docs.solana.com/api/http#getblockheight)
  - [getblocktime](https://docs.solana.com/api/http#getblocktime) based on voting. Algo to define
@@ -126,7 +73,7 @@ Method calls:
   - [getsignaturestatuses](https://docs.solana.com/api/http#getsignaturestatuses) not in Faithful rpc api
   - [getrecentprioritizationfees](https://docs.solana.com/api/http#getrecentprioritizationfees)not in geyser plugin. Algo to define
 
-##### Send transaction
+##### Send transaction Domain
  - [sendtransaction](https://docs.solana.com/api/http#sendtransaction) done by Lite-RPC
 
 ##### Geyser update:
