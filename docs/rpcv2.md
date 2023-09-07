@@ -76,22 +76,13 @@ Method calls:
 ##### Send transaction Domain
  - [sendtransaction](https://docs.solana.com/api/http#sendtransaction) done by Lite-RPC
 
-##### Geyser update:
- Update the Yellostone plugin to notify on Process.
-
- We should add the shred level data (tx, ...) on the geyser plugin and validator communication.
-
- To get the shred level data if not available from geyser plugin:
-
- Possibility to duplicate the Turbine shred at the network switch level to send them to the RPC node and process shred.
-
-#####  Task to do:
+#####  Current work on Consensus:
 
  getvoteaccounts: Stream from geyser
 
  getleaderschedule: Stream from geyser. See the issue https://github.com/solana-labs/solana/issues/31446 
 
- getclusternodes: Geyser or gossip.
+ getclusternodes: Geyser or gossip?
 
 #### Removed RPC calls
 
