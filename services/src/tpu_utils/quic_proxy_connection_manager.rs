@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv6Addr, SocketAddr, UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
@@ -111,7 +111,8 @@ impl QuicProxyConnectionManager {
         const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
 
         let mut endpoint = {
-            let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+            // Binding on :: will also listen on IPv4 (dual-stack).
+            let client_socket = UdpSocket::bind("[::]:0").unwrap();
             let config = EndpointConfig::default();
             Endpoint::new(config, None, client_socket, TokioRuntime)
                 .expect("create_endpoint quinn::Endpoint::new")
