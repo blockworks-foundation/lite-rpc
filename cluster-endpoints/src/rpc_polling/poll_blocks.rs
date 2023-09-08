@@ -180,7 +180,7 @@ pub fn poll_block(
                 .context("Slot notification channel close")?;
             let last_processed_slot = current_slot.load(std::sync::atomic::Ordering::Relaxed);
             let last_processed_slot = if last_processed_slot == 0 {
-                last_processed_slot.saturating_sub(1)
+                processed_slot.saturating_sub(1)
             } else {
                 last_processed_slot
             };
