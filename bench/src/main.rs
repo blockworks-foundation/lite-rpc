@@ -16,10 +16,17 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use std::sync::atomic::AtomicBool;
+use solana_rpc_client::rpc_client::SerializableTransaction;
+use solana_sdk::signature::Signature;
+use solana_sdk::transaction::Transaction;
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
+use solana_lite_rpc_quic_forward_proxy::outbound::tx_forward::tx_forwarder;
+use solana_lite_rpc_quic_forward_proxy::shared::ForwardPacket;
+use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
@@ -155,7 +162,20 @@ async fn bench(
     tx_metric_sx: UnboundedSender<TxMetricData>,
     log_txs: bool,
 ) -> Metric {
-    let map_of_txs = Arc::new(DashMap::new());
+    let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
+    let (forwarder_channel, forward_receiver) = tokio::sync::mpsc::channel(1000);
+
+    {
+        let validator_identity = ValidatorIdentity::new(None);
+        let exit_signal = Arc::new(AtomicBool::new(false));
+        let _jh = tokio::spawn(tx_forwarder(
+            validator_identity,
+            forward_receiver,
+            exit_signal,
+
+        ));
+    }
+
     // transaction sender task
     {
         let map_of_txs = map_of_txs.clone();
@@ -169,21 +189,38 @@ async fn bench(
                 let blockhash = { *block_hash.read().await };
                 let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
                 let start_time = Instant::now();
-                match rpc_client.send_transaction(&tx).await {
-                    Ok(signature) => {
-                        map_of_txs.insert(
-                            signature,
-                            TxSendData {
-                                sent_duration: start_time.elapsed(),
-                                sent_instant: Instant::now(),
-                                sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
-                            },
-                        );
-                    }
-                    Err(e) => {
-                        warn!("tx send failed with error {}", e);
-                    }
-                }
+                // match rpc_client.send_transaction(&tx).await {
+                //     Ok(signature) => {
+                //         map_of_txs.insert(
+                //             signature,
+                //             TxSendData {
+                //                 sent_duration: start_time.elapsed(),
+                //                 sent_instant: Instant::now(),
+                //                 sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
+                //             },
+                //         );
+                //     }
+                //     Err(e) => {
+                //         warn!("tx send failed with error {}", e);
+                //     }
+                // }
+                let tpu_address = "127.0.0.1:1033".parse().unwrap();
+
+                let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
+                let packet = ForwardPacket::new(
+                    vec![tx_raw],
+                    tpu_address,
+                    424242,
+                );
+
+                forwarder_channel.send(packet).await;
+
+                map_of_txs.insert(tx.get_signature().clone(), TxSendData {
+                    sent_duration: start_time.elapsed(),
+                    sent_instant: Instant::now(),
+                    sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
+                });
+
             }
         });
     }
