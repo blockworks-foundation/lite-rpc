@@ -179,6 +179,11 @@ pub fn poll_block(
                 .await
                 .context("Slot notification channel close")?;
             let last_processed_slot = current_slot.load(std::sync::atomic::Ordering::Relaxed);
+            let last_processed_slot = if last_processed_slot == 0 {
+                last_processed_slot.saturating_sub(1)
+            } else {
+                last_processed_slot
+            };
             if processed_slot > last_processed_slot {
                 current_slot.store(processed_slot, std::sync::atomic::Ordering::Relaxed);
 

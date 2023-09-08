@@ -84,13 +84,14 @@ pub fn poll_slots(
                     // this is because it may be a slot block
                     if estimated_slot < current_slot + 32 {
                         estimated_slot += 1;
+
+                        sender
+                            .send(SlotNotification {
+                                processed_slot: current_slot,
+                                estimated_processed_slot: estimated_slot,
+                            })
+                            .context("Connot send slot notification")?;
                     }
-                    sender
-                        .send(SlotNotification {
-                            processed_slot: current_slot,
-                            estimated_processed_slot: estimated_slot,
-                        })
-                        .context("Connot send slot notification")?;
                 }
             }
         }
