@@ -102,14 +102,6 @@ impl TpuService {
         current_slot: Slot,
         estimated_slot: Slot,
     ) -> anyhow::Result<()> {
-        let load_slot = if estimated_slot <= current_slot {
-            current_slot
-        } else if estimated_slot.saturating_sub(current_slot) > 8 {
-            estimated_slot - 8
-        } else {
-            current_slot
-        };
-
         let fanout = self.config.fanout_slots;
         let last_slot = estimated_slot + fanout;
 
@@ -117,7 +109,7 @@ impl TpuService {
 
         let next_leaders = self
             .leader_schedule
-            .get_slot_leaders(load_slot, last_slot)
+            .get_slot_leaders(current_slot, last_slot)
             .await?;
         // get next leader with its tpu port
         let connections_to_keep = next_leaders

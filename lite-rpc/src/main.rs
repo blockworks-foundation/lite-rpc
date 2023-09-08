@@ -151,10 +151,10 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
             connection_timeout: Duration::from_secs(1),
             connection_retry_count: 10,
             finalize_timeout: Duration::from_millis(200),
-            max_number_of_connections: 10,
+            max_number_of_connections: 8,
             unistream_timeout: Duration::from_millis(500),
             write_timeout: Duration::from_secs(1),
-            number_of_transactions_per_unistream: 8,
+            number_of_transactions_per_unistream: 1,
         },
         tpu_connection_path,
     };

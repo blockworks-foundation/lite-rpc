@@ -68,15 +68,16 @@ impl ActiveConnection {
         let mut exit_oneshot_channel = exit_oneshot_channel;
         let identity = self.identity;
 
-        let max_uni_stream_connections: u64 = compute_max_allowed_uni_streams(
-            identity_stakes.peer_type,
-            identity_stakes.stakes,
-            identity_stakes.total_stakes,
-        ) as u64;
         let number_of_transactions_per_unistream = self
             .connection_parameters
             .number_of_transactions_per_unistream;
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
+
+        let max_uni_stream_connections: u64 = (compute_max_allowed_uni_streams(
+            identity_stakes.peer_type,
+            identity_stakes.stakes,
+            identity_stakes.total_stakes,
+        ) * max_number_of_connections) as u64;
 
         let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
         let exit_signal = self.exit_signal.clone();
