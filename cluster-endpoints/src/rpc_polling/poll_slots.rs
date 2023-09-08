@@ -12,7 +12,7 @@ pub async fn poll_commitment_slots(
     commitment_config: CommitmentConfig,
     slot_tx: tokio::sync::mpsc::UnboundedSender<Slot>,
 ) -> anyhow::Result<()> {
-    let mut poll_frequency = tokio::time::interval(Duration::from_millis(10));
+    let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));
     let mut last_slot = 0;
     let mut errors = 0;
     loop {

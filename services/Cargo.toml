@@ -3,7 +3,7 @@ name = "solana-lite-rpc-services"
 version = "0.2.3"
 edition = "2021"
 description = "Services used by solana lite rpc"
-rust-version = "1.67.1"
+rust-version = "1.70.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 

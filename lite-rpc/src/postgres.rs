@@ -3,7 +3,6 @@ use chrono::{DateTime, Utc};
 use futures::join;
 use log::{info, warn};
 use postgres_native_tls::MakeTlsConnector;
-use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use std::{sync::Arc, time::Duration};
 
 use tokio::sync::{RwLock, RwLockReadGuard};
@@ -19,11 +18,6 @@ use solana_lite_rpc_core::{
     },
     AnyhowJoinHandle,
 };
-
-lazy_static::lazy_static! {
-    pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();
-    pub static ref POSTGRES_SESSION_ERRORS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_session_errors", "Number of failures while establishing postgres session")).unwrap();
-}
 
 use std::convert::From;
 
@@ -440,25 +434,21 @@ impl Postgres {
                     }
 
                     match recv.try_recv() {
-                        Ok(msg) => {
-                            MESSAGES_IN_POSTGRES_CHANNEL.dec();
-
-                            match msg {
-                                NotificationMsg::TxNotificationMsg(tx) => {
-                                    let mut tx = tx.iter().map(|x| x.into()).collect::<Vec<_>>();
-                                    tx_batch.append(&mut tx)
-                                }
-                                NotificationMsg::BlockNotificationMsg(block) => {
-                                    block_batch.push(block.into())
-                                }
-                                NotificationMsg::UpdateTransactionMsg(update) => {
-                                    let mut update = update.iter().map(|x| x.into()).collect();
-                                    update_batch.append(&mut update)
-                                }
-
-                                NotificationMsg::AccountAddrMsg(_) => todo!(),
+                        Ok(msg) => match msg {
+                            NotificationMsg::TxNotificationMsg(tx) => {
+                                let mut tx = tx.iter().map(|x| x.into()).collect::<Vec<_>>();
+                                tx_batch.append(&mut tx)
                             }
-                        }
+                            NotificationMsg::BlockNotificationMsg(block) => {
+                                block_batch.push(block.into())
+                            }
+                            NotificationMsg::UpdateTransactionMsg(update) => {
+                                let mut update = update.iter().map(|x| x.into()).collect();
+                                update_batch.append(&mut update)
+                            }
+
+                            NotificationMsg::AccountAddrMsg(_) => todo!(),
+                        },
                         Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
                         Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
                             log::error!("Postgres channel broke");
@@ -478,16 +468,12 @@ impl Postgres {
                 session_establish_error = session.is_err();
 
                 let Ok(session) = session else {
-                    POSTGRES_SESSION_ERRORS.inc();
-
                     const TIME_OUT: Duration = Duration::from_millis(1000);
                     warn!("Unable to get postgres session. Retrying in {TIME_OUT:?}");
                     tokio::time::sleep(TIME_OUT).await;
 
                     continue;
                 };
-
-                POSTGRES_SESSION_ERRORS.set(0);
 
                 // write to database when a successful connection is made
                 let (res_txs, res_blocks, res_update) = join!(

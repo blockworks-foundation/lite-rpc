@@ -74,9 +74,8 @@ pub async fn start_postgres(
     Ok((Some(postgres_send), postgres))
 }
 
-pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
+pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
     let Args {
-        rpc_addr,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
@@ -101,8 +100,6 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
 
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
-    // rpc client
-    let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?
     } else {
@@ -239,14 +236,17 @@ pub async fn main() -> anyhow::Result<()> {
     let args = get_args();
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
-    let rpc_tester = RpcTester::from(&args).start();
+    let Args { rpc_addr, .. } = &args;
+    // rpc client
+    let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
+    let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
 
-    let main = start_lite_rpc(args.clone());
+    let main = start_lite_rpc(args.clone(), rpc_client);
 
     tokio::select! {
         err = rpc_tester => {
-            // This should never happen
-            unreachable!("{err:?}")
+            log::error!("{err:?}");
+            Ok(())
         }
         res = main => {
             // This should never happen
@@ -255,7 +255,6 @@ pub async fn main() -> anyhow::Result<()> {
         }
         _ = ctrl_c_signal => {
             log::info!("Received ctrl+c signal");
-
             Ok(())
         }
     }
