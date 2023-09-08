@@ -172,13 +172,18 @@ pub fn poll_block(
     let task_spawner: AnyhowJoinHandle = tokio::spawn(async move {
         let counting_semaphore = Arc::new(tokio::sync::Semaphore::new(1024));
         let mut slot_notification = slot_notification;
-        let current_slot = Arc::new(AtomicU64::new(rpc_client.get_slot()));
+        let current_slot = Arc::new(AtomicU64::new(0));
         loop {
             let SlotNotification { processed_slot, .. } = slot_notification
                 .recv()
                 .await
                 .context("Slot notification channel close")?;
             let last_processed_slot = current_slot.load(std::sync::atomic::Ordering::Relaxed);
+            let last_processed_slot = if last_processed_slot == 0 {
+                last_processed_slot.saturating_sub(1)
+            } else {
+                last_processed_slot
+            };
             if processed_slot > last_processed_slot {
                 current_slot.store(processed_slot, std::sync::atomic::Ordering::Relaxed);
 
