@@ -18,7 +18,10 @@ use solana_transaction_status::{
     option_serializer::OptionSerializer, RewardType, TransactionDetails, UiTransactionEncoding,
     UiTransactionStatusMeta,
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{atomic::AtomicU64, Arc},
+    time::Duration,
+};
 use tokio::sync::broadcast::{Receiver, Sender};
 
 pub async fn process_block(
@@ -169,48 +172,63 @@ pub fn poll_block(
     let task_spawner: AnyhowJoinHandle = tokio::spawn(async move {
         let counting_semaphore = Arc::new(tokio::sync::Semaphore::new(1024));
         let mut slot_notification = slot_notification;
-        let mut last_processed_slot = 0;
+        let current_slot = Arc::new(AtomicU64::new(0));
         loop {
             let SlotNotification { processed_slot, .. } = slot_notification
                 .recv()
                 .await
                 .context("Slot notification channel close")?;
+            let last_processed_slot = current_slot.load(std::sync::atomic::Ordering::Relaxed);
             if processed_slot > last_processed_slot {
-                last_processed_slot = processed_slot;
-                let premit = counting_semaphore.clone().acquire_owned().await?;
-                let rpc_client = rpc_client.clone();
-                let block_notification_sender = block_notification_sender.clone();
-                tokio::spawn(async move {
-                    // try 500 times because slot gets
-                    for _ in 0..1024 {
-                        if let Some(processed_block) = process_block(
-                            rpc_client.as_ref(),
-                            processed_slot,
-                            CommitmentConfig::confirmed(),
-                        )
-                        .await
-                        {
-                            let _ = block_notification_sender.send(processed_block);
-                            break;
-                        }
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    }
+                current_slot.store(processed_slot, std::sync::atomic::Ordering::Relaxed);
 
-                    for _ in 0..1024 {
-                        if let Some(processed_block) = process_block(
-                            rpc_client.as_ref(),
-                            processed_slot,
-                            CommitmentConfig::finalized(),
-                        )
-                        .await
+                for slot in last_processed_slot + 1..processed_slot + 1 {
+                    let premit = counting_semaphore.clone().acquire_owned().await?;
+                    let rpc_client = rpc_client.clone();
+                    let block_notification_sender = block_notification_sender.clone();
+                    let current_slot = current_slot.clone();
+                    tokio::spawn(async move {
+                        let mut confirmed_slot_fetch = false;
+                        while current_slot
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                            .saturating_sub(slot)
+                            < 32
                         {
-                            let _ = block_notification_sender.send(processed_block);
-                            break;
+                            if let Some(processed_block) = process_block(
+                                rpc_client.as_ref(),
+                                slot,
+                                CommitmentConfig::confirmed(),
+                            )
+                            .await
+                            {
+                                let _ = block_notification_sender.send(processed_block);
+                                confirmed_slot_fetch = true;
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_millis(50)).await;
                         }
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                    }
-                    drop(premit)
-                });
+
+                        while confirmed_slot_fetch
+                            && current_slot
+                                .load(std::sync::atomic::Ordering::Relaxed)
+                                .saturating_sub(slot)
+                                < 128
+                        {
+                            if let Some(processed_block) = process_block(
+                                rpc_client.as_ref(),
+                                slot,
+                                CommitmentConfig::finalized(),
+                            )
+                            .await
+                            {
+                                let _ = block_notification_sender.send(processed_block);
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                        }
+                        drop(premit)
+                    });
+                }
             }
         }
     });
