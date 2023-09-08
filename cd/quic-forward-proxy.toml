@@ -1,0 +1,13 @@
+app = "solana-quic-forward-proxy"
+kill_signal = "SIGINT"
+kill_timeout = 5
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[experimental]
+  cmd = ["solana-lite-rpc-quic-forward-proxy"]
+
+[env]
+  PROXY_LISTEN_ADDR = "[::]:11111"
+  RUST_LOG = "debug"

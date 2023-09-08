@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 lazy_static::lazy_static! {
     static ref RPC_RESPONDING: Gauge =
-    register_gauge!(opts!("literpc_rpc_responding", "If LiteRpc is responding")).unwrap();
+    register_gauge!(opts!("literpc_rpc_responding", "If RPC is responding")).unwrap();
 }
 
 pub struct RpcTester {
