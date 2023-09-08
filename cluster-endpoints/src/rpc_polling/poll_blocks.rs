@@ -172,7 +172,7 @@ pub fn poll_block(
     let task_spawner: AnyhowJoinHandle = tokio::spawn(async move {
         let counting_semaphore = Arc::new(tokio::sync::Semaphore::new(1024));
         let mut slot_notification = slot_notification;
-        let current_slot = Arc::new(AtomicU64::new(0));
+        let current_slot = Arc::new(AtomicU64::new(rpc_client.get_slot()));
         loop {
             let SlotNotification { processed_slot, .. } = slot_notification
                 .recv()
