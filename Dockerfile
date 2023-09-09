@@ -20,3 +20,5 @@ FROM debian:bullseye-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6
 COPY --from=build /app/target/release/solana-lite-rpc-quic-forward-proxy /usr/local/bin/
 COPY --from=build /app/target/release/lite-rpc /usr/local/bin/
+
+CMD lite-rpc --rpc-addr "$RPC_URL" --ws-addr "$WS_URL"
