@@ -3,6 +3,11 @@ use std::time::{Duration, Instant};
 use anyhow::bail;
 use chrono::Utc;
 use log::{trace, warn};
+
+use prometheus::{
+    core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
+    register_int_gauge, Histogram, IntCounter,
+};
 use solana_sdk::slot_history::Slot;
 use tokio::sync::mpsc::Receiver;
 
@@ -13,6 +18,22 @@ use solana_lite_rpc_core::{
     tx_store::TxProps,
     AnyhowJoinHandle,
 };
+
+lazy_static::lazy_static! {
+    static ref TXS_SENT: IntCounter =
+        register_int_counter!("literpc_txs_sent", "Number of transactions forwarded to tpu").unwrap();
+    static ref TXS_SENT_ERRORS: IntCounter =
+    register_int_counter!("literpc_txs_sent_errors", "Number of errors while transactions forwarded to tpu").unwrap();
+    static ref TX_BATCH_SIZES: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tx_batch_size", "batchsize of tx sent by literpc")).unwrap();
+    static ref TT_SENT_TIMER: Histogram = register_histogram!(histogram_opts!(
+        "literpc_txs_send_timer",
+        "Time to send transaction batch",
+    ))
+    .unwrap();
+    static ref TX_TIMED_OUT: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tx_timeout", "Number of transactions that timeout")).unwrap();
+    pub static ref TXS_IN_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_channel", "Transactions in channel")).unwrap();
+
+}
 
 pub type WireTransaction = Vec<u8>;
 
@@ -54,6 +75,7 @@ impl TxSender {
             return;
         }
 
+        let histo_timer = TT_SENT_TIMER.start_timer();
         let start = Instant::now();
 
         let tpu_client = self.tpu_service.clone();
@@ -83,8 +105,12 @@ impl TxSender {
                 transaction_info.signature.clone(),
                 transaction_info.transaction.clone(),
             ) {
-                Ok(_) => 1,
+                Ok(_) => {
+                    TXS_SENT.inc_by(1);
+                    1
+                }
                 Err(err) => {
+                    TXS_SENT_ERRORS.inc_by(1);
                     warn!("{err}");
                     0
                 }
@@ -109,6 +135,7 @@ impl TxSender {
             // ignore error on sent because the channel may be already closed
             let _ = notifier.send(NotificationMsg::TxNotificationMsg(notification_msgs));
         }
+        histo_timer.observe_duration();
         trace!(
             "It took {} ms to send a batch of {} transaction(s)",
             start.elapsed().as_millis(),
@@ -136,6 +163,8 @@ impl TxSender {
                     {
                         Ok(value) => match value {
                             Some(transaction_info) => {
+                                TXS_IN_CHANNEL.dec();
+
                                 // duplicate transaction
                                 if self
                                     .data_cache
@@ -164,6 +193,8 @@ impl TxSender {
                 if transaction_infos.is_empty() {
                     continue;
                 }
+
+                TX_BATCH_SIZES.set(transaction_infos.len() as i64);
 
                 self.forward_txs(transaction_infos, notifier.clone()).await;
             }

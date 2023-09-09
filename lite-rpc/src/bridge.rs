@@ -4,11 +4,14 @@ use crate::{
     rpc::LiteRpcServer,
 };
 
-use solana_lite_rpc_services::transaction_service::TransactionService;
+use solana_lite_rpc_services::{
+    transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
+};
 
 use anyhow::Context;
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
 use log::info;
+use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
     block_information_store::BlockInformation, data_cache::DataCache, AnyhowJoinHandle,
 };
@@ -23,6 +26,23 @@ use solana_sdk::{
 use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
+
+lazy_static::lazy_static! {
+    static ref RPC_SEND_TX: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_send_tx", "RPC call send transaction")).unwrap();
+    static ref RPC_GET_LATEST_BLOCKHASH: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_get_latest_blockhash", "RPC call to get latest block hash")).unwrap();
+    static ref RPC_IS_BLOCKHASH_VALID: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_is_blockhash_valid", "RPC call to check if blockhash is vali calld")).unwrap();
+    static ref RPC_GET_SIGNATURE_STATUSES: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_get_signature_statuses", "RPC call to get signature statuses")).unwrap();
+    static ref RPC_GET_VERSION: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_get_version", "RPC call to version")).unwrap();
+    static ref RPC_REQUEST_AIRDROP: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
+    static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
+}
 
 /// A bridge between clients and tpu
 pub struct LiteBridge {
@@ -95,6 +115,8 @@ impl LiteRpcServer for LiteBridge {
         tx: String,
         send_transaction_config: Option<SendTransactionConfig>,
     ) -> crate::rpc::Result<String> {
+        RPC_SEND_TX.inc();
+
         let SendTransactionConfig {
             encoding,
             max_retries,
@@ -112,7 +134,11 @@ impl LiteRpcServer for LiteBridge {
             .send_transaction(raw_tx, max_retries)
             .await
         {
-            Ok(sig) => Ok(sig),
+            Ok(sig) => {
+                TXS_IN_CHANNEL.inc();
+
+                Ok(sig)
+            }
             Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
         }
     }
@@ -121,6 +147,8 @@ impl LiteRpcServer for LiteBridge {
         &self,
         config: Option<RpcContextConfig>,
     ) -> crate::rpc::Result<RpcResponse<RpcBlockhash>> {
+        RPC_GET_LATEST_BLOCKHASH.inc();
+
         let commitment_config = config
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
@@ -155,6 +183,8 @@ impl LiteRpcServer for LiteBridge {
         blockhash: String,
         config: Option<IsBlockHashValidConfig>,
     ) -> crate::rpc::Result<RpcResponse<bool>> {
+        RPC_IS_BLOCKHASH_VALID.inc();
+
         let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
         let commitment = CommitmentConfig { commitment };
 
@@ -198,6 +228,8 @@ impl LiteRpcServer for LiteBridge {
         sigs: Vec<String>,
         _config: Option<RpcSignatureStatusConfig>,
     ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
+        RPC_GET_SIGNATURE_STATUSES.inc();
+
         let sig_statuses = sigs
             .iter()
             .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status))
@@ -218,6 +250,8 @@ impl LiteRpcServer for LiteBridge {
     }
 
     fn get_version(&self) -> crate::rpc::Result<RpcVersionInfo> {
+        RPC_GET_VERSION.inc();
+
         let version = solana_version::Version::default();
         Ok(RpcVersionInfo {
             solana_core: version.to_string(),
@@ -231,6 +265,8 @@ impl LiteRpcServer for LiteBridge {
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
     ) -> crate::rpc::Result<String> {
+        RPC_REQUEST_AIRDROP.inc();
+
         let pubkey = match Pubkey::from_str(&pubkey_str) {
             Ok(pubkey) => pubkey,
             Err(err) => {
@@ -285,6 +321,7 @@ impl LiteRpcServer for LiteBridge {
         signature: String,
         commitment_config: CommitmentConfig,
     ) -> SubscriptionResult {
+        RPC_SIGNATURE_SUBSCRIBE.inc();
         let sink = pending.accept().await?;
 
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
