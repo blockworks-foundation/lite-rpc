@@ -1,4 +1,5 @@
 use anyhow::Context;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 
 use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
@@ -16,6 +17,20 @@ use std::{
     sync::Arc,
 };
 use tokio::time::Duration;
+
+lazy_static::lazy_static! {
+    static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_nb_cluster_nodes", "Number of cluster nodes in saved")).unwrap();
+
+    static ref NB_OF_LEADERS_IN_SCHEDULE: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_cached_leader", "Number of leaders in schedule cache")).unwrap();
+
+    static ref CURRENT_SLOT: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_current_slot", "Current slot seen by last rpc")).unwrap();
+
+    static ref ESTIMATED_SLOT: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
+}
 
 #[derive(Clone, Copy)]
 pub struct TpuServiceConfig {

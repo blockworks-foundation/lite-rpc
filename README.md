@@ -82,7 +82,8 @@ The app listens by default on ports 8890 and 8891 for HTTP and Websockets respec
 fly apps create my-lite-rpc
 fly secrets set -a my-lite-rpc RPC_URL=... WS_URL=...   # See above table for env options
 fly scale vm dedicated-cpu-2x --memory 4096 -a my-lite-rpc
-fly deploy -c cd/lite-rpc.toml -a my-lite-rpc --remote-only
+fly deploy -a my-lite-rpc --remote-only # To just launch lite-rpc
+fly deploy -c cd/lite-rpc.toml -a my-lite-rpc --remote-only # To launch lite-rpc with proxy mode
 ```
 
 ## License & Copyright

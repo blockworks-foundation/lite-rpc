@@ -1,12 +1,18 @@
 use crate::tpu_utils::tpu_service::TpuService;
 use anyhow::bail;
 use log::error;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::{tx_store::TxStore, AnyhowJoinHandle};
 use std::time::Duration;
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
     time::Instant,
 };
+
+lazy_static::lazy_static! {
+    pub static ref MESSAGES_IN_REPLAY_QUEUE: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_messages_in_replay_queue", "Number of transactions waiting for replay")).unwrap();
+}
 
 #[derive(Debug, Clone)]
 pub struct TransactionReplay {
@@ -44,6 +50,7 @@ impl TransactionReplayer {
 
         tokio::spawn(async move {
             while let Some(mut tx_replay) = reciever.recv().await {
+                MESSAGES_IN_REPLAY_QUEUE.dec();
                 if Instant::now() < tx_replay.replay_at {
                     tokio::time::sleep_until(tx_replay.replay_at).await;
                 }
@@ -66,6 +73,8 @@ impl TransactionReplayer {
                     if let Err(e) = sender.send(tx_replay) {
                         error!("error while scheduling replay ({})", e);
                         continue;
+                    } else {
+                        MESSAGES_IN_REPLAY_QUEUE.inc();
                     }
                 }
             }

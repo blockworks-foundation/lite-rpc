@@ -17,8 +17,11 @@ jobs:
       - name: Setup Fly
         uses: superfly/flyctl-actions/setup-flyctl@master
       
-      - name: Deploy lite-rpc
-        run: flyctl deploy -c cd/lite-rpc.toml --remote-only
+      - name: Deploy
+        run: flyctl deploy --remote-only
 
-      - name: Deploy quic-forward-proxy
-        run: flyctl deploy -c cd/quic-forward-proxy.toml --remote-only
+#      - name: Deploy lite-rpc
+#        run: flyctl deploy -c cd/lite-rpc.toml --remote-only
+
+#      - name: Deploy quic-forward-proxy
+#        run: flyctl deploy -c cd/quic-forward-proxy.toml --remote-only
