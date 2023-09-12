@@ -3,6 +3,7 @@ pub mod cluster_info;
 pub mod data_cache;
 pub mod keypair_loader;
 pub mod leaders_fetcher_trait;
+pub mod block_storage_interface;
 pub mod notifications;
 pub mod proxy_request_format;
 pub mod quic_connection;

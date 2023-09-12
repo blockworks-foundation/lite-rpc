@@ -17,7 +17,10 @@ use solana_lite_rpc_core::{
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
-    config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
+    config::{
+        RpcBlockConfig, RpcContextConfig, RpcEncodingConfigWrapper, RpcRequestAirdropConfig,
+        RpcSignatureStatusConfig,
+    },
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{
@@ -332,5 +335,19 @@ impl LiteRpcServer for LiteBridge {
         );
 
         Ok(())
+    }
+
+    async fn get_block(
+        &self,
+        slot: u64,
+        _config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+    ) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
+        if let Some(block_storage) = &self.block_storage {
+            Ok(block_storage.get(slot).await)
+        } else {
+            Err(jsonrpsee::core::Error::Custom(
+                "Does not support get_block".to_string(),
+            ))
+        }
     }
 }

@@ -1,0 +1,2 @@
+mod inmemory_block_store_tests;
+mod multiple_strategy_block_store_tests;

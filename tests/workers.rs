@@ -34,7 +34,7 @@ async fn send_and_confirm_txs() {
     let tpu_client = Arc::new(tpu_service.clone());
 
     let tx_sender = TxSender::new(txs_sent_store, tpu_client);
-    let block_store = BlockStore::new(&rpc_client).await.unwrap();
+    let block_storage = BlockStore::new(&rpc_client).await.unwrap();
 
     let block_listener = BlockListener::new(rpc_client.clone(), tx_sender.clone(), block_store);
 

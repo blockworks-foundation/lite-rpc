@@ -4410,6 +4410,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-lite-rpc-storage"
+version = "0.2.2"
+dependencies = [
+ "async-trait",
+ "dashmap",
+ "solana-lite-rpc-core",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-transaction-status",
+ "tokio",
+]
+
+[[package]]
 name = "solana-logger"
 version = "1.16.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -11,6 +11,8 @@ pub struct Args {
     pub rpc_addr: String,
     #[arg(short, long, default_value_t = String::from(DEFAULT_WS_ADDR))]
     pub ws_addr: String,
+    #[arg(short = 't', long, default_value_t = String::new())]
+    pub faithful_service_address: String,
     #[arg(short = 'l', long, default_value_t = String::from("[::]:8890"))]
     pub lite_rpc_http_addr: String,
     #[arg(short = 's', long, default_value_t = String::from("[::]:8891"))]
