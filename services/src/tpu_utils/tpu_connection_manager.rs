@@ -14,7 +14,7 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
 };
@@ -85,13 +85,13 @@ impl ActiveConnection {
             .number_of_transactions_per_unistream;
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
 
-        let max_uni_stream_connections: u64 = (compute_max_allowed_uni_streams(
+        let max_uni_stream_connections = compute_max_allowed_uni_streams(
             identity_stakes.peer_type,
             identity_stakes.stakes,
             identity_stakes.total_stakes,
-        ) * max_number_of_connections) as u64;
+        ) * max_number_of_connections;
 
-        let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+        let task_counter = Arc::new(tokio::sync::Semaphore::new(max_uni_stream_connections));
         let exit_signal = self.exit_signal.clone();
         let connection_pool = QuicConnectionPool::new(
             identity,
@@ -105,11 +105,6 @@ impl ActiveConnection {
             // exit signal set
             if exit_signal.load(Ordering::Relaxed) {
                 break;
-            }
-
-            if task_counter.load(Ordering::Relaxed) >= max_uni_stream_connections {
-                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-                continue;
             }
 
             tokio::select! {
@@ -155,13 +150,12 @@ impl ActiveConnection {
 
                     let task_counter = task_counter.clone();
                     let connection_pool = connection_pool.clone();
-
+                    let permit = task_counter.acquire_owned().await.expect("Should get permit");
                     tokio::spawn(async move {
-                        task_counter.fetch_add(1, Ordering::Relaxed);
+                        let _ = permit;
                         NB_QUIC_TASKS.inc();
                         connection_pool.send_transaction_batch(txs).await;
                         NB_QUIC_TASKS.dec();
-                        task_counter.fetch_sub(1, Ordering::Relaxed);
                     });
                 },
                 _ = exit_oneshot_channel.recv() => {

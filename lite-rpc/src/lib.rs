@@ -28,7 +28,7 @@ pub const DEFAULT_FANOUT_SIZE: u64 = 10;
 #[from_env]
 pub const MAX_RETRIES: usize = 40;
 
-pub const DEFAULT_RETRY_TIMEOUT: u64 = 2;
+pub const DEFAULT_RETRY_TIMEOUT: u64 = 1;
 
 #[from_env]
 pub const DEFAULT_CLEAN_INTERVAL_MS: u64 = 5 * 60 * 1000; // five minute

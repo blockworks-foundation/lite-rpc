@@ -145,11 +145,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
 
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,
-        number_of_leaders_to_cache: 1024,
-        clusterinfo_refresh_time: Duration::from_secs(60 * 60),
-        leader_schedule_update_frequency: Duration::from_secs(10),
         maximum_transaction_in_queue: 20000,
-        maximum_number_of_errors: 10,
         quic_connection_params: QuicConnectionParameters {
             connection_timeout: Duration::from_secs(1),
             connection_retry_count: 10,
