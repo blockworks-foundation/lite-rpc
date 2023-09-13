@@ -10,7 +10,7 @@ protocol on behalf of the web browser. Running full solana [validators](https://
 is incredibly resource intensive `(>256GB RAM)`, the goal of this
 project would be to create a specialized micro-service that allows
 to deploy this logic quickly and allows [horizontal scalability](https://en.wikipedia.org/wiki/Scalability) with
-commodity vms.
+commodity vms. Optionally the Lite RCP micro-services can be configured to send the transactions to a complementary __QUIC forward proxy__ instead of the solana tpu ([details](quic-forward-proxy/README.md)).
 
 ### Confirmation strategies
 
