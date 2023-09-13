@@ -165,8 +165,8 @@ impl ProxyListener {
                     return Ok(());
                 }
                 Err(e) => {
-                    error!("failed to accept stream: {}", e);
-                    bail!("error accepting stream");
+                    warn!("failed to accept stream: {} - drop client connection", e);
+                    bail!("failed accepting stream - drop client connection");
                 }
             }; // -- result
         } // -- loop
