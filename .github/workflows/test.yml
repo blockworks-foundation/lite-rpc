@@ -40,7 +40,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Check Rust Code Format
-        run:  cargo fmt -- --check
+        run:  cargo fmt --all --check
 
       - name: Run Rust Clippy
         run: cargo clippy --all-targets -- -D warnings
