@@ -82,6 +82,8 @@ pub async fn tx_forwarder(
                         "Start Quic forwarder agent #{} for TPU {}",
                         connection_idx, tpu_address
                     );
+                    let mut sent_ok_tx_count = 0;
+
                     // get a copy of the packet from broadcast channel
                     let auto_connection = AutoReconnect::new(endpoint_copy, tpu_address);
 
@@ -168,6 +170,7 @@ pub async fn tx_forwarder(
 
                         match result {
                             Ok(()) => {
+                                sent_ok_tx_count += transactions_batch.len();
                                 debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
                                 debug!(
                                     "Outbound connection stats: {}",
@@ -182,9 +185,9 @@ pub async fn tx_forwarder(
 
 
                     auto_connection.force_shutdown().await;
-                    warn!(
-                        "Quic forwarder agent #{} for TPU {} exited; shut down connection",
-                        connection_idx, tpu_address
+                    debug!(
+                        "Quic forwarder agent #{} for TPU {} shutting down - processed {} txs",
+                        connection_idx, tpu_address, sent_ok_tx_count
                     );
                 }); // -- spawned thread for one connection to one TPU
             } // -- for parallel connections to one TPU
