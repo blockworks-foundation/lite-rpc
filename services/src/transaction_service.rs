@@ -9,12 +9,12 @@ use crate::{
     tx_sender::{TransactionInfo, TxSender},
 };
 use anyhow::bail;
+use solana_lite_rpc_core::{solana_utils::SerializableTransaction, types::SlotStream};
 use solana_lite_rpc_core::{
-    block_information_store::{BlockInformation, BlockInformationStore},
-    notifications::NotificationSender,
+    stores::block_information_store::{BlockInformation, BlockInformationStore},
+    structures::notifications::NotificationSender,
     AnyhowJoinHandle,
 };
-use solana_lite_rpc_core::{solana_utils::SerializableTransaction, streams::SlotStream};
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},

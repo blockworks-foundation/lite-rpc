@@ -1,11 +1,6 @@
+use crate::structures::leader_data::LeaderData;
 use async_trait::async_trait;
-use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
-
-#[derive(Debug, Clone)]
-pub struct LeaderData {
-    pub leader_slot: Slot,
-    pub pubkey: Pubkey,
-}
+use solana_sdk::slot_history::Slot;
 
 #[async_trait]
 pub trait LeaderFetcherInterface: Send + Sync {

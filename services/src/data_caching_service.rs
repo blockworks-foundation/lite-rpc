@@ -3,11 +3,10 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use prometheus::core::GenericGauge;
 use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter};
-use solana_lite_rpc_core::block_information_store::BlockInformation;
-use solana_lite_rpc_core::data_cache::DataCache;
-use solana_lite_rpc_core::streams::{
-    BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream,
+use solana_lite_rpc_core::stores::{
+    block_information_store::BlockInformation, data_cache::DataCache,
 };
+use solana_lite_rpc_core::types::{BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream};
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};

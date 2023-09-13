@@ -4,14 +4,14 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
 
 use crate::{
-    block_information_store::BlockInformationStore,
-    cluster_info::ClusterInfo,
+    stores::{
+        block_information_store::BlockInformationStore, cluster_info::ClusterInfo,
+        subscription_handler::SubscriptionHandler, tx_store::TxStore,
+    },
     structures::{
         identity_stakes::IdentityStakes,
         slot_notification::{AtomicSlot, SlotNotification},
     },
-    subscription_handler::SubscriptionHandler,
-    tx_store::TxStore,
 };
 pub type TxSubKey = (String, CommitmentConfig);
 

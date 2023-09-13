@@ -7,9 +7,7 @@ use solana_sdk::{
 };
 use tokio::time::Instant;
 
-use crate::{structures::processed_block::TransactionInfo, subscription_sink::SubscriptionSink};
-
-pub type SubscptionHanderSink = Arc<dyn SubscriptionSink>;
+use crate::{structures::processed_block::TransactionInfo, types::SubscptionHanderSink};
 
 #[derive(Clone, Default)]
 pub struct SubscriptionHandler {

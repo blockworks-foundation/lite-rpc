@@ -13,7 +13,7 @@ use native_tls::{Certificate, Identity, TlsConnector};
 
 use crate::encoding::BinaryEncoding;
 use solana_lite_rpc_core::{
-    notifications::{
+    structures::notifications::{
         BlockNotification, NotificationMsg, NotificationReciever, TransactionNotification,
         TransactionUpdateNotification,
     },

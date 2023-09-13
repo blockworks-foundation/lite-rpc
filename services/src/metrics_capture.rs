@@ -3,7 +3,7 @@ use std::sync::Arc;
 use log::info;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use serde::{Deserialize, Serialize};
-use solana_lite_rpc_core::tx_store::TxStore;
+use solana_lite_rpc_core::stores::tx_store::TxStore;
 use solana_transaction_status::TransactionConfirmationStatus;
 use tokio::{sync::RwLock, task::JoinHandle};
 
