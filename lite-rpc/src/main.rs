@@ -18,9 +18,9 @@ use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::stores::{
     block_information_store::{BlockInformation, BlockInformationStore},
-    cluster_info::ClusterInfo,
+    cluster_info_store::ClusterInfo,
     data_cache::{DataCache, SlotCache},
-    subscription_handler::SubscriptionHandler,
+    subscription_store::SubscriptionStore,
     tx_store::TxStore,
 };
 use solana_lite_rpc_core::structures::{
@@ -123,7 +123,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         cluster_info: ClusterInfo::default(),
         identity_stakes: IdentityStakes::new(validator_identity.pubkey()),
         slot_cache: SlotCache::new(finalized_block.slot),
-        tx_subs: SubscriptionHandler::default(),
+        tx_subs: SubscriptionStore::default(),
         txs: TxStore::default(),
     };
 

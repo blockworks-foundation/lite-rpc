@@ -1,3 +1,5 @@
+// this mod will contain all the core structures that are defined for lite-rpc
+
 pub mod identity_stakes;
 pub mod leader_data;
 pub mod notifications;

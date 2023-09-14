@@ -7,7 +7,7 @@ use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
-use solana_lite_rpc_core::traits::leaders_fetcher_trait::LeaderFetcherInterface;
+use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterface;
 use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
