@@ -79,16 +79,7 @@ impl QuicConnection {
                     if connection.stable_id() != current_stable_id {
                         Some(connection)
                     } else {
-                        let new_conn = QuicConnectionUtils::connect(
-                            self.identity,
-                            true,
-                            self.endpoint.clone(),
-                            self.socket_address,
-                            self.connection_params.connection_timeout,
-                            self.connection_params.connection_retry_count,
-                            self.exit_signal.clone(),
-                        )
-                        .await;
+                        let new_conn = self.connect().await;
                         if let Some(new_conn) = new_conn {
                             *conn = Some(new_conn);
                             conn.clone()
@@ -101,7 +92,11 @@ impl QuicConnection {
                     Some(connection.clone())
                 }
             }
-            None => self.connect().await,
+            None => {
+                let connection = self.connect().await;
+                *self.connection.write().await = connection.clone();
+                connection
+            }
         }
     }
 
