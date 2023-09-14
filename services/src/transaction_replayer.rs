@@ -1,5 +1,5 @@
 use crate::tpu_utils::tpu_service::TpuService;
-use anyhow::bail;
+use anyhow::{bail, Context};
 use log::error;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::{tx_store::TxStore, AnyhowJoinHandle};
@@ -22,6 +22,12 @@ pub struct TransactionReplay {
     pub max_replay: usize,
     pub replay_at: Instant,
 }
+
+/// Transaction Replayer
+/// It will replay transaction sent to the cluster if they are not confirmed
+/// They will be replayed max_replay times
+/// The replay time will be exponentialy increasing by after count * replay after
+/// So the transasctions will be replayed like retry_after, retry_after*2, retry_after*3 ...
 
 #[derive(Clone)]
 pub struct TransactionReplayer {
@@ -51,7 +57,14 @@ impl TransactionReplayer {
         tokio::spawn(async move {
             while let Some(mut tx_replay) = reciever.recv().await {
                 MESSAGES_IN_REPLAY_QUEUE.dec();
-                if Instant::now() < tx_replay.replay_at {
+                let now = Instant::now();
+                if now < tx_replay.replay_at {
+                    if tx_replay.replay_at > now + retry_after {
+                        // requeue the transactions will be replayed after retry_after duration
+                        sender.send(tx_replay).context("replay channel closed")?;
+                        MESSAGES_IN_REPLAY_QUEUE.inc();
+                        continue;
+                    }
                     tokio::time::sleep_until(tx_replay.replay_at).await;
                 }
                 if let Some(tx) = tx_store.get(&tx_replay.signature) {
@@ -69,13 +82,9 @@ impl TransactionReplayer {
 
                 if tx_replay.replay_count < tx_replay.max_replay {
                     tx_replay.replay_count += 1;
-                    tx_replay.replay_at = Instant::now() + retry_after;
-                    if let Err(e) = sender.send(tx_replay) {
-                        error!("error while scheduling replay ({})", e);
-                        continue;
-                    } else {
-                        MESSAGES_IN_REPLAY_QUEUE.inc();
-                    }
+                    tx_replay.replay_at = Instant::now() + retry_after.mul_f32(tx_replay.replay_count as f32);
+                    sender.send(tx_replay).context("replay channel closed")?;
+                    MESSAGES_IN_REPLAY_QUEUE.inc();
                 }
             }
             error!("transaction replay channel broken");
