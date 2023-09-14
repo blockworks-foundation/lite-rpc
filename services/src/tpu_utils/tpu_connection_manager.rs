@@ -3,7 +3,7 @@ use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
-    quic_connection::QuicConnectionPool,
+    quic_connection::{PooledConnection, QuicConnectionPool},
     quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
     stores::tx_store::TxStore,
     structures::{identity_stakes::IdentityStakesData, rotating_queue::RotatingQueue},
@@ -89,9 +89,7 @@ impl ActiveConnection {
             identity_stakes.peer_type,
             identity_stakes.stakes,
             identity_stakes.total_stakes,
-        ) * max_number_of_connections;
-
-        let task_counter = Arc::new(tokio::sync::Semaphore::new(max_uni_stream_connections));
+        );
         let exit_signal = self.exit_signal.clone();
         let connection_pool = QuicConnectionPool::new(
             identity,
@@ -99,6 +97,8 @@ impl ActiveConnection {
             addr,
             self.connection_parameters,
             exit_signal.clone(),
+            max_number_of_connections,
+            max_uni_stream_connections,
         );
 
         loop {
@@ -141,20 +141,21 @@ impl ActiveConnection {
                         }
                     }
 
-                    // queue getting full and a connection poll is getting slower
-                    // add more connections to the pool
-                    if connection_pool.len() < max_number_of_connections {
-                        connection_pool.add_connection().await;
-                        NB_QUIC_CONNECTIONS.inc();
-                    }
-
-                    let task_counter = task_counter.clone();
-                    let connection_pool = connection_pool.clone();
-                    let permit = task_counter.acquire_owned().await.expect("Should get permit");
+                    let connection_pool = match connection_pool.get_pooled_connection().await {
+                        Ok(connection_pool) => connection_pool,
+                        Err(_) => break,
+                    };
                     tokio::spawn(async move {
-                        let _ = permit;
+                        let PooledConnection {
+                            connection,
+                            permit
+                        } = connection_pool;
+                        // permit will be used to send all the transaction and then destroyed
+                        let _permit = permit;
                         NB_QUIC_TASKS.inc();
-                        connection_pool.send_transaction_batch(txs).await;
+                        for tx in txs {
+                            connection.send_transaction(tx).await;
+                        }
                         NB_QUIC_TASKS.dec();
                     });
                 },
@@ -210,8 +211,7 @@ impl TpuConnectionManager {
         Self {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
-            })
-            .await,
+            }),
             identity_to_active_connection: Arc::new(DashMap::new()),
         }
     }
