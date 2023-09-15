@@ -27,8 +27,6 @@ use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
-use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
-use solana_lite_rpc_core::leaders_fetcher_trait::LeaderFetcherInterface;
 use solana_lite_rpc_quic_forward_proxy::outbound::tx_forward::tx_forwarder;
 use solana_lite_rpc_quic_forward_proxy::shared::ForwardPacket;
 use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
