@@ -9,7 +9,7 @@ use bench::{
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
@@ -20,6 +20,7 @@ use std::sync::{
     Arc,
 };
 use std::sync::atomic::AtomicBool;
+use anyhow::Context;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
@@ -27,6 +28,7 @@ use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
+use tracing_subscriber::fmt::format;
 use solana_lite_rpc_quic_forward_proxy::outbound::tx_forward::tx_forwarder;
 use solana_lite_rpc_quic_forward_proxy::shared::ForwardPacket;
 use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
@@ -212,7 +214,7 @@ async fn bench(
                 // }
                 // let tpu_address = "127.0.0.1:1033".parse().unwrap();
 
-                println!("sent tx {} to {} tpu nodes", tx.get_signature(), leader_addrs.len());
+                debug!("sent tx {} to {} tpu nodes", tx.get_signature(), leader_addrs.len());
                 for tpu_address in &leader_addrs {
                     let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
                     let packet = ForwardPacket::new(
@@ -283,7 +285,7 @@ fn read_leaders_from_file(leaders_file: &str) -> anyhow::Result<Vec<SocketAddrV4
     let leader_file = read_to_string(leaders_file)?;
     let mut leader_addrs = vec![];
     for line in leader_file.lines() {
-        let socket_addr = SocketAddrV4::from_str(line).unwrap();
+        let socket_addr = SocketAddrV4::from_str(line).context(format!("error parsing line: {}", line)).unwrap();
         leader_addrs.push(socket_addr);
     }
     Ok(leader_addrs)
