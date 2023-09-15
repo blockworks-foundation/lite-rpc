@@ -119,7 +119,7 @@ impl ActiveConnection {
                                 "Broadcast channel error on recv for {} error {} - continue",
                                 identity, e
                             );
-                            continue;
+                            break;
                         }
                     };
 

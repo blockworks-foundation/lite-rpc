@@ -586,9 +586,11 @@ dependencies = [
  "rand_chacha 0.3.1",
  "serde",
  "serde_json",
- "solana-lite-rpc-quic-forward-proxy",
+ "solana-lite-rpc-core",
+ "solana-lite-rpc-services",
  "solana-rpc-client",
  "solana-sdk",
+ "solana-streamer",
  "tokio",
  "tracing-subscriber",
 ]
