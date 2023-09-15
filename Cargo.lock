@@ -574,6 +574,7 @@ name = "bench"
 version = "0.2.3"
 dependencies = [
  "anyhow",
+ "bincode",
  "clap 4.4.2",
  "csv",
  "dashmap",
@@ -585,8 +586,11 @@ dependencies = [
  "rand_chacha 0.3.1",
  "serde",
  "serde_json",
+ "solana-lite-rpc-core",
+ "solana-lite-rpc-services",
  "solana-rpc-client",
  "solana-sdk",
+ "solana-streamer",
  "tokio",
  "tracing-subscriber",
 ]

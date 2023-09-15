@@ -6,16 +6,22 @@ use bench::{
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
-use log::{error, info, warn};
+use log::{error, info};
+use solana_lite_rpc_core::{structures::identity_stakes::IdentityStakesData, stores::tx_store::TxStore, quic_connection_utils::QuicConnectionParameters};
+use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
-    slot_history::Slot,
+    slot_history::Slot, pubkey::Pubkey,
 };
-use std::sync::{
+use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use std::{sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
-};
+}, net::{IpAddr, Ipv4Addr}, collections::HashMap};
+use solana_rpc_client::rpc_client::SerializableTransaction;
+use solana_sdk::signature::Signature;
+use solana_sdk::transaction::Transaction;
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
@@ -53,6 +59,35 @@ async fn main() {
     let slot = rpc_client.get_slot().await.unwrap();
     let block_hash: Arc<RwLock<Hash>> = Arc::new(RwLock::new(bh));
     let current_slot = Arc::new(AtomicU64::new(slot));
+
+    let (forwarder_channel, _) = tokio::sync::broadcast::channel(1000);
+
+    let identity = Keypair::new();
+
+    let (certificate, key) = new_self_signed_tls_certificate(
+        &identity,
+        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+    )
+    .expect("Failed to initialize QUIC client certificates");
+
+    let tpu_connection_manager = TpuConnectionManager::new(certificate, key, 4).await;
+    let mut connections_to_keep = HashMap::new();
+    connections_to_keep.insert(Pubkey::new_unique(), std::net::SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1033));
+    let identity_stakes = IdentityStakesData::default();
+    let tx_store = TxStore::default();
+    let connection_parameters = QuicConnectionParameters {
+        write_timeout: Duration::from_millis(500),
+        connection_retry_count: 10,
+        connection_timeout: Duration::from_millis(1000),
+        finalize_timeout: Duration::from_millis(100),
+        max_number_of_connections: 8,
+        number_of_transactions_per_unistream: 1,
+        unistream_timeout: Duration::from_millis(500),
+    };
+
+    let forwarder_channel = Arc::new(forwarder_channel);
+    tpu_connection_manager.update_connections(forwarder_channel.clone(), connections_to_keep, identity_stakes, tx_store, connection_parameters).await;
+
     {
         // block hash updater task
         let block_hash = block_hash.clone();
@@ -104,6 +139,7 @@ async fn main() {
             current_slot.clone(),
             tx_log_sx.clone(),
             log_transactions,
+            forwarder_channel.clone(),
         )));
         // wait for an interval
         run_interval_ms.tick().await;
@@ -154,36 +190,48 @@ async fn bench(
     current_slot: Arc<AtomicU64>,
     tx_metric_sx: UnboundedSender<TxMetricData>,
     log_txs: bool,
+    forwarder_channel : Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>
 ) -> Metric {
-    let map_of_txs = Arc::new(DashMap::new());
+    let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
+
     // transaction sender task
     {
         let map_of_txs = map_of_txs.clone();
-        let rpc_client = rpc_client.clone();
         let current_slot = current_slot.clone();
+        let forwarder_channel = forwarder_channel.clone();
         tokio::spawn(async move {
             let map_of_txs = map_of_txs.clone();
             let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed));
-
             for rand_string in rand_strings {
+
                 let blockhash = { *block_hash.read().await };
                 let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
                 let start_time = Instant::now();
-                match rpc_client.send_transaction(&tx).await {
-                    Ok(signature) => {
-                        map_of_txs.insert(
-                            signature,
-                            TxSendData {
-                                sent_duration: start_time.elapsed(),
-                                sent_instant: Instant::now(),
-                                sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
-                            },
-                        );
-                    }
-                    Err(e) => {
-                        warn!("tx send failed with error {}", e);
-                    }
-                }
+                // match rpc_client.send_transaction(&tx).await {
+                //     Ok(signature) => {
+                //         map_of_txs.insert(
+                //             signature,
+                //             TxSendData {
+                //                 sent_duration: start_time.elapsed(),
+                //                 sent_instant: Instant::now(),
+                //                 sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
+                //             },
+                //         );
+                //     }
+                //     Err(e) => {
+                //         warn!("tx send failed with error {}", e);
+                //     }
+                // }
+
+                let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
+                let _ = forwarder_channel.send((tx.get_signature().to_string(), tx_raw));
+
+                map_of_txs.insert(tx.get_signature().clone(), TxSendData {
+                    sent_duration: start_time.elapsed(),
+                    sent_instant: Instant::now(),
+                    sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
+                });
+
             }
         });
     }
@@ -199,29 +247,32 @@ async fn bench(
             tokio::time::sleep(Duration::from_millis(1)).await;
             continue;
         }
+        let chunks = signatures.chunks(100).collect::<Vec<_>>();
+        for chunk in chunks {
+            if let Ok(res) = rpc_client.get_signature_statuses(&chunk).await {
+                for (i, signature) in chunk.iter().enumerate() {
+                    let tx_status = &res.value[i];
+                    if tx_status.is_some() {
+                        let tx_data = map_of_txs.get(signature).unwrap();
+                        let time_to_confirm = tx_data.sent_instant.elapsed();
+                        metric.add_successful_transaction(tx_data.sent_duration, time_to_confirm);
 
-        if let Ok(res) = rpc_client.get_signature_statuses(&signatures).await {
-            for (i, signature) in signatures.iter().enumerate() {
-                let tx_status = &res.value[i];
-                if tx_status.is_some() {
-                    let tx_data = map_of_txs.get(signature).unwrap();
-                    let time_to_confirm = tx_data.sent_instant.elapsed();
-                    metric.add_successful_transaction(tx_data.sent_duration, time_to_confirm);
-
-                    if log_txs {
-                        let _ = tx_metric_sx.send(TxMetricData {
-                            signature: signature.to_string(),
-                            sent_slot: tx_data.sent_slot,
-                            confirmed_slot: current_slot.load(Ordering::Relaxed),
-                            time_to_send_in_millis: tx_data.sent_duration.as_millis() as u64,
-                            time_to_confirm_in_millis: time_to_confirm.as_millis() as u64,
-                        });
+                        if log_txs {
+                            let _ = tx_metric_sx.send(TxMetricData {
+                                signature: signature.to_string(),
+                                sent_slot: tx_data.sent_slot,
+                                confirmed_slot: current_slot.load(Ordering::Relaxed),
+                                time_to_send_in_millis: tx_data.sent_duration.as_millis() as u64,
+                                time_to_confirm_in_millis: time_to_confirm.as_millis() as u64,
+                            });
+                        }
+                        drop(tx_data);
+                        map_of_txs.remove(signature);
+                        confirmed_count += 1;
                     }
-                    drop(tx_data);
-                    map_of_txs.remove(signature);
-                    confirmed_count += 1;
                 }
             }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 
