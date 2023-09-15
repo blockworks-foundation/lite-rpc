@@ -202,10 +202,12 @@ impl TpuService {
 fn dump_leaders_to_file(leaders: Vec<&SocketAddr>) {
     // will create/truncate file
     // 69.197.20.37:8009
-    let mut out_file = File::create("leaders.dat").unwrap();
-
+    let mut out_file = File::create("leaders.dat.tmp").unwrap();
     for leader_addr in &leaders {
         write!(out_file, "{}\n", leader_addr).unwrap();
     }
+    out_file.flush().unwrap();
+
+    std::fs::rename("leaders.dat.tmp", "leaders.dat").unwrap();
 }
 
