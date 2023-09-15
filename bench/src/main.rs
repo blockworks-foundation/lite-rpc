@@ -11,7 +11,8 @@ use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
 use log::{debug, error, info};
-use solana_lite_rpc_core::{structures::identity_stakes::IdentityStakesData, stores::tx_store::TxStore, quic_connection_utils::QuicConnectionParameters};
+use solana_lite_rpc_core::tx_store::TxStore;
+use solana_lite_rpc_core::{structures::identity_stakes::IdentityStakesData, quic_connection_utils::QuicConnectionParameters};
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
@@ -29,9 +30,6 @@ use solana_sdk::transaction::Transaction;
 use std::sync::atomic::AtomicBool;
 use std::time::SystemTime;
 use anyhow::Context;
-use solana_rpc_client::rpc_client::SerializableTransaction;
-use solana_sdk::signature::Signature;
-use solana_sdk::transaction::Transaction;
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
