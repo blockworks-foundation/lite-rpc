@@ -1,6 +1,6 @@
 # Architecture
 
-## Modules
+## Domains
 
 ### Validator
 Manage real time generated data by the validator.
@@ -20,7 +20,7 @@ Provide these subscription:
  * Leader schedule
  * sent Tx at confirmed and / or finalized: notify when a Tx sent is confirmed or finalized. 
 
-A new subscription is added: Sent Tx confirmed/ finalized. SendTx module send Tx signature to the consensus module and when a Tx sent is confirmed (or finalized), it is notified on this subscription.
+A new subscription is added: Sent Tx confirmed/ finalized. SendTx module send Tx signature to the Validator domain and when a Tx sent is confirmed (or finalized), it is notified on this subscription.
 
 It avoids to call getSignatureStatuses in a pull mode.
 #### Sub domain Cluster
@@ -39,7 +39,7 @@ Implements the sendTx call.
 ### History
 Manage history function like getBlocks.
 
-A special use case is the getSignatureStatuses because on process its the Consensus module that provide tha data.
+A special use case is the getSignatureStatuses because on process its the Validator domain that provide tha data.
 
 ### RPC
 It's an entry point for all call and dispatch the call to the right function.
@@ -49,13 +49,13 @@ It's an entry point for all call and dispatch the call to the right function.
 ```mermaid
 flowchart TD
     subgraph Send Tx Domain
-        SendTx("SendTx API
+        SendTx("SendTx Domain
 
               send_transaction()")
     end
 
     subgraph History Domain
-        History("History API
+        History("History Domain
 
         at confirm/finalized
             getBlock()
@@ -72,7 +72,7 @@ flowchart TD
             Validator process
             + GRPC Geyser"]
         
-        Consensus("Validator API
+        Consensus("Validator Domain
 
             getVoteAccounts()
             getLeaderSchedule()
@@ -83,7 +83,7 @@ flowchart TD
             getSignatureStatuses()
 
               ")
-        Cluster("Cluster API
+        Cluster("Cluster Domain
             
            getClusterNodes()")
     end
@@ -91,10 +91,10 @@ flowchart TD
 
     Validator-- "geyser data" -->Consensus
     Validator-- "Cluster info" -->Cluster
-    Consensus-- "Block Info/Leader Schedule" -->SendTx
+    Consensus-- "Block Info/Slot/Leader Schedule" -->SendTx
     Consensus-- "confirmed Tx" -->SendTx
     Cluster-- "Cluster info" -->SendTx
-    Consensus-- "Full Block / Epoch" -->History
+    Consensus-- "Full Block/Slot/Epoch" -->History
     History<-. "old data" .-> Faithfull
     History<-. "recent data" .-> Storage
 
@@ -195,47 +195,25 @@ The logic organization will be.
 
 ```mermaid
 flowchart TD
-    SendTx("Send Tx
-           [Module]
-        
-          Send Tx to cluster")
-    History("History
-               [Module]
+    SendTx("Send Tx")
+    History("History")
+    subgraph Validator_Domain
+        Cluster("Cluster Info")
             
-              Get Block and Tx")
-
-    Cluster("Cluster Info
-           [Module]
-        
-          Cluster data")
-        
-    Consensus("Validator
-           [Module]
-          Manage realtime produced data
-    by the validator")
+        Consensus("Validator")
+    end
 
     Stream("Stream
           Manage message routing
           between module.")
 
-    Consensus-- "Send Full Block" -->Stream
-    Consensus-- "Send Block Info" -->Stream
-    Consensus-- "Send Slot" -->Stream
-    Consensus-- "Send Leader Schedule" -->Stream
-    Consensus-- "Send Epoch info" -->Stream
-    Consensus-- "Send Sent Tx confirmed/finalized" -->Stream
-    Consensus-- "Send geyser cluster info" -->Stream
+    Consensus-- "Send [Full&Info Block, Slot, Leader Schedule, Epoch info, Tx confirmed]" -->Stream
     Cluster-- "Send Cluster Info" -->Stream
-    SendTx-- "Send sendTx" -->Stream
+    SendTx-- "Sent sendTx" -->Stream
    
-    Stream-- "Cluster Info sub" -->SendTx
-    Stream-- "Block Info sub" -->SendTx
-    Stream-- "Leader Schedule sub" -->SendTx
-    Stream-- "Sent Tx confirmed/finalized sub" -->SendTx
-    Stream-- "Sent Tx sub" -->Consensus
-    Stream-- "Full Block sub" -->History
-    Stream-- "Epoch info sub" -->History
-    Stream-- "geyser cluster info sub" -->Cluster
+    Stream-- "[Slot, Leader Schedule, Block and Epoch info, Tx confirmed] sub" -->SendTx
+    Stream-- "[Sent Tx] sub" -->Consensus
+    Stream-- "[Full Block, Slot, Epoch info] sub" -->History
 
     classDef consensus fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef history fill:#666,stroke:#0b4884,color:#ffffff
@@ -253,66 +231,51 @@ flowchart TD
 Each domain implements its own bootsrap. A domain impl running can send boostrap data to a starting one.
 
 ## Deployment example
+
 ```mermaid
 flowchart TD
-    SendTx1("Send Tx Host1")
-    SendTx2("Send Tx Host2")
-    subgraph Data_instance1
-        History1("History1")
+    subgraph SendTx Host1
+        SendTx1("Send Tx impl")
     end
-    subgraph Data_instance2
-        History2("History2")
+    subgraph SendTx Host2
+        SendTx2("Send Tx impl")
     end
-    subgraph Data_instance3
-        History3("History3")
+    subgraph History Host1
+        History1("History impl")
+    end
+    subgraph History Host2
+        History2("History impl")
+    end
+    subgraph History Host3
+        History3("History impl")
     end
 
-    subgraph Validator1_Host
+    subgraph Validator Host1
         Validator1["Solana Validator"]
-        Consensus1("Validator")
-        Cluster1("Cluster Info")
+        Consensus1("Validator impl")
+        Cluster1("Cluster impl")
     end
-    subgraph Validator2_Host
+    subgraph Validator Host2
         Validator2["Solana Validator"]
-        Consensus2("Validator")
-        Cluster2("Cluster Info")
+        Consensus2("Validator impl")
+        Cluster2("Cluster impl")
     end
 
     RPC["RPC entry point
         dispatch on started servers"]
 
-    Stream("Stream")
-
     RPC== "Send sendTx" ==>SendTx1
     RPC== "Send sendTx" ==>SendTx2
-    SendTx1-- "Send Tx sent" -->Stream
-    SendTx2-- "Send Tx sent" -->Stream
-    Stream-- "Block Info" -->SendTx1
-    Stream-- "Block Info" -->SendTx2
-    Stream-- "Cluster Schedule" -->SendTx1
-    Stream-- "Cluster Schedule" -->SendTx2
 
-    Consensus1-- "Send consensus data" -->Stream
-    Consensus2-- "Send consensus data" -->Stream
-    RPC<== "getVoteAccounts" ==>Consensus1
-    RPC<== "getVoteAccounts" ==>Consensus2
+    RPC== "getVoteAccounts" ==>Consensus1
+    RPC== "getVoteAccounts" ==>Consensus2
 
-    Stream-- "Block sub" -->History1
-    Stream-- "Block sub" -->History2
-    Stream-- "Block sub" -->History3
-    RPC<== "getBlock" ==>History1
-    RPC<== "getBlock" ==>History2
-    RPC<== "getBlock" ==>History3
+    RPC== "getBlock" ==>History1
+    RPC== "getBlock" ==>History2
+    RPC== "getBlock" ==>History3
 
-    Cluster1-- "Send Cluster info" -->Stream
-    Cluster2-- "Send Cluster info" -->Stream
-    RPC<== "getClusterNodes" ==>Cluster1
-    RPC<== "getClusterNodes" ==>Cluster2
-
-    Validator1-- "Geyser data" -->Consensus1
-    Validator1-- "Geyser data" -->Cluster1
-    Validator2-- "Geyser data" -->Consensus2
-    Validator2-- "Geyser data" -->Cluster2
+    RPC== "getClusterNodes" ==>Cluster1
+    RPC== "getClusterNodes" ==>Cluster2
 
     classDef consensus fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef history fill:#666,stroke:#0b4884,color:#ffffff
@@ -322,11 +285,11 @@ flowchart TD
 
     class SendTx1 sendtx
     class SendTx2 sendtx
-    class Data_instance1 redgray
-    class Data_instance2 redgray
-    class Data_instance3 redgray
-    class Validator1_Host consensus
-    class Validator2_Host consensus
-    class Cluster greengray
+    class Cluster1 greengray
+    class Cluster2 greengray
+    class Consensus1 consensus
+    class Consensus2 consensus
+    class History1 redgray
+    class History2 redgray
+    class History3 redgray
 ```
-
