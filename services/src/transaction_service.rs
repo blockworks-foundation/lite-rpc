@@ -88,7 +88,7 @@ impl TransactionServiceBuilder {
                 replay_channel,
                 block_store,
                 max_retries,
-                replay_after: self.tx_replayer.retry_after,
+                replay_offset: self.tx_replayer.retry_offset,
             },
             jh_services,
         )
@@ -101,7 +101,7 @@ pub struct TransactionService {
     pub replay_channel: UnboundedSender<TransactionReplay>,
     pub block_store: BlockInformationStore,
     pub max_retries: usize,
-    pub replay_after: Duration,
+    pub replay_offset: Duration,
 }
 
 impl TransactionService {
@@ -146,7 +146,7 @@ impl TransactionService {
                 e
             );
         }
-        let replay_at = Instant::now() + self.replay_after;
+        let replay_at = Instant::now() + self.replay_offset;
         // ignore error for replay service
         if self
             .replay_channel
