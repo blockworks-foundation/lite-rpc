@@ -1,5 +1,5 @@
 use anyhow::{bail, Context};
-use log::{info, warn};
+use log::{info, warn, trace};
 use quinn::{Connection, ConnectionError, Endpoint};
 use std::fmt;
 use std::net::SocketAddr;
@@ -42,6 +42,7 @@ impl AutoReconnect {
     }
 
     pub async fn send_uni(&self, payload: &Vec<u8>) -> anyhow::Result<()> {
+        trace!("send_uni");
         let mut send_stream = timeout(SEND_TIMEOUT, self.refresh_and_get().await?.open_uni())
             .await
             .context("open uni stream for sending")??;
@@ -51,6 +52,7 @@ impl AutoReconnect {
     }
 
     pub async fn refresh_and_get(&self) -> anyhow::Result<Connection> {
+        trace!("refresh_and_get");
         self.refresh().await;
 
         let lock = self.current.read().await;
@@ -64,8 +66,10 @@ impl AutoReconnect {
 
     pub async fn refresh(&self) {
         {
+            trace!("refresh");
             // first check for existing connection using a cheap read-lock
             let lock = self.current.read().await;
+            trace!("refresh got lock");
             if let ConnectionState::Connection(conn) = &*lock {
                 if conn.close_reason().is_none() {
                     debug!(
@@ -78,6 +82,7 @@ impl AutoReconnect {
             }
         }
         let mut lock = self.current.write().await;
+        trace!("refresh got lock 2");
         match &*lock {
             ConnectionState::Connection(current) => {
                 if current.close_reason().is_some() {

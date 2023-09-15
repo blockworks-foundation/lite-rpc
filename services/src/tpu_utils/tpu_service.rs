@@ -1,6 +1,6 @@
 use anyhow::Context;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-
+use log::{debug, info, trace, warn};
 use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
@@ -107,6 +107,7 @@ impl TpuService {
     }
 
     pub fn send_transaction(&self, signature: String, transaction: Vec<u8>) -> anyhow::Result<()> {
+        trace!("send tx");
         self.broadcast_sender.send((signature, transaction))?;
         Ok(())
     }
