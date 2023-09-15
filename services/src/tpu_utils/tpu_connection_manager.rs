@@ -5,9 +5,8 @@ use quinn::Endpoint;
 use solana_lite_rpc_core::{
     quic_connection::QuicConnectionPool,
     quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
-    rotating_queue::RotatingQueue,
-    structures::identity_stakes::IdentityStakesData,
-    tx_store::TxStore,
+    stores::tx_store::TxStore,
+    structures::{identity_stakes::IdentityStakesData, rotating_queue::RotatingQueue},
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;

@@ -13,7 +13,7 @@ impl JsonRpseeSubscriptionHandlerSink {
 }
 
 #[async_trait]
-impl solana_lite_rpc_core::subscription_sink::SubscriptionSink
+impl solana_lite_rpc_core::traits::subscription_sink::SubscriptionSink
     for JsonRpseeSubscriptionHandlerSink
 {
     async fn send(&self, slot: solana_sdk::slot_history::Slot, message: serde_json::Value) {

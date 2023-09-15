@@ -4,14 +4,14 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
 
 use crate::{
-    block_information_store::BlockInformationStore,
-    cluster_info::ClusterInfo,
+    stores::{
+        block_information_store::BlockInformationStore, cluster_info_store::ClusterInfo,
+        subscription_store::SubscriptionStore, tx_store::TxStore,
+    },
     structures::{
         identity_stakes::IdentityStakes,
         slot_notification::{AtomicSlot, SlotNotification},
     },
-    subscription_handler::SubscriptionHandler,
-    tx_store::TxStore,
 };
 pub type TxSubKey = (String, CommitmentConfig);
 
@@ -26,7 +26,7 @@ pub struct SlotCache {
 pub struct DataCache {
     pub block_store: BlockInformationStore,
     pub txs: TxStore,
-    pub tx_subs: SubscriptionHandler,
+    pub tx_subs: SubscriptionStore,
     pub slot_cache: SlotCache,
     pub identity_stakes: IdentityStakes,
     pub cluster_info: ClusterInfo,

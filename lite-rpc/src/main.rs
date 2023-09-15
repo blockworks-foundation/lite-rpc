@@ -14,17 +14,20 @@ use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
-use solana_lite_rpc_core::block_information_store::{BlockInformation, BlockInformationStore};
-use solana_lite_rpc_core::cluster_info::ClusterInfo;
-use solana_lite_rpc_core::data_cache::{DataCache, SlotCache};
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
-use solana_lite_rpc_core::notifications::NotificationSender;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
-use solana_lite_rpc_core::streams::BlockStream;
-use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
-use solana_lite_rpc_core::structures::processed_block::ProcessedBlock;
-use solana_lite_rpc_core::subscription_handler::SubscriptionHandler;
-use solana_lite_rpc_core::tx_store::TxStore;
+use solana_lite_rpc_core::stores::{
+    block_information_store::{BlockInformation, BlockInformationStore},
+    cluster_info_store::ClusterInfo,
+    data_cache::{DataCache, SlotCache},
+    subscription_store::SubscriptionStore,
+    tx_store::TxStore,
+};
+use solana_lite_rpc_core::structures::{
+    identity_stakes::IdentityStakes, notifications::NotificationSender,
+    processed_block::ProcessedBlock,
+};
+use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
@@ -120,7 +123,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         cluster_info: ClusterInfo::default(),
         identity_stakes: IdentityStakes::new(validator_identity.pubkey()),
         slot_cache: SlotCache::new(finalized_block.slot),
-        tx_subs: SubscriptionHandler::default(),
+        tx_subs: SubscriptionStore::default(),
         txs: TxStore::default(),
     };
 

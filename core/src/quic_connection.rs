@@ -1,6 +1,6 @@
 use crate::{
     quic_connection_utils::{QuicConnectionError, QuicConnectionParameters, QuicConnectionUtils},
-    rotating_queue::RotatingQueue,
+    structures::rotating_queue::RotatingQueue,
 };
 use anyhow::bail;
 use log::warn;
