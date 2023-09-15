@@ -16,7 +16,6 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
-use tokio::time::Duration;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -35,11 +34,7 @@ lazy_static::lazy_static! {
 #[derive(Clone, Copy)]
 pub struct TpuServiceConfig {
     pub fanout_slots: u64,
-    pub number_of_leaders_to_cache: usize,
-    pub clusterinfo_refresh_time: Duration,
-    pub leader_schedule_update_frequency: Duration,
     pub maximum_transaction_in_queue: usize,
-    pub maximum_number_of_errors: usize,
     pub quic_connection_params: QuicConnectionParameters,
     pub tpu_connection_path: TpuConnectionPath,
 }

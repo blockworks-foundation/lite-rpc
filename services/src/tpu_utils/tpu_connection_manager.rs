@@ -3,7 +3,7 @@ use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
-    quic_connection::QuicConnectionPool,
+    quic_connection::{PooledConnection, QuicConnectionPool},
     quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
     stores::tx_store::TxStore,
     structures::{identity_stakes::IdentityStakesData, rotating_queue::RotatingQueue},
@@ -14,7 +14,7 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
 };
@@ -85,13 +85,11 @@ impl ActiveConnection {
             .number_of_transactions_per_unistream;
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
 
-        let max_uni_stream_connections: u64 = (compute_max_allowed_uni_streams(
+        let max_uni_stream_connections = compute_max_allowed_uni_streams(
             identity_stakes.peer_type,
             identity_stakes.stakes,
             identity_stakes.total_stakes,
-        ) * max_number_of_connections) as u64;
-
-        let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+        );
         let exit_signal = self.exit_signal.clone();
         let connection_pool = QuicConnectionPool::new(
             identity,
@@ -99,17 +97,14 @@ impl ActiveConnection {
             addr,
             self.connection_parameters,
             exit_signal.clone(),
+            max_number_of_connections,
+            max_uni_stream_connections,
         );
 
         loop {
             // exit signal set
             if exit_signal.load(Ordering::Relaxed) {
                 break;
-            }
-
-            if task_counter.load(Ordering::Relaxed) >= max_uni_stream_connections {
-                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
-                continue;
             }
 
             tokio::select! {
@@ -146,22 +141,22 @@ impl ActiveConnection {
                         }
                     }
 
-                    // queue getting full and a connection poll is getting slower
-                    // add more connections to the pool
-                    if connection_pool.len() < max_number_of_connections {
-                        connection_pool.add_connection().await;
-                        NB_QUIC_CONNECTIONS.inc();
-                    }
-
-                    let task_counter = task_counter.clone();
-                    let connection_pool = connection_pool.clone();
-
+                    let connection_pool = match connection_pool.get_pooled_connection().await {
+                        Ok(connection_pool) => connection_pool,
+                        Err(_) => break,
+                    };
                     tokio::spawn(async move {
-                        task_counter.fetch_add(1, Ordering::Relaxed);
+                        let PooledConnection {
+                            connection,
+                            permit
+                        } = connection_pool;
+                        // permit will be used to send all the transaction and then destroyed
+                        let _permit = permit;
                         NB_QUIC_TASKS.inc();
-                        connection_pool.send_transaction_batch(txs).await;
+                        for tx in txs {
+                            connection.send_transaction(tx).await;
+                        }
                         NB_QUIC_TASKS.dec();
-                        task_counter.fetch_sub(1, Ordering::Relaxed);
                     });
                 },
                 _ = exit_oneshot_channel.recv() => {
@@ -216,8 +211,7 @@ impl TpuConnectionManager {
         Self {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
-            })
-            .await,
+            }),
             identity_to_active_connection: Arc::new(DashMap::new()),
         }
     }
