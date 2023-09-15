@@ -2,7 +2,7 @@
 
 ## Modules
 
-### Consensus
+### Validator
 Manage real time generated data by the validator.
 
 Implements these calls:
@@ -23,6 +23,12 @@ Provide these subscription:
 A new subscription is added: Sent Tx confirmed/ finalized. SendTx module send Tx signature to the consensus module and when a Tx sent is confirmed (or finalized), it is notified on this subscription.
 
 It avoids to call getSignatureStatuses in a pull mode.
+#### Sub domain Cluster
+Manage cluster information.
+
+Implement the call: getClusterNodes
+
+Provide the subscription: cluster info.
 
 ### SendTx
 Manage the whole send Tx process. Represent the current Lite RPC process.
@@ -34,13 +40,6 @@ Implements the sendTx call.
 Manage history function like getBlocks.
 
 A special use case is the getSignatureStatuses because on process its the Consensus module that provide tha data.
-
-### Cluster
-Manage cluster information.
-
-Implement the call: getClusterNodes
-
-Provide the subscription: cluster info.
 
 ### RPC
 It's an entry point for all call and dispatch the call to the right function.
@@ -69,11 +68,11 @@ flowchart TD
     end
 
     subgraph Validator Host
-        Validator["Validator
+        Validator["Solana Validator
             Validator process
             + GRPC Geyser"]
         
-        Consensus("Consensus API
+        Consensus("Validator API
 
             getVoteAccounts()
             getLeaderSchedule()
@@ -128,21 +127,22 @@ flowchart TD
         Faithfull["Faithfull Service"]
         Storage["2 epoch Storage"]
     end
-    Cluster("Cluster Info
-           [Domain]
-        
-          Cluster data")
 
     subgraph Validator Host
 
-        Validator["Validator
+        Validator["Solana Validator
                   Validator process
                 + GRPC Geyser"]
         
-        Consensus("Consensus
+        Consensus("Validator
                [Domain]
               Manage realtime produced data
         by the validator")
+
+        Cluster("Cluster Info
+               [SubDomain]
+        
+              Cluster data")
 
     end
 
@@ -209,7 +209,7 @@ flowchart TD
         
           Cluster data")
         
-    Consensus("Consensus
+    Consensus("Validator
            [Module]
           Manage realtime produced data
     by the validator")
@@ -250,31 +250,31 @@ flowchart TD
 ```
 
 ## Bootstrap architecture
-To be done
+Each domain implements its own bootsrap. A domain impl running can send boostrap data to a starting one.
 
 ## Deployment example
 ```mermaid
 flowchart TD
-    SendTx1("Send Tx Host")
-    SendTx2("Send Tx Host")
+    SendTx1("Send Tx Host1")
+    SendTx2("Send Tx Host2")
     subgraph Data_instance1
-        History1("History + bootstrap")
+        History1("History1")
     end
     subgraph Data_instance2
-        History2("History + bootstrap")
+        History2("History2")
     end
     subgraph Data_instance3
-        History3("History + bootstrap")
+        History3("History3")
     end
 
     subgraph Validator1_Host
-        Validator1["Validator"]
-        Consensus1("Consensus + bootstrap")
+        Validator1["Solana Validator"]
+        Consensus1("Validator")
         Cluster1("Cluster Info")
     end
     subgraph Validator2_Host
-        Validator2["Validator"]
-        Consensus2("Consensus + bootstrap")
+        Validator2["Solana Validator"]
+        Consensus2("Validator")
         Cluster2("Cluster Info")
     end
 
