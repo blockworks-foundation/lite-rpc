@@ -1,3 +1,6 @@
+use std::fs::read_to_string;
+use std::net::{SocketAddr, SocketAddrV4};
+use std::str::FromStr;
 use bench::{
     cli::Args,
     helpers::BenchHelper,
@@ -24,6 +27,8 @@ use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
+use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
+use solana_lite_rpc_core::leaders_fetcher_trait::LeaderFetcherInterface;
 use solana_lite_rpc_quic_forward_proxy::outbound::tx_forward::tx_forwarder;
 use solana_lite_rpc_quic_forward_proxy::shared::ForwardPacket;
 use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
@@ -188,6 +193,9 @@ async fn bench(
             for rand_string in rand_strings {
                 let blockhash = { *block_hash.read().await };
                 let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
+
+                let leader_addrs = read_leaders_from_file("/Users/stefan/mango/code/lite-rpc/leaders.dat").expect("leaders.dat file");
+
                 let start_time = Instant::now();
                 // match rpc_client.send_transaction(&tx).await {
                 //     Ok(signature) => {
@@ -204,22 +212,26 @@ async fn bench(
                 //         warn!("tx send failed with error {}", e);
                 //     }
                 // }
-                let tpu_address = "127.0.0.1:1033".parse().unwrap();
+                // let tpu_address = "127.0.0.1:1033".parse().unwrap();
 
-                let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
-                let packet = ForwardPacket::new(
-                    vec![tx_raw],
-                    tpu_address,
-                    424242,
-                );
+                for tpu_address in &leader_addrs {
+                    let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
+                    let packet = ForwardPacket::new(
+                        vec![tx_raw],
+                        SocketAddr::from(*tpu_address),
+                        424242,
+                    );
 
-                forwarder_channel.send(packet).await;
+                    forwarder_channel.send(packet).await;
 
-                map_of_txs.insert(tx.get_signature().clone(), TxSendData {
-                    sent_duration: start_time.elapsed(),
-                    sent_instant: Instant::now(),
-                    sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
-                });
+                    println!("sent tx {}", tx.get_signature());
+
+                    map_of_txs.insert(tx.get_signature().clone(), TxSendData {
+                        sent_duration: start_time.elapsed(),
+                        sent_instant: Instant::now(),
+                        sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
+                    });
+                }
 
             }
         });
@@ -268,3 +280,17 @@ async fn bench(
     metric.finalize();
     metric
 }
+
+
+fn read_leaders_from_file(leaders_file: &str) -> anyhow::Result<Vec<SocketAddrV4>> {
+    let leader_file = read_to_string(leaders_file)?;
+    let mut leader_addrs = vec![];
+    for line in leader_file.lines() {
+        println!("line: {}", line);
+        let socket_addr = SocketAddrV4::from_str(line).unwrap();
+        println!("socket_addr: {}", socket_addr);
+        leader_addrs.push(socket_addr);
+    }
+    Ok(leader_addrs)
+}
+

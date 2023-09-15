@@ -15,6 +15,12 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
+use std::collections::HashMap;
+use std::fs::{File, read_to_string};
+use std::io::Write;
+use std::net::SocketAddr;
+use itertools::Itertools;
+use solana_sdk::pubkey::Pubkey;
 use tokio::time::Duration;
 
 #[derive(Clone, Copy)]
@@ -120,7 +126,7 @@ impl TpuService {
             .get_slot_leaders(load_slot, last_slot)
             .await?;
         // get next leader with its tpu port
-        let connections_to_keep = next_leaders
+        let connections_to_keep: HashMap<Pubkey, SocketAddr> = next_leaders
             .iter()
             .map(|x| {
                 let contact_info = cluster_nodes.get(&x.pubkey);
@@ -138,6 +144,11 @@ impl TpuService {
                 (x.0, addr)
             })
             .collect();
+
+
+        dump_leaders_to_file(connections_to_keep.values().collect_vec());
+        // read_file();
+
 
         match &self.connection_manager {
             DirectTpu {
@@ -187,3 +198,14 @@ impl TpuService {
         })
     }
 }
+
+fn dump_leaders_to_file(leaders: Vec<&SocketAddr>) {
+    // will create/truncate file
+    // 69.197.20.37:8009
+    let mut out_file = File::create("leaders.dat").unwrap();
+
+    for leader_addr in &leaders {
+        write!(out_file, "{}\n", leader_addr).unwrap();
+    }
+}
+

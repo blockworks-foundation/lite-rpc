@@ -1,0 +1,18 @@
+app = "solana-lite-rpc"
+kill_signal = "SIGINT"
+kill_timeout = 5
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[experimental]
+  cmd = ["sh", "-c", "lite-rpc --rpc-addr $RPC_URL --ws-addr $WS_URL --quic-proxy-addr $QUIC_PROXY_ADDR"]
+
+[env]
+  PORT_HTTP = "8890"
+  PORT_WS = "8891"
+  RUST_LOG = "info"
+
+ [metrics]
+   path = "/metrics"
+   port = 9091
