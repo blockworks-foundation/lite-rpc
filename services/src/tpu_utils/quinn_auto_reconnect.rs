@@ -46,8 +46,11 @@ impl AutoReconnect {
         let mut send_stream = timeout(SEND_TIMEOUT, self.refresh_and_get().await?.open_uni())
             .await
             .context("open uni stream for sending")??;
-        send_stream.write_all(payload.as_slice()).await?;
+        trace!("send_uni opened stream");
+        timeout(Duration::from_millis(150), send_stream.write_all(payload.as_slice())).await?.context("send to open uni stream")?;
+        trace!("send_uni wrote all");
         send_stream.finish().await?;
+        trace!("send_uni flushed all");
         Ok(())
     }
 
