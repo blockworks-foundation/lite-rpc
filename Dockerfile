@@ -14,10 +14,12 @@ FROM base as build
 COPY --from=plan /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN cargo build --release --bin lite-rpc
+RUN cargo build --release --bin lite-rpc --bin solana-lite-rpc-quic-forward-proxy --bin bench
 
 FROM debian:bullseye-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6
+COPY --from=build /app/target/release/solana-lite-rpc-quic-forward-proxy /usr/local/bin/
 COPY --from=build /app/target/release/lite-rpc /usr/local/bin/
+COPY --from=build /app/target/release/bench /usr/local/bin/
 
 CMD lite-rpc --rpc-addr "$RPC_URL" --ws-addr "$WS_URL"
