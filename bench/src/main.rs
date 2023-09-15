@@ -323,7 +323,7 @@ async fn bench(
 fn read_leaders_from_file(leaders_file: &str) -> anyhow::Result<Vec<SocketAddrV4>> {
     let last_modified = fs::metadata("leaders.dat")?.modified().unwrap();
     let file_age = SystemTime::now().duration_since(last_modified).unwrap();
-    assert!(file_age.as_millis() < 1000, "leaders.dat is outdated ({:?})", file_age);
+    assert!(file_age.as_millis() < 1000, "leaders.dat is outdated ({:?}) - pls run patched lite-rpc service", file_age);
     let leader_file = read_to_string(leaders_file)?;
     let mut leader_addrs = vec![];
     for line in leader_file.lines() {
