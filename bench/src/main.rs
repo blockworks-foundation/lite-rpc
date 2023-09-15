@@ -212,6 +212,7 @@ async fn bench(
                 // }
                 // let tpu_address = "127.0.0.1:1033".parse().unwrap();
 
+                println!("sent tx {} to {} tpu nodes", tx.get_signature(), leader_addrs.len());
                 for tpu_address in &leader_addrs {
                     let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
                     let packet = ForwardPacket::new(
@@ -221,8 +222,6 @@ async fn bench(
                     );
 
                     forwarder_channel.send(packet).await;
-
-                    println!("sent tx {}", tx.get_signature());
 
                     map_of_txs.insert(tx.get_signature().clone(), TxSendData {
                         sent_duration: start_time.elapsed(),
@@ -284,9 +283,7 @@ fn read_leaders_from_file(leaders_file: &str) -> anyhow::Result<Vec<SocketAddrV4
     let leader_file = read_to_string(leaders_file)?;
     let mut leader_addrs = vec![];
     for line in leader_file.lines() {
-        println!("line: {}", line);
         let socket_addr = SocketAddrV4::from_str(line).unwrap();
-        println!("socket_addr: {}", socket_addr);
         leader_addrs.push(socket_addr);
     }
     Ok(leader_addrs)
