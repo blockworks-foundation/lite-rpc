@@ -82,7 +82,8 @@ impl TransactionReplayer {
 
                 if tx_replay.replay_count < tx_replay.max_replay {
                     tx_replay.replay_count += 1;
-                    tx_replay.replay_at = Instant::now() + retry_after.mul_f32(tx_replay.replay_count as f32);
+                    tx_replay.replay_at =
+                        Instant::now() + retry_after.mul_f32(tx_replay.replay_count as f32);
                     sender.send(tx_replay).context("replay channel closed")?;
                     MESSAGES_IN_REPLAY_QUEUE.inc();
                 }
