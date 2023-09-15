@@ -192,7 +192,7 @@ async fn bench(
                 let blockhash = { *block_hash.read().await };
                 let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
 
-                let leader_addrs = read_leaders_from_file("/Users/stefan/mango/code/lite-rpc/leaders.dat").expect("leaders.dat file");
+                let leader_addrs = read_leaders_from_file("leaders.dat").expect("leaders.dat file");
 
                 let start_time = Instant::now();
                 // match rpc_client.send_transaction(&tx).await {
