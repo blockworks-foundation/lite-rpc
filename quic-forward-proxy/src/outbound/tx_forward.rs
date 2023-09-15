@@ -63,7 +63,7 @@ pub async fn tx_forwarder(
             transaction_channel
                 .recv()
                 .await
-                .expect("channel closed unexpectedly"),
+                .ok_or(anyhow::anyhow!("transaction_channel closed"))?
         );
         let tpu_address = forward_packet.tpu_address;
 
