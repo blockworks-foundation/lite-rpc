@@ -1,4 +1,5 @@
-use std::fs::read_to_string;
+use std::fs;
+use std::fs::{File, read_to_string};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::str::FromStr;
 use bench::{
@@ -20,6 +21,7 @@ use std::sync::{
     Arc,
 };
 use std::sync::atomic::AtomicBool;
+use std::time::SystemTime;
 use anyhow::Context;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_sdk::signature::Signature;
@@ -282,6 +284,9 @@ async fn bench(
 
 
 fn read_leaders_from_file(leaders_file: &str) -> anyhow::Result<Vec<SocketAddrV4>> {
+    let last_modified = fs::metadata("leaders.dat")?.modified().unwrap();
+    let file_age = SystemTime::now().duration_since(last_modified).unwrap();
+    assert!(file_age.as_millis() < 1000, "leaders.dat is outdated ({:?})", file_age);
     let leader_file = read_to_string(leaders_file)?;
     let mut leader_addrs = vec![];
     for line in leader_file.lines() {
