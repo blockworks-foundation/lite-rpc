@@ -55,7 +55,7 @@ Method calls:
 
 ##### Cluster info Domain
   - [getclusternodes](https://docs.solana.com/api/http#getclusternodes) not in geyser plugin can be get from gossip. Try to update gyser first.
-##### Consensus Domain
+##### Validator Domain
  - [getslot](https://docs.solana.com/api/http#getslot) Need top add 2 new commitment level for first shred seen and half confirm (1/3 of the stake has voted on the block)
  - [getBlockHeight](https://docs.solana.com/api/http#getblockheight)
  - [getblocktime](https://docs.solana.com/api/http#getblocktime) based on voting. Algo to define
@@ -76,7 +76,7 @@ Method calls:
 ##### Send transaction Domain
  - [sendtransaction](https://docs.solana.com/api/http#sendtransaction) done by Lite-RPC
 
-#####  Current work on Consensus:
+#####  Current work on Validator domain:
 
  getvoteaccounts: Stream from geyser
 
@@ -214,7 +214,7 @@ Algo:
  - send the batch to the TPU port of the current slot leader and next slot leader
 
 
-#### Consensus Domain
+#### Validator Domain
 This domain concerns the connected validator activity. It get and process data that are generated inside the validator (LeaderSchedule) or concerning current block processing (update stake account).
 
 ##### Data
@@ -728,11 +728,11 @@ For node info it seems that the stake is not needed. The gossip process is:
     -> crdsgossip_pull::filter_pull_responses()
     -> crds::upserts() update the cluster table.
 
-#### Cross domain Consensus/History
+#### Cross domain Validator/History
 
 Some function are implemented inside several domain. THe main reason is because the RPC call aggregate teh 2 domains.
 The concerned doma in are:
- * Consensus for answer at process
+ * Validator for answer at process
  * History for answer at confirm and finalized.
 
 ###### getSignatureStatuses
@@ -757,7 +757,7 @@ info: Unless the searchTransactionHistory configuration parameter is included, t
                 "Err": <ERR> - Transaction failed with TransactionError
 
 Sources:
-For consensus domain:
+For Validator domain:
 Get data at process
 
 geyser plugin subscribe to Tx at process.
@@ -786,7 +786,7 @@ If the  searchTransactionHistory is set to true:
 
 Sources
 
-For block in Consensus.
+For block in Validator domain.
 Need vote account and stake and vote tx to calculate the commitment on each block. See BlockCommitmentService::aggregate_commitment().
 
 For totalStake can be calculated or get from the epoch subscription.
