@@ -140,15 +140,15 @@ pub async fn tx_forwarder(
 
                         let mut transactions_batch: Vec<Vec<u8>> = packet.transactions.clone();
 
-                        'more: while let Ok(more) = per_connection_receiver.try_recv() {
-                            if more.tpu_address != tpu_address {
-                                continue 'more;
-                            }
-                            if !sharder.matching(more.shard_hash) {
-                                continue 'more;
-                            }
-                            transactions_batch.extend(more.transactions.clone());
-                        }
+                        // 'more: while let Ok(more) = per_connection_receiver.try_recv() {
+                        //     if more.tpu_address != tpu_address {
+                        //         continue 'more;
+                        //     }
+                        //     if !sharder.matching(more.shard_hash) {
+                        //         continue 'more;
+                        //     }
+                        //     transactions_batch.extend(more.transactions.clone());
+                        // }
 
                         debug!(
                             "forwarding transaction batch of size {} to address {}",
