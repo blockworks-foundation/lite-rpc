@@ -1,9 +1,9 @@
-use anyhow::Context;
-use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
+use anyhow::Context;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::data_cache::DataCache;
 use solana_lite_rpc_core::leaders_fetcher_trait::LeaderFetcherInterface;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
