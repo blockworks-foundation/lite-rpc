@@ -11,11 +11,11 @@ use tracing::debug;
 /// copy of quic-proxy AutoReconnect - used that for reference
 
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
-const MAX_RETRY_ATTEMPTS: u32 = 10;
 
 enum ConnectionState {
     NotConnected,
     Connection(Connection),
+    // not used for ocnnection to proxy
     PermanentError,
     FailedAttempt(u32),
 }
@@ -145,19 +145,11 @@ impl AutoReconnect {
                         *lock = ConnectionState::Connection(new_connection);
                     }
                     None => {
-                        if *attempts < MAX_RETRY_ATTEMPTS {
-                            warn!(
-                                "Reconnect to {} failed (attempt {})",
-                                self.target_address, attempts
-                            );
-                            *lock = ConnectionState::FailedAttempt(attempts + 1);
-                        } else {
-                            warn!(
-                                "Reconnect to {} failed permanently (attempt {})",
-                                self.target_address, attempts
-                            );
-                            *lock = ConnectionState::PermanentError;
-                        }
+                        warn!(
+                            "Reconnect to {} failed (attempt {})",
+                            self.target_address, attempts
+                        );
+                        *lock = ConnectionState::FailedAttempt(attempts + 1);
                     }
                 };
             }

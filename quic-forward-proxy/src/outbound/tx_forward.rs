@@ -19,12 +19,19 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use prometheus::{IntCounter, opts, register_int_counter};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
 
 const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
 const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(2500); // ms; should be 4x400ms+buffer
+
+lazy_static::lazy_static! {
+    static ref OUTBOUND_SEND_TX: IntCounter =
+    register_int_counter!(opts!("literpcproxy_send_tx", "Proxy to TPU send transaction")).unwrap();
+}
+
 
 struct AgentHandle {
     pub tpu_address: SocketAddr,
@@ -168,6 +175,7 @@ pub async fn tx_forwarder(
 
                         match result {
                             Ok(()) => {
+                                OUTBOUND_SEND_TX.inc();
                                 debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
                                 debug!(
                                     "Outbound connection stats: {}",

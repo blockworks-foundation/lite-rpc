@@ -11,6 +11,8 @@ publish = false
 
 [dependencies]
 solana-lite-rpc-core = { workspace = true }
+# required for promentheus-sync
+solana-lite-rpc-services = { workspace = true }
 solana-sdk = { workspace = true }
 solana-streamer = { workspace = true }
 solana-transaction-status = { workspace = true }

@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{SocketAddr, SocketAddrV4};
 
 use anyhow::bail;
 use std::sync::atomic::AtomicBool;
@@ -10,6 +10,7 @@ use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use crate::util::AnyhowJoinHandle;
 use crate::validator_identity::ValidatorIdentity;
 use log::info;
+use solana_lite_rpc_services::prometheus_sync::PrometheusSync;
 
 pub struct QuicForwardProxy {
     // endpoint: Endpoint,
@@ -56,6 +57,11 @@ impl QuicForwardProxy {
             exit_signal_clone,
         ));
 
+        // TODO make it a cli arg
+        let prometheus_addr: SocketAddrV4 = "127.0.0.1:9092".parse().unwrap();
+
+        let prometheus = PrometheusSync::sync(prometheus_addr);
+
         tokio::select! {
             res = quic_proxy => {
                 bail!("TPU Quic Proxy server exited unexpectedly {res:?}");
@@ -63,6 +69,9 @@ impl QuicForwardProxy {
             res = forwarder => {
                 bail!("TPU Quic Tx forwarder exited unexpectedly {res:?}");
             },
+            res = prometheus => {
+                bail!("Prometheus sync service exited unexpectedly {res:?}");
+            }
         }
     }
 }
