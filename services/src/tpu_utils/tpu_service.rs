@@ -1,4 +1,5 @@
 use anyhow::Context;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 
 use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
@@ -22,6 +23,20 @@ use std::net::SocketAddr;
 use itertools::Itertools;
 use solana_sdk::pubkey::Pubkey;
 use tokio::time::Duration;
+
+lazy_static::lazy_static! {
+    static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_nb_cluster_nodes", "Number of cluster nodes in saved")).unwrap();
+
+    static ref NB_OF_LEADERS_IN_SCHEDULE: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_cached_leader", "Number of leaders in schedule cache")).unwrap();
+
+    static ref CURRENT_SLOT: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_current_slot", "Current slot seen by last rpc")).unwrap();
+
+    static ref ESTIMATED_SLOT: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
+}
 
 #[derive(Clone, Copy)]
 pub struct TpuServiceConfig {
@@ -108,14 +123,6 @@ impl TpuService {
         current_slot: Slot,
         estimated_slot: Slot,
     ) -> anyhow::Result<()> {
-        let load_slot = if estimated_slot <= current_slot {
-            current_slot
-        } else if estimated_slot.saturating_sub(current_slot) > 8 {
-            estimated_slot - 8
-        } else {
-            current_slot
-        };
-
         let fanout = self.config.fanout_slots;
         let last_slot = estimated_slot + fanout;
 
@@ -123,7 +130,7 @@ impl TpuService {
 
         let next_leaders = self
             .leader_schedule
-            .get_slot_leaders(load_slot, last_slot)
+            .get_slot_leaders(current_slot, last_slot)
             .await?;
         // get next leader with its tpu port
         let connections_to_keep: HashMap<Pubkey, SocketAddr> = next_leaders

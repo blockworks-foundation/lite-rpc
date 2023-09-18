@@ -6,7 +6,6 @@ use clap::Parser;
 use dotenv::dotenv;
 use log::info;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
-use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
 use crate::validator_identity::ValidatorIdentity;
@@ -35,7 +34,7 @@ pub async fn main() -> anyhow::Result<()> {
     } = Args::parse();
     dotenv().ok();
 
-    let proxy_listener_addr = parse_host_port_to_ipv4(proxy_listen_addr.as_str()).unwrap();
+    let proxy_listener_addr = proxy_listen_addr.parse().unwrap();
     let validator_identity = ValidatorIdentity::new(load_identity_keypair(&identity_keypair).await);
 
     let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());
@@ -57,20 +56,5 @@ pub async fn main() -> anyhow::Result<()> {
 
             Ok(())
         }
-    }
-}
-
-fn parse_host_port_to_ipv4(host_port: &str) -> Result<SocketAddr, String> {
-    let addrs: Vec<_> = host_port
-        .to_socket_addrs()
-        .map_err(|err| format!("Unable to resolve host {host_port}: {err}"))?
-        .filter(|addr| addr.is_ipv4())
-        .collect();
-    if addrs.is_empty() {
-        Err(format!("Unable to resolve host: {host_port}"))
-    } else if addrs.len() > 1 {
-        Err(format!("Multiple addresses resolved for host: {host_port}"))
-    } else {
-        Ok(addrs[0])
     }
 }

@@ -1,5 +1,6 @@
 use dashmap::DashMap;
 use log::{error, trace};
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
     quic_connection::QuicConnectionPool,
@@ -19,6 +20,17 @@ use std::{
     },
 };
 use tokio::sync::{broadcast::Receiver, broadcast::Sender};
+
+lazy_static::lazy_static! {
+    static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
+    static ref NB_QUIC_ACTIVE_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_nb_active_connections", "Number quic tasks that are running")).unwrap();
+    static ref NB_CONNECTIONS_TO_KEEP: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_connections_to_keep", "Number of connections to keep asked by tpu service")).unwrap();
+    static ref NB_QUIC_TASKS: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
+}
 
 #[derive(Clone)]
 struct ActiveConnection {
@@ -64,19 +76,21 @@ impl ActiveConnection {
         identity_stakes: IdentityStakesData,
         txs_sent_store: TxStore,
     ) {
+        NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
         let mut exit_oneshot_channel = exit_oneshot_channel;
         let identity = self.identity;
 
-        let max_uni_stream_connections: u64 = compute_max_allowed_uni_streams(
-            identity_stakes.peer_type,
-            identity_stakes.stakes,
-            identity_stakes.total_stakes,
-        ) as u64;
         let number_of_transactions_per_unistream = self
             .connection_parameters
             .number_of_transactions_per_unistream;
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
+
+        let max_uni_stream_connections: u64 = (compute_max_allowed_uni_streams(
+            identity_stakes.peer_type,
+            identity_stakes.stakes,
+            identity_stakes.total_stakes,
+        ) * max_number_of_connections) as u64;
 
         let task_counter: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
         let exit_signal = self.exit_signal.clone();
@@ -137,6 +151,7 @@ impl ActiveConnection {
                     // add more connections to the pool
                     if connection_pool.len() < max_number_of_connections {
                         connection_pool.add_connection().await;
+                        NB_QUIC_CONNECTIONS.inc();
                     }
 
                     let task_counter = task_counter.clone();
@@ -144,7 +159,9 @@ impl ActiveConnection {
 
                     tokio::spawn(async move {
                         task_counter.fetch_add(1, Ordering::Relaxed);
+                        NB_QUIC_TASKS.inc();
                         connection_pool.send_transaction_batch(txs).await;
+                        NB_QUIC_TASKS.dec();
                         task_counter.fetch_sub(1, Ordering::Relaxed);
                     });
                 },
@@ -154,6 +171,8 @@ impl ActiveConnection {
             }
         }
         drop(transaction_reciever);
+        NB_QUIC_CONNECTIONS.dec();
+        NB_QUIC_ACTIVE_CONNECTIONS.dec();
     }
 
     pub fn start_listening(
@@ -212,6 +231,7 @@ impl TpuConnectionManager {
         txs_sent_store: TxStore,
         connection_parameters: QuicConnectionParameters,
     ) {
+        NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
         for (identity, socket_addr) in &connections_to_keep {
             if self.identity_to_active_connection.get(identity).is_none() {
                 trace!("added a connection for {}, {}", identity, socket_addr);

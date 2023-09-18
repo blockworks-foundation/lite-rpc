@@ -9,6 +9,8 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 publish = false
 
+
+
 [dependencies]
 solana-lite-rpc-core = { workspace = true }
 solana-sdk = { workspace = true }

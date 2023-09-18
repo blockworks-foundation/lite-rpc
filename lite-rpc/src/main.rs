@@ -74,9 +74,8 @@ pub async fn start_postgres(
     Ok((Some(postgres_send), postgres))
 }
 
-pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
+pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
     let Args {
-        rpc_addr,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
@@ -101,8 +100,6 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
 
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
-    // rpc client
-    let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?
     } else {
@@ -154,10 +151,10 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
             connection_timeout: Duration::from_secs(1),
             connection_retry_count: 10,
             finalize_timeout: Duration::from_millis(200),
-            max_number_of_connections: 10,
+            max_number_of_connections: 8,
             unistream_timeout: Duration::from_millis(500),
             write_timeout: Duration::from_secs(1),
-            number_of_transactions_per_unistream: 8,
+            number_of_transactions_per_unistream: 1,
         },
         tpu_connection_path,
     };
@@ -239,9 +236,12 @@ pub async fn main() -> anyhow::Result<()> {
     let args = get_args();
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
-    let rpc_tester = RpcTester::from(&args).start();
+    let Args { rpc_addr, .. } = &args;
+    // rpc client
+    let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
+    let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
 
-    let main = start_lite_rpc(args.clone());
+    let main = start_lite_rpc(args.clone(), rpc_client);
 
     tokio::select! {
         err = rpc_tester => {
@@ -264,7 +264,7 @@ fn configure_tpu_connection_path(quic_proxy_addr: Option<String>) -> TpuConnecti
     match quic_proxy_addr {
         None => TpuConnectionPath::QuicDirectPath,
         Some(prox_address) => {
-            let proxy_socket_addr = parse_host_port_to_ipv4(prox_address.as_str()).unwrap();
+            let proxy_socket_addr = parse_host_port(prox_address.as_str()).unwrap();
             TpuConnectionPath::QuicForwardProxyPath {
                 // e.g. "127.0.0.1:11111" or "localhost:11111"
                 forward_proxy_address: proxy_socket_addr,
@@ -273,11 +273,10 @@ fn configure_tpu_connection_path(quic_proxy_addr: Option<String>) -> TpuConnecti
     }
 }
 
-fn parse_host_port_to_ipv4(host_port: &str) -> Result<SocketAddr, String> {
+fn parse_host_port(host_port: &str) -> Result<SocketAddr, String> {
     let addrs: Vec<_> = host_port
         .to_socket_addrs()
         .map_err(|err| format!("Unable to resolve host {host_port}: {err}"))?
-        .filter(|addr| addr.is_ipv4())
         .collect();
     if addrs.is_empty() {
         Err(format!("Unable to resolve host: {host_port}"))
