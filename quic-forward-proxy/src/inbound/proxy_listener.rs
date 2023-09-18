@@ -133,18 +133,25 @@ impl ProxyListener {
 
                         for tpu_node in proxy_request.get_tpu_nodes() {
                             let tpu_address = tpu_node.tpu_socket_addr;
-                            forwarder_channel_copy
-                                .send_timeout(
-                                    ForwardPacket::new(
-                                        txs.clone(),
-                                        tpu_address,
-                                        proxy_request.get_hash(),
-                                    ),
-                                    FALLBACK_TIMEOUT,
-                                )
-                                .await
-                                .context("sending internal packet from proxy to forwarder")
-                                .unwrap();
+
+                            let send_result =
+                                forwarder_channel_copy
+                                    .send_timeout(
+                                        ForwardPacket::new(
+                                            txs.clone(),
+                                            tpu_address,
+                                            proxy_request.get_hash(),
+                                        ),
+                                        FALLBACK_TIMEOUT,
+                                    )
+                                    .await
+                                    .context("sending internal packet from proxy to forwarder");
+
+                            if let Err(err) = send_result {
+                                error!("send failed: {}",
+                                    err);
+                                return;
+                            }
                         }
                     });
 
@@ -156,10 +163,8 @@ impl ProxyListener {
                 Err(quinn::ConnectionError::ApplicationClosed(reason)) => {
                     debug!("connection closed by client - reason: {:?}", reason);
                     if reason.error_code != VarInt::from_u32(0) {
-                        return Err(anyhow!(
-                            "connection closed by client with unexpected reason: {:?}",
-                            reason
-                        ));
+                        bail!("connection closed by client with unexpected reason: {:?}",
+                            reason);
                     }
                     debug!("connection gracefully closed by client");
                     return Ok(());

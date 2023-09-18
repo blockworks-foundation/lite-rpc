@@ -226,9 +226,12 @@ pub async fn tx_forwarder(
             debug!("tx-forward queue len: {}", broadcast_in.len())
         }
 
-        broadcast_in
-            .send(forward_packet)
-            .expect("send must succeed");
+        let enqueue_result = broadcast_in
+            .send(forward_packet);
+
+        if let Err(e) = enqueue_result {
+            warn!("broadcast channel send error: {}", e);
+        }
     } // -- loop over transactions from upstream channels
 
     // not reachable
