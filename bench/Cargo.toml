@@ -4,10 +4,6 @@ version = "0.2.3"
 edition = "2021"
 
 [[bin]]
-name = "bench-rpc"
-path = "src/bench_rpc.rs"
-
-[[bin]]
 name = "bench-direct-quic"
 path = "src/bench_direct_quic.rs"
 
