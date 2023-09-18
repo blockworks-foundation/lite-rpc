@@ -153,10 +153,8 @@ impl QuicProxyConnectionManager {
         exit_signal: Arc<AtomicBool>,
         connection_parameters: QuicConnectionParameters,
     ) {
-        trace!("read_transactions_and_broadcast");
         let auto_connection = AutoReconnect::new(endpoint, proxy_addr);
         loop {
-            trace!("loop");
             // exit signal set
             if exit_signal.load(Relaxed) {
                 warn!("Caught exit signal - stopping sending transactions to quic proxy");
@@ -165,7 +163,6 @@ impl QuicProxyConnectionManager {
 
             tokio::select! {
                 tx = transaction_receiver.recv() => {
-                    trace!("recv");
                     let first_tx: TxData = match tx {
                         Ok((sig, tx_raw)) => {
                             TxData::new(sig, tx_raw)
@@ -183,7 +180,6 @@ impl QuicProxyConnectionManager {
                                 txs.push(TxData::new(sig, tx_raw));
                             },
                             Err(TryRecvError::Empty) => {
-                                trace!("empty");
                                 break;
                             }
                             Err(e) => {
@@ -193,7 +189,6 @@ impl QuicProxyConnectionManager {
                             }
                         };
                     }
-                    trace!("send txs {}", txs.len());
 
                     let tpu_fanout_nodes = current_tpu_nodes.read().await.clone();
 
@@ -217,9 +212,7 @@ impl QuicProxyConnectionManager {
 
                 },
             }
-            trace!("out of loop");
         } // -- loop
-        trace!("thread returning");
     }
 
     async fn send_copy_of_txs_to_quicproxy(
