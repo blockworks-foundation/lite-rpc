@@ -51,3 +51,9 @@ QUIC/QUINN Endpoint and Connection specifics
 ---------------------------
 * keep-alive and idle timeout: both values must be aligned AND they must be configured on both endpoints (see [docs](https://docs.rs/quinn/latest/quinn/struct.TransportConfig.html#method.keep_alive_interval))
 * tune or disable __max_concurrent_uni_streams__ respectively
+
+
+Monitoring
+---------------------------
+The Quic Proxy exposes prometheus metrics on address configured using _prometheus_addr_.
+

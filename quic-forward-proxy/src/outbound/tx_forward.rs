@@ -19,7 +19,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use prometheus::{IntCounter, opts, register_int_counter};
+use prometheus::{IntCounter, IntGauge, opts, register_int_counter, register_int_gauge};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
 
@@ -29,9 +29,14 @@ const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(2500); // ms; should
 
 lazy_static::lazy_static! {
     static ref OUTBOUND_SEND_TX: IntCounter =
-    register_int_counter!(opts!("literpcproxy_send_tx", "Proxy to TPU send transaction")).unwrap();
+        register_int_counter!(opts!("literpcproxy_send_tx", "Proxy to TPU send transaction")).unwrap();
+    static ref OUTBOUND_SEND_ERRORS: IntCounter =
+        register_int_counter!(opts!("literpcproxy_send_errors", "Proxy to TPU send errors")).unwrap();
+    static ref OUTBOUND_BATCH_SIZE: IntGauge =
+        register_int_gauge!(opts!("literpcproxy_batch_size", "Proxy to TPU tx batch size")).unwrap();
+    static ref OUTBOUND_PACKET_SIZE: IntGauge =
+        register_int_gauge!(opts!("literpcproxy_packet_size", "Proxy to TPU packet size")).unwrap();
 }
-
 
 struct AgentHandle {
     pub tpu_address: SocketAddr,
@@ -173,6 +178,10 @@ pub async fn tx_forwarder(
                             auto_connection.target_address
                         ));
 
+                        OUTBOUND_BATCH_SIZE.set(transactions_batch.len() as i64);
+
+                        OUTBOUND_PACKET_SIZE.set(count_bytes(&transactions_batch));
+
                         match result {
                             Ok(()) => {
                                 OUTBOUND_SEND_TX.inc();
@@ -183,6 +192,7 @@ pub async fn tx_forwarder(
                                 );
                             }
                             Err(err) => {
+                                OUTBOUND_SEND_ERRORS.inc();
                                 warn!("got send_txs_to_tpu_static error {} - loop over errors", err);
                             }
                         }
@@ -222,6 +232,14 @@ pub async fn tx_forwarder(
     } // -- loop over transactions from upstream channels
 
     // not reachable
+}
+
+fn count_bytes(tx_vec: &Vec<Vec<u8>>) -> i64 {
+    let mut total_bytes = 0;
+    for tx in tx_vec {
+        total_bytes += tx.len();
+    }
+    total_bytes as i64
 }
 
 async fn cleanup_agents(

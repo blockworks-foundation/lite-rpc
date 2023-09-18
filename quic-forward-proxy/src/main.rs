@@ -7,6 +7,7 @@ use dotenv::dotenv;
 use log::info;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use std::sync::Arc;
+use solana_lite_rpc_services::prometheus_sync::PrometheusSync;
 
 use crate::validator_identity::ValidatorIdentity;
 
@@ -31,6 +32,7 @@ pub async fn main() -> anyhow::Result<()> {
     let Args {
         identity_keypair,
         proxy_listen_addr,
+        prometheus_addr,
     } = Args::parse();
     dotenv().ok();
 
@@ -42,15 +44,17 @@ pub async fn main() -> anyhow::Result<()> {
         .await?
         .start_services();
 
+    let prometheus = PrometheusSync::sync(prometheus_addr);
+
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
         res = main_services => {
             bail!("Services quit unexpectedly {res:?}");
         },
-        // res = test_client => {
-        //     bail!("Test Client quit unexpectedly {res:?}");
-        // },
+        res = prometheus => {
+            bail!("Prometheus sync service exited unexpectedly {res:?}");
+        }
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");
 
