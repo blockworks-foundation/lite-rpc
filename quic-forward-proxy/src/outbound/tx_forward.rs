@@ -309,6 +309,7 @@ fn create_tpu_client_endpoint(
     let timeout = IdleTimeout::try_from(QUIC_MAX_TIMEOUT).unwrap();
     transport_config.max_idle_timeout(Some(timeout));
     transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+    transport_config.enable_segmentation_offload(false);
 
     config.transport_config(Arc::new(transport_config));
 
