@@ -1,6 +1,7 @@
+mod cli_direct_quic;
+
 use anyhow::Context;
 use bench::{
-    cli::Args,
     helpers::BenchHelper,
     metrics::{AvgMetric, Metric, TxMetricData},
 };
@@ -8,24 +9,18 @@ use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
 use log::{debug, error, info};
-use solana_lite_rpc_core::tx_store::TxStore;
-use solana_lite_rpc_core::{
-    quic_connection_utils::QuicConnectionParameters,
-    structures::identity_stakes::IdentityStakesData,
-};
 use solana_lite_rpc_quic_forward_proxy::outbound::tx_forward::tx_forwarder;
 use solana_lite_rpc_quic_forward_proxy::shared::ForwardPacket;
 use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
-use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
+
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, signature::Keypair,
+    commitment_config::CommitmentConfig, hash::Hash, signature::Keypair,
     signer::Signer, slot_history::Slot,
 };
-use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::fs;
 use std::fs::read_to_string;
 use std::net::{SocketAddr, SocketAddrV4};
@@ -33,8 +28,6 @@ use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::time::SystemTime;
 use std::{
-    collections::HashMap,
-    net::{IpAddr, Ipv4Addr},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -44,24 +37,23 @@ use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
-use tracing_subscriber::fmt::format;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let Args {
+    let cli_direct_quic::Args {
         tx_count,
         runs,
         run_interval_ms,
         metrics_file_name,
-        lite_rpc_addr,
+        rpc_addr,
         transaction_save_file,
-    } = Args::parse();
+    } = cli_direct_quic::Args::parse();
 
     let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
 
-    info!("Connecting to {lite_rpc_addr}");
+    info!("Using RPC service on {rpc_addr}");
 
     let mut avg_metric = AvgMetric::default();
 
@@ -71,50 +63,13 @@ async fn main() {
     println!("payer : {}", funded_payer.pubkey());
 
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
-        lite_rpc_addr.clone(),
+        rpc_addr.clone(),
         CommitmentConfig::confirmed(),
     ));
     let bh = rpc_client.get_latest_blockhash().await.unwrap();
     let slot = rpc_client.get_slot().await.unwrap();
     let block_hash: Arc<RwLock<Hash>> = Arc::new(RwLock::new(bh));
     let current_slot = Arc::new(AtomicU64::new(slot));
-
-    let (forwarder_channel, _) = tokio::sync::broadcast::channel(1000);
-
-    let identity = Keypair::new();
-
-    let (certificate, key) =
-        new_self_signed_tls_certificate(&identity, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
-            .expect("Failed to initialize QUIC client certificates");
-
-    let tpu_connection_manager = TpuConnectionManager::new(certificate, key, 4).await;
-    let mut connections_to_keep = HashMap::new();
-    connections_to_keep.insert(
-        Pubkey::new_unique(),
-        std::net::SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 1033),
-    );
-    let identity_stakes = IdentityStakesData::default();
-    let tx_store = TxStore::default();
-    let connection_parameters = QuicConnectionParameters {
-        write_timeout: Duration::from_millis(500),
-        connection_retry_count: 10,
-        connection_timeout: Duration::from_millis(1000),
-        finalize_timeout: Duration::from_millis(100),
-        max_number_of_connections: 8,
-        number_of_transactions_per_unistream: 1,
-        unistream_timeout: Duration::from_millis(500),
-    };
-
-    let forwarder_channel = Arc::new(forwarder_channel);
-    tpu_connection_manager
-        .update_connections(
-            forwarder_channel.clone(),
-            connections_to_keep,
-            identity_stakes,
-            tx_store,
-            connection_parameters,
-        )
-        .await;
 
     {
         // block hash updater task
@@ -167,7 +122,6 @@ async fn main() {
             current_slot.clone(),
             tx_log_sx.clone(),
             log_transactions,
-            forwarder_channel.clone(),
         )));
         // wait for an interval
         run_interval_ms.tick().await;
@@ -218,7 +172,6 @@ async fn bench(
     current_slot: Arc<AtomicU64>,
     tx_metric_sx: UnboundedSender<TxMetricData>,
     log_txs: bool,
-    forwarder_channel: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
 ) -> Metric {
     let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
     let (forwarder_channel, forward_receiver) = tokio::sync::mpsc::channel(1000);
@@ -236,7 +189,7 @@ async fn bench(
     {
         let map_of_txs = map_of_txs.clone();
         let current_slot = current_slot.clone();
-        let forwarder_channel = forwarder_channel.clone();
+        // let forwarder_channel = forwarder_channel.clone();
         tokio::spawn(async move {
             let map_of_txs = map_of_txs.clone();
             let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed));
@@ -247,22 +200,6 @@ async fn bench(
                 let leader_addrs = read_leaders_from_file("leaders.dat").expect("leaders.dat file");
 
                 let start_time = Instant::now();
-                // match rpc_client.send_transaction(&tx).await {
-                //     Ok(signature) => {
-                //         map_of_txs.insert(
-                //             signature,
-                //             TxSendData {
-                //                 sent_duration: start_time.elapsed(),
-                //                 sent_instant: Instant::now(),
-                //                 sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
-                //             },
-                //         );
-                //     }
-                //     Err(e) => {
-                //         warn!("tx send failed with error {}", e);
-                //     }
-                // }
-                // let tpu_address = "127.0.0.1:1033".parse().unwrap();
 
                 debug!(
                     "sent tx {} to {} tpu nodes",
@@ -272,9 +209,9 @@ async fn bench(
                 for tpu_address in &leader_addrs {
                     let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
                     let packet =
-                        ForwardPacket::new(vec![tx_raw], SocketAddr::from(*tpu_address), 424242);
+                        ForwardPacket::new(vec![tx_raw], SocketAddr::from(*tpu_address), 0xdeadbeef);
 
-                    forwarder_channel.send(packet).await;
+                    forwarder_channel.send(packet).await.unwrap();
 
                     map_of_txs.insert(
                         tx.get_signature().clone(),
@@ -336,6 +273,7 @@ async fn bench(
     metric
 }
 
+// note: this file gets written by tpu_services::dump_leaders_to_file; see docs how to activate
 fn read_leaders_from_file(leaders_file: &str) -> anyhow::Result<Vec<SocketAddrV4>> {
     let last_modified = fs::metadata("leaders.dat")?.modified().unwrap();
     let file_age = SystemTime::now().duration_since(last_modified).unwrap();

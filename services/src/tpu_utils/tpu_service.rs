@@ -22,6 +22,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
+use std::path::Path;
 use tokio::time::Duration;
 
 lazy_static::lazy_static! {
@@ -153,7 +154,6 @@ impl TpuService {
             .collect();
 
         dump_leaders_to_file(connections_to_keep.values().collect_vec());
-        // read_file();
 
         match &self.connection_manager {
             DirectTpu {
@@ -204,11 +204,17 @@ impl TpuService {
     }
 }
 
+// used for bench tool
+// optionally dumps the leaders to disk for later use
 fn dump_leaders_to_file(leaders: Vec<&SocketAddr>) {
+    // files acts as feature flag - create it on filesystem to enable
+    if !Path::exists(Path::new("leaders.dat")) {
+        return;
+    }
     // will create/truncate file
-    // 69.197.20.37:8009
     let mut out_file = File::create("leaders.dat.tmp").unwrap();
     for leader_addr in &leaders {
+        // 69.197.20.37:8009
         writeln!(out_file, "{}", leader_addr).unwrap();
     }
     out_file.flush().unwrap();
