@@ -1,9 +1,11 @@
-use std::net::SocketAddr;
-use std::str::FromStr;
+use solana_lite_rpc_services::tpu_utils::quic_proxy_connection_manager::{
+    QuicProxyConnectionManager, TpuNode,
+};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signer};
 use solana_sdk::transaction::Transaction;
-use solana_lite_rpc_services::tpu_utils::quic_proxy_connection_manager::{QuicProxyConnectionManager, TpuNode};
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 ///
 /// test with test-validator and quic-proxy
@@ -11,13 +13,13 @@ use solana_lite_rpc_services::tpu_utils::quic_proxy_connection_manager::{QuicPro
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() {
     tracing_subscriber::fmt::fmt()
-        .with_max_level(tracing::Level::DEBUG).init();
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
     send_test_to_proxy().await;
 }
 
 async fn send_test_to_proxy() {
-
     let tx = create_tx().await;
 
     // note: use the propaged TPU port - NOT port+6
@@ -29,11 +31,10 @@ async fn send_test_to_proxy() {
         // tpu pubkey is only used for logging
         tpu_identity: Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ").unwrap(),
     };
-    QuicProxyConnectionManager::send_simple_transactions(vec![tx], vec![tpu_node], proxy_address).await.unwrap();
-
-
+    QuicProxyConnectionManager::send_simple_transactions(vec![tx], vec![tpu_node], proxy_address)
+        .await
+        .unwrap();
 }
-
 
 async fn create_tx() -> Transaction {
     let payer = Keypair::from_base58_string(
@@ -43,7 +44,5 @@ async fn create_tx() -> Transaction {
 
     let memo_ix = spl_memo::build_memo("Hello world".as_bytes(), &[&payer_pubkey]);
 
-    let tx = Transaction::new_with_payer(&[memo_ix], Some(&payer_pubkey));
-
-    tx
+    Transaction::new_with_payer(&[memo_ix], Some(&payer_pubkey))
 }

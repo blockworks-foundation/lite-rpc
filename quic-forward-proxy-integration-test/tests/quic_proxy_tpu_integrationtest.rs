@@ -184,7 +184,6 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
 
     // lite-rpc
     let runtime_literpc = Builder::new_multi_thread()
-        // see lite-rpc -> main.rs
         .worker_threads(16) // also works with 1
         .enable_all()
         .build()

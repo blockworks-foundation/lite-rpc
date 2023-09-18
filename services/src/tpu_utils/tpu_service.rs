@@ -5,23 +5,23 @@ use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
+use itertools::Itertools;
 use solana_lite_rpc_core::data_cache::DataCache;
 use solana_lite_rpc_core::leaders_fetcher_trait::LeaderFetcherInterface;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::streams::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
+use std::net::SocketAddr;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
-use std::collections::HashMap;
-use std::fs::{File, read_to_string};
-use std::io::Write;
-use std::net::SocketAddr;
-use itertools::Itertools;
-use solana_sdk::pubkey::Pubkey;
 use tokio::time::Duration;
 
 lazy_static::lazy_static! {
@@ -152,10 +152,8 @@ impl TpuService {
             })
             .collect();
 
-
         dump_leaders_to_file(connections_to_keep.values().collect_vec());
         // read_file();
-
 
         match &self.connection_manager {
             DirectTpu {
@@ -211,10 +209,9 @@ fn dump_leaders_to_file(leaders: Vec<&SocketAddr>) {
     // 69.197.20.37:8009
     let mut out_file = File::create("leaders.dat.tmp").unwrap();
     for leader_addr in &leaders {
-        write!(out_file, "{}\n", leader_addr).unwrap();
+        writeln!(out_file, "{}", leader_addr).unwrap();
     }
     out_file.flush().unwrap();
 
     std::fs::rename("leaders.dat.tmp", "leaders.dat").unwrap();
 }
-

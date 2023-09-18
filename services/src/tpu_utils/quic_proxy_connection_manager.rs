@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
@@ -254,29 +254,26 @@ impl QuicProxyConnectionManager {
         Ok(())
     }
 
-
     // testing only
     pub async fn send_simple_transactions(
         txs: Vec<Transaction>,
         tpu_fanout_nodes: Vec<TpuNode>,
         proxy_address: SocketAddr,
     ) -> anyhow::Result<()> {
-
         let identity = Keypair::new();
 
-        let (certificate, key) = new_self_signed_tls_certificate(
-            &identity,
-            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-        ).unwrap();
+        let (certificate, key) =
+            new_self_signed_tls_certificate(&identity, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
+                .unwrap();
 
-        let txs_data = txs.iter()
+        let txs_data = txs
+            .iter()
             .map(|tx| {
                 let tx_raw = bincode::serialize(tx).unwrap();
                 let sig = tx.get_signature().to_string();
                 TxData::new(sig, tx_raw)
             })
             .collect_vec();
-
 
         let endpoint = Self::create_proxy_client_endpoint(certificate, key);
         let auto_reconnect = AutoReconnect::new(endpoint, proxy_address);
@@ -286,9 +283,12 @@ impl QuicProxyConnectionManager {
             info!("- {:?}", tx)
         }
 
-        let result = Self::send_copy_of_txs_to_quicproxy(
-            txs_data.as_slice(), &auto_reconnect, proxy_address, tpu_fanout_nodes).await;
-
-        result
+        Self::send_copy_of_txs_to_quicproxy(
+            txs_data.as_slice(),
+            &auto_reconnect,
+            proxy_address,
+            tpu_fanout_nodes,
+        )
+        .await
     }
 }
