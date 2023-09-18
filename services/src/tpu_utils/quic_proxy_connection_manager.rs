@@ -136,6 +136,7 @@ impl QuicProxyConnectionManager {
         let timeout = Duration::from_secs(10).try_into().unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+        transport_config.enable_segmentation_offload(false);
 
         config.transport_config(Arc::new(transport_config));
         endpoint.set_default_client_config(config);

@@ -50,7 +50,7 @@ prometheus = "0.13.3"
 lazy_static = "1.4.0"
 dotenv = "0.15.0"
 async-channel = "1.8.0"
-quinn = "0.9.3"
+quinn = { git = "https://github.com/grooviegermanikus/quinn.git", branch = "0.9.4-manually-disable-gso", version = "0.9.4" }
 rustls = { version = "=0.20.8", default-features = false }
 solana-lite-rpc-services = {path = "services", version="0.2.3"}
 solana-lite-rpc-core = {path = "core", version="0.2.3"}
