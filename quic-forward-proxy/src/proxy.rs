@@ -1,4 +1,4 @@
-use std::net::{SocketAddr, SocketAddrV4};
+use std::net::SocketAddr;
 
 use anyhow::bail;
 use std::sync::atomic::AtomicBool;
