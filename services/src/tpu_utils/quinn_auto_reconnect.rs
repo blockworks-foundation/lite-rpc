@@ -30,7 +30,7 @@ enum ConnectionState {
 }
 
 pub struct AutoReconnect {
-    // endoint should be configures with keep-alive and idle timeout
+    // endpoint should be configures with keep-alive and idle timeout
     endpoint: Endpoint,
     current: RwLock<ConnectionState>,
     pub target_address: SocketAddr,
@@ -45,7 +45,7 @@ impl AutoReconnect {
         }
     }
 
-    pub async fn is_permanent_dead(&self) -> bool {
+    pub async fn _is_permanent_dead(&self) -> bool {
         let lock = self.current.read().await;
         matches!(&*lock, ConnectionState::_PermanentError)
     }
@@ -100,7 +100,7 @@ impl AutoReconnect {
                     );
 
                     match self.create_connection().await {
-                        Some(new_connection) => {
+                        Ok(new_connection) => {
                             *lock = ConnectionState::Connection(new_connection.clone());
                             info!(
                                 "Restored closed connection {} with {} to target {}",
@@ -109,10 +109,10 @@ impl AutoReconnect {
                                 self.target_address,
                             );
                         }
-                        None => {
+                        Err(err) => {
                             warn!(
-                                "Reconnect to {} failed for connection {}",
-                                self.target_address, old_stable_id
+                                "Reconnect to {} failed for connection {}: {}",
+                                self.target_address, old_stable_id, err
                             );
                             *lock = ConnectionState::FailedAttempt(1);
                         }
@@ -127,7 +127,7 @@ impl AutoReconnect {
             }
             ConnectionState::NotConnected => {
                 match self.create_connection().await {
-                    Some(new_connection) => {
+                    Ok(new_connection) => {
                         *lock = ConnectionState::Connection(new_connection.clone());
 
                         info!(
@@ -136,8 +136,11 @@ impl AutoReconnect {
                             self.target_address
                         );
                     }
-                    None => {
-                        warn!("Failed connect initially to target {}", self.target_address);
+                    Err(err) => {
+                        warn!(
+                            "Failed connect initially to target {}: {}",
+                            self.target_address, err
+                        );
                         *lock = ConnectionState::FailedAttempt(1);
                     }
                 };
@@ -151,13 +154,13 @@ impl AutoReconnect {
             }
             ConnectionState::FailedAttempt(attempts) => {
                 match self.create_connection().await {
-                    Some(new_connection) => {
+                    Ok(new_connection) => {
                         *lock = ConnectionState::Connection(new_connection);
                     }
-                    None => {
+                    Err(err) => {
                         warn!(
-                            "Reconnect to {} failed (attempt {})",
-                            self.target_address, attempts
+                            "Reconnect to {} failed (attempt {}): {}",
+                            self.target_address, attempts, err
                         );
                         *lock = ConnectionState::FailedAttempt(attempts + 1);
                     }
@@ -166,21 +169,22 @@ impl AutoReconnect {
         }
     }
 
-    async fn create_connection(&self) -> Option<Connection> {
+    async fn create_connection(&self) -> anyhow::Result<Connection> {
         let connection = self
             .endpoint
             .connect(self.target_address, "localhost")
-            .expect("handshake");
+            .context("handshake")?;
 
         match connection.await {
-            Ok(conn) => Some(conn),
-            Err(ConnectionError::TimedOut) => None,
+            Ok(conn) => Ok(conn),
+            Err(ConnectionError::TimedOut) => bail!("timeout"),
             // maybe we should also treat TransportError explicitly
             Err(unexpected_error) => {
-                panic!(
+                warn!(
                     "Connection to {} failed with unexpected error: {}",
                     self.target_address, unexpected_error
                 );
+                bail!("Unecpected error connecting");
             }
         }
     }

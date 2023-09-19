@@ -1,3 +1,6 @@
+/// bench tool that uses the TPU client from quic proxy to submit transactions to TPUs via QUIC
+///
+/// note: this tool requires a lite-rpc service that is configured to dump the current leader list to a file (leaders.dat)
 mod cli_direct_quic;
 mod helpers;
 mod metrics;
