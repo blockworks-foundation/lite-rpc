@@ -17,7 +17,7 @@ use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocks;
 use yellowstone_grpc_proto::prelude::{subscribe_update::UpdateOneof, SubscribeRequestFilterSlots};
 
 #[derive(Debug, Error)]
-pub enum HistoryError {
+pub enum ConsensusError {
     #[error("Error during during send slot '{0}'")]
     SendSlotError(String),
 
@@ -36,10 +36,10 @@ pub async fn start_module(
         + 'static,
     block_info_sink: impl Sink<BlockInformation, Error = FuturesSendError> + std::marker::Send + 'static,
     epoch_sink: impl Sink<EpochInfo, Error = FuturesSendError> + std::marker::Send + 'static,
-) -> JoinHandle<Result<(), HistoryError>> {
+) -> JoinHandle<Result<(), ConsensusError>> {
     let handle = tokio::spawn(async move {
-        pin!(full_block_sinck);
-        pin!(block_info_sinck);
+        pin!(full_block_sink);
+        pin!(block_info_sink);
 
         //subscribe Geyser grpc
         let mut slots = HashMap::new();
@@ -96,11 +96,11 @@ pub async fn start_module(
                                     match msg.update_oneof {
                                         Some(UpdateOneof::Block(block)) => {
                                             let info_block = convert_into_blockinfo(&block);
-                                            if let Err(err) = block_info_sinck.send(info_block).await {
+                                            if let Err(err) = block_info_sink.send(info_block).await {
                                                 log::error!("Error during sending block info:{err}");
                                             }
                                             let rpc_block = convert_block(block);
-                                            if let Err(err) = full_block_sinck.send(rpc_block).await {
+                                            if let Err(err) = full_block_sink.send(rpc_block).await {
                                                 log::error!("Error during sending full block:{err}");
                                             }
                                         }
