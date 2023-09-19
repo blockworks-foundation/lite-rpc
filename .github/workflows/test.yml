@@ -58,9 +58,9 @@ jobs:
       - name: Install node deps
         run: yarn
           
-      - name: Setup validator
+      - name: Setup Solana Validator v1.16.13
         run: |
-          sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
+          sh -c "$(curl -sSfL https://release.solana.com/v1.16.13/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           ls "$HOME/.local/share/solana/install/active_release/bin"
