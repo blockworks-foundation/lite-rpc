@@ -244,7 +244,7 @@ async fn bench(
         }
         let chunks = signatures.chunks(100).collect::<Vec<_>>();
         for chunk in chunks {
-            if let Ok(res) = rpc_client.get_signature_statuses(&chunk).await {
+            if let Ok(res) = rpc_client.get_signature_statuses(chunk).await {
                 for (i, signature) in chunk.iter().enumerate() {
                     let tx_status = &res.value[i];
                     if tx_status.is_some() {
