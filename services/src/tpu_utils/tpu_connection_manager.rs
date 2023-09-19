@@ -80,16 +80,14 @@ impl ActiveConnection {
         let mut exit_oneshot_channel = exit_oneshot_channel;
         let identity = self.identity;
 
-        let number_of_transactions_per_unistream = self
-            .connection_parameters
-            .number_of_transactions_per_unistream;
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
 
         let max_uni_stream_connections = compute_max_allowed_uni_streams(
             identity_stakes.peer_type,
             identity_stakes.stakes,
             identity_stakes.total_stakes,
-        );
+        )
+        .saturating_sub(1);
         let exit_signal = self.exit_signal.clone();
         let connection_pool = QuicConnectionPool::new(
             identity,
@@ -114,7 +112,7 @@ impl ActiveConnection {
                         break;
                     }
 
-                    let first_tx: Vec<u8> = match tx {
+                    let tx: Vec<u8> = match tx {
                         Ok((sig, tx)) => {
                             if Self::check_for_confirmation(&txs_sent_store, sig) {
                                 // transaction is already confirmed/ no need to send
@@ -131,31 +129,22 @@ impl ActiveConnection {
                         }
                     };
 
-                    let mut txs = vec![first_tx];
-                    for _ in 1..number_of_transactions_per_unistream {
-                        if let Ok((sig, tx)) = transaction_reciever.try_recv() {
-                            if Self::check_for_confirmation(&txs_sent_store, sig) {
-                                continue;
-                            }
-                            txs.push(tx);
-                        }
-                    }
-
-                    let connection_pool = match connection_pool.get_pooled_connection().await {
+                    let PooledConnection {
+                        connection,
+                        permit
+                    } = match connection_pool.get_pooled_connection().await {
                         Ok(connection_pool) => connection_pool,
-                        Err(_) => break,
+                        Err(e) => {
+                            error!("error getting pooled connection {e:?}");
+                            break;
+                        },
                     };
+
                     tokio::spawn(async move {
-                        let PooledConnection {
-                            connection,
-                            permit
-                        } = connection_pool;
                         // permit will be used to send all the transaction and then destroyed
                         let _permit = permit;
                         NB_QUIC_TASKS.inc();
-                        for tx in txs {
-                            connection.send_transaction(tx).await;
-                        }
+                        connection.send_transaction(tx).await;
                         NB_QUIC_TASKS.dec();
                     });
                 },
