@@ -8,15 +8,24 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::debug;
 
-/// copy of quic-proxy AutoReconnect - used that for reference
+/// specialized connection manager with automatic reconnect; designated for connection lite-rpc -> quic proxy
+///
+/// assumptions:
+/// * connection to proxy service is reliable
+/// * connection to proxy service is fast (50ms-200ms) and high-bandwidth
+/// * proxy service will eventually be up again
+/// * proxy location/IP address might change transparently
+/// * proxy might be operated behind a load-balancer
+/// * proxy will propagate backpressure by closing the connection
+/// * proxy will not stall/delay connection but will respond fast with an error signal
 
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 
 enum ConnectionState {
     NotConnected,
     Connection(Connection),
-    // not used for ocnnection to proxy
-    PermanentError,
+    // not used for connection to proxy
+    _PermanentError,
     FailedAttempt(u32),
 }
 
@@ -38,7 +47,7 @@ impl AutoReconnect {
 
     pub async fn is_permanent_dead(&self) -> bool {
         let lock = self.current.read().await;
-        matches!(&*lock, ConnectionState::PermanentError)
+        matches!(&*lock, ConnectionState::_PermanentError)
     }
 
     pub async fn send_uni(&self, payload: &Vec<u8>) -> anyhow::Result<()> {
@@ -58,7 +67,7 @@ impl AutoReconnect {
         match &*lock {
             ConnectionState::NotConnected => bail!("not connected"),
             ConnectionState::Connection(conn) => Ok(conn.clone()),
-            ConnectionState::PermanentError => bail!("permanent error"),
+            ConnectionState::_PermanentError => bail!("permanent error"),
             ConnectionState::FailedAttempt(_) => bail!("failed connection attempt"),
         }
     }
@@ -133,7 +142,7 @@ impl AutoReconnect {
                     }
                 };
             }
-            ConnectionState::PermanentError => {
+            ConnectionState::_PermanentError => {
                 // no nothing
                 debug!(
                     "Not using connection to {} with permanent error",
@@ -193,7 +202,7 @@ impl AutoReconnect {
                 conn.stats().path.rtt
             ),
             ConnectionState::NotConnected => "n/c".to_string(),
-            ConnectionState::PermanentError => "n/a (permanent)".to_string(),
+            ConnectionState::_PermanentError => "n/a (permanent)".to_string(),
             ConnectionState::FailedAttempt(_) => "fail".to_string(),
         }
     }
