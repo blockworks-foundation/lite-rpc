@@ -1,10 +1,11 @@
 mod cli_direct_quic;
+mod helpers;
+mod metrics;
 
 use anyhow::Context;
-use bench::{
-    helpers::BenchHelper,
-    metrics::{AvgMetric, Metric, TxMetricData},
-};
+use helpers::BenchHelper;
+use metrics::{AvgMetric, Metric, TxMetricData};
+
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;

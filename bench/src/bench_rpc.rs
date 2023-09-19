@@ -1,8 +1,10 @@
-use bench::{
-    cli::Args,
-    helpers::BenchHelper,
-    metrics::{AvgMetric, Metric, TxMetricData},
-};
+mod cli_rpc;
+mod helpers;
+mod metrics;
+
+use helpers::BenchHelper;
+use metrics::{AvgMetric, Metric, TxMetricData};
+
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
@@ -25,14 +27,14 @@ use tokio::{
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let Args {
+    let cli_rpc::Args {
         tx_count,
         runs,
         run_interval_ms,
         metrics_file_name,
         lite_rpc_addr,
         transaction_save_file,
-    } = Args::parse();
+    } = cli_rpc::Args::parse();
 
     let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
 
