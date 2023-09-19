@@ -86,8 +86,7 @@ impl ActiveConnection {
             identity_stakes.peer_type,
             identity_stakes.stakes,
             identity_stakes.total_stakes,
-        )
-        .saturating_sub(1);
+        );
         let exit_signal = self.exit_signal.clone();
         let connection_pool = QuicConnectionPool::new(
             identity,
