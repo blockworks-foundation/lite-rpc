@@ -8,6 +8,7 @@ use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail, Context};
 use futures::future::join_all;
 use log::{debug, info, trace, warn};
+use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter, IntGauge};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
@@ -19,7 +20,6 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use prometheus::{IntCounter, IntGauge, opts, register_int_counter, register_int_gauge};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
 
@@ -75,7 +75,7 @@ pub async fn tx_forwarder(
             transaction_channel
                 .recv()
                 .await
-                .ok_or(anyhow::anyhow!("transaction_channel closed"))?
+                .ok_or(anyhow::anyhow!("transaction_channel closed"))?,
         );
         let tpu_address = forward_packet.tpu_address;
 
@@ -226,8 +226,7 @@ pub async fn tx_forwarder(
             debug!("tx-forward queue len: {}", broadcast_in.len())
         }
 
-        let enqueue_result = broadcast_in
-            .send(forward_packet);
+        let enqueue_result = broadcast_in.send(forward_packet);
 
         if let Err(e) = enqueue_result {
             warn!("broadcast channel send error: {}", e);

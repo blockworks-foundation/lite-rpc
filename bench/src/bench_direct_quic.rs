@@ -18,21 +18,19 @@ use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, hash::Hash, signature::Keypair,
-    signer::Signer, slot_history::Slot,
+    commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
+    slot_history::Slot,
 };
 use std::fs;
 use std::fs::read_to_string;
 use std::net::{SocketAddr, SocketAddrV4};
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
-use std::time::SystemTime;
-use std::{
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
 };
+use std::time::SystemTime;
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
@@ -208,8 +206,11 @@ async fn bench(
                 );
                 for tpu_address in &leader_addrs {
                     let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
-                    let packet =
-                        ForwardPacket::new(vec![tx_raw], SocketAddr::from(*tpu_address), 0xdeadbeef);
+                    let packet = ForwardPacket::new(
+                        vec![tx_raw],
+                        SocketAddr::from(*tpu_address),
+                        0xdeadbeef,
+                    );
 
                     forwarder_channel.send(packet).await.unwrap();
 

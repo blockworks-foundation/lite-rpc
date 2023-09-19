@@ -18,11 +18,11 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::net::SocketAddr;
+use std::path::Path;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
-use std::path::Path;
 use tokio::time::Duration;
 
 lazy_static::lazy_static! {
