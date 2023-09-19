@@ -15,6 +15,7 @@ path = "src/bench_direct_quic.rs"
 solana-lite-rpc-quic-forward-proxy = { path = "../quic-forward-proxy" }
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
+solana-streamer = {workspace = true}
 log = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -30,7 +31,4 @@ rand_chacha = "0.3.1"
 futures = { workspace = true }
 dashmap = { workspace = true }
 lazy_static = "1.4.0"
-solana-lite-rpc-core = {workspace = true}
-solana-lite-rpc-services = {workspace = true}
-solana-streamer = {workspace = true}
 
