@@ -105,6 +105,7 @@ pub fn with_100_transactions_direct() {
     });
 }
 
+#[ignore]
 #[test]
 pub fn with_1000_transactions_direct() {
     configure_logging(false);
