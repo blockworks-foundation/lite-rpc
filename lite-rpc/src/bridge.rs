@@ -21,9 +21,7 @@ use solana_rpc_client_api::{
     config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
-use solana_sdk::{
-    commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot,
-};
+use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
@@ -189,7 +187,11 @@ impl LiteRpcServer for LiteBridge {
         let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
         let commitment = CommitmentConfig { commitment };
 
-        let (is_valid, slot) = self.data_cache.block_store.is_blockhash_valid(&blockhash, commitment).await;
+        let (is_valid, slot) = self
+            .data_cache
+            .block_store
+            .is_blockhash_valid(&blockhash, commitment)
+            .await;
 
         Ok(RpcResponse {
             context: RpcResponseContext {

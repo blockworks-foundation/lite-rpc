@@ -2,7 +2,10 @@ use crate::tpu_utils::tpu_service::TpuService;
 use anyhow::{bail, Context};
 use log::error;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use solana_lite_rpc_core::{stores::tx_store::TxStore, AnyhowJoinHandle, structures::transaction_sent_info::SentTransactionInfo};
+use solana_lite_rpc_core::{
+    stores::tx_store::TxStore, structures::transaction_sent_info::SentTransactionInfo,
+    AnyhowJoinHandle,
+};
 use std::time::Duration;
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -76,8 +79,7 @@ impl TransactionReplayer {
                     continue;
                 }
                 // ignore reset error
-                let _ =
-                    tpu_service.send_transaction(&tx_replay.transaction);
+                let _ = tpu_service.send_transaction(&tx_replay.transaction);
 
                 if tx_replay.replay_count < tx_replay.max_replay {
                     tx_replay.replay_count += 1;

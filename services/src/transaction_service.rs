@@ -9,7 +9,10 @@ use crate::{
     tx_sender::TxSender,
 };
 use anyhow::bail;
-use solana_lite_rpc_core::{solana_utils::SerializableTransaction, types::SlotStream, structures::transaction_sent_info::SentTransactionInfo};
+use solana_lite_rpc_core::{
+    solana_utils::SerializableTransaction, structures::transaction_sent_info::SentTransactionInfo,
+    types::SlotStream,
+};
 use solana_lite_rpc_core::{
     stores::block_information_store::{BlockInformation, BlockInformationStore},
     structures::notifications::NotificationSender,
@@ -128,7 +131,7 @@ impl TransactionService {
         else {
             bail!("Blockhash not found in block store".to_string());
         };
-        
+
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         let transaction_info = SentTransactionInfo {
             signature: signature.to_string(),

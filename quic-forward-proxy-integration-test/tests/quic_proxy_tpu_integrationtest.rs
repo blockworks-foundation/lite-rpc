@@ -5,8 +5,9 @@ use log::{debug, error, info, trace, warn};
 
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::solana_utils::SerializableTransaction;
-use solana_lite_rpc_core::stores::tx_store::empty_tx_store;
+use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakesData;
+use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_manager::TpuConnectionManager;
 use solana_sdk::hash::Hash;
 use solana_sdk::instruction::Instruction;
@@ -514,7 +515,7 @@ async fn start_literpc_client_direct_mode(
             connections_to_keep,
             identity_stakes,
             // note: tx_store is useless in this scenario as it is never changed; it's only used to check for duplicates
-            empty_tx_store().clone(),
+            DataCache::new_for_tests(),
             QUIC_CONNECTION_PARAMS,
         )
         .await;
@@ -523,7 +524,7 @@ async fn start_literpc_client_direct_mode(
         let raw_sample_tx = build_raw_sample_tx(i);
         trace!(
             "broadcast transaction {} to {} receivers: {}",
-            raw_sample_tx.0,
+            raw_sample_tx.signature,
             broadcast_sender.receiver_count(),
             format!("hi {}", i)
         );
@@ -632,7 +633,7 @@ async fn start_literpc_client_proxy_mode(
         let raw_sample_tx = build_raw_sample_tx(i);
         trace!(
             "broadcast transaction {} to {} receivers: {}",
-            raw_sample_tx.0,
+            raw_sample_tx.signature,
             broadcast_sender.receiver_count(),
             format!("hi {}", i)
         );
@@ -731,16 +732,22 @@ impl SolanaQuicStreamer {
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
-pub fn build_raw_sample_tx(i: u32) -> (String, Vec<u8>) {
+pub fn build_raw_sample_tx(i: u32) -> SentTransactionInfo {
     let payer_keypair = Keypair::from_base58_string(
         "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
     );
 
     let tx = build_sample_tx(&payer_keypair, i);
 
-    let raw_tx = bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx");
+    let transaction =
+        bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx");
 
-    (tx.get_signature().to_string(), raw_tx)
+    SentTransactionInfo {
+        signature: tx.get_signature().to_string(),
+        slot: 1,
+        transaction,
+        last_valid_block_height: 300,
+    }
 }
 
 // "hi 1234 " -> 1234

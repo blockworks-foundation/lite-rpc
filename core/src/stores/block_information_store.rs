@@ -159,15 +159,18 @@ impl BlockInformationStore {
         self.blocks.len()
     }
 
-    pub async fn is_blockhash_valid(&self, blockhash: &String, commitment_config: CommitmentConfig,) -> (bool, Slot) {
+    pub async fn is_blockhash_valid(
+        &self,
+        blockhash: &String,
+        commitment_config: CommitmentConfig,
+    ) -> (bool, Slot) {
         let latest_block = self.get_latest_block(commitment_config).await;
         match self.blocks.get(blockhash) {
-            Some(block_information) => {
-                (latest_block.block_height <= block_information.last_valid_blockheight, latest_block.slot)
-            },
-            None => {
-                (false, latest_block.slot)
-            }
+            Some(block_information) => (
+                latest_block.block_height <= block_information.last_valid_blockheight,
+                latest_block.slot,
+            ),
+            None => (false, latest_block.slot),
         }
     }
 }

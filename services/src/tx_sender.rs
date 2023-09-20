@@ -13,7 +13,10 @@ use tokio::sync::mpsc::Receiver;
 use crate::tpu_utils::tpu_service::TpuService;
 use solana_lite_rpc_core::{
     stores::{data_cache::DataCache, tx_store::TxProps},
-    structures::{notifications::{NotificationMsg, NotificationSender, TransactionNotification}, transaction_sent_info::SentTransactionInfo},
+    structures::{
+        notifications::{NotificationMsg, NotificationSender, TransactionNotification},
+        transaction_sent_info::SentTransactionInfo,
+    },
     AnyhowJoinHandle,
 };
 
@@ -90,9 +93,7 @@ impl TxSender {
                 transaction_info.signature.clone(),
                 TxProps::new(transaction_info.last_valid_block_height),
             );
-            let quic_response = match tpu_client.send_transaction(
-                transaction_info
-            ) {
+            let quic_response = match tpu_client.send_transaction(transaction_info) {
                 Ok(_) => {
                     TXS_SENT.inc_by(1);
                     1

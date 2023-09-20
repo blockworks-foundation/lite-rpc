@@ -1,8 +1,8 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
 use solana_sdk::hash::Hash;
-use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 use solana_sdk::slot_history::Slot;
+use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 
 use crate::{
     stores::{
@@ -11,7 +11,8 @@ use crate::{
     },
     structures::{
         identity_stakes::IdentityStakes,
-        slot_notification::{AtomicSlot, SlotNotification}, transaction_sent_info::SentTransactionInfo,
+        slot_notification::{AtomicSlot, SlotNotification},
+        transaction_sent_info::SentTransactionInfo,
     },
 };
 
@@ -47,13 +48,23 @@ impl DataCache {
         self.tx_subs.clean(ttl_duration);
     }
 
-    pub async fn check_if_confirmed_or_expired_blockheight(&self, sent_transaction_info: &SentTransactionInfo) -> bool {
-        self.txs.is_transaction_confirmed(&sent_transaction_info.signature) || self.block_store.get_latest_block(CommitmentConfig::processed()).await.block_height > sent_transaction_info.last_valid_block_height
+    pub async fn check_if_confirmed_or_expired_blockheight(
+        &self,
+        sent_transaction_info: &SentTransactionInfo,
+    ) -> bool {
+        self.txs
+            .is_transaction_confirmed(&sent_transaction_info.signature)
+            || self
+                .block_store
+                .get_latest_block(CommitmentConfig::processed())
+                .await
+                .block_height
+                > sent_transaction_info.last_valid_block_height
     }
 
     pub fn new_for_tests() -> Self {
         Self {
-            block_store: BlockInformationStore::new(BlockInformation{
+            block_store: BlockInformationStore::new(BlockInformation {
                 block_height: 0,
                 blockhash: Hash::new_unique().to_string(),
                 cleanup_slot: 1000,
