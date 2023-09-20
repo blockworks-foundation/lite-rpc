@@ -1,4 +1,4 @@
-use crate::{structures::processed_block::TransactionInfo, types::SubscptionHanderSink};
+use crate::{structures::produced_block::TransactionInfo, types::SubscptionHanderSink};
 use dashmap::DashMap;
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},

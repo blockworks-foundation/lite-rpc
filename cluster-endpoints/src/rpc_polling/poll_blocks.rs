@@ -2,7 +2,7 @@ use anyhow::Context;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
     structures::{
-        processed_block::{ProcessedBlock, TransactionInfo},
+        produced_block::{ProducedBlock, TransactionInfo},
         slot_notification::SlotNotification,
     },
     AnyhowJoinHandle,
@@ -28,7 +28,7 @@ pub async fn process_block(
     rpc_client: &RpcClient,
     slot: Slot,
     commitment_config: CommitmentConfig,
-) -> Option<ProcessedBlock> {
+) -> Option<ProducedBlock> {
     let block = rpc_client
         .get_block_with_config(
             slot,
@@ -152,7 +152,7 @@ pub async fn process_block(
 
     let block_time = block.block_time.unwrap_or(0) as u64;
 
-    Some(ProcessedBlock {
+    Some(ProducedBlock {
         txs,
         block_height,
         leader_id,
@@ -166,7 +166,7 @@ pub async fn process_block(
 
 pub fn poll_block(
     rpc_client: Arc<RpcClient>,
-    block_notification_sender: Sender<ProcessedBlock>,
+    block_notification_sender: Sender<ProducedBlock>,
     slot_notification: Receiver<SlotNotification>,
 ) -> Vec<AnyhowJoinHandle> {
     let task_spawner: AnyhowJoinHandle = tokio::spawn(async move {
