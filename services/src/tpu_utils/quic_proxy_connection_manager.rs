@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 use anyhow::bail;
+use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
 use std::time::Duration;
 
 use itertools::Itertools;
@@ -62,7 +63,7 @@ impl QuicProxyConnectionManager {
 
     pub async fn update_connection(
         &self,
-        broadcast_receiver: Receiver<(String, Vec<u8>)>,
+        broadcast_receiver: Receiver<SentTransactionInfo>,
         // for duration of this slot these tpu nodes will receive the transactions
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         connection_parameters: QuicConnectionParameters,
@@ -145,7 +146,7 @@ impl QuicProxyConnectionManager {
 
     // send transactions to quic proxy
     async fn read_transactions_and_broadcast(
-        mut transaction_receiver: Receiver<(String, Vec<u8>)>,
+        mut transaction_receiver: Receiver<SentTransactionInfo>,
         current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>,
         proxy_addr: SocketAddr,
         endpoint: Endpoint,
@@ -165,8 +166,12 @@ impl QuicProxyConnectionManager {
                 tx = transaction_receiver.recv() => {
 
                     let first_tx: TxData = match tx {
-                        Ok((sig, tx_raw)) => {
-                            TxData::new(sig, tx_raw)
+                        Ok(SentTransactionInfo{
+                            signature,
+                            transaction,
+                            ..
+                        }) => {
+                            TxData::new(signature, transaction)
                         },
                         Err(e) => {
                             warn!("Broadcast channel error (close) on recv: {} - aborting", e);
@@ -177,8 +182,12 @@ impl QuicProxyConnectionManager {
                     let mut txs: Vec<TxData> = vec![first_tx];
                     for _ in 1..connection_parameters.number_of_transactions_per_unistream {
                         match transaction_receiver.try_recv() {
-                            Ok((sig, tx_raw)) => {
-                                txs.push(TxData::new(sig, tx_raw));
+                            Ok(SentTransactionInfo{
+                                signature,
+                                transaction,
+                                ..
+                            }) => {
+                                txs.push(TxData::new(signature, transaction));
                             },
                             Err(TryRecvError::Empty) => {
                                 break;

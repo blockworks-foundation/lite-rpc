@@ -6,10 +6,10 @@ use std::time::Duration;
 use crate::{
     tpu_utils::tpu_service::TpuService,
     transaction_replayer::{TransactionReplay, TransactionReplayer, MESSAGES_IN_REPLAY_QUEUE},
-    tx_sender::{TransactionInfo, TxSender},
+    tx_sender::TxSender,
 };
 use anyhow::bail;
-use solana_lite_rpc_core::{solana_utils::SerializableTransaction, types::SlotStream};
+use solana_lite_rpc_core::{solana_utils::SerializableTransaction, types::SlotStream, structures::transaction_sent_info::SentTransactionInfo};
 use solana_lite_rpc_core::{
     stores::block_information_store::{BlockInformation, BlockInformationStore},
     structures::notifications::NotificationSender,
@@ -97,7 +97,7 @@ impl TransactionServiceBuilder {
 
 #[derive(Clone)]
 pub struct TransactionService {
-    pub transaction_channel: Sender<TransactionInfo>,
+    pub transaction_channel: Sender<SentTransactionInfo>,
     pub replay_channel: UnboundedSender<TransactionReplay>,
     pub block_store: BlockInformationStore,
     pub max_retries: usize,
@@ -128,17 +128,17 @@ impl TransactionService {
         else {
             bail!("Blockhash not found in block store".to_string());
         };
-
-        let raw_tx_clone = raw_tx.clone();
+        
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
+        let transaction_info = SentTransactionInfo {
+            signature: signature.to_string(),
+            last_valid_block_height: last_valid_blockheight,
+            slot,
+            transaction: raw_tx,
+        };
         if let Err(e) = self
             .transaction_channel
-            .send(TransactionInfo {
-                signature: signature.to_string(),
-                last_valid_block_height: last_valid_blockheight,
-                slot,
-                transaction: raw_tx,
-            })
+            .send(transaction_info.clone())
             .await
         {
             bail!(
@@ -151,8 +151,7 @@ impl TransactionService {
         if self
             .replay_channel
             .send(TransactionReplay {
-                signature: signature.to_string(),
-                tx: raw_tx_clone,
+                transaction: transaction_info,
                 replay_count: 0,
                 max_replay,
                 replay_at,

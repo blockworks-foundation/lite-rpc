@@ -65,6 +65,13 @@ impl TxStore {
         });
         log::info!("Cleaned {} transactions", length_before - self.store.len());
     }
+
+    pub fn is_transaction_confirmed(&self, signature: &String) -> bool {
+        match self.store.get(signature) {
+            Some(props) => props.status.is_some(),
+            None => false,
+        }
+    }
 }
 
 pub fn empty_tx_store() -> TxStore {
