@@ -24,6 +24,9 @@ use std::{
     sync::Arc,
 };
 
+// enable unless it is needed for bench_direct_quic.rs for performance reasons
+const ENABLE_LEADERSDAT_FOR_BENCH: bool = false;
+
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
     register_int_gauge!(opts!("literpc_nb_cluster_nodes", "Number of cluster nodes in saved")).unwrap();
@@ -148,7 +151,9 @@ impl TpuService {
             })
             .collect();
 
-        dump_leaders_to_file(connections_to_keep.values().collect_vec());
+        if ENABLE_LEADERSDAT_FOR_BENCH {
+            dump_leaders_to_file(connections_to_keep.values().collect_vec());
+        }
 
         match &self.connection_manager {
             DirectTpu {
