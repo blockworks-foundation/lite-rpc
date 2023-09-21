@@ -28,6 +28,8 @@ pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
 const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(2500); // ms; should be 4x400ms+buffer
 
 const MICROBATCH_WINDOW: Duration = Duration::from_millis(40);
+/// larger values will put more pressure on the downstream network sending part
+/// while with smaller the backpressure will be on the upstream channel
 const MAX_BATCH_SIZE: usize = 50;
 
 struct AgentHandle {
