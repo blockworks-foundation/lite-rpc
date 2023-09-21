@@ -5,8 +5,11 @@ use quinn::Endpoint;
 use solana_lite_rpc_core::{
     quic_connection::{PooledConnection, QuicConnectionPool},
     quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
-    stores::tx_store::TxStore,
-    structures::{identity_stakes::IdentityStakesData, rotating_queue::RotatingQueue},
+    stores::data_cache::DataCache,
+    structures::{
+        identity_stakes::IdentityStakesData, rotating_queue::RotatingQueue,
+        transaction_sent_info::SentTransactionInfo,
+    },
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
@@ -37,7 +40,7 @@ struct ActiveConnection {
     identity: Pubkey,
     tpu_address: SocketAddr,
     exit_signal: Arc<AtomicBool>,
-    txs_sent_store: TxStore,
+    data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
 }
 
@@ -46,7 +49,7 @@ impl ActiveConnection {
         endpoints: RotatingQueue<Endpoint>,
         tpu_address: SocketAddr,
         identity: Pubkey,
-        txs_sent_store: TxStore,
+        data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) -> Self {
         Self {
@@ -54,26 +57,18 @@ impl ActiveConnection {
             tpu_address,
             identity,
             exit_signal: Arc::new(AtomicBool::new(false)),
-            txs_sent_store,
+            data_cache,
             connection_parameters,
-        }
-    }
-
-    fn check_for_confirmation(txs_sent_store: &TxStore, signature: String) -> bool {
-        match txs_sent_store.get(&signature) {
-            Some(props) => props.status.is_some(),
-            None => false,
         }
     }
 
     #[allow(clippy::too_many_arguments)]
     async fn listen(
         &self,
-        transaction_reciever: Receiver<(String, Vec<u8>)>,
+        transaction_reciever: Receiver<SentTransactionInfo>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
-        txs_sent_store: TxStore,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
@@ -112,12 +107,12 @@ impl ActiveConnection {
                     }
 
                     let tx: Vec<u8> = match tx {
-                        Ok((sig, tx)) => {
-                            if Self::check_for_confirmation(&txs_sent_store, sig) {
+                        Ok(transaction_sent_info) => {
+                            if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info).await {
                                 // transaction is already confirmed/ no need to send
                                 continue;
                             }
-                            tx
+                            transaction_sent_info.transaction
                         },
                         Err(e) => {
                             error!(
@@ -159,12 +154,11 @@ impl ActiveConnection {
 
     pub fn start_listening(
         &self,
-        transaction_reciever: Receiver<(String, Vec<u8>)>,
+        transaction_reciever: Receiver<SentTransactionInfo>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         identity_stakes: IdentityStakesData,
     ) {
         let addr = self.tpu_address;
-        let txs_sent_store = self.txs_sent_store.clone();
         let this = self.clone();
         tokio::spawn(async move {
             this.listen(
@@ -172,7 +166,6 @@ impl ActiveConnection {
                 exit_oneshot_channel,
                 addr,
                 identity_stakes,
-                txs_sent_store,
             )
             .await;
         });
@@ -206,10 +199,10 @@ impl TpuConnectionManager {
 
     pub async fn update_connections(
         &self,
-        broadcast_sender: Arc<Sender<(String, Vec<u8>)>>,
+        broadcast_sender: Arc<Sender<SentTransactionInfo>>,
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakesData,
-        txs_sent_store: TxStore,
+        data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
@@ -220,7 +213,7 @@ impl TpuConnectionManager {
                     self.endpoints.clone(),
                     *socket_addr,
                     *identity,
-                    txs_sent_store.clone(),
+                    data_cache.clone(),
                     connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever

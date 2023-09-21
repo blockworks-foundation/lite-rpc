@@ -7,3 +7,4 @@ pub mod produced_block;
 pub mod proxy_request_format;
 pub mod rotating_queue;
 pub mod slot_notification;
+pub mod transaction_sent_info;

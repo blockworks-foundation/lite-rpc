@@ -1,5 +1,6 @@
 use anyhow::Context;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
 
 use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
@@ -41,7 +42,7 @@ pub struct TpuServiceConfig {
 
 #[derive(Clone)]
 pub struct TpuService {
-    broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
+    broadcast_sender: Arc<tokio::sync::broadcast::Sender<SentTransactionInfo>>,
     connection_manager: ConnectionManager,
     leader_schedule: Arc<dyn LeaderFetcherInterface>,
     config: TpuServiceConfig,
@@ -101,8 +102,8 @@ impl TpuService {
         })
     }
 
-    pub fn send_transaction(&self, signature: String, transaction: Vec<u8>) -> anyhow::Result<()> {
-        self.broadcast_sender.send((signature, transaction))?;
+    pub fn send_transaction(&self, transaction: &SentTransactionInfo) -> anyhow::Result<()> {
+        self.broadcast_sender.send(transaction.clone())?;
         Ok(())
     }
 
@@ -150,7 +151,7 @@ impl TpuService {
                         self.broadcast_sender.clone(),
                         connections_to_keep,
                         self.data_cache.identity_stakes.get_stakes().await,
-                        self.data_cache.txs.clone(),
+                        self.data_cache.clone(),
                         self.config.quic_connection_params,
                     )
                     .await;
