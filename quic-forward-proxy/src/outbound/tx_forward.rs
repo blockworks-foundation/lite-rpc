@@ -27,6 +27,9 @@ const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
 const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(2500); // ms; should be 4x400ms+buffer
 
+const MICROBATCH_WINDOW: Duration = Duration::from_millis(40);
+const MAX_BATCH_SIZE: usize = 10;
+
 struct AgentHandle {
     pub tpu_address: SocketAddr,
     pub agent_exit_signal: Arc<AtomicBool>,
@@ -143,7 +146,7 @@ pub async fn tx_forwarder(
                         // - after receiving one message wait a bit before draining the channel
                         // - should be a fraction of slot time - i.e. small enough to not miss the slot
                         // - check prometheus metric 'literpcproxy_batch_size'
-                        sleep(Duration::from_millis(40)).await;
+                        sleep(MICROBATCH_WINDOW).await;
 
                         let mut transactions_batch: Vec<Vec<u8>> = packet.transactions.clone();
 
@@ -155,6 +158,9 @@ pub async fn tx_forwarder(
                                 continue 'more;
                             }
                             transactions_batch.extend(more.transactions.clone());
+                            if transactions_batch.len() >= MAX_BATCH_SIZE {
+                                break 'more;
+                            }
                         }
 
                         debug!(
