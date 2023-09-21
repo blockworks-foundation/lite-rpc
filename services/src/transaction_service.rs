@@ -50,7 +50,7 @@ impl TransactionServiceBuilder {
     pub fn start(
         self,
         notifier: Option<NotificationSender>,
-        block_store: BlockInformationStore,
+        block_information_store: BlockInformationStore,
         max_retries: usize,
         slot_notifications: SlotStream,
     ) -> (TransactionService, AnyhowJoinHandle) {
@@ -89,7 +89,7 @@ impl TransactionServiceBuilder {
             TransactionService {
                 transaction_channel,
                 replay_channel,
-                block_store,
+                block_information_store,
                 max_retries,
                 replay_offset: self.tx_replayer.retry_offset,
             },
@@ -102,7 +102,7 @@ impl TransactionServiceBuilder {
 pub struct TransactionService {
     pub transaction_channel: Sender<SentTransactionInfo>,
     pub replay_channel: UnboundedSender<TransactionReplay>,
-    pub block_store: BlockInformationStore,
+    pub block_information_store: BlockInformationStore,
     pub max_retries: usize,
     pub replay_offset: Duration,
 }
@@ -126,7 +126,7 @@ impl TransactionService {
             last_valid_blockheight,
             ..
         }) = self
-            .block_store
+            .block_information_store
             .get_block_info(&tx.get_recent_blockhash().to_string())
         else {
             bail!("Blockhash not found in block store".to_string());

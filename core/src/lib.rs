@@ -1,3 +1,4 @@
+pub mod commitment_utils;
 pub mod keypair_loader;
 pub mod quic_connection;
 pub mod quic_connection_utils;

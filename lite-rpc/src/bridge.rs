@@ -16,13 +16,17 @@ use solana_lite_rpc_core::{
     stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
     AnyhowJoinHandle,
 };
+use solana_lite_rpc_history::history::History;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
-    config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
+    config::{
+        RpcBlockConfig, RpcContextConfig, RpcEncodingConfigWrapper, RpcRequestAirdropConfig,
+        RpcSignatureStatusConfig,
+    },
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
-use solana_transaction_status::TransactionStatus;
+use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
 
@@ -49,6 +53,7 @@ pub struct LiteBridge {
     // should be removed
     rpc_client: Arc<RpcClient>,
     transaction_service: TransactionService,
+    history: History,
 }
 
 impl LiteBridge {
@@ -56,11 +61,13 @@ impl LiteBridge {
         rpc_client: Arc<RpcClient>,
         data_cache: DataCache,
         transaction_service: TransactionService,
+        history: History,
     ) -> Self {
         Self {
             rpc_client,
             data_cache,
             transaction_service,
+            history,
         }
     }
 
@@ -159,7 +166,7 @@ impl LiteRpcServer for LiteBridge {
             ..
         } = self
             .data_cache
-            .block_store
+            .block_information_store
             .get_latest_block(commitment_config)
             .await;
 
@@ -189,7 +196,7 @@ impl LiteRpcServer for LiteBridge {
 
         let (is_valid, slot) = self
             .data_cache
-            .block_store
+            .block_information_store
             .is_blockhash_valid(&blockhash, commitment)
             .await;
 
@@ -218,7 +225,7 @@ impl LiteRpcServer for LiteBridge {
             context: RpcResponseContext {
                 slot: self
                     .data_cache
-                    .block_store
+                    .block_information_store
                     .get_latest_block_info(CommitmentConfig::finalized())
                     .await
                     .slot,
@@ -288,7 +295,7 @@ impl LiteRpcServer for LiteBridge {
 
         let BlockInformation { slot, .. } = self
             .data_cache
-            .block_store
+            .block_information_store
             .get_latest_block(commitment_config)
             .await;
         Ok(slot)
@@ -311,5 +318,20 @@ impl LiteRpcServer for LiteBridge {
         );
 
         Ok(())
+    }
+
+    async fn get_block(
+        &self,
+        slot: u64,
+        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+    ) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
+        let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
+        let block = self.history.block_storage.get(slot, config).await;
+        if block.is_some() {
+            // TO DO Convert to UIConfirmed Block
+            Err(jsonrpsee::core::Error::HttpNotImplemented)
+        } else {
+            Ok(None)
+        }
     }
 }

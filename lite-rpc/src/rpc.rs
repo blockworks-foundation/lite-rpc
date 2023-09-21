@@ -1,12 +1,13 @@
 use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::proc_macros::rpc;
 use solana_rpc_client_api::config::{
-    RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
+    RpcBlockConfig, RpcContextConfig, RpcEncodingConfigWrapper, RpcRequestAirdropConfig,
+    RpcSignatureStatusConfig,
 };
 use solana_rpc_client_api::response::{Response as RpcResponse, RpcBlockhash, RpcVersionInfo};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
-use solana_transaction_status::TransactionStatus;
+use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 
 use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
 
@@ -61,4 +62,11 @@ pub trait LiteRpc {
         signature: String,
         commitment_config: CommitmentConfig,
     ) -> SubscriptionResult;
+
+    #[method(name = "getBlock")]
+    async fn get_block(
+        &self,
+        slot: u64,
+        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+    ) -> Result<Option<UiConfirmedBlock>>;
 }
