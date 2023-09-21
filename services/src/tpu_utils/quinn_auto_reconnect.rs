@@ -8,20 +8,29 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::debug;
 
-/// copy of quic-proxy AutoReconnect - used that for reference
+/// specialized connection manager with automatic reconnect; designated for connection lite-rpc -> quic proxy
+///
+/// assumptions:
+/// * connection to proxy service is reliable
+/// * connection to proxy service is fast (50ms-200ms) and high-bandwidth
+/// * proxy service will eventually be up again
+/// * proxy location/IP address might change transparently
+/// * proxy might be operated behind a load-balancer
+/// * proxy will propagate backpressure by closing the connection
+/// * proxy will not stall/delay connection but will respond fast with an error signal
 
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
-const MAX_RETRY_ATTEMPTS: u32 = 10;
 
 enum ConnectionState {
     NotConnected,
     Connection(Connection),
-    PermanentError,
+    // not used for connection to proxy
+    _PermanentError,
     FailedAttempt(u32),
 }
 
 pub struct AutoReconnect {
-    // endoint should be configures with keep-alive and idle timeout
+    // endpoint should be configures with keep-alive and idle timeout
     endpoint: Endpoint,
     current: RwLock<ConnectionState>,
     pub target_address: SocketAddr,
@@ -36,17 +45,18 @@ impl AutoReconnect {
         }
     }
 
-    pub async fn is_permanent_dead(&self) -> bool {
+    pub async fn _is_permanent_dead(&self) -> bool {
         let lock = self.current.read().await;
-        matches!(&*lock, ConnectionState::PermanentError)
+        matches!(&*lock, ConnectionState::_PermanentError)
     }
 
     pub async fn send_uni(&self, payload: &Vec<u8>) -> anyhow::Result<()> {
-        let mut send_stream = timeout(SEND_TIMEOUT, self.refresh_and_get().await?.open_uni())
+        let connection = self.refresh_and_get().await?;
+        let mut send_stream = timeout(SEND_TIMEOUT, connection.open_uni())
             .await
             .context("open uni stream for sending")??;
-        send_stream.write_all(payload.as_slice()).await?;
-        send_stream.finish().await?;
+        timeout(SEND_TIMEOUT, send_stream.write_all(payload.as_slice())).await??;
+        timeout(SEND_TIMEOUT, send_stream.finish()).await??;
         Ok(())
     }
 
@@ -57,7 +67,7 @@ impl AutoReconnect {
         match &*lock {
             ConnectionState::NotConnected => bail!("not connected"),
             ConnectionState::Connection(conn) => Ok(conn.clone()),
-            ConnectionState::PermanentError => bail!("permanent error"),
+            ConnectionState::_PermanentError => bail!("permanent error"),
             ConnectionState::FailedAttempt(_) => bail!("failed connection attempt"),
         }
     }
@@ -90,7 +100,7 @@ impl AutoReconnect {
                     );
 
                     match self.create_connection().await {
-                        Some(new_connection) => {
+                        Ok(new_connection) => {
                             *lock = ConnectionState::Connection(new_connection.clone());
                             info!(
                                 "Restored closed connection {} with {} to target {}",
@@ -99,10 +109,10 @@ impl AutoReconnect {
                                 self.target_address,
                             );
                         }
-                        None => {
+                        Err(err) => {
                             warn!(
-                                "Reconnect to {} failed for connection {}",
-                                self.target_address, old_stable_id
+                                "Reconnect to {} failed for connection {}: {}",
+                                self.target_address, old_stable_id, err
                             );
                             *lock = ConnectionState::FailedAttempt(1);
                         }
@@ -117,7 +127,7 @@ impl AutoReconnect {
             }
             ConnectionState::NotConnected => {
                 match self.create_connection().await {
-                    Some(new_connection) => {
+                    Ok(new_connection) => {
                         *lock = ConnectionState::Connection(new_connection.clone());
 
                         info!(
@@ -126,13 +136,16 @@ impl AutoReconnect {
                             self.target_address
                         );
                     }
-                    None => {
-                        warn!("Failed connect initially to target {}", self.target_address);
+                    Err(err) => {
+                        warn!(
+                            "Failed connect initially to target {}: {}",
+                            self.target_address, err
+                        );
                         *lock = ConnectionState::FailedAttempt(1);
                     }
                 };
             }
-            ConnectionState::PermanentError => {
+            ConnectionState::_PermanentError => {
                 // no nothing
                 debug!(
                     "Not using connection to {} with permanent error",
@@ -141,44 +154,37 @@ impl AutoReconnect {
             }
             ConnectionState::FailedAttempt(attempts) => {
                 match self.create_connection().await {
-                    Some(new_connection) => {
+                    Ok(new_connection) => {
                         *lock = ConnectionState::Connection(new_connection);
                     }
-                    None => {
-                        if *attempts < MAX_RETRY_ATTEMPTS {
-                            warn!(
-                                "Reconnect to {} failed (attempt {})",
-                                self.target_address, attempts
-                            );
-                            *lock = ConnectionState::FailedAttempt(attempts + 1);
-                        } else {
-                            warn!(
-                                "Reconnect to {} failed permanently (attempt {})",
-                                self.target_address, attempts
-                            );
-                            *lock = ConnectionState::PermanentError;
-                        }
+                    Err(err) => {
+                        warn!(
+                            "Reconnect to {} failed (attempt {}): {}",
+                            self.target_address, attempts, err
+                        );
+                        *lock = ConnectionState::FailedAttempt(attempts + 1);
                     }
                 };
             }
         }
     }
 
-    async fn create_connection(&self) -> Option<Connection> {
+    async fn create_connection(&self) -> anyhow::Result<Connection> {
         let connection = self
             .endpoint
             .connect(self.target_address, "localhost")
-            .expect("handshake");
+            .context("handshake")?;
 
         match connection.await {
-            Ok(conn) => Some(conn),
-            Err(ConnectionError::TimedOut) => None,
+            Ok(conn) => Ok(conn),
+            Err(ConnectionError::TimedOut) => bail!("timeout"),
             // maybe we should also treat TransportError explicitly
             Err(unexpected_error) => {
-                panic!(
+                warn!(
                     "Connection to {} failed with unexpected error: {}",
                     self.target_address, unexpected_error
                 );
+                bail!("Unecpected error connecting");
             }
         }
     }
@@ -200,7 +206,7 @@ impl AutoReconnect {
                 conn.stats().path.rtt
             ),
             ConnectionState::NotConnected => "n/c".to_string(),
-            ConnectionState::PermanentError => "n/a (permanent)".to_string(),
+            ConnectionState::_PermanentError => "n/a (permanent)".to_string(),
             ConnectionState::FailedAttempt(_) => "fail".to_string(),
         }
     }

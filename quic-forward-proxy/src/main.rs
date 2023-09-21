@@ -31,6 +31,7 @@ pub async fn main() -> anyhow::Result<()> {
     let Args {
         identity_keypair,
         proxy_listen_addr,
+        prometheus_addr,
     } = Args::parse();
     dotenv().ok();
 
@@ -42,15 +43,17 @@ pub async fn main() -> anyhow::Result<()> {
         .await?
         .start_services();
 
+    let prometheus = PrometheusSync::sync(prometheus_addr);
+
     let ctrl_c_signal = tokio::signal::ctrl_c();
 
     tokio::select! {
         res = main_services => {
             bail!("Services quit unexpectedly {res:?}");
         },
-        // res = test_client => {
-        //     bail!("Test Client quit unexpectedly {res:?}");
-        // },
+        res = prometheus => {
+            bail!("Prometheus sync service exited unexpectedly {res:?}");
+        }
         _ = ctrl_c_signal => {
             info!("Received ctrl+c signal");
 

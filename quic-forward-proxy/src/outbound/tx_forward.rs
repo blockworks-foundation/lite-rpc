@@ -8,6 +8,7 @@ use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail, Context};
 use futures::future::join_all;
 use log::{debug, info, trace, warn};
+use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter, IntGauge};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
@@ -25,6 +26,17 @@ use tokio::sync::RwLock;
 const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
 const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(2500); // ms; should be 4x400ms+buffer
+
+lazy_static::lazy_static! {
+    static ref OUTBOUND_SEND_TX: IntCounter =
+        register_int_counter!(opts!("literpcproxy_send_tx", "Proxy to TPU send transaction")).unwrap();
+    static ref OUTBOUND_SEND_ERRORS: IntCounter =
+        register_int_counter!(opts!("literpcproxy_send_errors", "Proxy to TPU send errors")).unwrap();
+    static ref OUTBOUND_BATCH_SIZE: IntGauge =
+        register_int_gauge!(opts!("literpcproxy_batch_size", "Proxy to TPU tx batch size")).unwrap();
+    static ref OUTBOUND_PACKET_SIZE: IntGauge =
+        register_int_gauge!(opts!("literpcproxy_packet_size", "Proxy to TPU packet size")).unwrap();
+}
 
 struct AgentHandle {
     pub tpu_address: SocketAddr,
@@ -63,7 +75,7 @@ pub async fn tx_forwarder(
             transaction_channel
                 .recv()
                 .await
-                .expect("channel closed unexpectedly"),
+                .ok_or(anyhow::anyhow!("transaction_channel closed"))?,
         );
         let tpu_address = forward_packet.tpu_address;
 
@@ -166,8 +178,13 @@ pub async fn tx_forwarder(
                             auto_connection.target_address
                         ));
 
+                        OUTBOUND_BATCH_SIZE.set(transactions_batch.len() as i64);
+
+                        OUTBOUND_PACKET_SIZE.set(count_bytes(&transactions_batch));
+
                         match result {
                             Ok(()) => {
+                                OUTBOUND_SEND_TX.inc();
                                 debug!("send_txs_to_tpu_static sent {}", transactions_batch.len());
                                 debug!(
                                     "Outbound connection stats: {}",
@@ -175,6 +192,7 @@ pub async fn tx_forwarder(
                                 );
                             }
                             Err(err) => {
+                                OUTBOUND_SEND_ERRORS.inc();
                                 warn!("got send_txs_to_tpu_static error {} - loop over errors", err);
                             }
                         }
@@ -208,12 +226,22 @@ pub async fn tx_forwarder(
             debug!("tx-forward queue len: {}", broadcast_in.len())
         }
 
-        broadcast_in
-            .send(forward_packet)
-            .expect("send must succeed");
+        let enqueue_result = broadcast_in.send(forward_packet);
+
+        if let Err(e) = enqueue_result {
+            warn!("broadcast channel send error: {}", e);
+        }
     } // -- loop over transactions from upstream channels
 
     // not reachable
+}
+
+fn count_bytes(tx_vec: &Vec<Vec<u8>>) -> i64 {
+    let mut total_bytes = 0;
+    for tx in tx_vec {
+        total_bytes += tx.len();
+    }
+    total_bytes as i64
 }
 
 async fn cleanup_agents(
