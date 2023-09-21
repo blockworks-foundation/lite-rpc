@@ -28,7 +28,7 @@ pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
 const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(2500); // ms; should be 4x400ms+buffer
 
 const MICROBATCH_WINDOW: Duration = Duration::from_millis(40);
-const MAX_BATCH_SIZE: usize = 10;
+const MAX_BATCH_SIZE: usize = 50;
 
 struct AgentHandle {
     pub tpu_address: SocketAddr,
@@ -150,16 +150,17 @@ pub async fn tx_forwarder(
 
                         let mut transactions_batch: Vec<Vec<u8>> = packet.transactions.clone();
 
-                        'more: while let Ok(more) = per_connection_receiver.try_recv() {
+                        'drain_loop: while let Ok(more) = per_connection_receiver.try_recv() {
                             if more.tpu_address != tpu_address {
-                                continue 'more;
+                                continue 'drain_loop;
                             }
                             if !sharder.matching(more.shard_hash) {
-                                continue 'more;
+                                continue 'drain_loop;
                             }
                             transactions_batch.extend(more.transactions.clone());
                             if transactions_batch.len() >= MAX_BATCH_SIZE {
-                                break 'more;
+                                debug!("batch truncated leaving txs in queue: {}", per_connection_receiver.len());
+                                break 'drain_loop;
                             }
                         }
 
