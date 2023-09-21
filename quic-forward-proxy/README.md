@@ -122,6 +122,12 @@ TPU has complex logic to assign connection capacity to TPU clients (see Solana q
 * it keeps connections on a per peer address / peer identity basis
 * ...
 
+
+Monitoring
+---------------------------
+The Quic Proxy exposes prometheus metrics on address configured using _prometheus_addr_ (e.g. localhost:9092).
+
+
 ## License & Copyright
 
 Copyright (c) 2022 Blockworks Foundation
