@@ -6,6 +6,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use log::info;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
+use solana_lite_rpc_services::prometheus_sync::PrometheusSync;
 use std::sync::Arc;
 
 use crate::validator_identity::ValidatorIdentity;
