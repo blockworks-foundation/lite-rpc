@@ -6,6 +6,7 @@ members = [
     "quic-forward-proxy",
     "quic-forward-proxy-integration-test",
     "cluster-endpoints",
+    "history",
     "bench"
 ]
 
@@ -55,6 +56,7 @@ rustls = { version = "=0.20.8", default-features = false }
 solana-lite-rpc-services = {path = "services", version="0.2.3"}
 solana-lite-rpc-core = {path = "core", version="0.2.3"}
 solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.3"}
+solana-lite-rpc-history = {path = "history", version="0.2.3"}
 
 async-trait = "0.1.68"
 yellowstone-grpc-client = "1.9.0"

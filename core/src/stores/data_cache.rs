@@ -28,7 +28,7 @@ pub struct SlotCache {
 /// The central data store for all data from the cluster.
 #[derive(Clone)]
 pub struct DataCache {
-    pub block_store: BlockInformationStore,
+    pub block_information_store: BlockInformationStore,
     pub txs: TxStore,
     pub tx_subs: SubscriptionStore,
     pub slot_cache: SlotCache,
@@ -39,10 +39,10 @@ pub struct DataCache {
 impl DataCache {
     pub async fn clean(&self, ttl_duration: std::time::Duration) {
         let block_info = self
-            .block_store
+            .block_information_store
             .get_latest_block_info(CommitmentConfig::finalized())
             .await;
-        self.block_store.clean().await;
+        self.block_information_store.clean().await;
         self.txs.clean(block_info.block_height);
 
         self.tx_subs.clean(ttl_duration);
@@ -55,7 +55,7 @@ impl DataCache {
         self.txs
             .is_transaction_confirmed(&sent_transaction_info.signature)
             || self
-                .block_store
+                .block_information_store
                 .get_latest_block(CommitmentConfig::processed())
                 .await
                 .block_height
@@ -64,7 +64,7 @@ impl DataCache {
 
     pub fn new_for_tests() -> Self {
         Self {
-            block_store: BlockInformationStore::new(BlockInformation {
+            block_information_store: BlockInformationStore::new(BlockInformation {
                 block_height: 0,
                 blockhash: Hash::new_unique().to_string(),
                 cleanup_slot: 1000,

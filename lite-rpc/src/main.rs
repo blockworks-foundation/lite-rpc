@@ -29,6 +29,8 @@ use solana_lite_rpc_core::structures::{
 };
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
+use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceConfig};
@@ -117,9 +119,10 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
 
-    let block_store = BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
+    let block_information_store =
+        BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
     let data_cache = DataCache {
-        block_store,
+        block_information_store,
         cluster_info: ClusterInfo::default(),
         identity_stakes: IdentityStakes::new(validator_identity.pubkey()),
         slot_cache: SlotCache::new(finalized_block.slot),
@@ -187,9 +190,18 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
+    let history = History {
+        block_storage: Arc::new(InmemoryBlockStore::new(1024)),
+    };
+
     let bridge_service = tokio::spawn(
-        LiteBridge::new(rpc_client.clone(), data_cache.clone(), transaction_service)
-            .start(lite_rpc_http_addr, lite_rpc_ws_addr),
+        LiteBridge::new(
+            rpc_client.clone(),
+            data_cache.clone(),
+            transaction_service,
+            history,
+        )
+        .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
     tokio::select! {
         res = tx_service_jh => {

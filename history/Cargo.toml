@@ -1,0 +1,20 @@
+[package]
+name = "solana-lite-rpc-history"
+version = "0.2.3"
+edition = "2021"
+description = "History implementations used by solana lite rpc"
+rust-version = "1.70.0"
+repository = "https://github.com/blockworks-foundation/lite-rpc"
+license = "AGPL"
+
+[dependencies]
+solana-sdk = { workspace = true }
+solana-transaction-status = { workspace = true }
+solana-rpc-client = { workspace = true }
+
+dashmap = {workspace = true}
+async-trait = { workspace = true }
+tokio = "1.*"
+
+solana-lite-rpc-core = {workspace = true}
+solana-rpc-client-api = {workspace = true}

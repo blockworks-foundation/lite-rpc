@@ -53,7 +53,7 @@ impl DataCachingService {
                 let block = block_notifier.recv().await.expect("Should recv blocks");
 
                 data_cache
-                    .block_store
+                    .block_information_store
                     .add_block(BlockInformation::from_block(&block))
                     .await;
 

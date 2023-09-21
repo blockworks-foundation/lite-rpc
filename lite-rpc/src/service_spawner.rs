@@ -77,7 +77,7 @@ impl ServiceSpawner {
         );
         service_builder.start(
             notifier,
-            self.data_cache.block_store.clone(),
+            self.data_cache.block_information_store.clone(),
             max_retries,
             slot_notifications,
         )
