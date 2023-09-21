@@ -64,7 +64,7 @@ impl IdentityStakes {
             };
 
             log::info!(
-                "Idenity stakes {}, {}, {}, {}",
+                "Identity stakes {}, {}, {}, {}",
                 identity_stakes.total_stakes,
                 identity_stakes.min_stakes,
                 identity_stakes.max_stakes,

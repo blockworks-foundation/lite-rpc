@@ -51,12 +51,10 @@ impl DataCachingService {
             let mut block_notifier = block_notifier;
             loop {
                 let block = block_notifier.recv().await.expect("Should recv blocks");
+
                 data_cache
                     .block_store
-                    .add_block(
-                        BlockInformation::from_block(&block),
-                        block.commitment_config,
-                    )
+                    .add_block(BlockInformation::from_block(&block))
                     .await;
 
                 let confirmation_status = match block.commitment_config.commitment {

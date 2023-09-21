@@ -29,6 +29,7 @@ pub struct QuicConnection {
     connection_params: QuicConnectionParameters,
     exit_signal: Arc<AtomicBool>,
     timeout_counters: Arc<AtomicU64>,
+    has_connected_once: Arc<AtomicBool>,
 }
 
 impl QuicConnection {
@@ -48,6 +49,7 @@ impl QuicConnection {
             connection_params,
             exit_signal,
             timeout_counters: Arc::new(AtomicU64::new(0)),
+            has_connected_once: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -64,7 +66,7 @@ impl QuicConnection {
         .await
     }
 
-    async fn get_connection(&self) -> Option<Connection> {
+    pub async fn get_connection(&self) -> Option<Connection> {
         // get new connection reset if necessary
         let last_stable_id = self.last_stable_id.load(Ordering::Relaxed) as usize;
         let conn = self.connection.read().await.clone();
@@ -95,6 +97,7 @@ impl QuicConnection {
             None => {
                 let connection = self.connect().await;
                 *self.connection.write().await = connection.clone();
+                self.has_connected_once.store(true, Ordering::Relaxed);
                 connection
             }
         }
@@ -110,10 +113,6 @@ impl QuicConnection {
 
             let mut do_retry = false;
             let connection = self.get_connection().await;
-
-            if self.exit_signal.load(Ordering::Relaxed) {
-                return;
-            }
 
             if let Some(connection) = connection {
                 let current_stable_id = connection.stable_id() as u64;
@@ -175,6 +174,10 @@ impl QuicConnection {
     pub fn reset_timeouts(&self) {
         self.timeout_counters.store(0, Ordering::Relaxed);
     }
+
+    pub fn has_connected_atleast_once(&self) -> bool {
+        self.has_connected_once.load(Ordering::Relaxed)
+    }
 }
 
 #[derive(Clone)]
@@ -232,11 +235,14 @@ impl QuicConnectionPool {
         )
         .await;
         drop(_others);
+
+        // establish a connection if the connection has not yet been used
+        let connection = self.connections[index].clone();
+        if !connection.has_connected_atleast_once() {
+            connection.get_connection().await;
+        }
         let permit = permit.context("Cannot aquire permit, connection pool erased")?;
-        Ok(PooledConnection {
-            connection: self.connections[index].clone(),
-            permit,
-        })
+        Ok(PooledConnection { connection, permit })
     }
 
     pub fn len(&self) -> usize {
