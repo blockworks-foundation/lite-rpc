@@ -14,11 +14,16 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 commit : TODO
 
-- core : Refactored out solana rpc client from the core library.
-- services : Refactored out solana rpc client from the services library.
-- cluster-endpoints : Created cluster endpoint library and added rpc polling
-- cluster-endpoints : Added grpc support in cluster endpoints.
-- proxy : Added lite-rpc quic proxy which will act as a TPU forwarding proxy for multiple lite-rpc clients.
+- core : Refactored out solana rpc client from the core library. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/174)
+- services : Refactored out solana rpc client from the services library. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/174)
+- cluster-endpoints : Created cluster endpoint library and added rpc polling [PR](https://github.com/blockworks-foundation/lite-rpc/pull/174)
+- cluster-endpoints : Added grpc support in cluster endpoints. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/174)
+- proxy : Added lite-rpc quic proxy which will act as a TPU forwarding proxy for multiple lite-rpc clients. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/164) [PR](https://github.com/blockworks-foundation/lite-rpc/pull/169) [PR](https://github.com/blockworks-foundation/lite-rpc/pull/187)
+- Using counting semaphore for block polling. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/189)
+- Changing algorithm for replay so that replay is done in linearly increasing time. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/196)
+- Unistream connection counting semaphore is now held by each connection. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/194)
+- Adding history libraries and block storing strategies. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/205)
+- Avoid sending transactions in TPUClient for which have expired blockheight. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/204)
 
 ## [0.2.2] - 2023-06-23
 
