@@ -24,6 +24,9 @@ commit : TODO
 - Unistream connection counting semaphore is now held by each connection. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/194)
 - Adding history libraries and block storing strategies. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/205)
 - Avoid sending transactions in TPUClient for which have expired blockheight. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/204)
+- Upgrade to Solana 1.16 [PR](https://github.com/blockworks-foundation/lite-rpc/pull/178)
+- Update Rust to 1.70 [PR](https://github.com/blockworks-foundation/lite-rpc/pull/184)
+
 
 ## [0.2.2] - 2023-06-23
 
