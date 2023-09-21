@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
+use tokio::time::sleep;
 
 const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
@@ -137,6 +138,12 @@ pub async fn tx_forwarder(
                                 per_connection_receiver.len());
                             break 'tx_channel_loop;
                         }
+
+                        // micro-batch
+                        // - after receiving one message wait a bit before draining the channel
+                        // - should be a fraction of slot time - i.e. small enough to not miss the slot
+                        // - check prometheus metric 'literpcproxy_batch_size'
+                        sleep(Duration::from_millis(40)).await;
 
                         let mut transactions_batch: Vec<Vec<u8>> = packet.transactions.clone();
 
