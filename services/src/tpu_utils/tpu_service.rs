@@ -6,10 +6,10 @@ use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
 use itertools::Itertools;
-use solana_lite_rpc_core::data_cache::DataCache;
-use solana_lite_rpc_core::leaders_fetcher_trait::LeaderFetcherInterface;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
-use solana_lite_rpc_core::streams::SlotStream;
+use solana_lite_rpc_core::stores::data_cache::DataCache;
+use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterface;
+use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
@@ -23,7 +23,6 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
-use tokio::time::Duration;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -42,11 +41,7 @@ lazy_static::lazy_static! {
 #[derive(Clone, Copy)]
 pub struct TpuServiceConfig {
     pub fanout_slots: u64,
-    pub number_of_leaders_to_cache: usize,
-    pub clusterinfo_refresh_time: Duration,
-    pub leader_schedule_update_frequency: Duration,
     pub maximum_transaction_in_queue: usize,
-    pub maximum_number_of_errors: usize,
     pub quic_connection_params: QuicConnectionParameters,
     pub tpu_connection_path: TpuConnectionPath,
 }

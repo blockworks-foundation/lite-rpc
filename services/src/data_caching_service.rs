@@ -3,11 +3,10 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use prometheus::core::GenericGauge;
 use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter};
-use solana_lite_rpc_core::block_information_store::BlockInformation;
-use solana_lite_rpc_core::data_cache::DataCache;
-use solana_lite_rpc_core::streams::{
-    BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream,
+use solana_lite_rpc_core::stores::{
+    block_information_store::BlockInformation, data_cache::DataCache,
 };
+use solana_lite_rpc_core::types::{BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream};
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
@@ -52,12 +51,10 @@ impl DataCachingService {
             let mut block_notifier = block_notifier;
             loop {
                 let block = block_notifier.recv().await.expect("Should recv blocks");
+
                 data_cache
                     .block_store
-                    .add_block(
-                        BlockInformation::from_block(&block),
-                        block.commitment_config,
-                    )
+                    .add_block(BlockInformation::from_block(&block))
                     .await;
 
                 let confirmation_status = match block.commitment_config.commitment {

@@ -1,23 +1,19 @@
-use std::{sync::Arc, time::Duration};
-
+use crate::{structures::produced_block::TransactionInfo, types::SubscptionHanderSink};
 use dashmap::DashMap;
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     slot_history::Slot,
 };
+use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
 
-use crate::{structures::processed_block::TransactionInfo, subscription_sink::SubscriptionSink};
-
-pub type SubscptionHanderSink = Arc<dyn SubscriptionSink>;
-
 #[derive(Clone, Default)]
-pub struct SubscriptionHandler {
+pub struct SubscriptionStore {
     pub signature_subscribers:
         Arc<DashMap<(String, CommitmentConfig), (SubscptionHanderSink, Instant)>>,
 }
 
-impl SubscriptionHandler {
+impl SubscriptionStore {
     #[allow(deprecated)]
     pub fn get_supported_commitment_config(
         commitment_config: CommitmentConfig,

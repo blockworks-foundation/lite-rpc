@@ -219,7 +219,7 @@ async fn bench(
                     forwarder_channel.send(packet).await.unwrap();
 
                     map_of_txs.insert(
-                        tx.get_signature().clone(),
+                        *tx.get_signature(),
                         TxSendData {
                             sent_duration: start_time.elapsed(),
                             sent_instant: Instant::now(),

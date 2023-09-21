@@ -13,9 +13,8 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::tpu_utils::tpu_service::TpuService;
 use solana_lite_rpc_core::{
-    data_cache::DataCache,
-    notifications::{NotificationMsg, NotificationSender, TransactionNotification},
-    tx_store::TxProps,
+    stores::{data_cache::DataCache, tx_store::TxProps},
+    structures::notifications::{NotificationMsg, NotificationSender, TransactionNotification},
     AnyhowJoinHandle,
 };
 

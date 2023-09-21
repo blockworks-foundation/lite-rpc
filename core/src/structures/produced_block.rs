@@ -12,7 +12,7 @@ pub struct TransactionInfo {
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct ProcessedBlock {
+pub struct ProducedBlock {
     pub txs: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
     pub blockhash: String,

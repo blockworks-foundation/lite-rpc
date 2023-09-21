@@ -8,7 +8,7 @@ use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
     structures::{
-        processed_block::{ProcessedBlock, TransactionInfo},
+        produced_block::{ProducedBlock, TransactionInfo},
         slot_notification::SlotNotification,
     },
     AnyhowJoinHandle,
@@ -39,7 +39,7 @@ use yellowstone_grpc_proto::prelude::{
 fn process_block(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
-) -> ProcessedBlock {
+) -> ProducedBlock {
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
@@ -125,54 +125,66 @@ fn process_block(
                     .collect(),
             });
 
-            let legacy_compute_budget = message.instructions().iter().find_map(|i| {
-                if i.program_id(message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                        units,
-                        additional_fee,
-                    }) = try_from_slice_unchecked(i.data.as_slice())
+            let legacy_compute_budget: Option<(u32, Option<u64>)> =
+                message.instructions().iter().find_map(|i| {
+                    if i.program_id(message.static_account_keys())
+                        .eq(&compute_budget::id())
                     {
-                        return Some((units, additional_fee));
+                        if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
+                            units,
+                            additional_fee,
+                        }) = try_from_slice_unchecked(i.data.as_slice())
+                        {
+                            if additional_fee > 0 {
+                                return Some((
+                                    units,
+                                    Some(((units * 1000) / additional_fee) as u64),
+                                ));
+                            } else {
+                                return Some((units, None));
+                            }
+                        }
                     }
-                }
-                None
-            });
+                    None
+                });
 
-            let mut cu_requested = message.instructions().iter().find_map(|i| {
-                if i.program_id(message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                        try_from_slice_unchecked(i.data.as_slice())
+            let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
+            let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
+
+            let cu_requested = message
+                .instructions()
+                .iter()
+                .find_map(|i| {
+                    if i.program_id(message.static_account_keys())
+                        .eq(&compute_budget::id())
                     {
-                        return Some(limit);
+                        if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
+                            try_from_slice_unchecked(i.data.as_slice())
+                        {
+                            return Some(limit);
+                        }
                     }
-                }
-                None
-            });
+                    None
+                })
+                .or(legacy_cu_requested);
 
-            let mut prioritization_fees = message.instructions().iter().find_map(|i| {
-                if i.program_id(message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                        try_from_slice_unchecked(i.data.as_slice())
+            let prioritization_fees = message
+                .instructions()
+                .iter()
+                .find_map(|i| {
+                    if i.program_id(message.static_account_keys())
+                        .eq(&compute_budget::id())
                     {
-                        return Some(price);
+                        if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
+                            try_from_slice_unchecked(i.data.as_slice())
+                        {
+                            return Some(price);
+                        }
                     }
-                }
 
-                None
-            });
-
-            if let Some((units, additional_fee)) = legacy_compute_budget {
-                cu_requested = Some(units);
-                if additional_fee > 0 {
-                    prioritization_fees = Some(((units * 1000) / additional_fee).into())
-                }
-            };
+                    None
+                })
+                .or(legacy_prioritization_fees);
 
             Some(TransactionInfo {
                 signature: signature.to_string(),
@@ -201,7 +213,6 @@ fn process_block(
                     }
                     yellowstone_grpc_proto::prelude::RewardType::Voting => Some(RewardType::Voting),
                 },
-                // Warn: idk how to convert string to option u8
                 commission: None,
             })
             .collect_vec()
@@ -216,7 +227,7 @@ fn process_block(
         None
     };
 
-    ProcessedBlock {
+    ProducedBlock {
         txs,
         block_height: block
             .block_height
@@ -233,7 +244,7 @@ fn process_block(
 
 pub fn create_block_processing_task(
     grpc_addr: String,
-    block_sx: Sender<ProcessedBlock>,
+    block_sx: Sender<ProducedBlock>,
     commitment_level: CommitmentLevel,
 ) -> AnyhowJoinHandle {
     let mut blocks_subs = HashMap::new();
@@ -286,12 +297,12 @@ pub fn create_block_processing_task(
                 UpdateOneof::Ping(_) => {
                     log::trace!("GRPC Ping");
                 }
-                k => {
-                    bail!("Unexpected update: {k:?}");
+                u => {
+                    bail!("Unexpected update: {u:?}");
                 }
             };
         }
-        bail!("gyser slot stream ended");
+        bail!("geyser slot stream ended");
     })
 }
 
@@ -316,7 +327,7 @@ pub fn create_grpc_subscription(
         let version = client.get_version().await?.version;
         if version != expected_grpc_version {
             log::warn!(
-                "Expected version {:?}, got {:?}",
+                "Expected grpc version {:?}, got {:?}, continue",
                 expected_grpc_version,
                 version
             );
@@ -358,7 +369,7 @@ pub fn create_grpc_subscription(
                 }
             };
         }
-        bail!("gyser slot stream ended");
+        bail!("geyser slot stream ended");
     });
 
     let block_confirmed_task: AnyhowJoinHandle = create_block_processing_task(

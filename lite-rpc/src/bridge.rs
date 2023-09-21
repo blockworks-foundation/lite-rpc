@@ -13,7 +13,8 @@ use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscrip
 use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
-    block_information_store::BlockInformation, data_cache::DataCache, AnyhowJoinHandle,
+    stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
+    AnyhowJoinHandle,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
@@ -293,7 +294,7 @@ impl LiteRpcServer for LiteBridge {
         {
             self.data_cache.txs.insert(
                 airdrop_sig.clone(),
-                solana_lite_rpc_core::tx_store::TxProps {
+                TxProps {
                     status: None,
                     last_valid_blockheight: block_height,
                 },

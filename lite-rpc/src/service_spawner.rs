@@ -1,7 +1,7 @@
 use solana_lite_rpc_core::{
-    data_cache::DataCache,
-    notifications::NotificationSender,
-    streams::{BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream},
+    stores::data_cache::DataCache,
+    structures::notifications::NotificationSender,
+    types::{BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream},
     AnyhowJoinHandle,
 };
 use solana_lite_rpc_services::{

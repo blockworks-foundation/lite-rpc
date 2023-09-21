@@ -18,11 +18,11 @@ use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::{broadcast::Receiver, RwLock};
 
-use solana_lite_rpc_core::proxy_request_format::{TpuForwardingRequest, TxData};
 use solana_lite_rpc_core::quic_connection_utils::{
     QuicConnectionParameters, SkipServerVerification,
 };
 use solana_lite_rpc_core::solana_utils::SerializableTransaction;
+use solana_lite_rpc_core::structures::proxy_request_format::{TpuForwardingRequest, TxData};
 
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;
 
