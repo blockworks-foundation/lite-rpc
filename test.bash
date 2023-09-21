@@ -4,7 +4,7 @@
 trap 'kill $(jobs -pr)' SIGINT SIGTERM EXIT
 
 echo "Doing an early build"
-cargo build --workspace --tests 
+cargo build --bin lite-rpc --tests
 yarn
 
 echo "Switching to local lite-rpc rpc config"
@@ -17,7 +17,7 @@ echo "Air Dropping 10000 sol"
 sleep 20 && solana airdrop 10000
 
 echo "Starting LiteRpc"
-cargo run &
+cargo run --bin lite-rpc &
 
 echo "Running cargo tests in 20s"
 sleep 20 && cargo test
