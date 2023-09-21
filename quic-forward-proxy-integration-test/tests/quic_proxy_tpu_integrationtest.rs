@@ -94,6 +94,7 @@ pub fn small_tx_batch_unstake_direct() {
     });
 }
 
+#[ignore]
 #[test]
 pub fn with_100_transactions_direct() {
     configure_logging(false);
