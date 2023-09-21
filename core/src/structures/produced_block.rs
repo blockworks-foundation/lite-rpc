@@ -20,7 +20,7 @@ pub struct TransactionInfo {
 
 #[derive(Default, Debug, Clone)]
 pub struct ProducedBlock {
-    pub txs: Vec<TransactionInfo>,
+    pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
     pub blockhash: String,
     pub block_height: u64,
@@ -28,6 +28,7 @@ pub struct ProducedBlock {
     pub parent_slot: Slot,
     pub block_time: u64,
     pub commitment_config: CommitmentConfig,
+    pub previous_blockhash: String,
 }
 
 impl ProducedBlock {
@@ -40,6 +41,7 @@ impl ProducedBlock {
         let txs = block.transactions.unwrap_or_default();
 
         let blockhash = block.blockhash;
+        let previous_blockhash = block.previous_blockhash;
         let parent_slot = block.parent_slot;
 
         let txs = txs
@@ -139,10 +141,11 @@ impl ProducedBlock {
         let block_time = block.block_time.unwrap_or(0) as u64;
 
         ProducedBlock {
-            txs,
+            transactions: txs,
             block_height,
             leader_id,
             blockhash,
+            previous_blockhash,
             parent_slot,
             block_time,
             slot,

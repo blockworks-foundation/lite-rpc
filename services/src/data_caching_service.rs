@@ -63,7 +63,7 @@ impl DataCachingService {
                     _ => TransactionConfirmationStatus::Processed,
                 };
 
-                for tx in block.txs {
+                for tx in block.transactions {
                     if data_cache.txs.update_status(
                         &tx.signature,
                         TransactionStatus {

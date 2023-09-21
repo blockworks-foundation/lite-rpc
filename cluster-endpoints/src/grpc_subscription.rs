@@ -228,13 +228,14 @@ fn process_block(
     };
 
     ProducedBlock {
-        txs,
+        transactions: txs,
         block_height: block
             .block_height
             .map(|block_height| block_height.block_height)
             .unwrap(),
         block_time: block.block_time.map(|time| time.timestamp).unwrap() as u64,
         blockhash: block.blockhash,
+        previous_blockhash: block.parent_blockhash,
         commitment_config,
         leader_id,
         parent_slot: block.parent_slot,

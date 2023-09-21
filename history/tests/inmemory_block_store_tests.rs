@@ -11,8 +11,9 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
     ProducedBlock {
         block_height: slot,
         blockhash: Hash::new_unique().to_string(),
+        previous_blockhash: Hash::new_unique().to_string(),
         parent_slot: slot - 1,
-        txs: vec![],
+        transactions: vec![],
         block_time: 0,
         commitment_config,
         leader_id: None,
