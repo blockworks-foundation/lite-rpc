@@ -120,6 +120,30 @@ Method calls:
  - [getsupply](https://docs.solana.com/api/http#getsupply) account API but needed. not in geyser plugin
    need to add stake supply in the return response.
 
+#### Subscriptions
+Subscription is implemented in the validator domain because it corresponds to current processed data by the validator.
+
+Each method has its unsubscribe call.
+
+##### Subscription Mapped by a geyser subscription
+These calls map geyser subscription so they can be implemented by using a geyser subscription and a corresponding specific filter
+
+ - [programSubscribe](https://docs.solana.com/api/websocket#programsubscribe)
+ - [slotSubscribe](https://docs.solana.com/api/websocket#slotsubscribe)
+ - [blockSubscribe](https://docs.solana.com/api/websocket#blocksubscribe)
+ - [transactionSubscribe](https://github.com/solana-foundation/solana-improvement-documents/pull/69)
+
+
+##### Subscription with no current geyser subscription
+These calls doesn't correspond to a current geyser subscription and need a specific development that can be: 
+ * data transformation from geyser notification in the validator module.
+ * a new subscription to geyser plugin.
+
+ - [logsSubscribe](https://docs.solana.com/api/websocket#logssubscribe)
+ - [signatureSubscribe](https://docs.solana.com/api/websocket#signaturesubscribe)
+ - [slotsUpdatesSubscribe](https://docs.solana.com/api/websocket#slotsupdatessubscribe)
+ - [voteSubscribe](https://docs.solana.com/api/websocket#votesubscribe)
+
 #### General update
 
 number like lamports that can be more than 48 bits should be in a string format to avoid number overflow. 
@@ -446,6 +470,59 @@ Algo:
 
 Call geyser plugin.
 
+### Cluster Sub domain
+Manage all data related to the solana validator cluster.
+
+##### Data
+ * Cluster: define at the beginning of the epoch all cluster's validator data (ip and port) 
+ * Leader schedule: define for all epoch slot the validator that will be leader.
+ * Epoch data: data related to the epoch.
+ * Vote account: Account data (staking) at the beginning of the epoch for all account that can vote for the blocks.
+
+##### Process
+##### Cluster storage
+Store all cluster data per epoch like for block processing module.
+
+##### Cluster processing
+Process epoch data to extract cluster data (ex: Total staking from the vote accounts).
+
+See the CLuster RPC call to have more details.
+
+###### getclusternodes
+    - Returns information about all the nodes participating in the cluster
+    - Parameters: None
+    - Result: The result field will be an array of JSON objects, each with the following sub fields:
+        * pubkey: <string> - Node public key, as base-58 encoded string
+        * gossip: <string|null> - Gossip network address for the node
+        * tpu: <string|null> - TPU network address for the node
+        * rpc: <string|null> - JSON RPC network address for the node, or null if the JSON RPC service is not enabled
+        * version: <string|null> - The software version of the node, or null if the version information is not available
+        * featureSet: <u32|null > - The unique identifier of the node's feature set
+        * shredVersion: <u16|null> - The shred version the node has been configured to use
+
+Sources: not provided by geyser plugin.
+
+In Solana the cluster data are stored in the ClusterInfo share struct 
+
+1) Geyser (currently not accepted by Solana) :
+  * a) propose the same get_cluster_nodes impl to get the cluster a any time
+  * b) notify at the beginning of the epoch. Change the call name, enough for us but perhaps not for every user: change notifier to add a ClusterInfo notifier like BlockMetadataNotifier for block metadata.
+    Need to change the plugin interface, add notify_cluster_at_epoch. We can notify every time the cluster info is changed but not sure Solana will accept (too much data).
+2) Use gossip and use the GossipService impl like the bootstrap::start_gossip_node() function. Need to use ClusterInfo struct that use BankForks to get staked_nodes.
+For node info it seems that the stake is not needed. The gossip process is:
+ * For shred data: crds_gossip::new_push_messages() -> crds::insert() that update peers with CrdsData::LegacyContactInfo(node). So by getting gossip message with LegacyContactInfo we can update the cluster node info.
+ * For peers data. 
+    GossipService start ClusterInfo::Listen()
+    -> ClusterInfo::listen()
+    -> ClusterInfo::run_listen()
+    -> ClusterInfo::process_packets()
+    -> ClusterInfo::handle_batch_pull_responses(
+    -> ClusterInfo::handle_pull_response()
+    -> CrdsGossip::filter_pull_responses()
+    -> crdsgossip_pull::filter_pull_responses()
+    -> crds::upserts() update the cluster table.
+
+
 #### History domain
 This domain include all function related to get past data of the blockchain.
 
@@ -676,58 +753,6 @@ This function need some evolutions with the current implementation:
     - can get the same signature twice (fork).
 
 
-### Cluster domain
-Manage all data related to the solana validator cluster.
-
-##### Data
- * Cluster: define at the beginning of the epoch all cluster's validator data (ip and port) 
- * Leader schedule: define for all epoch slot the validator that will be leader.
- * Epoch data: data related to the epoch.
- * Vote account: Account data (staking) at the beginning of the epoch for all account that can vote for the blocks.
-
-##### Process
-##### Cluster storage
-Store all cluster data per epoch like for block processing module.
-
-##### Cluster processing
-Process epoch data to extract cluster data (ex: Total staking from the vote accounts).
-
-See the CLuster RPC call to have more details.
-
-###### getclusternodes
-    - Returns information about all the nodes participating in the cluster
-    - Parameters: None
-    - Result: The result field will be an array of JSON objects, each with the following sub fields:
-        * pubkey: <string> - Node public key, as base-58 encoded string
-        * gossip: <string|null> - Gossip network address for the node
-        * tpu: <string|null> - TPU network address for the node
-        * rpc: <string|null> - JSON RPC network address for the node, or null if the JSON RPC service is not enabled
-        * version: <string|null> - The software version of the node, or null if the version information is not available
-        * featureSet: <u32|null > - The unique identifier of the node's feature set
-        * shredVersion: <u16|null> - The shred version the node has been configured to use
-
-Sources: not provided by geyser plugin.
-
-In Solana the cluster data are stored in the ClusterInfo share struct 
-
-1) Geyser (currently not accepted by Solana) :
-  * a) propose the same get_cluster_nodes impl to get the cluster a any time
-  * b) notify at the beginning of the epoch. Change the call name, enough for us but perhaps not for every user: change notifier to add a ClusterInfo notifier like BlockMetadataNotifier for block metadata.
-    Need to change the plugin interface, add notify_cluster_at_epoch. We can notify every time the cluster info is changed but not sure Solana will accept (too much data).
-2) Use gossip and use the GossipService impl like the bootstrap::start_gossip_node() function. Need to use ClusterInfo struct that use BankForks to get staked_nodes.
-For node info it seems that the stake is not needed. The gossip process is:
- * For shred data: crds_gossip::new_push_messages() -> crds::insert() that update peers with CrdsData::LegacyContactInfo(node). So by getting gossip message with LegacyContactInfo we can update the cluster node info.
- * For peers data. 
-    GossipService start ClusterInfo::Listen()
-    -> ClusterInfo::listen()
-    -> ClusterInfo::run_listen()
-    -> ClusterInfo::process_packets()
-    -> ClusterInfo::handle_batch_pull_responses(
-    -> ClusterInfo::handle_pull_response()
-    -> CrdsGossip::filter_pull_responses()
-    -> crdsgossip_pull::filter_pull_responses()
-    -> crds::upserts() update the cluster table.
-
 #### Cross domain Validator/History
 
 Some function are implemented inside several domain. THe main reason is because the RPC call aggregate teh 2 domains.
@@ -772,7 +797,6 @@ The Tx info of the managed epoch are store locally. The cashed Tx in memory corr
 If the  searchTransactionHistory is set to true:
  * the local storage is search first
  * if not found the Faithful plugin is queried using getTransaction.
-
 
 ###### getBlockCommitment
     - Returns commitment for particular block

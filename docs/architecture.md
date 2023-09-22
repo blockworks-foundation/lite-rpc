@@ -5,7 +5,7 @@
 ### Validator
 Manage real time generated data by the validator.
 
-Implements these calls:
+Implements these RPC calls:
  * GetVoteAccounts
  * getLeaderSchedule
  * getEpochInfo
@@ -13,22 +13,35 @@ Implements these calls:
  * getSignatureStatuses at process commitment.
  * new tx sent: call by the SendTx module when a Tx is processed by sendTx module.
 
-Provide these subscription:
- * Full block
- * BLock info
- * Slots
- * Leader schedule
- * sent Tx at confirmed and / or finalized: notify when a Tx sent is confirmed or finalized. 
-
-A new subscription is added: Sent Tx confirmed/ finalized. SendTx module send Tx signature to the Validator domain and when a Tx sent is confirmed (or finalized), it is notified on this subscription.
-
-It avoids to call getSignatureStatuses in a pull mode.
+#### Subdomain Validator subscription
+Implements these RPC subscriptions
+ * programSubscribe
+ * slotSubscribe
+ * blockSubscribe
+ * transactionSubscribe
+ * logsSubscribe
+ * signatureSubscribe
+ * slotsUpdatesSubscribe
+ * voteSubscribe
 #### Sub domain Cluster
 Manage cluster information.
 
 Implement the call: getClusterNodes
 
 Provide the subscription: cluster info.
+
+#### Inter module messages notification (Stream)
+
+Provides these inter module message notification:
+ * Full block
+ * BLock info
+ * Slots
+ * Leader schedule
+ * sent Tx at confirmed and / or finalized: notify when a Tx sent is confirmed or finalized. Use by RPC transactionSubscribe
+
+A new subscription is added: Sent Tx confirmed/ finalized. SendTx module send Tx signature to the Validator domain and when a Tx sent is confirmed (or finalized), it is notified on this subscription.
+
+It avoids to call getSignatureStatuses in a pull mode.
 
 ### SendTx
 Manage the whole send Tx process. Represent the current Lite RPC process.
@@ -37,9 +50,9 @@ Implements the sendTx call.
 
 
 ### History
-Manage history function like getBlocks.
+Manage history function like getBlock/getBlocks/getTransaction.
 
-A special use case is the getSignatureStatuses because on process its the Validator domain that provide tha data.
+A special use case is the getSignatureStatuses because on process its the Validator domain that provide the data.
 
 ### RPC
 It's an entry point for all call and dispatch the call to the right function.
@@ -48,12 +61,6 @@ It's an entry point for all call and dispatch the call to the right function.
 
 ```mermaid
 flowchart TD
-    subgraph Send Tx Domain
-        SendTx("SendTx Domain
-
-              send_transaction()")
-    end
-
     subgraph History Domain
         History("History Domain
 
@@ -67,13 +74,19 @@ flowchart TD
         Storage["2 epoch Storage"]
     end
 
+    subgraph Send Tx Domain
+        SendTx("SendTx Domain
+
+              send_transaction()")
+    end
+
     subgraph Validator Host
         Validator["Solana Validator
             Validator process
             + GRPC Geyser"]
         
         Consensus("Validator Domain
-
+        RPC calls:
             getVoteAccounts()
             getLeaderSchedule()
             getEpochInfo()
@@ -81,18 +94,30 @@ flowchart TD
         At process:
             getSignaturesForAddress()
             getSignatureStatuses()
-
               ")
-        Cluster("Cluster Domain
+        Subscription("Subscription Sub Domain
+            
+            programSubscribe
+            slotSubscribe
+            blockSubscribe
+            transactionSubscribe
+            logsSubscribe
+            signatureSubscribe
+            slotsUpdatesSubscribe
+            voteSubscribe
+              ")
+        Cluster("Cluster Sub Domain
             
            getClusterNodes()")
     end
     
 
     Validator-- "geyser data" -->Consensus
+    Validator-- "geyser data" -->Subscription
     Validator-- "Cluster info" -->Cluster
     Consensus-- "Block Info/Slot/Leader Schedule" -->SendTx
     Consensus-- "confirmed Tx" -->SendTx
+    Consensus-- "confirmed Tx" -->Subscription
     Cluster-- "Cluster info" -->SendTx
     Consensus-- "Full Block/Slot/Epoch" -->History
     History<-. "old data" .-> Faithfull
@@ -109,7 +134,6 @@ flowchart TD
     class Consensus consensus
     class Cluster greengray
 ```
-
 
 ## Interaction diagram
 
@@ -139,6 +163,11 @@ flowchart TD
               Manage realtime produced data
         by the validator")
 
+        Subscription("Subscription Sub Domain
+            
+            All RPC subscriptions
+              ")
+
         Cluster("Cluster Info
                [SubDomain]
         
@@ -158,11 +187,13 @@ flowchart TD
     Validator-- "geyser Stakes and Votes account Sub" -->Consensus
     Validator== "geyser getBlockHeight" ==>RPC
     Validator-- "geyser Cluster info Sub" -->Cluster
+    Validator-- "geyser Sub" -->Subscription
     Consensus<== "getVoteAccounts/getLeaderSchedule/getEpochInfo/getSlot" ==>RPC
     Consensus<== "At Process getSignaturesForAddress/getSignatureStatuses" ==>RPC
     Consensus-- "Block Info Sub" -->SendTx
     Consensus-- "Leader Schedule Sub" -->SendTx
     Consensus-- "Sent Tx confirmed Sub" -->SendTx
+    Consensus-- "Sent Tx confirmed Sub" -->Subscription
     Cluster-- "Cluster info Sub" -->SendTx
     Consensus-- "Full Block / Epoch Sub" -->History
     RPC== "SendTx" ==> SendTx
@@ -182,6 +213,7 @@ flowchart TD
     class SendTx sendtx
     class History redgray
     class Consensus consensus
+    class Subscription consensus
     class Cluster greengray
 ```
 
@@ -201,6 +233,8 @@ flowchart TD
         Cluster("Cluster Info")
             
         Consensus("Validator")
+
+        Subscription("Subscription")
     end
 
     Stream("Stream
@@ -213,6 +247,7 @@ flowchart TD
    
     Stream-- "[Slot, Leader Schedule, Block and Epoch info, Tx confirmed] sub" -->SendTx
     Stream-- "[Sent Tx] sub" -->Consensus
+    Stream-- "[Sent Tx] sub" -->Subscription
     Stream-- "[Full Block, Slot, Epoch info] sub" -->History
 
     classDef consensus fill:#1168bd,stroke:#0b4884,color:#ffffff
@@ -224,6 +259,7 @@ flowchart TD
     class SendTx sendtx
     class History redgray
     class Consensus consensus
+    class Subscription consensus
     class Cluster greengray
 ```
 
@@ -253,11 +289,13 @@ flowchart TD
     subgraph Validator Host1
         Validator1["Solana Validator"]
         Consensus1("Validator impl")
+        Subscription1("Subscription impl")
         Cluster1("Cluster impl")
     end
     subgraph Validator Host2
         Validator2["Solana Validator"]
         Consensus2("Validator impl")
+        Subscription2("Subscription impl")
         Cluster2("Cluster impl")
     end
 
@@ -269,6 +307,9 @@ flowchart TD
 
     RPC== "getVoteAccounts" ==>Consensus1
     RPC== "getVoteAccounts" ==>Consensus2
+
+    RPC== "Subscription" ==>Subscription1
+    RPC== "Subscription" ==>Subscription2
 
     RPC== "getBlock" ==>History1
     RPC== "getBlock" ==>History2
@@ -287,9 +328,10 @@ flowchart TD
     class SendTx2 sendtx
     class Cluster1 greengray
     class Cluster2 greengray
+    class Subscription1 consensus
+    class Subscription2 consensus
     class Consensus1 consensus
     class Consensus2 consensus
     class History1 redgray
     class History2 redgray
     class History3 redgray
-```
