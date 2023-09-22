@@ -15,6 +15,7 @@ use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
+use solana_lite_rpc_cluster_endpoints::multiplexing_subscriptions::multiplexing_endstreams;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::stores::{
@@ -94,6 +95,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
+        multiplex_rpc_grpc,
         grpc_addr,
         ..
     } = args;
@@ -110,6 +112,16 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
 
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?
+    } else if multiplex_rpc_grpc {
+        let (grpc_subscription, mut grpc_tasks) =
+            create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?;
+        let (rpc_subscription, mut rpc_tasks) =
+            create_json_rpc_polling_subscription(rpc_client.clone())?;
+        let (multiplexed_endpoint, mut tasks) =
+            multiplexing_endstreams(rpc_subscription, grpc_subscription)?;
+        tasks.append(&mut grpc_tasks);
+        tasks.append(&mut rpc_tasks);
+        (multiplexed_endpoint, tasks)
     } else {
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };

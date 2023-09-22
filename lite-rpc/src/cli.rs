@@ -34,6 +34,8 @@ pub struct Args {
     pub quic_proxy_addr: Option<String>,
     #[arg(short = 'g', long)]
     pub use_grpc: bool,
+    #[arg(long, conflicts_with("use_grpc"))]
+    pub multiplex_rpc_grpc: bool,
     /// grpc address
     #[arg(long, default_value_t = String::from(DEFAULT_GRPC_ADDR))]
     pub grpc_addr: String,
