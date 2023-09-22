@@ -312,7 +312,7 @@ pub fn create_block_processing_task(
 }
 
 pub fn create_grpc_subscription(
-    rpc_client: Arc<RpcClient>,
+    rpc_client: Option<Arc<RpcClient>>,
     grpc_addr: String,
     expected_grpc_version: String,
 ) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
@@ -385,8 +385,16 @@ pub fn create_grpc_subscription(
     let block_finalized_task: AnyhowJoinHandle =
         create_block_processing_task(grpc_addr, block_sx, CommitmentLevel::Finalized);
 
-    let cluster_info_polling =
+    let mut endpoint_tasks = vec![
+        slot_task,
+        block_confirmed_task,
+        block_finalized_task,
+    ];
+    if let Some(rpc_client) = rpc_client {
+        let cluster_info_polling =
         poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
+        endpoint_tasks.push(cluster_info_polling);
+    }
 
     let streamers = EndpointStreaming {
         blocks_notifier,
@@ -394,12 +402,5 @@ pub fn create_grpc_subscription(
         cluster_info_notifier,
         vote_account_notifier,
     };
-
-    let endpoint_tasks = vec![
-        slot_task,
-        block_confirmed_task,
-        block_finalized_task,
-        cluster_info_polling,
-    ];
     Ok((streamers, endpoint_tasks))
 }

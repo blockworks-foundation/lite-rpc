@@ -78,7 +78,7 @@ pub fn poll_slots(
                 }
                 Ok(None) => log::error!("got nothing from slot update notifier"),
                 Err(err) => {
-                    log::warn!("failed to receive slot update: {err}");
+                    log::trace!("failed to receive slot update: {err}");
                     // force update the slot
                     // estimated slot should not go ahead more than 32 slots
                     // this is because it may be a slot block

@@ -111,12 +111,12 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
-        create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?
+        create_grpc_subscription(Some(rpc_client.clone()), grpc_addr, GRPC_VERSION.to_string())?
     } else if multiplex_rpc_grpc {
-        let (grpc_subscription, mut grpc_tasks) =
-            create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?;
         let (rpc_subscription, mut rpc_tasks) =
             create_json_rpc_polling_subscription(rpc_client.clone())?;
+        let (grpc_subscription, mut grpc_tasks) =
+            create_grpc_subscription(None, grpc_addr, GRPC_VERSION.to_string())?;
         let (multiplexed_endpoint, mut tasks) =
             multiplexing_endstreams(rpc_subscription, grpc_subscription)?;
         tasks.append(&mut grpc_tasks);
