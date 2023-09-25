@@ -10,6 +10,7 @@ use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use crate::util::AnyhowJoinHandle;
 use crate::validator_identity::ValidatorIdentity;
 use log::info;
+use crate::outbound::ng_forward::ng_forwarder;
 
 pub struct QuicForwardProxy {
     // endpoint: Endpoint,
@@ -50,7 +51,7 @@ impl QuicForwardProxy {
 
         let validator_identity = self.validator_identity.clone();
         let exit_signal_clone = exit_signal.clone();
-        let forwarder: AnyhowJoinHandle = tokio::spawn(tx_forwarder(
+        let forwarder: AnyhowJoinHandle = tokio::spawn(ng_forwarder(
             validator_identity,
             forward_receiver,
             exit_signal_clone,

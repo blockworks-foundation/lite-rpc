@@ -133,11 +133,13 @@ impl ProxyListener {
 
                         for tpu_node in proxy_request.get_tpu_nodes() {
                             let tpu_address = tpu_node.tpu_socket_addr;
+                            let tpu_identity = tpu_node.identity_tpunode;
                             forwarder_channel_copy
                                 .send_timeout(
                                     ForwardPacket::new(
                                         txs.clone(),
                                         tpu_address,
+                                        tpu_identity,
                                         proxy_request.get_hash(),
                                     ),
                                     FALLBACK_TIMEOUT,
