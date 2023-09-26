@@ -2,7 +2,7 @@ use crate::outbound::debouncer::Debouncer;
 use crate::outbound::sharder::Sharder;
 use crate::quic_util::SkipServerVerification;
 use crate::quinn_auto_reconnect::AutoReconnect;
-use crate::shared::{ForwardPacket, TxRawData};
+use crate::shared::{ForwardPacket};
 use crate::util::timeout_fallback;
 use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail, Context};
@@ -19,8 +19,10 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use itertools::Itertools;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction::VersionedTransaction;
+use tokio::pin;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
@@ -86,18 +88,17 @@ pub async fn ng_forwarder(
             bail!("exit signal received");
         }
 
-        let forward_packet = Arc::new(
+        let forward_packet =
             transaction_channel
                 .recv()
                 .await
-                .expect("channel closed unexpectedly"),
-        );
+                .expect("channel closed unexpectedly");
         let tpu_address = forward_packet.tpu_address;
         let tpu_identity = forward_packet.tpu_identity;
 
+        // TODO optimize move into tpu_connection_manager and implement shutdown based on not used
         connections_to_keep.insert(tpu_identity, tpu_address);
 
-        // TODO optimize
         tpu_connection_manager
             .update_connections(
                 broadcast_sender.clone(),
@@ -110,12 +111,11 @@ pub async fn ng_forwarder(
 
         tpu_connection_manager.cleanup_unused_connections(&connections_to_keep).await;
 
-        for raw_tx in &forward_packet.transactions {
-            let tsi = ProxiedTransaction {
-                // signature: raw_tx.signature.clone(),
-                transaction: raw_tx.clone(),
+        for raw_tx in forward_packet.transactions {
+            let transaction = ProxiedTransaction {
+                transaction: raw_tx,
             };
-            broadcast_sender.send(tsi)?;
+            broadcast_sender.send(transaction).expect("failed to send to broadcast");
         }
 
     } // all txs in packet
