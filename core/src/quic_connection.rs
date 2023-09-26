@@ -238,8 +238,8 @@ impl QuicConnectionPool {
         // pefer getting connection that were already established
         for (index, sem) in self.transactions_in_sending_semaphore.iter().enumerate() {
             let connection = &self.connections[index];
-            if connection.has_connected_atleast_once() || connection.is_connected().await {
-                // if it is connection is not yet created or connection is still open
+            if !connection.has_connected_atleast_once() || connection.is_connected().await {
+                // if it is connection is not yet connected even once or connection is still open
                 if let Ok(permit) = sem.clone().try_acquire_owned() {
                     return Ok((permit, index));
                 }
