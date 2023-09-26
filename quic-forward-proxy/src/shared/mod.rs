@@ -1,5 +1,13 @@
 use std::net::SocketAddr;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signature;
+
+
+#[derive(Debug)]
+pub struct TxRawData {
+    pub signature: String,
+    pub transaction: Vec<u8>,
+}
 
 /// internal structure with transactions and target TPU
 #[derive(Debug)]

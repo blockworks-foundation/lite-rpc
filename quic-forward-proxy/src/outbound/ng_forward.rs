@@ -2,7 +2,7 @@ use crate::outbound::debouncer::Debouncer;
 use crate::outbound::sharder::Sharder;
 use crate::quic_util::SkipServerVerification;
 use crate::quinn_auto_reconnect::AutoReconnect;
-use crate::shared::ForwardPacket;
+use crate::shared::{ForwardPacket, TxRawData};
 use crate::util::timeout_fallback;
 use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail, Context};
@@ -28,9 +28,10 @@ use solana_lite_rpc_core::solana_utils::SerializableTransaction;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakesData;
 use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
-use crate::outbound::tpu_connection_manager::TpuConnectionManager;
+use crate::outbound::tpu_connection_manager::{ProxiedTransaction, TpuConnectionManager};
 
 
+// TODO
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 16_384;
 
 
@@ -107,15 +108,12 @@ pub async fn ng_forwarder(
             )
             .await;
 
+        tpu_connection_manager.cleanup_unused_connections(&connections_to_keep).await;
 
         for raw_tx in &forward_packet.transactions {
-            let tx = bincode::deserialize::<VersionedTransaction>(&raw_tx).unwrap();
-
-            let tsi = SentTransactionInfo {
-                signature: tx.get_signature().to_string(),
-                slot: 4242,
+            let tsi = ProxiedTransaction {
+                // signature: raw_tx.signature.clone(),
                 transaction: raw_tx.clone(),
-                last_valid_block_height: 999,
             };
             broadcast_sender.send(tsi)?;
         }

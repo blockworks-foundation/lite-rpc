@@ -8,7 +8,6 @@ use solana_lite_rpc_core::{
     stores::data_cache::DataCache,
     structures::{
         identity_stakes::IdentityStakesData, rotating_queue::RotatingQueue,
-        transaction_sent_info::SentTransactionInfo,
     },
 };
 use solana_sdk::pubkey::Pubkey;
@@ -21,6 +20,7 @@ use std::{
         Arc,
     },
 };
+use solana_sdk::clock::Slot;
 use tokio::sync::{broadcast::Receiver, broadcast::Sender};
 
 lazy_static::lazy_static! {
@@ -32,6 +32,14 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_connections_to_keep", "Number of connections to keep asked by tpu service")).unwrap();
     static ref NB_QUIC_TASKS: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
+}
+
+pub type WireTransaction = Vec<u8>;
+
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub struct ProxiedTransaction {
+    // pub signature: String,
+    pub transaction: WireTransaction,
 }
 
 #[derive(Clone)]
@@ -65,7 +73,7 @@ impl ActiveConnection {
     #[allow(clippy::too_many_arguments)]
     async fn listen(
         &self,
-        transaction_reciever: Receiver<SentTransactionInfo>,
+        transaction_reciever: Receiver<ProxiedTransaction>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
@@ -108,10 +116,10 @@ impl ActiveConnection {
 
                     let tx: Vec<u8> = match tx {
                         Ok(transaction_sent_info) => {
-                            if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info).await {
-                                // transaction is already confirmed/ no need to send
-                                continue;
-                            }
+                            // if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info).await {
+                            //     // transaction is already confirmed/ no need to send
+                            //     continue;
+                            // }
                             transaction_sent_info.transaction
                         },
                         Err(e) => {
@@ -154,7 +162,7 @@ impl ActiveConnection {
 
     pub fn start_listening(
         &self,
-        transaction_reciever: Receiver<SentTransactionInfo>,
+        transaction_reciever: Receiver<ProxiedTransaction>,
         exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         identity_stakes: IdentityStakesData,
     ) {
@@ -197,9 +205,11 @@ impl TpuConnectionManager {
         }
     }
 
+    // #[tracing::instrument(skip_all, level = "warn")]
+    // update_connections: solana_lite_rpc_quic_forward_proxy::outbound::tpu_connection_manager: close time.busy=565µs time.idle=666ns
     pub async fn update_connections(
         &self,
-        broadcast_sender: Arc<Sender<SentTransactionInfo>>,
+        broadcast_sender: Arc<Sender<ProxiedTransaction>>,
         connections_to_keep: &HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakesData,
         data_cache: DataCache,
@@ -207,30 +217,39 @@ impl TpuConnectionManager {
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
         for (identity, socket_addr) in connections_to_keep {
-            if self.identity_to_active_connection.get(identity).is_none() {
-                trace!("added a connection for {}, {}", identity, socket_addr);
-                let active_connection = ActiveConnection::new(
-                    self.endpoints.clone(),
-                    *socket_addr,
-                    *identity,
-                    data_cache.clone(),
-                    connection_parameters,
-                );
-                // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
-                let (sx, rx) = tokio::sync::mpsc::channel(1);
-
-                let broadcast_receiver = broadcast_sender.subscribe();
-                active_connection.start_listening(broadcast_receiver, rx, identity_stakes);
-                self.identity_to_active_connection.insert(
-                    *identity,
-                    Arc::new(ActiveConnectionWithExitChannel {
-                        active_connection,
-                        exit_stream: sx,
-                    }),
-                );
+            if self.identity_to_active_connection.get(identity).is_some() {
+                continue;
             }
+            trace!("added a connection for {}, {}", identity, socket_addr);
+            let active_connection = ActiveConnection::new(
+                self.endpoints.clone(),
+                *socket_addr,
+                *identity,
+                data_cache.clone(),
+                connection_parameters,
+            );
+            // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
+            let (sx, rx) = tokio::sync::mpsc::channel(1);
+
+            let broadcast_receiver = broadcast_sender.subscribe();
+
+            active_connection.start_listening(broadcast_receiver, rx, identity_stakes);
+            self.identity_to_active_connection.insert(
+                *identity,
+                Arc::new(ActiveConnectionWithExitChannel {
+                    active_connection,
+                    exit_stream: sx,
+                }),
+            );
         }
 
+    }
+
+
+    pub async fn cleanup_unused_connections(
+        &self,
+        connections_to_keep: &HashMap<Pubkey, SocketAddr>,
+    ) {
         // TODO reimplement
         // remove connections which are no longer needed
         let collect_current_active_connections = self
@@ -251,4 +270,5 @@ impl TpuConnectionManager {
             }
         }
     }
+
 }

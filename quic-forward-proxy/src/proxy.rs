@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use crate::inbound::proxy_listener;
-use crate::outbound::tx_forward::tx_forwarder;
 use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use crate::util::AnyhowJoinHandle;
 use crate::validator_identity::ValidatorIdentity;

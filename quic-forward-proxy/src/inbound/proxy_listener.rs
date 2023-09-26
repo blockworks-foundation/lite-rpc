@@ -117,6 +117,7 @@ impl ProxyListener {
                         trace!("proxy request details: {}", proxy_request);
                         let txs = proxy_request.get_transaction_bytes();
 
+
                         debug!(
                             "enqueue transaction batch of size {} to {} tpu nodes",
                             txs.len(),
@@ -125,9 +126,9 @@ impl ProxyListener {
                         if forwarder_channel_copy.capacity() < forwarder_channel_copy.max_capacity()
                         {
                             debug!(
-                                "forward channel buffered: capacity {} of {}",
-                                forwarder_channel_copy.capacity(),
+                                "forward channel buffered: {} packets",
                                 forwarder_channel_copy.max_capacity()
+                                - forwarder_channel_copy.capacity(),
                             );
                         }
 
