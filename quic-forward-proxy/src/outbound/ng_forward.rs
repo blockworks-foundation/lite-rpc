@@ -2,7 +2,6 @@ use crate::outbound::debouncer::Debouncer;
 use crate::outbound::sharder::Sharder;
 use crate::quic_util::SkipServerVerification;
 use crate::quinn_auto_reconnect::AutoReconnect;
-use crate::shared::{ForwardPacket};
 use crate::util::timeout_fallback;
 use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail, Context};
@@ -31,6 +30,7 @@ use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakesData;
 use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
 use crate::outbound::tpu_connection_manager::{ProxiedTransaction, TpuConnectionManager};
+use crate::proxy_request_format::TpuForwardingRequest;
 
 
 // TODO
@@ -48,9 +48,10 @@ const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameter
 };
 
 
+
 pub async fn ng_forwarder(
     validator_identity: ValidatorIdentity,
-    mut transaction_channel: Receiver<ForwardPacket>,
+    mut transaction_channel: Receiver<TpuForwardingRequest>,
     exit_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
 
@@ -82,7 +83,6 @@ pub async fn ng_forwarder(
 
     let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
 
-
     loop {
         if exit_signal.load(Ordering::Relaxed) {
             bail!("exit signal received");
@@ -93,11 +93,11 @@ pub async fn ng_forwarder(
                 .recv()
                 .await
                 .expect("channel closed unexpectedly");
-        let tpu_address = forward_packet.tpu_address;
-        let tpu_identity = forward_packet.tpu_identity;
 
-        // TODO optimize move into tpu_connection_manager and implement shutdown based on not used
-        connections_to_keep.insert(tpu_identity, tpu_address);
+        for tpu_node in forward_packet.get_tpu_nodes() {
+            // TODO optimize move into tpu_connection_manager and implement shutdown based on not used
+            connections_to_keep.insert(tpu_node.identity_tpunode, tpu_node.tpu_socket_addr);
+        }
 
         tpu_connection_manager
             .update_connections(
@@ -111,7 +111,9 @@ pub async fn ng_forwarder(
 
         tpu_connection_manager.cleanup_unused_connections(&connections_to_keep).await;
 
-        for raw_tx in forward_packet.transactions {
+        info!("broadcast {}", broadcast_sender.receiver_count());
+
+        for raw_tx in forward_packet.get_transaction_bytes() {
             let transaction = ProxiedTransaction {
                 transaction: raw_tx,
             };

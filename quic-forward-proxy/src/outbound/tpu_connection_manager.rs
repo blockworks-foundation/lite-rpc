@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use log::{error, trace};
+use log::{error, info, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
@@ -36,7 +36,7 @@ lazy_static::lazy_static! {
 
 pub type WireTransaction = Vec<u8>;
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Clone)]
 pub struct ProxiedTransaction {
     // pub signature: String,
     pub transaction: WireTransaction,
@@ -205,8 +205,8 @@ impl TpuConnectionManager {
         }
     }
 
-    // #[tracing::instrument(skip_all, level = "warn")]
-    // update_connections: solana_lite_rpc_quic_forward_proxy::outbound::tpu_connection_manager: close time.busy=565µs time.idle=666ns
+    #[tracing::instrument(skip_all, level = "warn")]
+    // update_connections: solana_lite_rpc_quic_forward_proxy::outbound::tpu_connection_manager: close time.busy=10.6µs time.idle=4.00µs
     pub async fn update_connections(
         &self,
         broadcast_sender: Arc<Sender<ProxiedTransaction>>,
@@ -216,15 +216,15 @@ impl TpuConnectionManager {
         connection_parameters: QuicConnectionParameters,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
-        for (identity, socket_addr) in connections_to_keep {
-            if self.identity_to_active_connection.get(identity).is_some() {
+        for (tpu_identity, tpu_addr) in connections_to_keep {
+            if self.identity_to_active_connection.get(tpu_identity).is_some() {
                 continue;
             }
-            trace!("added a connection for {}, {}", identity, socket_addr);
+            trace!("added a connection for {}, {}", tpu_identity, tpu_addr);
             let active_connection = ActiveConnection::new(
                 self.endpoints.clone(),
-                *socket_addr,
-                *identity,
+                *tpu_addr,
+                *tpu_identity,
                 data_cache.clone(),
                 connection_parameters,
             );
@@ -235,7 +235,7 @@ impl TpuConnectionManager {
 
             active_connection.start_listening(broadcast_receiver, rx, identity_stakes);
             self.identity_to_active_connection.insert(
-                *identity,
+                *tpu_identity,
                 Arc::new(ActiveConnectionWithExitChannel {
                     active_connection,
                     exit_stream: sx,
@@ -245,7 +245,7 @@ impl TpuConnectionManager {
 
     }
 
-
+    #[tracing::instrument(skip_all, level = "warn")]
     pub async fn cleanup_unused_connections(
         &self,
         connections_to_keep: &HashMap<Pubkey, SocketAddr>,
