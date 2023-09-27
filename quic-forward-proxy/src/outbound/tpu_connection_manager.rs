@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use log::{error, info, trace};
+use log::{debug, error, info, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
@@ -20,8 +20,13 @@ use std::{
         Arc,
     },
 };
+use std::thread::sleep;
+use std::time::Duration;
 use solana_sdk::clock::Slot;
-use tokio::sync::{broadcast::Receiver, broadcast::Sender};
+use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
+use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
+use solana_lite_rpc_core::atomic_timing::AtomicTiming;
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
@@ -42,7 +47,6 @@ pub struct ProxiedTransaction {
     pub transaction: WireTransaction,
 }
 
-#[derive(Clone)]
 struct ActiveConnection {
     endpoints: RotatingQueue<Endpoint>,
     identity: Pubkey,
@@ -60,6 +64,7 @@ impl ActiveConnection {
         data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) -> Self {
+        let now = Instant::now();
         Self {
             endpoints,
             tpu_address,
@@ -72,34 +77,16 @@ impl ActiveConnection {
 
     #[allow(clippy::too_many_arguments)]
     async fn listen(
-        &self,
+        connection_pool: QuicConnectionPool,
         transaction_reciever: Receiver<ProxiedTransaction>,
-        exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
+        exit_signal: Arc<AtomicBool>,
+        exit_token: CancellationToken,
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
+        last_used: Arc<AtomicTiming>,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
-        let mut exit_oneshot_channel = exit_oneshot_channel;
-        let identity = self.identity;
-
-        let max_number_of_connections = self.connection_parameters.max_number_of_connections;
-
-        let max_uni_stream_connections = compute_max_allowed_uni_streams(
-            identity_stakes.peer_type,
-            identity_stakes.stakes,
-            identity_stakes.total_stakes,
-        );
-        let exit_signal = self.exit_signal.clone();
-        let connection_pool = QuicConnectionPool::new(
-            identity,
-            self.endpoints.clone(),
-            addr,
-            self.connection_parameters,
-            exit_signal.clone(),
-            max_number_of_connections,
-            max_uni_stream_connections,
-        );
 
         loop {
             // exit signal set
@@ -114,6 +101,8 @@ impl ActiveConnection {
                         break;
                     }
 
+                    last_used.update();
+
                     let tx: Vec<u8> = match tx {
                         Ok(transaction_sent_info) => {
                             // if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info).await {
@@ -125,7 +114,7 @@ impl ActiveConnection {
                         Err(e) => {
                             error!(
                                 "Broadcast channel error on recv for {} error {} - continue",
-                                identity, e
+                                addr, e
                             );
                             continue;
                         }
@@ -150,7 +139,8 @@ impl ActiveConnection {
                         NB_QUIC_TASKS.dec();
                     });
                 },
-                _ = exit_oneshot_channel.recv() => {
+                _ = exit_token.cancelled() => {
+                    debug!("Got send exit token - shutdown active connection");
                     break;
                 }
             }
@@ -160,34 +150,89 @@ impl ActiveConnection {
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn perform_cleanup(
+        last_used: Arc<AtomicTiming>,
+        exit_token: CancellationToken) {
+
+        let mut interval = tokio::time::interval(Duration::from_millis(20));
+
+        loop {
+
+            tokio::select! {
+                _ = interval.tick() => {
+                    let unused_duration = last_used.elapsed();
+                    let is_unused = unused_duration > Duration::from_millis(20);
+
+                    if is_unused {
+                        debug!("Connection not used for {}ms - send exit token", unused_duration.as_millis());
+
+                        exit_token.cancel();
+                    }
+
+                },
+                _ = exit_token.cancelled() => {
+                    break;
+                }
+            }
+
+        }
+
+    }
+
     pub fn start_listening(
         &self,
         transaction_reciever: Receiver<ProxiedTransaction>,
-        exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
         identity_stakes: IdentityStakesData,
     ) {
-        let addr = self.tpu_address;
-        let this = self.clone();
-        tokio::spawn(async move {
-            this.listen(
-                transaction_reciever,
-                exit_oneshot_channel,
-                addr,
-                identity_stakes,
-            )
-            .await;
-        });
-    }
-}
+        let exit_token = CancellationToken::new();
 
-struct ActiveConnectionWithExitChannel {
-    pub active_connection: ActiveConnection,
-    pub exit_stream: tokio::sync::mpsc::Sender<()>,
+        let addr = self.tpu_address;
+
+        let max_number_of_connections = self.connection_parameters.max_number_of_connections;
+
+        let max_uni_stream_connections = compute_max_allowed_uni_streams(
+            identity_stakes.peer_type,
+            identity_stakes.stakes,
+            identity_stakes.total_stakes,
+        );
+        let exit_signal = self.exit_signal.clone();
+
+        let last_used = Arc::new(AtomicTiming::new());
+
+        let connection_pool = QuicConnectionPool::new(
+            self.identity.clone(),
+            self.endpoints.clone(),
+            addr,
+            self.connection_parameters,
+            exit_signal.clone(),
+            max_number_of_connections,
+            max_uni_stream_connections,
+        );
+
+        tokio::spawn(
+            Self::listen(
+                connection_pool.clone(),
+                transaction_reciever,
+                exit_signal.clone(),
+                exit_token.clone(),
+                addr.clone(),
+                identity_stakes.clone(),
+                last_used.clone(),
+            ));
+
+        tokio::spawn(
+            Self::perform_cleanup(
+                last_used.clone(),
+                exit_token.clone(),
+            ));
+
+    }
 }
 
 pub struct TpuConnectionManager {
     endpoints: RotatingQueue<Endpoint>,
-    identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitChannel>>>,
+    identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnection>>>,
 }
 
 impl TpuConnectionManager {
@@ -228,18 +273,13 @@ impl TpuConnectionManager {
                 data_cache.clone(),
                 connection_parameters,
             );
-            // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
-            let (sx, rx) = tokio::sync::mpsc::channel(1);
 
             let broadcast_receiver = broadcast_sender.subscribe();
 
-            active_connection.start_listening(broadcast_receiver, rx, identity_stakes);
+            active_connection.start_listening(broadcast_receiver, identity_stakes);
             self.identity_to_active_connection.insert(
                 *tpu_identity,
-                Arc::new(ActiveConnectionWithExitChannel {
-                    active_connection,
-                    exit_stream: sx,
-                }),
+                Arc::new(active_connection),
             );
         }
 
@@ -252,23 +292,24 @@ impl TpuConnectionManager {
     ) {
         // TODO reimplement
         // remove connections which are no longer needed
-        let collect_current_active_connections = self
-            .identity_to_active_connection
-            .iter()
-            .map(|x| (*x.key(), x.value().clone()))
-            .collect::<Vec<_>>();
-        for (identity, value) in collect_current_active_connections.iter() {
-            if !connections_to_keep.contains_key(identity) {
-                trace!("removing a connection for {}", identity);
-                // ignore error for exit channel
-                value
-                    .active_connection
-                    .exit_signal
-                    .store(true, Ordering::Relaxed);
-                let _ = value.exit_stream.send(()).await;
-                self.identity_to_active_connection.remove(identity);
-            }
-        }
+        // let collect_current_active_connections = self
+        //     .identity_to_active_connection
+        //     .iter()
+        //     .map(|x| (*x.key(), x.value().clone()))
+        //     .collect::<Vec<_>>();
+        // for (identity, value) in collect_current_active_connections.iter() {
+        //     if !connections_to_keep.contains_key(identity) {
+        //         trace!("removing a connection for {}", identity);
+        //         // ignore error for exit channel
+        //         value
+        //             .active_connection
+        //             .exit_signal
+        //             .store(true, Ordering::Relaxed);
+        //         let _ = value.exit_stream.send(()).await;
+        //         self.identity_to_active_connection.remove(identity);
+        //     }
+        // }
     }
 
 }
+
