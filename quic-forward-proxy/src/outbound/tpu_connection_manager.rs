@@ -92,38 +92,27 @@ impl ActiveConnection {
         connection_pool: QuicConnectionPool,
         broadcast_receiver: Receiver<BroadcastMessage>,
         exit_signal: Arc<AtomicBool>,
-        exit_token: CancellationToken,
         identity: Pubkey,
         addr: SocketAddr,
-        identity_stakes: IdentityStakesData,
         last_used: Arc<AtomicTiming>,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut broadcast_receiver = broadcast_receiver;
 
         loop {
-            if exit_signal.load(Ordering::Relaxed) {
-                warn!("got exit signal");
-                break;
-            }
 
             tokio::select! {
                 broadcast_message = broadcast_receiver.recv() => {
-                    warn!("got broadcast {:?}", broadcast_message);
 
                     let tx: Vec<u8> = match broadcast_message {
                         Ok(BroadcastMessage::Transaction(tx_raw)) => {
                             last_used.update();
-                            // if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info).await {
-                            //     // transaction is already confirmed/ no need to send
-                            //     continue;
-                            // }
-
                             tx_raw
                         },
                         Ok(BroadcastMessage::Shutdown(tpu_identity)) => {
                             if tpu_identity == identity {
-                                info!("Received shutdown signal for active connection to {}", addr);
+                                debug!("Received shutdown signal for active connection to {}", addr);
+                                exit_signal.store(true, Ordering::Relaxed);
                                 break;
                             }
                             continue;
@@ -156,10 +145,6 @@ impl ActiveConnection {
                         NB_QUIC_TASKS.dec();
                     });
                 },
-                _ = exit_token.cancelled() => {
-                    debug!("Got send exit token - shutdown active connection");
-                    break;
-                }
             }
         }
         drop(broadcast_receiver);
@@ -172,8 +157,6 @@ impl ActiveConnection {
         broadcast_receiver: Receiver<BroadcastMessage>,
         identity_stakes: IdentityStakesData,
     ) {
-        let exit_token = CancellationToken::new();
-
         let addr = self.tpu_address;
 
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
@@ -200,10 +183,8 @@ impl ActiveConnection {
                 connection_pool.clone(),
                 broadcast_receiver,
                 exit_signal.clone(),
-                exit_token.clone(),
                 self.identity,
                 addr.clone(),
-                identity_stakes.clone(),
                 self.last_used.clone(),
             ));
 
@@ -233,7 +214,7 @@ impl TpuConnectionManager {
 
         let (sender, _) = tokio::sync::broadcast::channel::<BroadcastMessage>(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let broadcast_sender = Arc::new(sender.clone());
-        let broadcast_sender2 = Arc::new(sender.clone());
+        let broadcast_sender2 = Arc::new(sender.clone()); // TODO do we need this?
         drop(sender);
 
         let identity_to_active_connection = Arc::new(DashMap::new());
@@ -267,7 +248,7 @@ impl TpuConnectionManager {
             if self.identity_to_active_connection.get(tpu_identity).is_some() {
                 continue;
             }
-            info!("add active connection for {}, {}", tpu_identity, tpu_addr);
+            debug!("add active connection for {}, {}", tpu_identity, tpu_addr);
             let active_connection = ActiveConnection::new(
                 self.endpoints.clone(),
                 *tpu_addr,
@@ -295,9 +276,7 @@ impl TpuConnectionManager {
         let mut period = tokio::time::interval(std::time::Duration::from_millis(500));
 
         loop {
-
             period.tick().await;
-            info!("tick.");
 
             let connections_to_shutdown =
                 identity_to_active_connection.iter()
@@ -311,7 +290,7 @@ impl TpuConnectionManager {
                 // entry must exist because nobody else can remove it
                 broadcast_sender.send(BroadcastMessage::Shutdown(identity)).expect("failed to send to broadcast");
                 identity_to_active_connection.remove(&identity);
-                info!("send shutdown message for active connection to tpu {}", identity);
+                debug!("send shutdown message for active connection to tpu {}", identity);
             }
 
         }
