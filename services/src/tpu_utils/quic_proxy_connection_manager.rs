@@ -68,10 +68,6 @@ impl QuicProxyConnectionManager {
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         connection_parameters: QuicConnectionParameters,
     ) {
-        debug!(
-            "reconfigure quic proxy connection (# of tpu nodes: {})",
-            connections_to_keep.len()
-        );
 
         {
             let list_of_nodes = connections_to_keep

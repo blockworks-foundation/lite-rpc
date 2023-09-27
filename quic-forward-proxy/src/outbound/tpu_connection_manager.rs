@@ -1,5 +1,7 @@
+#![allow(unused_imports)]
+
 use dashmap::DashMap;
-use log::{debug, error, info, trace, warn};
+use log::{debug, error};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
@@ -69,7 +71,6 @@ impl ActiveConnection {
         data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) -> Self {
-        let now = Instant::now();
         Self {
             endpoints,
             tpu_address,

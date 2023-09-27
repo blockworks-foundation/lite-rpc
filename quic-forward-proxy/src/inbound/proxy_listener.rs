@@ -10,7 +10,6 @@ use solana_sdk::packet::PACKET_DATA_SIZE;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use itertools::Itertools;
 use tokio::sync::mpsc::Sender;
 
 // note: setting this to "1" did not make a difference!
