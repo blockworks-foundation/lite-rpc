@@ -7,5 +7,6 @@ pub mod stores;
 pub mod structures;
 pub mod traits;
 pub mod types;
+pub mod atomic_timing;
 
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;

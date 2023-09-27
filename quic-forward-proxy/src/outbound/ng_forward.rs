@@ -1,40 +1,21 @@
-use crate::outbound::debouncer::Debouncer;
-use crate::outbound::sharder::Sharder;
-use crate::quic_util::SkipServerVerification;
-use crate::quinn_auto_reconnect::AutoReconnect;
-use crate::util::timeout_fallback;
 use crate::validator_identity::ValidatorIdentity;
-use anyhow::{bail, Context};
-use futures::future::join_all;
-use log::{debug, info, trace, warn};
-use quinn::{
-    ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
-};
-use solana_sdk::quic::QUIC_MAX_TIMEOUT;
-use solana_streamer::nonblocking::quic::{ALPN_TPU_PROTOCOL_ID, ConnectionPeerType};
+use anyhow::{bail};
+use solana_streamer::nonblocking::quic::{ConnectionPeerType};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-use itertools::Itertools;
+use std::time::{Duration};
+use log::info;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::transaction::VersionedTransaction;
-use tokio::pin;
 use tokio::sync::mpsc::Receiver;
-use tokio::sync::RwLock;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
-use solana_lite_rpc_core::solana_utils::SerializableTransaction;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakesData;
-use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
-use crate::outbound::tpu_connection_manager::{ProxiedTransaction, TpuConnectionManager};
+use crate::outbound::tpu_connection_manager::{TpuConnectionManager};
 use crate::proxy_request_format::TpuForwardingRequest;
 
-
-// TODO
-const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 16_384;
 
 
 const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameters {
@@ -78,12 +59,9 @@ pub async fn ng_forwarder(
     };
 
 
-    let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
-    let broadcast_sender = Arc::new(sender);
-
-    let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
 
     loop {
+        info!("tick2");
         if exit_signal.load(Ordering::Relaxed) {
             bail!("exit signal received");
         }
@@ -94,30 +72,23 @@ pub async fn ng_forwarder(
                 .await
                 .expect("channel closed unexpectedly");
 
+        let mut requested_connections: HashMap<Pubkey, SocketAddr> = HashMap::new();
         for tpu_node in forward_packet.get_tpu_nodes() {
             // TODO optimize move into tpu_connection_manager and implement shutdown based on not used
-            connections_to_keep.insert(tpu_node.identity_tpunode, tpu_node.tpu_socket_addr);
+            requested_connections.insert(tpu_node.identity_tpunode, tpu_node.tpu_socket_addr);
         }
 
         tpu_connection_manager
             .update_connections(
-                broadcast_sender.clone(),
-                &connections_to_keep,
+                &requested_connections,
                 identity_stakes,
                 DataCache::new_for_tests(),
                 QUIC_CONNECTION_PARAMS, // TODO improve
             )
             .await;
 
-        tpu_connection_manager.cleanup_unused_connections(&connections_to_keep).await;
-
-        info!("broadcast {}", broadcast_sender.receiver_count());
-
         for raw_tx in forward_packet.get_transaction_bytes() {
-            let transaction = ProxiedTransaction {
-                transaction: raw_tx,
-            };
-            broadcast_sender.send(transaction).expect("failed to send to broadcast");
+            tpu_connection_manager.send_transaction(raw_tx);
         }
 
     } // all txs in packet

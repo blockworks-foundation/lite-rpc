@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
@@ -20,10 +20,10 @@ use std::{
         Arc,
     },
 };
-use std::thread::sleep;
 use std::time::Duration;
-use solana_sdk::clock::Slot;
-use tokio::sync::{broadcast::Receiver, broadcast::Sender, RwLock};
+use itertools::Itertools;
+use spl_memo::id;
+use tokio::sync::{broadcast::Receiver, broadcast::Sender};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use solana_lite_rpc_core::atomic_timing::AtomicTiming;
@@ -39,12 +39,22 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
 }
 
+
+
+// TODO
+const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 16_384;
+
+// FIXME
+const SHUTDOWN_AGENT_THRESHOLD: Duration = Duration::from_millis(2500);
+
+
+
 pub type WireTransaction = Vec<u8>;
 
 #[derive(Debug, Clone)]
-pub struct ProxiedTransaction {
-    // pub signature: String,
-    pub transaction: WireTransaction,
+pub enum BroadcastMessage {
+    Transaction(WireTransaction),
+    Shutdown(Pubkey),
 }
 
 struct ActiveConnection {
@@ -54,6 +64,7 @@ struct ActiveConnection {
     exit_signal: Arc<AtomicBool>,
     data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
+    last_used: Arc<AtomicTiming>,
 }
 
 impl ActiveConnection {
@@ -72,44 +83,50 @@ impl ActiveConnection {
             exit_signal: Arc::new(AtomicBool::new(false)),
             data_cache,
             connection_parameters,
+            last_used: Arc::new(AtomicTiming::default()),
         }
     }
 
     #[allow(clippy::too_many_arguments)]
     async fn listen(
         connection_pool: QuicConnectionPool,
-        transaction_reciever: Receiver<ProxiedTransaction>,
+        broadcast_receiver: Receiver<BroadcastMessage>,
         exit_signal: Arc<AtomicBool>,
         exit_token: CancellationToken,
+        identity: Pubkey,
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
         last_used: Arc<AtomicTiming>,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
-        let mut transaction_reciever = transaction_reciever;
+        let mut broadcast_receiver = broadcast_receiver;
 
         loop {
-            // exit signal set
             if exit_signal.load(Ordering::Relaxed) {
+                warn!("got exit signal");
                 break;
             }
 
             tokio::select! {
-                tx = transaction_reciever.recv() => {
-                    // exit signal set
-                    if exit_signal.load(Ordering::Relaxed) {
-                        break;
-                    }
+                broadcast_message = broadcast_receiver.recv() => {
+                    warn!("got broadcast {:?}", broadcast_message);
 
-                    last_used.update();
-
-                    let tx: Vec<u8> = match tx {
-                        Ok(transaction_sent_info) => {
+                    let tx: Vec<u8> = match broadcast_message {
+                        Ok(BroadcastMessage::Transaction(tx_raw)) => {
+                            last_used.update();
                             // if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info).await {
                             //     // transaction is already confirmed/ no need to send
                             //     continue;
                             // }
-                            transaction_sent_info.transaction
+
+                            tx_raw
+                        },
+                        Ok(BroadcastMessage::Shutdown(tpu_identity)) => {
+                            if tpu_identity == identity {
+                                info!("Received shutdown signal for active connection to {}", addr);
+                                break;
+                            }
+                            continue;
                         },
                         Err(e) => {
                             error!(
@@ -145,44 +162,14 @@ impl ActiveConnection {
                 }
             }
         }
-        drop(transaction_reciever);
+        drop(broadcast_receiver);
         NB_QUIC_CONNECTIONS.dec();
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn perform_cleanup(
-        last_used: Arc<AtomicTiming>,
-        exit_token: CancellationToken) {
-
-        let mut interval = tokio::time::interval(Duration::from_millis(20));
-
-        loop {
-
-            tokio::select! {
-                _ = interval.tick() => {
-                    let unused_duration = last_used.elapsed();
-                    let is_unused = unused_duration > Duration::from_millis(20);
-
-                    if is_unused {
-                        debug!("Connection not used for {}ms - send exit token", unused_duration.as_millis());
-
-                        exit_token.cancel();
-                    }
-
-                },
-                _ = exit_token.cancelled() => {
-                    break;
-                }
-            }
-
-        }
-
-    }
-
     pub fn start_listening(
         &self,
-        transaction_reciever: Receiver<ProxiedTransaction>,
+        broadcast_receiver: Receiver<BroadcastMessage>,
         identity_stakes: IdentityStakesData,
     ) {
         let exit_token = CancellationToken::new();
@@ -198,8 +185,6 @@ impl ActiveConnection {
         );
         let exit_signal = self.exit_signal.clone();
 
-        let last_used = Arc::new(AtomicTiming::new());
-
         let connection_pool = QuicConnectionPool::new(
             self.identity.clone(),
             self.endpoints.clone(),
@@ -213,18 +198,13 @@ impl ActiveConnection {
         tokio::spawn(
             Self::listen(
                 connection_pool.clone(),
-                transaction_reciever,
+                broadcast_receiver,
                 exit_signal.clone(),
                 exit_token.clone(),
+                self.identity,
                 addr.clone(),
                 identity_stakes.clone(),
-                last_used.clone(),
-            ));
-
-        tokio::spawn(
-            Self::perform_cleanup(
-                last_used.clone(),
-                exit_token.clone(),
+                self.last_used.clone(),
             ));
 
     }
@@ -233,6 +213,15 @@ impl ActiveConnection {
 pub struct TpuConnectionManager {
     endpoints: RotatingQueue<Endpoint>,
     identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnection>>>,
+    // channel to communicate to the active connections threads
+    broadcast_sender: Arc<Sender<BroadcastMessage>>,
+}
+
+impl TpuConnectionManager {
+    pub fn send_transaction(&self, transaction: Vec<u8>) {
+        self.broadcast_sender.send(BroadcastMessage::Transaction(transaction))
+            .expect("failed to send to broadcast");
+    }
 }
 
 impl TpuConnectionManager {
@@ -241,20 +230,33 @@ impl TpuConnectionManager {
         key: rustls::PrivateKey,
         fanout: usize,
     ) -> Self {
+
+        let (sender, _) = tokio::sync::broadcast::channel::<BroadcastMessage>(MAXIMUM_TRANSACTIONS_IN_QUEUE);
+        let broadcast_sender = Arc::new(sender.clone());
+        let broadcast_sender2 = Arc::new(sender.clone());
+        drop(sender);
+
+        let identity_to_active_connection = Arc::new(DashMap::new());
+
+        tokio::spawn(
+            Self::cleanup_unused_connections(
+            identity_to_active_connection.clone(),
+            broadcast_sender2,
+            ));
+
         let number_of_clients = fanout * 2;
         Self {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
             }),
-            identity_to_active_connection: Arc::new(DashMap::new()),
+            identity_to_active_connection,
+            broadcast_sender,
         }
     }
 
     #[tracing::instrument(skip_all, level = "warn")]
-    // update_connections: solana_lite_rpc_quic_forward_proxy::outbound::tpu_connection_manager: close time.busy=10.6µs time.idle=4.00µs
     pub async fn update_connections(
         &self,
-        broadcast_sender: Arc<Sender<ProxiedTransaction>>,
         connections_to_keep: &HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakesData,
         data_cache: DataCache,
@@ -265,7 +267,7 @@ impl TpuConnectionManager {
             if self.identity_to_active_connection.get(tpu_identity).is_some() {
                 continue;
             }
-            trace!("added a connection for {}, {}", tpu_identity, tpu_addr);
+            info!("add active connection for {}, {}", tpu_identity, tpu_addr);
             let active_connection = ActiveConnection::new(
                 self.endpoints.clone(),
                 *tpu_addr,
@@ -274,7 +276,7 @@ impl TpuConnectionManager {
                 connection_parameters,
             );
 
-            let broadcast_receiver = broadcast_sender.subscribe();
+            let broadcast_receiver = self.broadcast_sender.subscribe();
 
             active_connection.start_listening(broadcast_receiver, identity_stakes);
             self.identity_to_active_connection.insert(
@@ -285,30 +287,34 @@ impl TpuConnectionManager {
 
     }
 
-    #[tracing::instrument(skip_all, level = "warn")]
-    pub async fn cleanup_unused_connections(
-        &self,
-        connections_to_keep: &HashMap<Pubkey, SocketAddr>,
+    async fn cleanup_unused_connections(
+        identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnection>>>,
+        broadcast_sender: Arc<Sender<BroadcastMessage>>,
     ) {
-        // TODO reimplement
-        // remove connections which are no longer needed
-        // let collect_current_active_connections = self
-        //     .identity_to_active_connection
-        //     .iter()
-        //     .map(|x| (*x.key(), x.value().clone()))
-        //     .collect::<Vec<_>>();
-        // for (identity, value) in collect_current_active_connections.iter() {
-        //     if !connections_to_keep.contains_key(identity) {
-        //         trace!("removing a connection for {}", identity);
-        //         // ignore error for exit channel
-        //         value
-        //             .active_connection
-        //             .exit_signal
-        //             .store(true, Ordering::Relaxed);
-        //         let _ = value.exit_stream.send(()).await;
-        //         self.identity_to_active_connection.remove(identity);
-        //     }
-        // }
+
+        let mut period = tokio::time::interval(std::time::Duration::from_millis(500));
+
+        loop {
+
+            period.tick().await;
+            info!("tick.");
+
+            let connections_to_shutdown =
+                identity_to_active_connection.iter()
+                    .filter(|x| {
+                        let elapsed = x.last_used.elapsed();
+                        elapsed > SHUTDOWN_AGENT_THRESHOLD
+                    }).map(|x| *x.key())
+                    .collect_vec();
+
+            for identity in connections_to_shutdown {
+                // entry must exist because nobody else can remove it
+                broadcast_sender.send(BroadcastMessage::Shutdown(identity)).expect("failed to send to broadcast");
+                identity_to_active_connection.remove(&identity);
+                info!("send shutdown message for active connection to tpu {}", identity);
+            }
+
+        }
     }
 
 }
