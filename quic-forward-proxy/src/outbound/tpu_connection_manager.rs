@@ -40,14 +40,8 @@ lazy_static::lazy_static! {
 }
 
 
-
-// TODO
 const MAXIMUM_TRANSACTIONS_IN_QUEUE: usize = 16_384;
-
-// FIXME
 const SHUTDOWN_AGENT_THRESHOLD: Duration = Duration::from_millis(2500);
-
-
 
 pub type WireTransaction = Vec<u8>;
 
@@ -214,7 +208,6 @@ impl TpuConnectionManager {
 
         let (sender, _) = tokio::sync::broadcast::channel::<BroadcastMessage>(MAXIMUM_TRANSACTIONS_IN_QUEUE);
         let broadcast_sender = Arc::new(sender.clone());
-        let broadcast_sender2 = Arc::new(sender.clone()); // TODO do we need this?
         drop(sender);
 
         let identity_to_active_connection = Arc::new(DashMap::new());
@@ -222,7 +215,7 @@ impl TpuConnectionManager {
         tokio::spawn(
             Self::cleanup_unused_connections(
             identity_to_active_connection.clone(),
-            broadcast_sender2,
+            broadcast_sender.clone(),
             ));
 
         let number_of_clients = fanout * 2;
