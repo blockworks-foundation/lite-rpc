@@ -15,7 +15,8 @@ pub struct QuicForwardProxy {
     // endpoint: Endpoint,
     validator_identity: ValidatorIdentity,
     tls_config: Arc<SelfSignedTlsConfigProvider>,
-    pub proxy_listener_addr: SocketAddr,
+    proxy_listener_addr: SocketAddr,
+    fanout_size: u64,
 }
 
 impl QuicForwardProxy {
@@ -23,6 +24,7 @@ impl QuicForwardProxy {
         proxy_listener_addr: SocketAddr,
         tls_config: Arc<SelfSignedTlsConfigProvider>,
         validator_identity: ValidatorIdentity,
+        fanout_size: u64,
     ) -> anyhow::Result<Self> {
         info!("Quic proxy uses validator identity {}", validator_identity);
 
@@ -30,6 +32,7 @@ impl QuicForwardProxy {
             proxy_listener_addr,
             validator_identity,
             tls_config,
+            fanout_size,
         })
     }
 
@@ -54,6 +57,7 @@ impl QuicForwardProxy {
             validator_identity,
             forward_receiver,
             exit_signal_clone,
+            self.fanout_size,
         ));
 
         tokio::select! {

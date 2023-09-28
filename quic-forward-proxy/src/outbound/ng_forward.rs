@@ -31,10 +31,8 @@ pub async fn ng_forwarder(
     validator_identity: ValidatorIdentity,
     mut transaction_channel: Receiver<TpuForwardingRequest>,
     exit_signal: Arc<AtomicBool>,
+    fanout_slots: u64,
 ) -> anyhow::Result<()> {
-
-    // TODO
-    let fanout_slots = 4;
 
     let (certificate, key) = new_self_signed_tls_certificate(
         &validator_identity.get_keypair_for_tls(),
@@ -42,7 +40,6 @@ pub async fn ng_forwarder(
     )
         .expect("Failed to initialize QUIC connection certificates");
 
-    // TODO make copy of TpuConnectionManager in proxy crate an strip unused features
     let tpu_connection_manager =
         TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
 

@@ -4319,6 +4319,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap 4.4.2",
+ "const_env",
  "dashmap",
  "dotenv",
  "futures",

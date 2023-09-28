@@ -665,12 +665,13 @@ async fn start_literpc_client_proxy_mode(
 async fn start_quic_proxy(proxy_listen_addr: SocketAddr) -> anyhow::Result<()> {
     let _tls_configuration = SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost();
     let random_unstaked_validator_identity = ValidatorIdentity::new(None);
-
+    let fanout_size = 10;
     let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());
     let proxy_service = QuicForwardProxy::new(
         proxy_listen_addr,
         tls_config,
         random_unstaked_validator_identity,
+        fanout_size,
     )
     .await?
     .start_services();

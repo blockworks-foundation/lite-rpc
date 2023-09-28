@@ -28,6 +28,7 @@ anyhow = { workspace = true }
 log = { workspace = true }
 clap = { workspace = true }
 dashmap = { workspace = true }
+const_env = { workspace = true }
 itertools = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
