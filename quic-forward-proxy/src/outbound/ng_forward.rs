@@ -1,17 +1,15 @@
 use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail};
-use solana_streamer::nonblocking::quic::{compute_max_allowed_uni_streams, ConnectionPeerType};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration};
-use log::info;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::quic::QUIC_MIN_STAKED_CONCURRENT_STREAMS;
 use tokio::sync::mpsc::Receiver;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
-use solana_lite_rpc_core::structures::identity_stakes::IdentityStakesData;
 use crate::outbound::tpu_connection_manager::{TpuConnectionManager};
 use crate::proxy_request_format::TpuForwardingRequest;
 
@@ -48,20 +46,7 @@ pub async fn ng_forwarder(
     let tpu_connection_manager =
         TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
 
-    // TODO remove
-    let identity_stakes = IdentityStakesData {
-        peer_type: ConnectionPeerType::Staked,
-        stakes: 30,
-        min_stakes: 0,
-        max_stakes: 40,
-        total_stakes: 100,
-    };
-
-    let max_uni_stream_connections = compute_max_allowed_uni_streams(
-        identity_stakes.peer_type,
-        identity_stakes.stakes,
-        identity_stakes.total_stakes,
-    );
+    let max_uni_stream_connections = QUIC_MIN_STAKED_CONCURRENT_STREAMS;
 
     loop {
         if exit_signal.load(Ordering::Relaxed) {
