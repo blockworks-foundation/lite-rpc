@@ -94,51 +94,49 @@ impl ActiveConnection {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut broadcast_receiver = broadcast_receiver;
 
-        loop {
+        'all_message: loop {
 
             tokio::select! {
                 broadcast_message = broadcast_receiver.recv() => {
 
-                    let tx: Vec<u8> = match broadcast_message {
+                    match broadcast_message {
                         Ok(BroadcastMessage::Transaction(tx_raw)) => {
                             last_used.update();
-                            tx_raw
+                            let PooledConnection {
+                                connection,
+                                permit
+                            } = match connection_pool.get_pooled_connection().await {
+                                Ok(connection_pool) => connection_pool,
+                                Err(e) => {
+                                    error!("error getting pooled connection {e:?}");
+                                    break 'all_message;
+                                },
+                            };
+
+                            tokio::spawn(async move {
+                                // permit will be used to send all the transaction and then destroyed
+                                let _permit = permit;
+                                NB_QUIC_TASKS.inc();
+                                connection.send_transaction(tx_raw).await;
+                                NB_QUIC_TASKS.dec();
+                            });
+
                         },
                         Ok(BroadcastMessage::Shutdown(tpu_identity)) => {
                             if tpu_identity == identity {
                                 debug!("Received shutdown signal for active connection to {}", addr);
                                 exit_signal.store(true, Ordering::Relaxed);
-                                break;
+                                break 'all_message;
                             }
-                            continue;
                         },
                         Err(e) => {
                             error!(
                                 "Broadcast channel error on recv for {} error {} - continue",
                                 addr, e
                             );
-                            continue;
                         }
                     };
 
-                    let PooledConnection {
-                        connection,
-                        permit
-                    } = match connection_pool.get_pooled_connection().await {
-                        Ok(connection_pool) => connection_pool,
-                        Err(e) => {
-                            error!("error getting pooled connection {e:?}");
-                            break;
-                        },
-                    };
-
-                    tokio::spawn(async move {
-                        // permit will be used to send all the transaction and then destroyed
-                        let _permit = permit;
-                        NB_QUIC_TASKS.inc();
-                        connection.send_transaction(tx).await;
-                        NB_QUIC_TASKS.dec();
-                    });
                 },
             }
         }
@@ -207,9 +205,10 @@ impl TpuConnectionManager {
         fanout: usize,
     ) -> Self {
 
-        let (sender, _) = tokio::sync::broadcast::channel::<BroadcastMessage>(MAXIMUM_TRANSACTIONS_IN_QUEUE);
-        let broadcast_sender = Arc::new(sender.clone());
-        drop(sender);
+        let broadcast_sender = {
+            let (sender, _) = tokio::sync::broadcast::channel::<BroadcastMessage>(MAXIMUM_TRANSACTIONS_IN_QUEUE);
+            Arc::new(sender.clone())
+        };
 
         let identity_to_active_connection = Arc::new(DashMap::new());
 
@@ -232,13 +231,13 @@ impl TpuConnectionManager {
     #[tracing::instrument(skip_all, level = "warn")]
     pub async fn update_connections(
         &self,
-        connections_to_keep: &HashMap<Pubkey, SocketAddr>,
+        requested_connections: &HashMap<Pubkey, SocketAddr>,
         identity_stakes: IdentityStakesData,
         data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) {
-        NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
-        for (tpu_identity, tpu_addr) in connections_to_keep {
+        NB_CONNECTIONS_TO_KEEP.set(requested_connections.len() as i64);
+        for (tpu_identity, tpu_addr) in requested_connections {
             if self.identity_to_active_connection.get(tpu_identity).is_some() {
                 continue;
             }
