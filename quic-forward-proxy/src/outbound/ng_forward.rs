@@ -11,7 +11,6 @@ use log::info;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::mpsc::Receiver;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
-use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakesData;
 use crate::outbound::tpu_connection_manager::{TpuConnectionManager};
 use crate::proxy_request_format::TpuForwardingRequest;
@@ -58,10 +57,13 @@ pub async fn ng_forwarder(
         total_stakes: 100,
     };
 
-
+    let max_uni_stream_connections = compute_max_allowed_uni_streams(
+        identity_stakes.peer_type,
+        identity_stakes.stakes,
+        identity_stakes.total_stakes,
+    );
 
     loop {
-        info!("tick2");
         if exit_signal.load(Ordering::Relaxed) {
             bail!("exit signal received");
         }
@@ -74,21 +76,13 @@ pub async fn ng_forwarder(
 
         let mut requested_connections: HashMap<Pubkey, SocketAddr> = HashMap::new();
         for tpu_node in forward_packet.get_tpu_nodes() {
-            // TODO optimize move into tpu_connection_manager and implement shutdown based on not used
             requested_connections.insert(tpu_node.identity_tpunode, tpu_node.tpu_socket_addr);
         }
-
-        let max_uni_stream_connections = compute_max_allowed_uni_streams(
-            identity_stakes.peer_type,
-            identity_stakes.stakes,
-            identity_stakes.total_stakes,
-        );
 
         tpu_connection_manager
             .update_connections(
                 &requested_connections,
                 max_uni_stream_connections,
-                DataCache::new_for_tests(),
                 QUIC_CONNECTION_PARAMS, // TODO improve
             )
             .await;

@@ -58,7 +58,6 @@ struct ActiveConnection {
     identity: Pubkey,
     tpu_address: SocketAddr,
     exit_signal: Arc<AtomicBool>,
-    data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
     last_used: Arc<AtomicTiming>,
 }
@@ -68,7 +67,6 @@ impl ActiveConnection {
         endpoints: RotatingQueue<Endpoint>,
         tpu_address: SocketAddr,
         identity: Pubkey,
-        data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) -> Self {
         Self {
@@ -76,7 +74,6 @@ impl ActiveConnection {
             tpu_address,
             identity,
             exit_signal: Arc::new(AtomicBool::new(false)),
-            data_cache,
             connection_parameters,
             last_used: Arc::new(AtomicTiming::default()),
         }
@@ -228,7 +225,6 @@ impl TpuConnectionManager {
         &self,
         requested_connections: &HashMap<Pubkey, SocketAddr>,
         max_uni_stream_connections: usize,
-        data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(requested_connections.len() as i64);
@@ -241,7 +237,6 @@ impl TpuConnectionManager {
                 self.endpoints.clone(),
                 *tpu_addr,
                 *tpu_identity,
-                data_cache.clone(),
                 connection_parameters,
             );
 
