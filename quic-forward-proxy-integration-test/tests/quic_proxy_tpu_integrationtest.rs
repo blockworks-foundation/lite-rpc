@@ -120,7 +120,6 @@ pub fn with_1000_transactions_direct() {
 }
 
 // note: this tests are flakes on CI ond also local (see https://mangolana.atlassian.net/browse/MAN-59)
-#[ignore]
 #[test]
 pub fn bench_proxy() {
     configure_logging(true);

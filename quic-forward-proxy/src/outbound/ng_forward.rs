@@ -1,6 +1,6 @@
 use crate::validator_identity::ValidatorIdentity;
 use anyhow::{bail};
-use solana_streamer::nonblocking::quic::{ConnectionPeerType};
+use solana_streamer::nonblocking::quic::{compute_max_allowed_uni_streams, ConnectionPeerType};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -78,10 +78,16 @@ pub async fn ng_forwarder(
             requested_connections.insert(tpu_node.identity_tpunode, tpu_node.tpu_socket_addr);
         }
 
+        let max_uni_stream_connections = compute_max_allowed_uni_streams(
+            identity_stakes.peer_type,
+            identity_stakes.stakes,
+            identity_stakes.total_stakes,
+        );
+
         tpu_connection_manager
             .update_connections(
                 &requested_connections,
-                identity_stakes,
+                max_uni_stream_connections,
                 DataCache::new_for_tests(),
                 QUIC_CONNECTION_PARAMS, // TODO improve
             )

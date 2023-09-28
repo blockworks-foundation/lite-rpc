@@ -16,7 +16,6 @@ mod outbound;
 pub mod proxy;
 pub mod proxy_request_format;
 pub mod quic_util;
-mod quinn_auto_reconnect;
 pub mod tls_config_provider_client;
 pub mod tls_config_provider_server;
 pub mod tls_self_signed_pair_generator;

@@ -148,17 +148,12 @@ impl ActiveConnection {
     pub fn start_listening(
         &self,
         broadcast_receiver: Receiver<BroadcastMessage>,
-        identity_stakes: IdentityStakesData,
+        max_uni_stream_connections: usize,
     ) {
         let addr = self.tpu_address;
 
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
 
-        let max_uni_stream_connections = compute_max_allowed_uni_streams(
-            identity_stakes.peer_type,
-            identity_stakes.stakes,
-            identity_stakes.total_stakes,
-        );
         let exit_signal = self.exit_signal.clone();
 
         let connection_pool = QuicConnectionPool::new(
@@ -232,7 +227,7 @@ impl TpuConnectionManager {
     pub async fn update_connections(
         &self,
         requested_connections: &HashMap<Pubkey, SocketAddr>,
-        identity_stakes: IdentityStakesData,
+        max_uni_stream_connections: usize,
         data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) {
@@ -252,7 +247,7 @@ impl TpuConnectionManager {
 
             let broadcast_receiver = self.broadcast_sender.subscribe();
 
-            active_connection.start_listening(broadcast_receiver, identity_stakes);
+            active_connection.start_listening(broadcast_receiver, max_uni_stream_connections);
             self.identity_to_active_connection.insert(
                 *tpu_identity,
                 Arc::new(active_connection),
