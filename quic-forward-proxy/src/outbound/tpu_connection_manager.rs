@@ -32,13 +32,13 @@ use solana_lite_rpc_core::atomic_timing::AtomicTiming;
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
+        register_int_gauge!(opts!("literpcproxy_nb_active_quic_connections", "Number of quic connections open")).unwrap();
     static ref NB_QUIC_ACTIVE_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_nb_active_connections", "Number quic tasks that are running")).unwrap();
+        register_int_gauge!(opts!("literpcproxy_nb_active_connections", "Number quic tasks that are running")).unwrap();
     static ref NB_CONNECTIONS_TO_KEEP: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_connections_to_keep", "Number of connections to keep asked by tpu service")).unwrap();
+        register_int_gauge!(opts!("literpcproxy_connections_to_keep", "Number of connections to keep asked by tpu service")).unwrap();
     static ref NB_QUIC_TASKS: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
+        register_int_gauge!(opts!("literpcproxy_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
 }
 
 
