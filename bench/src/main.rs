@@ -8,6 +8,7 @@ use dashmap::DashMap;
 use futures::future::join_all;
 use log::{error, info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::signature::Signature;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
     slot_history::Slot,
@@ -43,14 +44,14 @@ async fn main() {
         TransactionSize::Small
     };
 
-    info!("Connecting to {lite_rpc_addr}");
+    info!("Connecting to LiteRPC using {lite_rpc_addr}");
 
     let mut avg_metric = AvgMetric::default();
 
     let mut tasks = vec![];
 
     let funded_payer = BenchHelper::get_payer().await.unwrap();
-    println!("payer : {}", funded_payer.pubkey());
+    info!("Payer: {}", funded_payer.pubkey());
 
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
         lite_rpc_addr.clone(),
@@ -150,6 +151,7 @@ struct TxSendData {
     sent_duration: Duration,
     sent_instant: Instant,
     sent_slot: Slot,
+    transaction_bytes: u64,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -164,7 +166,7 @@ async fn bench(
     log_txs: bool,
     transaction_size: TransactionSize,
 ) -> Metric {
-    let map_of_txs = Arc::new(DashMap::new());
+    let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
     // transaction sender task
     {
         let map_of_txs = map_of_txs.clone();
@@ -197,6 +199,7 @@ async fn bench(
                                 sent_duration: start_time.elapsed(),
                                 sent_instant: Instant::now(),
                                 sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
+                                transaction_bytes: bincode::serialized_size(&tx).unwrap(),
                             },
                         );
                     }
@@ -226,7 +229,12 @@ async fn bench(
                 if tx_status.is_some() {
                     let tx_data = map_of_txs.get(signature).unwrap();
                     let time_to_confirm = tx_data.sent_instant.elapsed();
-                    metric.add_successful_transaction(tx_data.sent_duration, time_to_confirm);
+                    let transaction_bytes = tx_data.transaction_bytes;
+                    metric.add_successful_transaction(
+                        tx_data.sent_duration,
+                        time_to_confirm,
+                        transaction_bytes,
+                    );
 
                     if log_txs {
                         let _ = tx_metric_sx.send(TxMetricData {
@@ -246,7 +254,7 @@ async fn bench(
     }
 
     for tx in map_of_txs.iter() {
-        metric.add_unsuccessful_transaction(tx.sent_duration);
+        metric.add_unsuccessful_transaction(tx.sent_duration, tx.transaction_bytes);
     }
     metric.finalize();
     metric
