@@ -20,6 +20,7 @@ pub struct Args {
     pub lite_rpc_addr: String,
     #[arg(short = 't', long, default_value_t = String::from("transactions.csv"))]
     pub transaction_save_file: String,
+    // choose between small (179 bytes) and large (1186 bytes) transactions
     #[arg(short = 'L', long, default_value_t = false)]
     pub large_transactions: bool,
 }
