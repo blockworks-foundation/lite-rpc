@@ -37,7 +37,7 @@ impl Display for TpuForwardingRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "TpuForwardingRequest t9 {} tpu nodes",
+            "TpuForwardingRequest to {} tpu nodes",
             &self.tpu_nodes.len(),
         )
     }

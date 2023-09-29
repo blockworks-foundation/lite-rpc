@@ -6,17 +6,27 @@ use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
+use itertools::Itertools;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterface;
 use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
+use std::net::SocketAddr;
+use std::path::Path;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
+
+// enable unless it is needed for bench_direct_quic.rs for performance reasons
+const ENABLE_LEADERSDAT_FOR_BENCH: bool = false;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -123,7 +133,7 @@ impl TpuService {
             .get_slot_leaders(current_slot, last_slot)
             .await?;
         // get next leader with its tpu port
-        let connections_to_keep = next_leaders
+        let connections_to_keep: HashMap<Pubkey, SocketAddr> = next_leaders
             .iter()
             .map(|x| {
                 let contact_info = cluster_nodes.get(&x.pubkey);
@@ -141,6 +151,10 @@ impl TpuService {
                 (x.0, addr)
             })
             .collect();
+
+        if ENABLE_LEADERSDAT_FOR_BENCH {
+            dump_leaders_to_file(connections_to_keep.values().collect_vec());
+        }
 
         match &self.connection_manager {
             DirectTpu {
@@ -189,4 +203,22 @@ impl TpuService {
             }
         })
     }
+}
+
+// used for bench tool
+// optionally dumps the leaders to disk for later use
+fn dump_leaders_to_file(leaders: Vec<&SocketAddr>) {
+    // files acts as feature flag - create it on filesystem to enable
+    if !Path::exists(Path::new("leaders.dat")) {
+        return;
+    }
+    // will create/truncate file
+    let mut out_file = File::create("leaders.dat.tmp").unwrap();
+    for leader_addr in &leaders {
+        // 69.197.20.37:8009
+        writeln!(out_file, "{}", leader_addr).unwrap();
+    }
+    out_file.flush().unwrap();
+
+    std::fs::rename("leaders.dat.tmp", "leaders.dat").unwrap();
 }

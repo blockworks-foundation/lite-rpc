@@ -3,9 +3,19 @@ name = "bench"
 version = "0.2.3"
 edition = "2021"
 
+[[bin]]
+name = "bench-rpc"
+path = "src/bench_rpc.rs"
+
+[[bin]]
+name = "bench-direct-quic"
+path = "src/bench_direct_quic.rs"
+
 [dependencies]
+solana-lite-rpc-quic-forward-proxy = { path = "../quic-forward-proxy" }
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
+solana-streamer = {workspace = true}
 log = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -13,6 +23,7 @@ serde_json = { workspace = true }
 clap = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
 tracing-subscriber = { workspace = true }
+bincode = { workspace = true }
 csv = "1.2.1"
 dirs = "5.0.0"
 rand = "0.8.5"

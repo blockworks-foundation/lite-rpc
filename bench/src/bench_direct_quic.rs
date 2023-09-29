@@ -1,21 +1,41 @@
-use bench::{
-    cli::Args,
-    helpers::BenchHelper,
-    metrics::{AvgMetric, Metric, TxMetricData},
-};
+/// bench tool that uses the TPU client from quic proxy to submit transactions to TPUs via QUIC
+///
+/// note: this tool requires a lite-rpc service that is configured to dump the current leader list to a file (leaders.dat)
+/// important: need to enable flag ENABLE_LEADERSDAT_FOR_BENCH in tpu_service.rs
+mod cli_direct_quic;
+mod helpers;
+mod metrics;
+
+use anyhow::Context;
+use helpers::BenchHelper;
+use metrics::{AvgMetric, Metric, TxMetricData};
+
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
-use log::{error, info, warn};
+use log::{debug, error, info};
+use solana_lite_rpc_quic_forward_proxy::outbound::tx_forward::tx_forwarder;
+use solana_lite_rpc_quic_forward_proxy::shared::ForwardPacket;
+use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
+
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client::rpc_client::SerializableTransaction;
+use solana_sdk::signature::Signature;
+use solana_sdk::transaction::Transaction;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
     slot_history::Slot,
 };
+use std::fs;
+use std::fs::read_to_string;
+use std::net::{SocketAddr, SocketAddrV4};
+use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use std::time::SystemTime;
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
@@ -25,18 +45,18 @@ use tokio::{
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let Args {
+    let cli_direct_quic::Args {
         tx_count,
         runs,
         run_interval_ms,
         metrics_file_name,
-        lite_rpc_addr,
+        rpc_addr,
         transaction_save_file,
-    } = Args::parse();
+    } = cli_direct_quic::Args::parse();
 
     let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
 
-    info!("Connecting to {lite_rpc_addr}");
+    info!("Using RPC service on {rpc_addr}");
 
     let mut avg_metric = AvgMetric::default();
 
@@ -46,13 +66,14 @@ async fn main() {
     println!("payer : {}", funded_payer.pubkey());
 
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
-        lite_rpc_addr.clone(),
+        rpc_addr.clone(),
         CommitmentConfig::confirmed(),
     ));
     let bh = rpc_client.get_latest_blockhash().await.unwrap();
     let slot = rpc_client.get_slot().await.unwrap();
     let block_hash: Arc<RwLock<Hash>> = Arc::new(RwLock::new(bh));
     let current_slot = Arc::new(AtomicU64::new(slot));
+
     {
         // block hash updater task
         let block_hash = block_hash.clone();
@@ -155,34 +176,57 @@ async fn bench(
     tx_metric_sx: UnboundedSender<TxMetricData>,
     log_txs: bool,
 ) -> Metric {
-    let map_of_txs = Arc::new(DashMap::new());
+    let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
+    let (forwarder_channel, forward_receiver) = tokio::sync::mpsc::channel(1000);
+
+    {
+        let validator_identity = ValidatorIdentity::new(None);
+        let exit_signal = Arc::new(AtomicBool::new(false));
+        let _jh = tokio::spawn(tx_forwarder(
+            validator_identity,
+            forward_receiver,
+            exit_signal,
+        ));
+    }
     // transaction sender task
     {
         let map_of_txs = map_of_txs.clone();
-        let rpc_client = rpc_client.clone();
         let current_slot = current_slot.clone();
+        // let forwarder_channel = forwarder_channel.clone();
         tokio::spawn(async move {
             let map_of_txs = map_of_txs.clone();
             let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed));
-
             for rand_string in rand_strings {
                 let blockhash = { *block_hash.read().await };
                 let tx = BenchHelper::create_memo_tx(&rand_string, &funded_payer, blockhash);
+
+                let leader_addrs = read_leaders_from_file("leaders.dat").expect("leaders.dat file");
+
                 let start_time = Instant::now();
-                match rpc_client.send_transaction(&tx).await {
-                    Ok(signature) => {
-                        map_of_txs.insert(
-                            signature,
-                            TxSendData {
-                                sent_duration: start_time.elapsed(),
-                                sent_instant: Instant::now(),
-                                sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
-                            },
-                        );
-                    }
-                    Err(e) => {
-                        warn!("tx send failed with error {}", e);
-                    }
+
+                debug!(
+                    "sent tx {} to {} tpu nodes",
+                    tx.get_signature(),
+                    leader_addrs.len()
+                );
+                for tpu_address in &leader_addrs {
+                    let tx_raw = bincode::serialize::<Transaction>(&tx).unwrap();
+                    let packet = ForwardPacket::new(
+                        vec![tx_raw],
+                        SocketAddr::from(*tpu_address),
+                        0xdeadbeef,
+                    );
+
+                    forwarder_channel.send(packet).await.unwrap();
+
+                    map_of_txs.insert(
+                        *tx.get_signature(),
+                        TxSendData {
+                            sent_duration: start_time.elapsed(),
+                            sent_instant: Instant::now(),
+                            sent_slot: current_slot.load(std::sync::atomic::Ordering::Relaxed),
+                        },
+                    );
                 }
             }
         });
@@ -199,29 +243,32 @@ async fn bench(
             tokio::time::sleep(Duration::from_millis(1)).await;
             continue;
         }
+        let chunks = signatures.chunks(100).collect::<Vec<_>>();
+        for chunk in chunks {
+            if let Ok(res) = rpc_client.get_signature_statuses(chunk).await {
+                for (i, signature) in chunk.iter().enumerate() {
+                    let tx_status = &res.value[i];
+                    if tx_status.is_some() {
+                        let tx_data = map_of_txs.get(signature).unwrap();
+                        let time_to_confirm = tx_data.sent_instant.elapsed();
+                        metric.add_successful_transaction(tx_data.sent_duration, time_to_confirm);
 
-        if let Ok(res) = rpc_client.get_signature_statuses(&signatures).await {
-            for (i, signature) in signatures.iter().enumerate() {
-                let tx_status = &res.value[i];
-                if tx_status.is_some() {
-                    let tx_data = map_of_txs.get(signature).unwrap();
-                    let time_to_confirm = tx_data.sent_instant.elapsed();
-                    metric.add_successful_transaction(tx_data.sent_duration, time_to_confirm);
-
-                    if log_txs {
-                        let _ = tx_metric_sx.send(TxMetricData {
-                            signature: signature.to_string(),
-                            sent_slot: tx_data.sent_slot,
-                            confirmed_slot: current_slot.load(Ordering::Relaxed),
-                            time_to_send_in_millis: tx_data.sent_duration.as_millis() as u64,
-                            time_to_confirm_in_millis: time_to_confirm.as_millis() as u64,
-                        });
+                        if log_txs {
+                            let _ = tx_metric_sx.send(TxMetricData {
+                                signature: signature.to_string(),
+                                sent_slot: tx_data.sent_slot,
+                                confirmed_slot: current_slot.load(Ordering::Relaxed),
+                                time_to_send_in_millis: tx_data.sent_duration.as_millis() as u64,
+                                time_to_confirm_in_millis: time_to_confirm.as_millis() as u64,
+                            });
+                        }
+                        drop(tx_data);
+                        map_of_txs.remove(signature);
+                        confirmed_count += 1;
                     }
-                    drop(tx_data);
-                    map_of_txs.remove(signature);
-                    confirmed_count += 1;
                 }
             }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 
@@ -230,4 +277,24 @@ async fn bench(
     }
     metric.finalize();
     metric
+}
+
+// note: this file gets written by tpu_services::dump_leaders_to_file; see docs how to activate
+fn read_leaders_from_file(leaders_file: &str) -> anyhow::Result<Vec<SocketAddrV4>> {
+    let last_modified = fs::metadata("leaders.dat")?.modified().unwrap();
+    let file_age = SystemTime::now().duration_since(last_modified).unwrap();
+    assert!(
+        file_age.as_millis() < 1000,
+        "leaders.dat is outdated ({:?}) - pls run patched lite-rpc service",
+        file_age
+    );
+    let leader_file = read_to_string(leaders_file)?;
+    let mut leader_addrs = vec![];
+    for line in leader_file.lines() {
+        let socket_addr = SocketAddrV4::from_str(line)
+            .context(format!("error parsing line: {}", line))
+            .unwrap();
+        leader_addrs.push(socket_addr);
+    }
+    Ok(leader_addrs)
 }

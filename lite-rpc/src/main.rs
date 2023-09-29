@@ -277,7 +277,7 @@ fn configure_tpu_connection_path(quic_proxy_addr: Option<String>) -> TpuConnecti
         Some(prox_address) => {
             let proxy_socket_addr = parse_host_port(prox_address.as_str()).unwrap();
             TpuConnectionPath::QuicForwardProxyPath {
-                // e.g. "127.0.0.1:11111" or "localhost:11111"
+                // e.g. "127.0.0.1:11111"
                 forward_proxy_address: proxy_socket_addr,
             }
         }

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
@@ -12,6 +12,9 @@ use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use quinn::{ClientConfig, Endpoint, EndpointConfig, TokioRuntime, TransportConfig, VarInt};
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Keypair;
+use solana_sdk::transaction::Transaction;
+use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::{broadcast::Receiver, RwLock};
@@ -19,6 +22,7 @@ use tokio::sync::{broadcast::Receiver, RwLock};
 use solana_lite_rpc_core::quic_connection_utils::{
     QuicConnectionParameters, SkipServerVerification,
 };
+use solana_lite_rpc_core::solana_utils::SerializableTransaction;
 use solana_lite_rpc_core::structures::proxy_request_format::{TpuForwardingRequest, TxData};
 
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;
@@ -112,6 +116,7 @@ impl QuicProxyConnectionManager {
         const ALPN_TPU_FORWARDPROXY_PROTOCOL_ID: &[u8] = b"solana-tpu-forward-proxy";
 
         let mut endpoint = {
+            // Binding on :: will also listen on IPv4 (dual-stack).
             let client_socket = UdpSocket::bind("[::]:0").unwrap();
             let config = EndpointConfig::default();
             Endpoint::new(config, None, client_socket, TokioRuntime)
@@ -256,5 +261,43 @@ impl QuicProxyConnectionManager {
         } // -- one chunk
 
         Ok(())
+    }
+
+    // testing only
+    pub async fn send_simple_transactions(
+        txs: Vec<Transaction>,
+        tpu_fanout_nodes: Vec<TpuNode>,
+        proxy_address: SocketAddr,
+    ) -> anyhow::Result<()> {
+        let identity = Keypair::new();
+
+        let (certificate, key) =
+            new_self_signed_tls_certificate(&identity, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
+                .unwrap();
+
+        let txs_data = txs
+            .iter()
+            .map(|tx| {
+                let tx_raw = bincode::serialize(tx).unwrap();
+                let sig = tx.get_signature().to_string();
+                TxData::new(sig, tx_raw)
+            })
+            .collect_vec();
+
+        let endpoint = Self::create_proxy_client_endpoint(certificate, key);
+        let auto_reconnect = AutoReconnect::new(endpoint, proxy_address);
+
+        info!("Sending {} transactions to quic proxy:", txs_data.len());
+        for tx in &txs_data {
+            info!("- {:?}", tx)
+        }
+
+        Self::send_copy_of_txs_to_quicproxy(
+            txs_data.as_slice(),
+            &auto_reconnect,
+            proxy_address,
+            tpu_fanout_nodes,
+        )
+        .await
     }
 }

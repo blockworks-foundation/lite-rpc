@@ -30,6 +30,7 @@ log = { workspace = true }
 clap = { workspace = true }
 dashmap = { workspace = true }
 itertools = { workspace = true }
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 native-tls = { workspace = true }
 prometheus = { workspace = true }

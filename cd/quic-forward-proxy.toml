@@ -11,3 +11,10 @@ kill_timeout = 5
 [env]
   PROXY_LISTEN_ADDR = "[::]:11111"
   RUST_LOG = "debug"
+
+[[services]]
+  internal_port = 11111
+  protocol = "udp"
+
+[[services.ports]]
+  port = "11111"
