@@ -574,11 +574,13 @@ name = "bench"
 version = "0.2.3"
 dependencies = [
  "anyhow",
+ "bincode",
  "clap 4.4.2",
  "csv",
  "dashmap",
  "dirs",
  "futures",
+ "itertools",
  "lazy_static",
  "log",
  "rand 0.8.5",
@@ -587,6 +589,7 @@ dependencies = [
  "serde_json",
  "solana-rpc-client",
  "solana-sdk",
+ "spl-memo 4.0.0",
  "tokio",
  "tracing-subscriber",
 ]
@@ -4352,7 +4355,7 @@ dependencies = [
  "solana-sdk",
  "solana-streamer",
  "solana-transaction-status",
- "spl-memo",
+ "spl-memo 3.0.1",
  "thiserror",
  "tokio",
  "tracing",
@@ -4394,7 +4397,7 @@ dependencies = [
  "solana-sdk",
  "solana-streamer",
  "solana-transaction-status",
- "spl-memo",
+ "spl-memo 3.0.1",
  "thiserror",
  "tokio",
  "tracing-subscriber",
@@ -4908,7 +4911,7 @@ dependencies = [
  "solana-address-lookup-table-program",
  "solana-sdk",
  "spl-associated-token-account",
- "spl-memo",
+ "spl-memo 3.0.1",
  "spl-token",
  "spl-token-2022",
  "thiserror",
@@ -5057,6 +5060,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spl-memo"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0f180b03318c3dbab3ef4e1e4d46d5211ae3c780940dd0a28695aba4b59a75a"
+dependencies = [
+ "solana-program",
+]
+
+[[package]]
 name = "spl-token"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5084,7 +5096,7 @@ dependencies = [
  "num_enum 0.5.11",
  "solana-program",
  "solana-zk-token-sdk",
- "spl-memo",
+ "spl-memo 3.0.1",
  "spl-token",
  "thiserror",
 ]
