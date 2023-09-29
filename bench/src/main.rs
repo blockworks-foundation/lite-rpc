@@ -12,14 +12,12 @@ use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
     slot_history::Slot,
 };
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Once};
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
+use tokio::sync::OnceCell;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
@@ -156,14 +154,18 @@ async fn bench(
     log_txs: bool,
 ) -> Metric {
     let map_of_txs = Arc::new(DashMap::new());
+    let total_gross_send_time = Arc::new(OnceCell::new());
     // transaction sender task
     {
         let map_of_txs = map_of_txs.clone();
         let rpc_client = rpc_client.clone();
         let current_slot = current_slot.clone();
+        let total_gross_send_time = total_gross_send_time.clone();
         tokio::spawn(async move {
             let map_of_txs = map_of_txs.clone();
             let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed));
+
+            let bench_start_time = Instant::now();
 
             for rand_string in rand_strings {
                 let blockhash = { *block_hash.read().await };
@@ -185,8 +187,10 @@ async fn bench(
                     }
                 }
             }
+            total_gross_send_time.set(bench_start_time.elapsed()).unwrap();
         });
-    }
+    } // -- main act: send the transactions
+
 
     let mut metric = Metric::default();
     let confirmation_time = Instant::now();
@@ -228,6 +232,12 @@ async fn bench(
     for tx in map_of_txs.iter() {
         metric.add_unsuccessful_transaction(tx.sent_duration);
     }
+
+    metric.set_total_gross_send_time(total_gross_send_time.get().unwrap().as_millis() as f64);
+
+    // TODO remove
+    info!("sending took: {}ms", total_gross_send_time.get().unwrap().as_millis());
+
     metric.finalize();
     metric
 }

@@ -12,11 +12,15 @@ pub struct Metric {
     pub txs_un_confirmed: u64,
     pub average_confirmation_time_ms: f64,
     pub average_time_to_send_txs: f64,
+    pub average_transaction_bytes: f64,
+    pub send_tps: f64,
 
     #[serde(skip_serializing)]
     total_sent_time: Duration,
     #[serde(skip_serializing)]
     total_confirmation_time: Duration,
+    #[serde(skip_serializing)]
+    total_gross_send_time_ms: f64,
 }
 
 impl Metric {
@@ -44,10 +48,20 @@ impl Metric {
                 self.total_sent_time.as_millis() as f64 / self.txs_sent as f64;
         }
 
+        if self.total_gross_send_time_ms > 0.01 {
+            self.send_tps =
+                1000.0 * self.txs_sent as f64 / self.total_gross_send_time_ms;
+        }
+
         if self.txs_confirmed > 0 {
             self.average_confirmation_time_ms =
                 self.total_confirmation_time.as_millis() as f64 / self.txs_confirmed as f64;
         }
+
+    }
+
+    pub fn set_total_gross_send_time(&mut self, total_gross_send_time_ms: f64) {
+        self.total_gross_send_time_ms = total_gross_send_time_ms;
     }
 }
 
