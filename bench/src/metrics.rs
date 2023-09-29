@@ -12,7 +12,6 @@ pub struct Metric {
     pub txs_un_confirmed: u64,
     pub average_confirmation_time_ms: f64,
     pub average_time_to_send_txs: f64,
-    pub average_transaction_bytes: f64,
     pub send_tps: f64,
 
     #[serde(skip_serializing)]
@@ -85,6 +84,8 @@ impl AddAssign<&Self> for Metric {
 
         self.total_confirmation_time += rhs.total_confirmation_time;
         self.total_sent_time += rhs.total_sent_time;
+        self.send_tps += rhs.send_tps;
+
         self.finalize();
     }
 }
@@ -103,6 +104,9 @@ impl DivAssign<u64> for Metric {
             Duration::from_micros((self.total_confirmation_time.as_micros() / rhs as u128) as u64);
         self.total_sent_time =
             Duration::from_micros((self.total_sent_time.as_micros() / rhs as u128) as u64);
+        self.send_tps =
+            self.send_tps / rhs as f64;
+
         self.finalize();
     }
 }

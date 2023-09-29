@@ -12,7 +12,7 @@ use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
     slot_history::Slot,
 };
-use std::sync::{atomic::{AtomicU64, Ordering}, Arc, Once};
+use std::sync::{atomic::{AtomicU64, Ordering}, Arc};
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
@@ -129,7 +129,7 @@ async fn main() {
 
     let avg_metric = Metric::from(avg_metric);
 
-    info!("Avg Metric {avg_metric:?}",);
+    info!("Avg Metric {:?}", avg_metric);
     csv_writer.serialize(avg_metric).unwrap();
 
     csv_writer.flush().unwrap();
