@@ -235,9 +235,6 @@ async fn bench(
 
     metric.set_total_gross_send_time(total_gross_send_time.get().unwrap().as_millis() as f64);
 
-    // TODO remove
-    info!("sending took: {}ms", total_gross_send_time.get().unwrap().as_millis());
-
     metric.finalize();
     metric
 }
