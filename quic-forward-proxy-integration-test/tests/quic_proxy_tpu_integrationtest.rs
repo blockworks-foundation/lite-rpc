@@ -311,7 +311,7 @@ fn wireup_and_send_txs_via_channel(test_case_params: TestCaseParams) {
                 count_map.insert_or_increment(*tx.get_signature());
             }
 
-            if packet_count == warmup_tx_count {
+            if timer2.is_none() && packet_count >= warmup_tx_count {
                 timer2 = Some(Instant::now());
             }
         } // -- while not all packets received - by count
