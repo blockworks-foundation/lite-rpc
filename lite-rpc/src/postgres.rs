@@ -2,23 +2,20 @@ use anyhow::{bail, Context};
 use chrono::{DateTime, Utc};
 use futures::join;
 use log::{info, warn};
+use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use std::{sync::Arc, time::Duration};
-
-use tokio::sync::{RwLock, RwLockReadGuard};
-use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket};
-
-use native_tls::{Certificate, Identity, TlsConnector};
-
-use crate::encoding::BinaryEncoding;
 use solana_lite_rpc_core::{
+    encoding::BinaryEncoding,
     structures::notifications::{
         BlockNotification, NotificationMsg, NotificationReciever, TransactionNotification,
         TransactionUpdateNotification,
     },
     AnyhowJoinHandle,
 };
+use std::{sync::Arc, time::Duration};
+use tokio::sync::{RwLock, RwLockReadGuard};
+use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket};
 
 lazy_static::lazy_static! {
     pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();

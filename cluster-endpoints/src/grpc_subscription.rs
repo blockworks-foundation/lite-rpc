@@ -7,6 +7,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
+    encoding::BinaryEncoding,
     structures::{
         produced_block::{ProducedBlock, TransactionInfo},
         slot_notification::SlotNotification,
@@ -192,6 +193,8 @@ fn process_block(
                 cu_requested,
                 prioritization_fees,
                 cu_consumed: compute_units_consumed,
+                recent_blockhash: message.recent_blockhash().to_string(),
+                message: BinaryEncoding::Base64.encode(message.serialize()),
             })
         })
         .collect();
