@@ -193,7 +193,7 @@ fn process_block(
                 cu_requested,
                 prioritization_fees,
                 cu_consumed: compute_units_consumed,
-                blockhash: message.recent_blockhash().to_string(),
+                recent_blockhash: message.recent_blockhash().to_string(),
                 message: BinaryEncoding::Base64.encode(message.serialize()),
             })
         })
