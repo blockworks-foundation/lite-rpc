@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use solana_lite_rpc_epoch::Epoch;
 use solana_lite_rpc_epoch::EpochCache;
 use solana_sdk::hash::Hash;
@@ -78,7 +79,10 @@ impl DataCache {
             identity_stakes: IdentityStakes::new(Pubkey::new_unique()),
             slot_cache: SlotCache::new(0),
             tx_subs: SubscriptionStore::default(),
-            txs: TxStore::default(),
+            txs: TxStore {
+                save_for_additional_slots: 0,
+                store: Arc::new(DashMap::new()),
+            },
             epoch_data: EpochCache::new_for_tests(),
         }
     }
