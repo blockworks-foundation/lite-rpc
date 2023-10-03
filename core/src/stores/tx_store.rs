@@ -19,19 +19,31 @@ impl TxProps {
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct TxStore {
     pub store: Arc<DashMap<String, TxProps>>,
+    pub save_for_additional_slots: u64,
 }
 
 impl TxStore {
-    pub fn update_status(&self, signature: &str, status: TransactionStatus) -> bool {
+    pub fn update_status(
+        &self,
+        signature: &str,
+        status: TransactionStatus,
+        last_valid_blockheight: u64,
+    ) -> bool {
         if let Some(mut meta) = self.store.get_mut(signature) {
             meta.status = Some(status);
-            true
         } else {
-            false
+            self.store.insert(
+                signature.to_string(),
+                TxProps {
+                    status: Some(status),
+                    last_valid_blockheight,
+                },
+            );
         }
+        true
     }
 
     pub fn insert(&self, signature: String, props: TxProps) -> Option<TxProps> {
@@ -57,11 +69,7 @@ impl TxStore {
     pub fn clean(&self, current_finalized_blochash: u64) {
         let length_before = self.store.len();
         self.store.retain(|_k, v| {
-            let retain = v.last_valid_blockheight >= current_finalized_blochash;
-            if !retain && v.status.is_none() {
-                // TODO: TX_TIMED_OUT.inc();
-            }
-            retain
+            v.last_valid_blockheight >= current_finalized_blochash + self.save_for_additional_slots
         });
         log::info!("Cleaned {} transactions", length_before - self.store.len());
     }
@@ -71,11 +79,5 @@ impl TxStore {
             Some(props) => props.status.is_some(),
             None => false,
         }
-    }
-}
-
-pub fn empty_tx_store() -> TxStore {
-    TxStore {
-        store: Arc::new(DashMap::new()),
     }
 }

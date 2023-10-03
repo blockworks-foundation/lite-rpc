@@ -9,6 +9,8 @@ use solana_transaction_status::{
     option_serializer::OptionSerializer, RewardType, UiConfirmedBlock, UiTransactionStatusMeta,
 };
 
+use crate::encoding::BinaryEncoding;
+
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
     pub signature: String,
@@ -16,6 +18,8 @@ pub struct TransactionInfo {
     pub cu_requested: Option<u32>,
     pub prioritization_fees: Option<u64>,
     pub cu_consumed: Option<u64>,
+    pub blockhash: String,
+    pub message: String,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -119,12 +123,17 @@ impl ProducedBlock {
                     }
                 };
 
+                let blockhash = tx.message.recent_blockhash().to_string();
+                let message = BinaryEncoding::Base64.encode(tx.message.serialize());
+
                 Some(TransactionInfo {
                     signature,
                     err,
                     cu_requested,
                     prioritization_fees,
                     cu_consumed,
+                    blockhash,
+                    message,
                 })
             })
             .collect();

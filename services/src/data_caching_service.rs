@@ -8,6 +8,7 @@ use solana_lite_rpc_core::stores::{
 };
 use solana_lite_rpc_core::types::{BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream};
 use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 
@@ -64,6 +65,15 @@ impl DataCachingService {
                 };
 
                 for tx in block.transactions {
+                    let block_info = data_cache
+                        .block_information_store
+                        .get_block_info(&tx.blockhash);
+                    let last_valid_blockheight = if let Some(block_info) = block_info {
+                        block_info.last_valid_blockheight
+                    } else {
+                        block.slot + MAX_RECENT_BLOCKHASHES as u64
+                    };
+
                     if data_cache.txs.update_status(
                         &tx.signature,
                         TransactionStatus {
@@ -73,6 +83,7 @@ impl DataCachingService {
                             err: tx.err.clone(),
                             confirmation_status: Some(confirmation_status.clone()),
                         },
+                        last_valid_blockheight,
                     ) {
                         // transaction updated
                         match confirmation_status {
