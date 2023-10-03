@@ -18,7 +18,7 @@ pub struct TransactionInfo {
     pub cu_requested: Option<u32>,
     pub prioritization_fees: Option<u64>,
     pub cu_consumed: Option<u64>,
-    pub blockhash: String,
+    pub recent_blockhash: String,
     pub message: String,
 }
 
@@ -132,7 +132,7 @@ impl ProducedBlock {
                     cu_requested,
                     prioritization_fees,
                     cu_consumed,
-                    blockhash,
+                    recent_blockhash: blockhash,
                     message,
                 })
             })

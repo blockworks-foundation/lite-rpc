@@ -67,7 +67,7 @@ impl DataCachingService {
                 for tx in block.transactions {
                     let block_info = data_cache
                         .block_information_store
-                        .get_block_info(&tx.blockhash);
+                        .get_block_info(&tx.recent_blockhash);
                     let last_valid_blockheight = if let Some(block_info) = block_info {
                         block_info.last_valid_blockheight
                     } else {
