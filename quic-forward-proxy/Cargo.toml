@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 solana-lite-rpc-core = { workspace = true }
+solana-lite-rpc-services = { workspace = true }
 solana-sdk = { workspace = true }
 solana-streamer = { workspace = true }
 solana-transaction-status = { workspace = true }
@@ -27,6 +28,7 @@ anyhow = { workspace = true }
 log = { workspace = true }
 clap = { workspace = true }
 dashmap = { workspace = true }
+const_env = { workspace = true }
 itertools = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -40,6 +42,7 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 chrono = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
+tokio-util = "0.7.8"
 rcgen = "0.9.3"
 spl-memo = "3.0.1"
 

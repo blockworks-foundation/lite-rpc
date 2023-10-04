@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use log::trace;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

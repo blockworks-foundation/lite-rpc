@@ -16,8 +16,6 @@ mod outbound;
 pub mod proxy;
 pub mod proxy_request_format;
 pub mod quic_util;
-mod quinn_auto_reconnect;
-mod shared;
 pub mod tls_config_provider_client;
 pub mod tls_config_provider_server;
 pub mod tls_self_signed_pair_generator;
@@ -31,6 +29,7 @@ pub async fn main() -> anyhow::Result<()> {
     let Args {
         identity_keypair,
         proxy_listen_addr,
+        fanout_size,
     } = Args::parse();
     dotenv().ok();
 
@@ -38,7 +37,7 @@ pub async fn main() -> anyhow::Result<()> {
     let validator_identity = ValidatorIdentity::new(load_identity_keypair(&identity_keypair).await);
 
     let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());
-    let main_services = QuicForwardProxy::new(proxy_listener_addr, tls_config, validator_identity)
+    let main_services = QuicForwardProxy::new(proxy_listener_addr, tls_config, validator_identity, fanout_size)
         .await?
         .start_services();
 

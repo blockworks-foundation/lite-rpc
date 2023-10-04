@@ -1,6 +1,5 @@
 use crate::proxy_request_format::TpuForwardingRequest;
 use crate::quic_util::connection_stats;
-use crate::shared::ForwardPacket;
 use crate::tls_config_provider_server::ProxyTlsConfigProvider;
 use crate::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use crate::util::FALLBACK_TIMEOUT;
@@ -33,7 +32,7 @@ impl ProxyListener {
         }
     }
 
-    pub async fn listen(&self, forwarder_channel: &Sender<ForwardPacket>) -> anyhow::Result<()> {
+    pub async fn listen(&self, forwarder_channel: &Sender<TpuForwardingRequest>) -> anyhow::Result<()> {
         info!(
             "TPU Quic Proxy server listening on {}",
             self.proxy_listener_addr
@@ -88,7 +87,7 @@ impl ProxyListener {
     #[tracing::instrument(skip_all, level = "debug")]
     async fn handle_client_connection(
         client_conn_handshake: Connecting,
-        forwarder_channel: Sender<ForwardPacket>,
+        forwarder_channel: Sender<TpuForwardingRequest>,
     ) -> anyhow::Result<()> {
         let client_connection = client_conn_handshake.await.context("handshake")?;
 
@@ -117,35 +116,27 @@ impl ProxyListener {
                         trace!("proxy request details: {}", proxy_request);
                         let txs = proxy_request.get_transaction_bytes();
 
+
                         debug!(
                             "enqueue transaction batch of size {} to {} tpu nodes",
                             txs.len(),
                             proxy_request.get_tpu_nodes().len(),
                         );
-                        if forwarder_channel_copy.capacity() < forwarder_channel_copy.max_capacity()
-                        {
+                        if forwarder_channel_copy.capacity() < forwarder_channel_copy.max_capacity() {
                             debug!(
-                                "forward channel buffered: capacity {} of {}",
-                                forwarder_channel_copy.capacity(),
+                                "forward channel buffered: {} packets",
                                 forwarder_channel_copy.max_capacity()
+                                - forwarder_channel_copy.capacity(),
                             );
                         }
 
-                        for tpu_node in proxy_request.get_tpu_nodes() {
-                            let tpu_address = tpu_node.tpu_socket_addr;
-                            forwarder_channel_copy
-                                .send_timeout(
-                                    ForwardPacket::new(
-                                        txs.clone(),
-                                        tpu_address,
-                                        proxy_request.get_hash(),
-                                    ),
-                                    FALLBACK_TIMEOUT,
-                                )
-                                .await
-                                .context("sending internal packet from proxy to forwarder")
-                                .unwrap();
-                        }
+                        forwarder_channel_copy
+                            .send_timeout(proxy_request,
+                                FALLBACK_TIMEOUT,
+                            )
+                            .await
+                            .context("sending internal packet from proxy to forwarder")
+                            .unwrap();
                     });
 
                     debug!(
