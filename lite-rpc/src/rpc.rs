@@ -6,6 +6,7 @@ use solana_rpc_client_api::config::{
 };
 use solana_rpc_client_api::response::{Response as RpcResponse, RpcBlockhash, RpcVersionInfo};
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 
@@ -69,4 +70,7 @@ pub trait LiteRpc {
         slot: u64,
         config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
     ) -> Result<Option<UiConfirmedBlock>>;
+
+    #[method(name = "getEpochInfo")]
+    async fn get_epoch_info(&self) -> crate::rpc::Result<EpochInfo>;
 }

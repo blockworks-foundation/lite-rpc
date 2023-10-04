@@ -33,3 +33,5 @@ chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
 itertools = { workspace = true }
+
+solana-lite-rpc-epoch = { workspace = true }

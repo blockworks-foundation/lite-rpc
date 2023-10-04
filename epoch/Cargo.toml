@@ -1,0 +1,21 @@
+[package]
+name = "solana-lite-rpc-epoch"
+version = "0.2.3"
+edition = "2021"
+description = "Epoch implementations used by solana lite rpc"
+rust-version = "1.70.0"
+repository = "https://github.com/blockworks-foundation/lite-rpc"
+license = "AGPL"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bincode = { workspace = true }
+log = { workspace = true }
+tokio = "1.*"
+
+solana-client = { workspace = true }
+solana-sdk = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-account-decoder = "~1.16.3"
+

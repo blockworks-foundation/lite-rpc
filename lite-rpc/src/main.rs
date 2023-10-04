@@ -119,6 +119,8 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
 
+    let epoch_data = solana_lite_rpc_epoch::EpochCache::bootstrap_epoch(&rpc_client).await?;
+
     let block_information_store =
         BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
     let data_cache = DataCache {
@@ -128,6 +130,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         slot_cache: SlotCache::new(finalized_block.slot),
         tx_subs: SubscriptionStore::default(),
         txs: TxStore::default(),
+        epoch_data,
     };
 
     let lata_cache_service = DataCachingService {
@@ -165,7 +168,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         prometheus_addr,
         data_cache: data_cache.clone(),
     };
-    let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128));
+    let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 10, 10));
 
     let tpu_service: TpuService = TpuService::new(
         tpu_config,

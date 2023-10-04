@@ -2458,6 +2458,7 @@ dependencies = [
  "serde_json",
  "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
+ "solana-lite-rpc-epoch",
  "solana-lite-rpc-history",
  "solana-lite-rpc-services",
  "solana-rpc-client",
@@ -4281,6 +4282,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-client",
+ "solana-lite-rpc-epoch",
  "solana-net-utils",
  "solana-pubsub-client",
  "solana-rpc-client-api",
@@ -4289,6 +4291,19 @@ dependencies = [
  "solana-transaction-status",
  "solana-version",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "solana-lite-rpc-epoch"
+version = "0.2.3"
+dependencies = [
+ "bincode",
+ "log",
+ "solana-account-decoder",
+ "solana-client",
+ "solana-rpc-client",
+ "solana-sdk",
  "tokio",
 ]
 

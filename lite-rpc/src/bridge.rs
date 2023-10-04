@@ -3,6 +3,7 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
+use solana_sdk::epoch_info::EpochInfo;
 
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
@@ -333,5 +334,21 @@ impl LiteRpcServer for LiteBridge {
         } else {
             Ok(None)
         }
+    }
+
+    async fn get_epoch_info(&self) -> crate::rpc::Result<EpochInfo> {
+        let block_info = self
+            .data_cache
+            .block_information_store
+            .get_latest_block_info(CommitmentConfig::finalized())
+            .await;
+
+        //TODO manage transaction_count of epoch info. Currently None.
+        let epoch_info = self
+            .data_cache
+            .get_current_epoch()
+            .await
+            .into_epoch_info(block_info.block_height, None);
+        Ok(epoch_info)
     }
 }

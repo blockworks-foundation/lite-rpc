@@ -1,8 +1,9 @@
-use std::sync::{atomic::AtomicU64, Arc};
-
+use solana_lite_rpc_epoch::Epoch;
+use solana_lite_rpc_epoch::EpochCache;
 use solana_sdk::hash::Hash;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
+use std::sync::{atomic::AtomicU64, Arc};
 
 use crate::{
     stores::{
@@ -34,6 +35,7 @@ pub struct DataCache {
     pub slot_cache: SlotCache,
     pub identity_stakes: IdentityStakes,
     pub cluster_info: ClusterInfo,
+    pub epoch_data: EpochCache,
 }
 
 impl DataCache {
@@ -77,7 +79,17 @@ impl DataCache {
             slot_cache: SlotCache::new(0),
             tx_subs: SubscriptionStore::default(),
             txs: TxStore::default(),
+            epoch_data: EpochCache::new_for_tests(),
         }
+    }
+
+    pub async fn get_current_epoch(&self) -> Epoch {
+        let commitment = CommitmentConfig::confirmed();
+        let BlockInformation { slot, .. } = self
+            .block_information_store
+            .get_latest_block(commitment)
+            .await;
+        self.epoch_data.get_epoch_at_slot(slot)
     }
 }
 
