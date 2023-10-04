@@ -61,6 +61,7 @@ impl QuicConnectionUtils {
         let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+        apply_gso_workaround(&mut transport_config);
         config.transport_config(Arc::new(transport_config));
 
         endpoint.set_default_client_config(config);
@@ -232,4 +233,12 @@ pub fn connection_stats(connection: &Connection) -> String {
         connection.stats().path.rtt,
         connection.stats().frame_rx
     )
+}
+
+pub fn apply_gso_workaround(tc: &mut TransportConfig) {
+    let disable_gso = std::env::var("DISABLE_GSO")
+        .unwrap_or("false".to_string()).parse::<bool>()
+        .expect("flag must be true or false");
+    warn!("TODO apply flag: disable_gso={}", disable_gso);
+    // tc..enable_segmentation_offload(()
 }

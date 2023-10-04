@@ -16,9 +16,7 @@ use solana_sdk::pubkey::Pubkey;
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::{broadcast::Receiver, RwLock};
 
-use solana_lite_rpc_core::quic_connection_utils::{
-    QuicConnectionParameters, SkipServerVerification,
-};
+use solana_lite_rpc_core::quic_connection_utils::{apply_gso_workaround, QuicConnectionParameters, SkipServerVerification};
 use solana_lite_rpc_core::structures::proxy_request_format::{TpuForwardingRequest, TxData};
 
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;
@@ -137,6 +135,7 @@ impl QuicProxyConnectionManager {
         let timeout = Duration::from_secs(10).try_into().unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+        apply_gso_workaround(&mut transport_config);
 
         config.transport_config(Arc::new(transport_config));
         endpoint.set_default_client_config(config);

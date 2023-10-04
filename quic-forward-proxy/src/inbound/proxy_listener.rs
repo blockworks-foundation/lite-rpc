@@ -12,6 +12,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::Sender;
+use solana_lite_rpc_core::quic_connection_utils::apply_gso_workaround;
 
 // note: setting this to "1" did not make a difference!
 // solana server sets this to 256
@@ -79,6 +80,7 @@ impl ProxyListener {
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
         transport_config.stream_receive_window((PACKET_DATA_SIZE as u32).into());
+        apply_gso_workaround(transport_config);
         transport_config
             .receive_window((PACKET_DATA_SIZE as u32 * MAX_CONCURRENT_UNI_STREAMS).into());
 
