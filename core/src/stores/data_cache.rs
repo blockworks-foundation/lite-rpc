@@ -65,8 +65,7 @@ impl DataCache {
                 > sent_transaction_info.last_valid_block_height
     }
 
-    pub async fn get_current_epoch(&self) -> Epoch {
-        let commitment = CommitmentConfig::confirmed();
+    pub async fn get_current_epoch(&self, commitment: CommitmentConfig) -> Epoch {
         let BlockInformation { slot, .. } = self
             .block_information_store
             .get_latest_block(commitment)
