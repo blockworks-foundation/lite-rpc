@@ -25,7 +25,7 @@ use solana_lite_rpc_core::stores::{
     tx_store::TxStore,
 };
 use solana_lite_rpc_core::structures::{
-    identity_stakes::IdentityStakes, notifications::NotificationSender,
+    epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
     produced_block::ProducedBlock,
 };
 use solana_lite_rpc_core::types::BlockStream;
@@ -122,6 +122,8 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
 
+    let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await?;
+
     let block_information_store =
         BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
 
@@ -135,6 +137,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
             store: Arc::new(DashMap::new()),
             save_for_additional_slots: NB_SLOTS_TRANSACTIONS_TO_CACHE,
         },
+        epoch_data,
     };
 
     let lata_cache_service = DataCachingService {

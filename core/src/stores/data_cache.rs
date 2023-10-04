@@ -11,6 +11,7 @@ use crate::{
         subscription_store::SubscriptionStore, tx_store::TxStore,
     },
     structures::{
+        epoch::{Epoch, EpochCache},
         identity_stakes::IdentityStakes,
         slot_notification::{AtomicSlot, SlotNotification},
         transaction_sent_info::SentTransactionInfo,
@@ -35,6 +36,7 @@ pub struct DataCache {
     pub slot_cache: SlotCache,
     pub identity_stakes: IdentityStakes,
     pub cluster_info: ClusterInfo,
+    pub epoch_data: EpochCache,
 }
 
 impl DataCache {
@@ -63,6 +65,14 @@ impl DataCache {
                 > sent_transaction_info.last_valid_block_height
     }
 
+    pub async fn get_current_epoch(&self, commitment: CommitmentConfig) -> Epoch {
+        let BlockInformation { slot, .. } = self
+            .block_information_store
+            .get_latest_block(commitment)
+            .await;
+        self.epoch_data.get_epoch_at_slot(slot)
+    }
+
     pub fn new_for_tests() -> Self {
         Self {
             block_information_store: BlockInformationStore::new(BlockInformation {
@@ -81,6 +91,7 @@ impl DataCache {
                 save_for_additional_slots: 0,
                 store: Arc::new(DashMap::new()),
             },
+            epoch_data: EpochCache::new_for_tests(),
         }
     }
 }

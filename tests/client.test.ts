@@ -6,7 +6,7 @@ import * as crypto from "crypto";
 jest.setTimeout(60000);
 
 const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
-const connection = new Connection('http://0.0.0.0:8890', 'confirmed');
+const connection = new Connection('http://0.0.0.0:8899', 'confirmed');
 const keypair_file = fs.readFileSync(`${os.homedir}/.config/solana/id.json`, 'utf-8');
 const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(keypair_file)));
 
@@ -43,5 +43,12 @@ test('send and confirm transaction', async () => {
     const tx = createTransaction();
 
     await sendAndConfirmTransaction(connection, tx, [payer]);
+});
+
+
+test('get epoch info', async () => {
+    const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo();
+    console.log(`get current epoch:${epoch} absoluteSlot:${absoluteSlot} slotIndex:${slotIndex} slotsInEpoch:${slotsInEpoch}`)
+    expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);
 });
 
