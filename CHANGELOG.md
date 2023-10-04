@@ -10,9 +10,9 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features:
 
-## [0.2.3] - 
+## [0.2.3] - 2023-09-23
 
-commit : TODO
+commit : 3cdab51676a4b1bfb5b41739a383e30cd8a1c73c
 
 - core : Refactored out solana rpc client from the core library. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/174)
 - services : Refactored out solana rpc client from the services library. [PR](https://github.com/blockworks-foundation/lite-rpc/pull/174)

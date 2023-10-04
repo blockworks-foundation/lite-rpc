@@ -1,5 +1,6 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
+use dashmap::DashMap;
 use solana_sdk::hash::Hash;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
@@ -76,7 +77,10 @@ impl DataCache {
             identity_stakes: IdentityStakes::new(Pubkey::new_unique()),
             slot_cache: SlotCache::new(0),
             tx_subs: SubscriptionStore::default(),
-            txs: TxStore::default(),
+            txs: TxStore {
+                save_for_additional_slots: 0,
+                store: Arc::new(DashMap::new()),
+            },
         }
     }
 }

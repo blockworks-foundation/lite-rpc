@@ -4,7 +4,6 @@ use solana_transaction_status::TransactionConfirmationStatus;
 pub mod bridge;
 pub mod cli;
 pub mod configs;
-pub mod encoding;
 pub mod errors;
 pub mod jsonrpsee_subscrption_handler_sink;
 pub mod postgres;
@@ -40,3 +39,7 @@ pub const DEFAULT_GRPC_ADDR: &str = "http://127.0.0.0:10000";
 
 #[from_env]
 pub const GRPC_VERSION: &str = "1.16.1";
+
+// cache transactions of 1000 slots by default
+#[from_env]
+pub const NB_SLOTS_TRANSACTIONS_TO_CACHE: u64 = 1000;
