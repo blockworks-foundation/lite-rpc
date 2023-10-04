@@ -23,9 +23,10 @@ use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
 
-const MAX_PARALLEL_STREAMS: usize = 6;
+const MAX_PARALLEL_STREAMS: usize = 50;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
-const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(2500); // ms; should be 4x400ms+buffer
+// changed from 2500 to 30000 to avoid the risk of early shutdown
+const AGENT_SHUTDOWN_IDLE: Duration = Duration::from_millis(30000); // ms; should be 4x400ms+buffer
 
 lazy_static::lazy_static! {
     static ref OUTBOUND_SEND_TX: IntCounter =
