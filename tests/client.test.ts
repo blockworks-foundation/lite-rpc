@@ -47,8 +47,34 @@ test('send and confirm transaction', async () => {
 
 
 test('get epoch info', async () => {
-    const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo();
-    console.log(`get current epoch:${epoch} absoluteSlot:${absoluteSlot} slotIndex:${slotIndex} slotsInEpoch:${slotsInEpoch}`)
-    expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);
+    {
+        const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo();
+        expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);        
+    }
+
+    let process_absoluteSlot;
+    {
+        const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'processed' });
+        expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);
+        process_absoluteSlot = absoluteSlot;  
+    }
+
+    let confirmed_absoluteSlot;
+    {
+        const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'confirmed' });
+        expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);      
+        confirmed_absoluteSlot = absoluteSlot;  
+    }
+    expect(confirmed_absoluteSlot >= process_absoluteSlot);
+
+    let finalized_absoluteSlot;
+    {
+        const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'finalized' });
+        expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);        
+        finalized_absoluteSlot = absoluteSlot;  
+    }
+    expect(process_absoluteSlot > finalized_absoluteSlot);
+    expect(confirmed_absoluteSlot > finalized_absoluteSlot);
+
 });
 
