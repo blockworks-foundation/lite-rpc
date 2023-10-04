@@ -231,4 +231,3 @@ async fn bench(
     metric.finalize();
     metric
 }
-
