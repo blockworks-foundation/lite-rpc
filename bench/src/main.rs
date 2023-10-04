@@ -141,7 +141,7 @@ async fn main() {
 
     let avg_metric = Metric::from(avg_metric);
 
-    info!("Avg Metric {:?}", avg_metric);
+    info!("Avg Metric {avg_metric:?}",);
     csv_writer.serialize(avg_metric).unwrap();
 
     csv_writer.flush().unwrap();
