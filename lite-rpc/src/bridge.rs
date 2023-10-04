@@ -282,6 +282,7 @@ impl LiteRpcServer for LiteBridge {
                 TxProps {
                     status: None,
                     last_valid_blockheight: block_height,
+                    sent_by_lite_rpc: true,
                 },
             );
         }
