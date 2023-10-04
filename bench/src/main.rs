@@ -154,6 +154,10 @@ struct TxSendData {
     transaction_bytes: u64,
 }
 
+struct ApiCallerResult {
+    gross_send_time: Duration,
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn bench(
     rpc_client: Arc<RpcClient>,
@@ -168,7 +172,7 @@ async fn bench(
 ) -> Metric {
     let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
     // transaction sender task
-    {
+    let api_caller_result = {
         let map_of_txs = map_of_txs.clone();
         let rpc_client = rpc_client.clone();
         let current_slot = current_slot.clone();
@@ -179,6 +183,8 @@ async fn bench(
                 TransactionSize::Large => 240, // 565 is max but we need to lower that to not burn the CUs
             };
             let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed), n_chars);
+
+            let bench_start_time = Instant::now();
 
             for rand_string in &rand_strings {
                 let blockhash = { *block_hash.read().await };
@@ -208,8 +214,11 @@ async fn bench(
                     }
                 }
             }
-        });
-    }
+            ApiCallerResult {
+                gross_send_time: bench_start_time.elapsed(),
+            }
+        })
+    };
 
     let mut metric = Metric::default();
     let confirmation_time = Instant::now();
@@ -256,6 +265,14 @@ async fn bench(
     for tx in map_of_txs.iter() {
         metric.add_unsuccessful_transaction(tx.sent_duration, tx.transaction_bytes);
     }
+
+    let api_caller_result = api_caller_result
+        .await
+        .expect("api caller task must succeed");
+
+    metric
+        .set_total_gross_send_time(api_caller_result.gross_send_time.as_micros() as f64 / 1_000.0);
+
     metric.finalize();
     metric
 }
