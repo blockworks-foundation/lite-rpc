@@ -12,12 +12,15 @@ use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
     slot_history::Slot,
 };
-use std::sync::{atomic::{AtomicU64, Ordering}, Arc};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
+use tokio::sync::OnceCell;
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
-use tokio::sync::OnceCell;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
@@ -187,10 +190,11 @@ async fn bench(
                     }
                 }
             }
-            total_gross_send_time.set(bench_start_time.elapsed()).unwrap();
+            total_gross_send_time
+                .set(bench_start_time.elapsed())
+                .unwrap();
         });
     } // -- main act: send the transactions
-
 
     let mut metric = Metric::default();
     let confirmation_time = Instant::now();
@@ -233,7 +237,9 @@ async fn bench(
         metric.add_unsuccessful_transaction(tx.sent_duration);
     }
 
-    metric.set_total_gross_send_time(total_gross_send_time.get().unwrap().as_millis() as f64);
+    metric.set_total_gross_send_time(
+        total_gross_send_time.get().unwrap().as_micros() as f64 / 1_000.0,
+    );
 
     metric.finalize();
     metric
