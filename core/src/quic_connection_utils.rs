@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 use tokio::time::timeout;
+use crate::read_env;
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 
@@ -61,7 +62,7 @@ impl QuicConnectionUtils {
         let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
-        apply_gso_workaround(&mut transport_config);
+        transport_config.enable_segmentation_offload(enable_gso());
         config.transport_config(Arc::new(transport_config));
 
         endpoint.set_default_client_config(config);
@@ -235,10 +236,11 @@ pub fn connection_stats(connection: &Connection) -> String {
     )
 }
 
-pub fn apply_gso_workaround(tc: &mut TransportConfig) {
+/// env flag to optionally disable GSO (generic segmentation offload) on environments where Quinn cannot detect it properly
+/// see https://github.com/quinn-rs/quinn/pull/1671
+pub fn enable_gso() -> bool {
     let disable_gso = std::env::var("DISABLE_GSO")
         .unwrap_or("false".to_string()).parse::<bool>()
         .expect("flag must be true or false");
-    warn!("TODO apply flag: disable_gso={}", disable_gso);
-    // tc..enable_segmentation_offload(()
+    !disable_gso
 }

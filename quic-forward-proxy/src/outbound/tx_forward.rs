@@ -21,7 +21,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
-use solana_lite_rpc_core::quic_connection_utils::apply_gso_workaround;
 
 const MAX_PARALLEL_STREAMS: usize = 6;
 pub const PARALLEL_TPU_CONNECTION_COUNT: usize = 4;
@@ -310,7 +309,7 @@ fn create_tpu_client_endpoint(
     let timeout = IdleTimeout::try_from(QUIC_MAX_TIMEOUT).unwrap();
     transport_config.max_idle_timeout(Some(timeout));
     transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
-    apply_gso_workaround(&mut transport_config);
+    transport_config.enable_segmentation_offload(enable_gso());
 
     config.transport_config(Arc::new(transport_config));
 
