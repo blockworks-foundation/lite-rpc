@@ -17,7 +17,6 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
-use tokio::sync::OnceCell;
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
@@ -168,13 +167,11 @@ async fn bench(
     transaction_size: TransactionSize,
 ) -> Metric {
     let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
-    let total_gross_send_time = Arc::new(OnceCell::new());
     // transaction sender task
-    {
+    let time_to_run = {
         let map_of_txs = map_of_txs.clone();
         let rpc_client = rpc_client.clone();
         let current_slot = current_slot.clone();
-        let total_gross_send_time = total_gross_send_time.clone();
         tokio::spawn(async move {
             let map_of_txs = map_of_txs.clone();
             let n_chars = match transaction_size {
@@ -213,11 +210,9 @@ async fn bench(
                     }
                 }
             }
-            total_gross_send_time
-                .set(bench_start_time.elapsed())
-                .unwrap();
-        });
-    } // -- main act: send the transactions
+            bench_start_time.elapsed()
+        })
+    };
 
     let mut metric = Metric::default();
     let confirmation_time = Instant::now();
@@ -264,10 +259,9 @@ async fn bench(
     for tx in map_of_txs.iter() {
         metric.add_unsuccessful_transaction(tx.sent_duration, tx.transaction_bytes);
     }
-
-    metric.set_total_gross_send_time(
-        total_gross_send_time.get().unwrap().as_micros() as f64 / 1_000.0,
-    );
+    if let Ok(total_gross_send_time) = time_to_run.await {
+        metric.set_total_gross_send_time(total_gross_send_time.as_micros() as f64 / 1_000.0);
+    }
 
     metric.finalize();
     metric
