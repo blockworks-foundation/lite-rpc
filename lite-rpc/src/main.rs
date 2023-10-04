@@ -168,7 +168,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         prometheus_addr,
         data_cache: data_cache.clone(),
     };
-    let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 10, 10));
+    let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128));
 
     let tpu_service: TpuService = TpuService::new(
         tpu_config,

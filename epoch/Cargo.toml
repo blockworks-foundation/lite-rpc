@@ -17,5 +17,5 @@ tokio = "1.*"
 solana-client = { workspace = true }
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
-solana-account-decoder = "~1.16.3"
+solana-account-decoder = { workspace = true }
 
