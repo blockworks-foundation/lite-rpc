@@ -72,27 +72,21 @@ impl TxSender {
 
         let tpu_client = self.tpu_service.clone();
         let txs_sent = self.data_cache.txs.clone();
+        let forwarded_slot = self.data_cache.slot_cache.get_current_slot();
+        let forwarded_local_time = Utc::now();
 
-        for transaction_info in &transaction_infos {
+        let mut quic_responses = vec![];
+        for transaction_info in transaction_infos.iter() {
             trace!("sending transaction {}", transaction_info.signature);
             txs_sent.insert(
                 transaction_info.signature.clone(),
                 TxProps {
                     status: None,
                     last_valid_blockheight: transaction_info.last_valid_block_height,
+                    sent_by_lite_rpc: true,
                 },
             );
-        }
 
-        let forwarded_slot = self.data_cache.slot_cache.get_current_slot();
-        let forwarded_local_time = Utc::now();
-
-        let mut quic_responses = vec![];
-        for transaction_info in transaction_infos.iter() {
-            txs_sent.insert(
-                transaction_info.signature.clone(),
-                TxProps::new(transaction_info.last_valid_block_height),
-            );
             let quic_response = match tpu_client.send_transaction(transaction_info) {
                 Ok(_) => {
                     TXS_SENT.inc_by(1);

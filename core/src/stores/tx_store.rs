@@ -1,22 +1,14 @@
-use std::sync::Arc;
-
 use dashmap::DashMap;
 use solana_transaction_status::TransactionStatus;
+use std::sync::Arc;
+
 /// Transaction Properties
 
 #[derive(Debug, Clone)]
 pub struct TxProps {
     pub status: Option<TransactionStatus>,
     pub last_valid_blockheight: u64,
-}
-
-impl TxProps {
-    pub fn new(last_valid_blockheight: u64) -> Self {
-        Self {
-            status: Default::default(),
-            last_valid_blockheight,
-        }
-    }
+    pub sent_by_lite_rpc: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -28,22 +20,24 @@ pub struct TxStore {
 impl TxStore {
     pub fn update_status(
         &self,
-        signature: &str,
-        status: TransactionStatus,
+        signature: &String,
+        transaction_status: TransactionStatus,
         last_valid_blockheight: u64,
     ) -> bool {
         if let Some(mut meta) = self.store.get_mut(signature) {
-            meta.status = Some(status);
+            meta.status = Some(transaction_status);
+            meta.value().sent_by_lite_rpc
         } else {
             self.store.insert(
-                signature.to_string(),
+                signature.clone(),
                 TxProps {
-                    status: Some(status),
+                    status: Some(transaction_status),
                     last_valid_blockheight,
+                    sent_by_lite_rpc: false,
                 },
             );
+            false
         }
-        true
     }
 
     pub fn insert(&self, signature: String, props: TxProps) -> Option<TxProps> {
