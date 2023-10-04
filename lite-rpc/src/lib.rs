@@ -6,7 +6,7 @@ pub mod cli;
 pub mod configs;
 pub mod errors;
 pub mod jsonrpsee_subscrption_handler_sink;
-pub mod postgres;
+pub mod postgres_logger;
 pub mod rpc;
 pub mod service_spawner;
 

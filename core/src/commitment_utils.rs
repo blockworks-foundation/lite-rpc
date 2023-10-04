@@ -8,6 +8,21 @@ pub enum Commitment {
     Finalized = 2,
 }
 
+impl From<&CommitmentLevel> for Commitment {
+    #[allow(deprecated)]
+    fn from(value: &CommitmentLevel) -> Self {
+        match value {
+            CommitmentLevel::Finalized | CommitmentLevel::Root | CommitmentLevel::Max => {
+                Commitment::Finalized
+            }
+            CommitmentLevel::Confirmed
+            | CommitmentLevel::Single
+            | CommitmentLevel::SingleGossip => Commitment::Confirmed,
+            CommitmentLevel::Processed | CommitmentLevel::Recent => Commitment::Processed,
+        }
+    }
+}
+
 impl From<CommitmentLevel> for Commitment {
     #[allow(deprecated)]
     fn from(value: CommitmentLevel) -> Self {
@@ -25,6 +40,12 @@ impl From<CommitmentLevel> for Commitment {
 
 impl From<CommitmentConfig> for Commitment {
     fn from(value: CommitmentConfig) -> Self {
+        value.commitment.into()
+    }
+}
+
+impl From<&CommitmentConfig> for Commitment {
+    fn from(value: &CommitmentConfig) -> Self {
         value.commitment.into()
     }
 }

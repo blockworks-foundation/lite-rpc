@@ -6,7 +6,7 @@ use anyhow::bail;
 use clap::Parser;
 use dashmap::DashMap;
 use dotenv::dotenv;
-use lite_rpc::postgres::Postgres;
+use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION, NB_SLOTS_TRANSACTIONS_TO_CACHE};
@@ -32,6 +32,7 @@ use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
 use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceConfig};
@@ -75,7 +76,8 @@ pub async fn start_postgres(
 
     let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
 
-    let postgres = Postgres::new().await?.start(postgres_recv);
+    let postgres_session_cache = PostgresSessionCache::new().await?;
+    let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
 
     Ok((Some(postgres_send), postgres))
 }

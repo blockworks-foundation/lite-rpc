@@ -4299,14 +4299,22 @@ dependencies = [
 name = "solana-lite-rpc-history"
 version = "0.2.3"
 dependencies = [
+ "anyhow",
  "async-trait",
+ "base64 0.21.3",
+ "bincode",
+ "chrono",
  "dashmap",
+ "log",
+ "native-tls",
+ "postgres-native-tls",
  "solana-lite-rpc-core",
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",
  "solana-transaction-status",
  "tokio",
+ "tokio-postgres",
 ]
 
 [[package]]

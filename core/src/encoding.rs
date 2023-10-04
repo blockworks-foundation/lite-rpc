@@ -33,4 +33,20 @@ impl BinaryEncoding {
             Self::Base64 => base64::engine::general_purpose::STANDARD.encode(to_encode),
         }
     }
+
+    pub fn serialize<E: Serialize>(&self, to_serialize: &E) -> anyhow::Result<String> {
+        let bytes = bincode::serialize(to_serialize)?;
+        Ok(self.encode(bytes))
+    }
+
+    pub fn deserialize<E: for<'a> Deserialize<'a>>(
+        &self,
+        to_deserialize: &String,
+    ) -> anyhow::Result<E> {
+        let bytes = self.decode(to_deserialize)?;
+        Ok(bincode::deserialize(&bytes)?)
+    }
 }
+
+pub const BASE64: BinaryEncoding = BinaryEncoding::Base64;
+pub const BASE58: BinaryEncoding = BinaryEncoding::Base58;
