@@ -21,6 +21,7 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
         commitment_config,
         leader_id: None,
         slot,
+        rewards: None,
     }
 }
 

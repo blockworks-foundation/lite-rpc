@@ -7,7 +7,7 @@ use futures::StreamExt;
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
-    encoding::BinaryEncoding,
+    encoding::BASE64,
     structures::{
         produced_block::{ProducedBlock, TransactionInfo},
         slot_notification::SlotNotification,
@@ -194,7 +194,7 @@ fn process_block(
                 prioritization_fees,
                 cu_consumed: compute_units_consumed,
                 recent_blockhash: message.recent_blockhash().to_string(),
-                message: BinaryEncoding::Base64.encode(message.serialize()),
+                message: BASE64.encode(message.serialize()),
             })
         })
         .collect();
@@ -221,7 +221,7 @@ fn process_block(
             .collect_vec()
     });
 
-    let leader_id = if let Some(rewards) = rewards {
+    let leader_id = if let Some(rewards) = &rewards {
         rewards
             .iter()
             .find(|reward| Some(RewardType::Fee) == reward.reward_type)
@@ -243,6 +243,7 @@ fn process_block(
         leader_id,
         parent_slot: block.parent_slot,
         slot: block.slot,
+        rewards,
     }
 }
 

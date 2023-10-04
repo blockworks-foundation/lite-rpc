@@ -6,7 +6,8 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solana_transaction_status::{
-    option_serializer::OptionSerializer, RewardType, UiConfirmedBlock, UiTransactionStatusMeta,
+    option_serializer::OptionSerializer, Reward, RewardType, UiConfirmedBlock,
+    UiTransactionStatusMeta,
 };
 
 use crate::encoding::BinaryEncoding;
@@ -33,6 +34,7 @@ pub struct ProducedBlock {
     pub block_time: u64,
     pub commitment_config: CommitmentConfig,
     pub previous_blockhash: String,
+    pub rewards: Option<Vec<Reward>>,
 }
 
 impl ProducedBlock {
@@ -47,6 +49,7 @@ impl ProducedBlock {
         let blockhash = block.blockhash;
         let previous_blockhash = block.previous_blockhash;
         let parent_slot = block.parent_slot;
+        let rewards = block.rewards.clone();
 
         let txs = txs
             .into_iter()
@@ -159,6 +162,7 @@ impl ProducedBlock {
             block_time,
             slot,
             commitment_config,
+            rewards,
         }
     }
 }
