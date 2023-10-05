@@ -5,7 +5,7 @@ use log::{info, warn};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::{
     structures::notifications::{
-        BlockNotification, NotificationMsg, NotificationReciever, TransactionNotification,
+        NotificationMsg, NotificationReciever, TransactionNotification,
         TransactionUpdateNotification,
     },
     AnyhowJoinHandle,
@@ -87,32 +87,6 @@ impl From<&TransactionUpdateNotification> for PostgresTxUpdate {
 }
 
 #[derive(Debug)]
-pub struct PostgresBlock {
-    pub slot: i64,                   // 8 bytes
-    pub leader_id: i64,              // 8 bytes
-    pub parent_slot: i64,            // 8 bytes
-    pub cluster_time: DateTime<Utc>, // 8 bytes
-    pub local_time: Option<DateTime<Utc>>,
-}
-
-impl SchemaSize for PostgresBlock {
-    const DEFAULT_SIZE: usize = 4 * 8;
-    const MAX_SIZE: usize = Self::DEFAULT_SIZE + 8;
-}
-
-impl From<BlockNotification> for PostgresBlock {
-    fn from(value: BlockNotification) -> Self {
-        Self {
-            slot: value.slot as i64,
-            leader_id: 0, // TODO
-            cluster_time: value.cluster_time,
-            local_time: value.local_time,
-            parent_slot: value.parent_slot as i64,
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct AccountAddr {
     pub id: u32,
     pub addr: String,
@@ -176,59 +150,6 @@ async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> any
     PostgresSession::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &[]);
 
     postgres_session.client.execute(&query, &args).await?;
-
-    Ok(())
-}
-
-async fn send_blocks(
-    postgres_session: &PostgresSession,
-    blocks: &[PostgresBlock],
-) -> anyhow::Result<()> {
-    const NUMBER_OF_ARGS: usize = 5;
-
-    if blocks.is_empty() {
-        return Ok(());
-    }
-
-    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * blocks.len());
-
-    for block in blocks.iter() {
-        let PostgresBlock {
-            slot,
-            leader_id,
-            parent_slot,
-            cluster_time,
-            local_time,
-        } = block;
-
-        args.push(slot);
-        args.push(leader_id);
-        args.push(parent_slot);
-        args.push(cluster_time);
-        args.push(local_time);
-    }
-
-    let mut query = String::from(
-        r#"
-            INSERT INTO lite_rpc.Blocks
-            (slot, leader_id, parent_slot, cluster_time, local_time)
-            VALUES
-        "#,
-    );
-
-    PostgresSession::multiline_query(&mut query, NUMBER_OF_ARGS, blocks.len(), &[]);
-
-    query.push_str(
-        r#"
-            ON CONFLICT (slot) DO UPDATE SET
-            leader_id = EXCLUDED.leader_id,
-            parent_slot = EXCLUDED.parent_slot,
-            cluster_time = EXCLUDED.cluster_time,
-            local_time = EXCLUDED.local_time
-        "#,
-    );
-
-    postgres_session.execute(&query, &args).await?;
 
     Ok(())
 }
@@ -302,11 +223,9 @@ impl PostgresLogger {
             info!("start postgres worker");
 
             const TX_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresTx>();
-            const BLOCK_MAX_CAPACITY: usize = get_max_safe_inserts::<PostgresBlock>();
             const UPDATE_MAX_CAPACITY: usize = get_max_safe_updates::<PostgresTxUpdate>();
 
             let mut tx_batch: Vec<PostgresTx> = Vec::with_capacity(TX_MAX_CAPACITY);
-            let mut block_batch: Vec<PostgresBlock> = Vec::with_capacity(BLOCK_MAX_CAPACITY);
             let mut update_batch = Vec::<PostgresTxUpdate>::with_capacity(UPDATE_MAX_CAPACITY);
 
             let mut session_establish_error = false;
@@ -320,7 +239,6 @@ impl PostgresLogger {
 
                     // check for capacity
                     if tx_batch.len() >= TX_MAX_CAPACITY
-                        || block_batch.len() >= BLOCK_MAX_CAPACITY
                         || update_batch.len() >= UPDATE_MAX_CAPACITY
                     {
                         break;
@@ -335,8 +253,9 @@ impl PostgresLogger {
                                     let mut tx = tx.iter().map(|x| x.into()).collect::<Vec<_>>();
                                     tx_batch.append(&mut tx)
                                 }
-                                NotificationMsg::BlockNotificationMsg(block) => {
-                                    block_batch.push(block.into())
+                                NotificationMsg::BlockNotificationMsg(_) => {
+                                    // ignore block storage as it has been moved to persistant history.
+                                    continue;
                                 }
                                 NotificationMsg::UpdateTransactionMsg(update) => {
                                     let mut update = update.iter().map(|x| x.into()).collect();
@@ -355,7 +274,7 @@ impl PostgresLogger {
                 }
 
                 // if there's nothing to do, yield for a brief time
-                if tx_batch.is_empty() && block_batch.is_empty() && update_batch.is_empty() {
+                if tx_batch.is_empty() && update_batch.is_empty() {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                     continue;
                 }
@@ -377,9 +296,8 @@ impl PostgresLogger {
                 POSTGRES_SESSION_ERRORS.set(0);
 
                 // write to database when a successful connection is made
-                let (res_txs, res_blocks, res_update) = join!(
+                let (res_txs, res_update) = join!(
                     send_txs(&session, &tx_batch),
-                    send_blocks(&session, &block_batch),
                     update_txs(&session, &update_batch)
                 );
 
@@ -391,14 +309,6 @@ impl PostgresLogger {
                     );
                 } else {
                     tx_batch.clear();
-                }
-                if let Err(err) = res_blocks {
-                    warn!(
-                        "Error sending block batch ({:?}) to postgres {err:?}",
-                        block_batch.len()
-                    );
-                } else {
-                    block_batch.clear();
                 }
                 if let Err(err) = res_update {
                     warn!(
