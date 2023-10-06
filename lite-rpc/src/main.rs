@@ -87,7 +87,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
-        enable_postgres,
+        enable_postgres_logging: enable_postgres,
         prometheus_addr,
         identity_keypair,
         maximum_retries_per_tx,

@@ -1,4 +1,5 @@
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
+use solana_sdk::slot_history::Slot;
 use tokio_postgres::types::ToSql;
 
 use super::postgres_session::PostgresSession;
@@ -79,5 +80,23 @@ impl PostgresBlock {
         PostgresSession::multiline_query(&mut query, NB_ARUMENTS, 1, &[]);
         postgres_session.execute(&query, &args).await?;
         Ok(())
+    }
+
+    pub async fn get(
+        postgres_session: &PostgresSession,
+        schema: &String,
+        slot: Slot,
+    ) -> anyhow::Result<PostgresBlock> {
+        let statement = format!("SELECT  blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards FROM {}.BLOCKS WHERE SLOT = {};", schema, slot);
+        let row = postgres_session.client.query_one(&statement, &[]).await?;
+        Ok(Self {
+            slot: slot as i64,
+            blockhash: row.get(0),
+            block_height: row.get(1),
+            parent_slot: row.get(2),
+            block_time: row.get(3),
+            previous_blockhash: row.get(4),
+            rewards: row.get(5),
+        })
     }
 }

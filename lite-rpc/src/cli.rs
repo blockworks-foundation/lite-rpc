@@ -20,7 +20,11 @@ pub struct Args {
     pub fanout_size: u64,
     /// enable logging to postgres
     #[arg(short = 'p', long)]
-    pub enable_postgres: bool,
+    pub enable_postgres_logging: bool,
+    #[arg(long)]
+    pub enable_save_blocks_in_postgres: bool,
+    #[arg(long)]
+    pub enable_fetch_blocks_from_postgres: bool,
     /// enable metrics to prometheus at addr
     #[arg(short = 'm', long, default_value_t = String::from("[::]:9091"))]
     pub prometheus_addr: String,

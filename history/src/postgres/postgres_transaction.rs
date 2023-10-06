@@ -1,5 +1,5 @@
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
-use solana_sdk::slot_history::Slot;
+use solana_sdk::{slot_history::Slot, transaction::TransactionError};
 use tokio_postgres::types::ToSql;
 
 use super::postgres_session::PostgresSession;
@@ -101,12 +101,33 @@ impl PostgresTransaction {
     }
 
     pub async fn get(
-        postgres_session: PostgresSession,
+        postgres_session: &PostgresSession,
         schema: &String,
         slot: Slot,
-    ) -> Vec<TransactionInfo> {
-        let statement = format!("SELECT signature, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message FROM {}.TRANSACTIONS WHERE SLOT = {}", schema, slot);
-        let _ = postgres_session.client.query(&statement, &[]).await;
-        todo!()
+    ) -> anyhow::Result<Vec<TransactionInfo>> {
+        let statement = format!("SELECT signature, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message FROM {}.TRANSACTIONS WHERE SLOT = {};", schema, slot);
+        let rows = postgres_session.client.query(&statement, &[]).await?;
+
+        Ok(rows
+            .iter()
+            .map(|row| {
+                let err: Option<String> = row.get(1);
+                let prioritization_fees: Option<i64> = row.get(3);
+                let cu_consumed: Option<i64> = row.get(4);
+                TransactionInfo {
+                    signature: row.get(0),
+                    err: err.map(|x| {
+                        BASE64
+                            .deserialize::<TransactionError>(&x)
+                            .expect("Should be deserializable")
+                    }),
+                    cu_requested: row.get(2),
+                    prioritization_fees: prioritization_fees.map(|x| x as u64),
+                    cu_consumed: cu_consumed.map(|x| x as u64),
+                    recent_blockhash: row.get(5),
+                    message: row.get(6),
+                }
+            })
+            .collect())
     }
 }
