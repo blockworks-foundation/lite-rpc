@@ -37,63 +37,78 @@ async fn test_in_multiple_stategy_block_store() {
 
     block_storage
         .save(create_test_block(1235, CommitmentConfig::confirmed()))
-        .await;
+        .await
+        .unwrap();
     block_storage
         .save(create_test_block(1236, CommitmentConfig::confirmed()))
-        .await;
+        .await
+        .unwrap();
 
     assert!(block_storage
         .get(1235, RpcBlockConfig::default())
         .await
+        .ok()
         .is_some());
     assert!(block_storage
         .get(1236, RpcBlockConfig::default())
         .await
+        .ok()
         .is_some());
     assert!(persistent_store
         .get(1235, RpcBlockConfig::default())
         .await
+        .ok()
         .is_none());
     assert!(persistent_store
         .get(1236, RpcBlockConfig::default())
         .await
+        .ok()
         .is_none());
 
     block_storage
         .save(create_test_block(1235, CommitmentConfig::finalized()))
-        .await;
+        .await
+        .unwrap();
     block_storage
         .save(create_test_block(1236, CommitmentConfig::finalized()))
-        .await;
+        .await
+        .unwrap();
     block_storage
         .save(create_test_block(1237, CommitmentConfig::finalized()))
-        .await;
+        .await
+        .unwrap();
 
     assert!(block_storage
         .get(1235, RpcBlockConfig::default())
         .await
+        .ok()
         .is_some());
     assert!(block_storage
         .get(1236, RpcBlockConfig::default())
         .await
+        .ok()
         .is_some());
     assert!(block_storage
         .get(1237, RpcBlockConfig::default())
         .await
+        .ok()
         .is_some());
     assert!(persistent_store
         .get(1235, RpcBlockConfig::default())
         .await
+        .ok()
         .is_some());
     assert!(persistent_store
         .get(1236, RpcBlockConfig::default())
         .await
+        .ok()
         .is_some());
     assert!(persistent_store
         .get(1237, RpcBlockConfig::default())
         .await
+        .ok()
         .is_some());
-    assert!(block_storage.get_in_memory_block(1237).await.is_some());
+    assert!(block_storage.get_in_memory_block(1237).await.ok().is_some());
 
     // blocks are replaced by finalized blocks
     assert_eq!(
@@ -137,5 +152,6 @@ async fn test_in_multiple_stategy_block_store() {
     assert!(block_storage
         .get(1238, RpcBlockConfig::default())
         .await
+        .ok()
         .is_none());
 }

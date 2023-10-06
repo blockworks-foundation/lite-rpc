@@ -55,7 +55,11 @@ impl PostgresBlock {
         )
     }
 
-    pub async fn save(&self, postgres_session: &PostgresSession, schema: &String) {
+    pub async fn save(
+        &self,
+        postgres_session: &PostgresSession,
+        schema: &String,
+    ) -> anyhow::Result<()> {
         let mut query = format!(
             r#"
             INSERT INTO {}.BLOCKS (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards) VALUES 
@@ -73,13 +77,7 @@ impl PostgresBlock {
         args.push(&self.rewards);
 
         PostgresSession::multiline_query(&mut query, NB_ARUMENTS, 1, &[]);
-        if let Err(e) = postgres_session.execute(&query, &args).await {
-            log::error!(
-                "Could not save block {} slot, schema {}, error {}",
-                self.slot,
-                schema,
-                e
-            );
-        }
+        postgres_session.execute(&query, &args).await?;
+        Ok(())
     }
 }

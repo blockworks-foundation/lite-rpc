@@ -1,4 +1,3 @@
-use log::error;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
 use tokio_postgres::types::ToSql;
@@ -61,7 +60,7 @@ impl PostgresTransaction {
         postgres_session: &PostgresSession,
         schema: &String,
         transactions: &[Self],
-    ) {
+    ) -> anyhow::Result<()> {
         let mut args: Vec<&(dyn ToSql + Sync)> =
             Vec::with_capacity(NB_ARUMENTS * transactions.len());
 
@@ -97,12 +96,8 @@ impl PostgresTransaction {
         );
 
         PostgresSession::multiline_query(&mut query, NB_ARUMENTS, transactions.len(), &[]);
-        if let Err(e) = postgres_session.execute(&query, &args).await {
-            error!(
-                "Could not save transaction batch schema {}, error {}",
-                schema, e
-            );
-        }
+        postgres_session.execute(&query, &args).await?;
+        Ok(())
     }
 
     pub async fn get(

@@ -31,26 +31,33 @@ async fn inmemory_block_store_tests() {
     for i in 1..11 {
         store
             .save(create_test_block(i, CommitmentConfig::finalized()))
-            .await;
+            .await
+            .unwrap();
     }
 
     // check if 10 blocks are added
     for i in 1..11 {
-        assert!(store.get(i, RpcBlockConfig::default()).await.is_some());
+        assert!(store.get(i, RpcBlockConfig::default()).await.ok().is_some());
     }
     // add 11th block
     store
         .save(create_test_block(11, CommitmentConfig::finalized()))
-        .await;
+        .await
+        .unwrap();
 
     // can get 11th block
-    assert!(store.get(11, RpcBlockConfig::default()).await.is_some());
+    assert!(store
+        .get(11, RpcBlockConfig::default())
+        .await
+        .ok()
+        .is_some());
     // first block is removed
-    assert!(store.get(1, RpcBlockConfig::default()).await.is_none());
+    assert!(store.get(1, RpcBlockConfig::default()).await.ok().is_none());
 
     // cannot add old blocks
     store
         .save(create_test_block(1, CommitmentConfig::finalized()))
-        .await;
-    assert!(store.get(1, RpcBlockConfig::default()).await.is_none());
+        .await
+        .unwrap();
+    assert!(store.get(1, RpcBlockConfig::default()).await.ok().is_none());
 }

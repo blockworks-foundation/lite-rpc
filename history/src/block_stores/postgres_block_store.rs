@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
 use solana_lite_rpc_core::{
@@ -29,7 +30,7 @@ pub struct PostgresBlockStore {
 }
 
 impl PostgresBlockStore {
-    pub async fn start_new_epoch(&self, schema: &String) {
+    pub async fn start_new_epoch(&self, schema: &String) -> Result<()> {
         // create schema for new epoch
         let session = self
             .session_cache
@@ -38,29 +39,22 @@ impl PostgresBlockStore {
             .expect("should get new postgres session");
 
         let statement = format!("CREATE SCHEMA {};", schema);
-        if let Err(e) = session.execute(&statement, &[]).await {
-            log::error!("Error creating a schema for {} error {}", schema, e);
-            return;
-        }
+        session.execute(&statement, &[]).await?;
 
         // Create blocks table
         let statement = PostgresBlock::create_statement(schema);
-        if let Err(e) = session.execute(&statement, &[]).await {
-            log::error!("Error creating a blocks table for {} error {}", schema, e);
-            return;
-        }
+        session.execute(&statement, &[]).await?;
 
         // create transaction table
         let statement = PostgresTransaction::create_statement(schema);
-        if let Err(e) = session.execute(&statement, &[]).await {
-            log::error!("Error creating a blocks table for {} error {}", schema, e);
-        }
+        session.execute(&statement, &[]).await?;
+        Ok(())
     }
 }
 
 #[async_trait]
 impl BlockStorageInterface for PostgresBlockStore {
-    async fn save(&self, block: ProducedBlock) {
+    async fn save(&self, block: ProducedBlock) -> Result<()> {
         let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
         let slot = block.slot;
@@ -75,7 +69,7 @@ impl BlockStorageInterface for PostgresBlockStore {
         let schema = format!("EPOCH_{}", epoch.epoch);
         if current_epoch == 0 || current_epoch < epoch.epoch {
             self.postgres_data.write().await.current_epoch = epoch.epoch;
-            self.start_new_epoch(&schema).await;
+            self.start_new_epoch(&schema).await?;
         }
 
         const NUMBER_OF_TRANSACTION: usize = 20;
@@ -88,15 +82,16 @@ impl BlockStorageInterface for PostgresBlockStore {
             .await
             .expect("should get new postgres session");
         for chunk in chunks {
-            PostgresTransaction::save_transactions(&session, &schema, chunk).await;
+            PostgresTransaction::save_transactions(&session, &schema, chunk).await?;
         }
-        postgres_block.save(&session, &schema).await;
+        postgres_block.save(&session, &schema).await?;
+        Ok(())
     }
 
-    async fn get(&self, slot: Slot, _config: RpcBlockConfig) -> Option<ProducedBlock> {
+    async fn get(&self, slot: Slot, _config: RpcBlockConfig) -> Result<ProducedBlock> {
         let range = self.get_slot_range().await;
         if range.contains(&slot) {}
-        None
+        todo!()
     }
 
     async fn get_slot_range(&self) -> std::ops::Range<Slot> {
