@@ -2450,6 +2450,7 @@ dependencies = [
  "dashmap",
  "dotenv",
  "futures",
+ "itertools",
  "jsonrpsee",
  "lazy_static",
  "log",

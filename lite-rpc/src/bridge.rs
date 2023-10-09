@@ -3,19 +3,17 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
-use solana_sdk::{epoch_info::EpochInfo, transaction::VersionedTransaction, message::{v0::Message, VersionedMessage}};
-
+use solana_sdk::epoch_info::EpochInfo;
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
-
 use anyhow::Context;
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
 use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
     stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
-    AnyhowJoinHandle, encoding::BASE64,
+    AnyhowJoinHandle,
 };
 use solana_lite_rpc_history::history::History;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -30,6 +28,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_histo
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock, EncodedTransactionWithStatusMeta, UiTransactionStatusMeta, option_serializer::OptionSerializer};
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
+use itertools::Itertools;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -340,14 +339,13 @@ impl LiteRpcServer for LiteBridge {
                         solana_transaction_status::TransactionDetails::Accounts => (false, false, true),
                     };
 
-                    if include_accounts || include_rewards {
-                        block.transactions.iter().map(|transaction_info| {
-                            let signature = transaction_info.signature.clone();
+                    if is_full || include_accounts || include_rewards {
+                        Some(block.transactions.iter().map(|transaction_info| {
                             EncodedTransactionWithStatusMeta {
                                 version: None,
                                 meta: Some(UiTransactionStatusMeta {
-                                    err: transaction_info.err,
-                                    status: transaction_info.err.map_or(Ok(()), |x| Err(x)),
+                                    err: transaction_info.err.clone(),
+                                    status: transaction_info.err.clone().map_or(Ok(()), |x| Err(x)),
                                     fee: 0,
                                     pre_balances: vec![],
                                     post_balances: vec![],
@@ -360,9 +358,9 @@ impl LiteRpcServer for LiteBridge {
                                     return_data: OptionSerializer::None,
                                     compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None, |x| OptionSerializer::Some(x)),
                                 }),
-                                transaction: solana_transaction_status::EncodedTransaction::Binary(transaction_info.message, solana_transaction_status::TransactionBinaryEncoding::Base64)
+                                transaction: solana_transaction_status::EncodedTransaction::Binary(transaction_info.message.clone(), solana_transaction_status::TransactionBinaryEncoding::Base64)
                             }
-                        }).collect_vec()
+                        }).collect_vec())
                     } else {
                         None
                     }
@@ -375,7 +373,7 @@ impl LiteRpcServer for LiteBridge {
                 parent_slot: block.parent_slot,
                 transactions,
                 signatures: None,
-                rewards: None,
+                rewards: block.rewards,
                 block_time: Some(block.block_time as i64),
                 block_height: Some(block.block_height),
             }))

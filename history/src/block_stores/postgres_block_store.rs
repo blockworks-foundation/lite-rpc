@@ -32,6 +32,14 @@ pub struct PostgresBlockStore {
 }
 
 impl PostgresBlockStore {
+    pub fn new(session_cache: PostgresSessionCache, epoch_cache: EpochCache) -> Self {
+        Self {
+            session_cache,
+            epoch_cache,
+            postgres_data: Arc::new(RwLock::new(PostgresData { from_slot: 0, to_slot: 0, current_epoch: 0 })),
+        }
+    }
+
     pub async fn start_new_epoch(&self, schema: &String) -> Result<()> {
         // create schema for new epoch
         let session = self

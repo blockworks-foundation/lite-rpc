@@ -28,9 +28,11 @@ use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
     produced_block::ProducedBlock,
 };
+use solana_lite_rpc_core::traits::block_storage_interface::BlockStorageImpl;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
+use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
@@ -62,24 +64,13 @@ async fn get_latest_block(
 }
 
 pub async fn start_postgres(
-    enable: bool,
-) -> anyhow::Result<(Option<NotificationSender>, AnyhowJoinHandle)> {
-    if !enable {
-        return Ok((
-            None,
-            tokio::spawn(async {
-                std::future::pending::<()>().await;
-                unreachable!()
-            }),
-        ));
-    }
+    postgres_session_cache: PostgresSessionCache,
+) -> anyhow::Result<(NotificationSender, AnyhowJoinHandle)> {
 
     let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
-
-    let postgres_session_cache = PostgresSessionCache::new().await?;
     let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
 
-    Ok((Some(postgres_send), postgres))
+    Ok((postgres_send, postgres))
 }
 
 pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
@@ -87,7 +78,9 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
-        enable_postgres_logging: enable_postgres,
+        enable_postgres_logging,
+        enable_fetch_blocks_from_postgres,
+        enable_save_blocks_in_postgres,
         prometheus_addr,
         identity_keypair,
         maximum_retries_per_tx,
@@ -137,7 +130,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
             store: Arc::new(DashMap::new()),
             save_for_additional_slots: NB_SLOTS_TRANSACTIONS_TO_CACHE,
         },
-        epoch_data,
+        epoch_data: epoch_data.clone(),
     };
 
     let lata_cache_service = DataCachingService {
@@ -153,8 +146,22 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         vote_account_notifier,
     );
     drop(blocks_notifier);
+    let postgres_session_cache = if enable_fetch_blocks_from_postgres || enable_postgres_logging {
+         Some(PostgresSessionCache::new().await?)
+    } else {
+        None
+    };
 
-    let (notification_channel, postgres) = start_postgres(enable_postgres).await?;
+    let (notification_channel, postgres) = if enable_postgres_logging {
+        let (channel, postgres) = start_postgres(postgres_session_cache.clone().unwrap()).await?;
+        (Some(channel), postgres)
+    } else {
+        let jh = tokio::spawn(async {
+            std::future::pending::<()>().await;
+            unreachable!()
+        });
+        (None, jh)
+    };
 
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,
@@ -200,8 +207,15 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
+    let block_storage: BlockStorageImpl = if enable_save_blocks_in_postgres {
+        let session_cache =  postgres_session_cache.unwrap();
+        Arc::new(PostgresBlockStore::new(session_cache, epoch_data.clone()))
+    } else {
+        Arc::new(InmemoryBlockStore::new(1024))
+    };
+
     let history = History {
-        block_storage: Arc::new(InmemoryBlockStore::new(1024)),
+        block_storage,
     };
 
     let bridge_service = tokio::spawn(
@@ -240,7 +254,7 @@ fn get_args() -> Args {
 
     dotenv().ok();
 
-    args.enable_postgres = args.enable_postgres
+    args.enable_postgres_logging = args.enable_postgres_logging
         || if let Ok(enable_postgres_env_var) = env::var("PG_ENABLED") {
             enable_postgres_env_var != "false"
         } else {
