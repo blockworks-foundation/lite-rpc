@@ -1,4 +1,4 @@
-use log::{trace, warn};
+use log::{info, trace, warn};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig,
@@ -61,7 +61,7 @@ impl QuicConnectionUtils {
         let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
-        transport_config.enable_segmentation_offload(enable_gso());
+        apply_gso_workaround(&mut transport_config);
         config.transport_config(Arc::new(transport_config));
 
         endpoint.set_default_client_config(config);
@@ -237,9 +237,26 @@ pub fn connection_stats(connection: &Connection) -> String {
 
 /// env flag to optionally disable GSO (generic segmentation offload) on environments where Quinn cannot detect it properly
 /// see https://github.com/quinn-rs/quinn/pull/1671
-pub fn enable_gso() -> bool {
+/// note: true means that quinn's heuristic for GSO detection is used to decide if it gets enabled
+pub fn apply_gso_workaround(tc: &mut TransportConfig) {
+    let disable_gso = disable_gso();
+    if disable_gso {
+        tc.enable_segmentation_offload(false);
+    }
+}
+
+pub fn log_gso_workaround() {
     let disable_gso = std::env::var("DISABLE_GSO")
-        .unwrap_or("false".to_string()).parse::<bool>()
+        .unwrap_or("false".to_string())
+        .parse::<bool>()
         .expect("flag must be true or false");
-    !disable_gso
+
+    info!("GSO force-disabled? {}", disable_gso);
+}
+
+fn disable_gso() -> bool {
+    std::env::var("DISABLE_GSO")
+        .unwrap_or("false".to_string())
+        .parse::<bool>()
+        .expect("flag must be true or false")
 }
