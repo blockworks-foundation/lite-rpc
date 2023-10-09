@@ -13,7 +13,6 @@ use std::{
     time::Duration,
 };
 use tokio::time::timeout;
-use crate::read_env;
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 
