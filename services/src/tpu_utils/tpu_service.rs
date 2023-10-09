@@ -6,7 +6,7 @@ use super::tpu_connection_manager::TpuConnectionManager;
 use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
-use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
+use solana_lite_rpc_core::quic_connection_utils::{enable_gso, QuicConnectionParameters};
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterface;
 use solana_lite_rpc_core::types::SlotStream;
@@ -17,6 +17,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
+use log::info;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -72,6 +73,8 @@ impl TpuService {
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         )
         .expect("Failed to initialize QUIC client certificates");
+
+        info!("GSO enabled? {}", enable_gso());
 
         let connection_manager = match config.tpu_connection_path {
             TpuConnectionPath::QuicDirectPath => {
