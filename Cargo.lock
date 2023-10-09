@@ -3275,7 +3275,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "thiserror",
  "tokio",
  "tracing",
@@ -3284,15 +3284,15 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.9.4"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31999cfc7927c4e212e60fd50934ab40e8e8bfd2d493d6095d2d306bc0764d9"
+checksum = "94b0b33c13a79f669c85defaf4c275dc86a0c0372807d0ca3d78e0bb87274863"
 dependencies = [
  "bytes",
  "rand 0.8.5",
  "ring",
  "rustc-hash",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "rustls-native-certs",
  "slab",
  "thiserror",
@@ -3653,9 +3653,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.20.8"
+version = "0.20.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fff78fc74d175294f4e83b28343315ffcfb114b156f0185e9741cb5570f50e2f"
+checksum = "1b80e3dec595989ea8510028f30c408a4630db12c9cbb8de34203b89d6577e99"
 dependencies = [
  "log",
  "ring",
@@ -4243,7 +4243,7 @@ dependencies = [
  "itertools",
  "log",
  "quinn",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "serde",
  "serde_json",
  "solana-client",
@@ -4272,13 +4272,12 @@ dependencies = [
  "bs58",
  "bytes",
  "chrono",
- "const_env",
  "dashmap",
  "futures",
  "itertools",
  "log",
  "quinn",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "serde",
  "serde_json",
  "solana-client",
@@ -4320,7 +4319,6 @@ dependencies = [
  "bytes",
  "chrono",
  "clap 4.4.2",
- "const_env",
  "dashmap",
  "dotenv",
  "futures",
@@ -4331,7 +4329,7 @@ dependencies = [
  "prometheus",
  "quinn",
  "rcgen 0.9.3",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "serde",
  "serde_json",
  "solana-lite-rpc-core",
@@ -4371,7 +4369,7 @@ dependencies = [
  "prometheus",
  "quinn",
  "rcgen 0.9.3",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "serde",
  "serde_json",
  "solana-lite-rpc-core",
@@ -4399,7 +4397,6 @@ dependencies = [
  "bs58",
  "bytes",
  "chrono",
- "const_env",
  "countmap",
  "crossbeam-channel",
  "dashmap",
@@ -4409,7 +4406,7 @@ dependencies = [
  "log",
  "prometheus",
  "quinn",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "serde",
  "serde_json",
  "solana-client",
@@ -4635,7 +4632,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rcgen 0.10.0",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "solana-connection-cache",
  "solana-measure",
  "solana-metrics",
@@ -4827,7 +4824,7 @@ dependencies = [
  "quinn-udp",
  "rand 0.7.3",
  "rcgen 0.10.0",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "solana-metrics",
  "solana-perf",
  "solana-sdk",
@@ -5378,7 +5375,7 @@ version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
 dependencies = [
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "tokio",
  "webpki",
 ]
@@ -5412,7 +5409,7 @@ checksum = "f714dd15bead90401d77e04243611caec13726c2408afd5b31901dfcdcb3b181"
 dependencies = [
  "futures-util",
  "log",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "tokio",
  "tokio-rustls 0.23.4",
  "tungstenite",
@@ -5634,7 +5631,7 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.8.5",
- "rustls 0.20.8",
+ "rustls 0.20.9",
  "sha-1 0.10.1",
  "thiserror",
  "url",
