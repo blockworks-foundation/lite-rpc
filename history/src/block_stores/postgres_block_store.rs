@@ -29,14 +29,27 @@ pub struct PostgresBlockStore {
     session_cache: PostgresSessionCache,
     epoch_cache: EpochCache,
     postgres_data: Arc<RwLock<PostgresData>>,
+    save_blocks: bool,
+    get_blocks: bool,
 }
 
 impl PostgresBlockStore {
-    pub fn new(session_cache: PostgresSessionCache, epoch_cache: EpochCache) -> Self {
+    pub fn new(
+        session_cache: PostgresSessionCache,
+        epoch_cache: EpochCache,
+        save_blocks: bool,
+        get_blocks: bool,
+    ) -> Self {
         Self {
             session_cache,
             epoch_cache,
-            postgres_data: Arc::new(RwLock::new(PostgresData { from_slot: 0, to_slot: 0, current_epoch: 0 })),
+            postgres_data: Arc::new(RwLock::new(PostgresData {
+                from_slot: 0,
+                to_slot: 0,
+                current_epoch: 0,
+            })),
+            save_blocks,
+            get_blocks,
         }
     }
 
@@ -69,6 +82,9 @@ impl PostgresBlockStore {
 #[async_trait]
 impl BlockStorageInterface for PostgresBlockStore {
     async fn save(&self, block: ProducedBlock) -> Result<()> {
+        if !self.save_blocks {
+            return Ok(());
+        }
         let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
         let slot = block.slot;
@@ -99,10 +115,14 @@ impl BlockStorageInterface for PostgresBlockStore {
             PostgresTransaction::save_transactions(&session, &schema, chunk).await?;
         }
         postgres_block.save(&session, &schema).await?;
+        self.postgres_data.write().await.to_slot = slot;
         Ok(())
     }
 
     async fn get(&self, slot: Slot, _config: RpcBlockConfig) -> Result<ProducedBlock> {
+        if !self.get_blocks {
+            bail!("getting blocks from postgres is disabled");
+        }
         let epoch = self.epoch_cache.get_epoch_at_slot(slot);
         let schema = self.get_schema(epoch.epoch);
 

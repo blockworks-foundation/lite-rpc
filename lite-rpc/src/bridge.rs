@@ -3,11 +3,8 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
-use solana_sdk::epoch_info::EpochInfo;
-use solana_lite_rpc_services::{
-    transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
-};
 use anyhow::Context;
+use itertools::Itertools;
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
 use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
@@ -16,6 +13,9 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_services::{
+    transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
+};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
@@ -24,11 +24,14 @@ use solana_rpc_client_api::{
     },
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
+use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
-use solana_transaction_status::{TransactionStatus, UiConfirmedBlock, EncodedTransactionWithStatusMeta, UiTransactionStatusMeta, option_serializer::OptionSerializer};
+use solana_transaction_status::{
+    option_serializer::OptionSerializer, EncodedTransactionWithStatusMeta, TransactionStatus,
+    UiConfirmedBlock, UiTransactionStatusMeta,
+};
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
-use itertools::Itertools;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -329,14 +332,21 @@ impl LiteRpcServer for LiteBridge {
         let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
         let block = self.history.block_storage.get(slot, config).await;
         if let Ok(block) = block {
-
-            let transactions: Option<Vec<EncodedTransactionWithStatusMeta>> = match config.transaction_details {
+            let transactions: Option<Vec<EncodedTransactionWithStatusMeta>> = match config
+                .transaction_details
+            {
                 Some(transaction_details) => {
                     let (is_full, include_rewards, include_accounts) = match transaction_details {
                         solana_transaction_status::TransactionDetails::Full => (true, true, true),
-                        solana_transaction_status::TransactionDetails::Signatures => ( false, false, false),
-                        solana_transaction_status::TransactionDetails::None => (false, false, false),
-                        solana_transaction_status::TransactionDetails::Accounts => (false, false, true),
+                        solana_transaction_status::TransactionDetails::Signatures => {
+                            (false, false, false)
+                        }
+                        solana_transaction_status::TransactionDetails::None => {
+                            (false, false, false)
+                        }
+                        solana_transaction_status::TransactionDetails::Accounts => {
+                            (false, false, true)
+                        }
                     };
 
                     if is_full || include_accounts || include_rewards {
@@ -345,7 +355,7 @@ impl LiteRpcServer for LiteBridge {
                                 version: None,
                                 meta: Some(UiTransactionStatusMeta {
                                     err: transaction_info.err.clone(),
-                                    status: transaction_info.err.clone().map_or(Ok(()), |x| Err(x)),
+                                    status: transaction_info.err.clone().map_or(Ok(()), Err),
                                     fee: 0,
                                     pre_balances: vec![],
                                     post_balances: vec![],
@@ -356,7 +366,7 @@ impl LiteRpcServer for LiteBridge {
                                     rewards: OptionSerializer::None,
                                     loaded_addresses: OptionSerializer::None,
                                     return_data: OptionSerializer::None,
-                                    compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None, |x| OptionSerializer::Some(x)),
+                                    compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None,OptionSerializer::Some),
                                 }),
                                 transaction: solana_transaction_status::EncodedTransaction::Binary(transaction_info.message.clone(), solana_transaction_status::TransactionBinaryEncoding::Base64)
                             }
@@ -364,8 +374,8 @@ impl LiteRpcServer for LiteBridge {
                     } else {
                         None
                     }
-                },
-                None => None
+                }
+                None => None,
             };
             Ok(Some(UiConfirmedBlock {
                 previous_blockhash: block.previous_blockhash,

@@ -32,6 +32,7 @@ use solana_lite_rpc_core::traits::block_storage_interface::BlockStorageImpl;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
+use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
 use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
@@ -66,7 +67,6 @@ async fn get_latest_block(
 pub async fn start_postgres(
     postgres_session_cache: PostgresSessionCache,
 ) -> anyhow::Result<(NotificationSender, AnyhowJoinHandle)> {
-
     let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
     let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
 
@@ -145,9 +145,8 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         cluster_info_notifier,
         vote_account_notifier,
     );
-    drop(blocks_notifier);
     let postgres_session_cache = if enable_fetch_blocks_from_postgres || enable_postgres_logging {
-         Some(PostgresSessionCache::new().await?)
+        Some(PostgresSessionCache::new().await?)
     } else {
         None
     };
@@ -207,16 +206,23 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
-    let block_storage: BlockStorageImpl = if enable_save_blocks_in_postgres {
-        let session_cache =  postgres_session_cache.unwrap();
-        Arc::new(PostgresBlockStore::new(session_cache, epoch_data.clone()))
-    } else {
-        Arc::new(InmemoryBlockStore::new(1024))
-    };
+    let block_storage: BlockStorageImpl =
+        if enable_save_blocks_in_postgres || enable_fetch_blocks_from_postgres {
+            let session_cache = postgres_session_cache.expect("Session cache should be some");
+            let postgres_store = Arc::new(PostgresBlockStore::new(
+                session_cache,
+                epoch_data.clone(),
+                enable_save_blocks_in_postgres,
+                enable_fetch_blocks_from_postgres,
+            ));
+            Arc::new(MultipleStrategyBlockStorage::new(postgres_store, None, 64))
+        } else {
+            Arc::new(InmemoryBlockStore::new(1024))
+        };
 
-    let history = History {
-        block_storage,
-    };
+    let history = History { block_storage };
+    let history_service = history.start_saving_blocks(blocks_notifier.resubscribe());
+    drop(blocks_notifier);
 
     let bridge_service = tokio::spawn(
         LiteBridge::new(
@@ -238,13 +244,16 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
             anyhow::bail!("Server {res:?}")
         }
         res = postgres => {
-            anyhow::bail!("Postgres service {res:?}");
+            anyhow::bail!("Postgres service {res:?}")
         }
         res = futures::future::select_all(data_caching_service) => {
             anyhow::bail!("Data caching service failed {res:?}")
         }
         res = futures::future::select_all(cluster_endpoint_tasks) => {
             anyhow::bail!("cluster endpoint failure {res:?}")
+        }
+        res = history_service => {
+            anyhow::bail!("History service failure {res:?}")
         }
     }
 }
