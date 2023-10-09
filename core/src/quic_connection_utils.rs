@@ -239,19 +239,13 @@ pub fn connection_stats(connection: &Connection) -> String {
 /// see https://github.com/quinn-rs/quinn/pull/1671
 /// note: true means that quinn's heuristic for GSO detection is used to decide if it gets enabled
 pub fn apply_gso_workaround(tc: &mut TransportConfig) {
-    let disable_gso = disable_gso();
-    if disable_gso {
+    if disable_gso() {
         tc.enable_segmentation_offload(false);
     }
 }
 
 pub fn log_gso_workaround() {
-    let disable_gso = std::env::var("DISABLE_GSO")
-        .unwrap_or("false".to_string())
-        .parse::<bool>()
-        .expect("flag must be true or false");
-
-    info!("GSO force-disabled? {}", disable_gso);
+    info!("GSO force-disabled? {}", disable_gso());
 }
 
 fn disable_gso() -> bool {
