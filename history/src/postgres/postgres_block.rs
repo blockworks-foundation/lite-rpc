@@ -1,29 +1,23 @@
-use super::postgres_session::SchemaSize;
-use solana_lite_rpc_core::{
-    commitment_utils::Commitment, encoding::BASE64, structures::produced_block::ProducedBlock,
-};
+use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
+use tokio_postgres::types::ToSql;
+
+use super::postgres_session::PostgresSession;
 
 #[derive(Debug)]
 pub struct PostgresBlock {
-    pub leader_id: Option<String>,
+    pub slot: i64,
     pub blockhash: String,
     pub block_height: i64,
-    pub slot: i64,
     pub parent_slot: i64,
     pub block_time: i64,
-    pub commitment_config: i8,
     pub previous_blockhash: String,
     pub rewards: Option<String>,
 }
 
-impl SchemaSize for PostgresBlock {
-    const DEFAULT_SIZE: usize = 4 * 8;
-    const MAX_SIZE: usize = Self::DEFAULT_SIZE + 8;
-}
+const NB_ARUMENTS: usize = 7;
 
-impl From<ProducedBlock> for PostgresBlock {
-    fn from(value: ProducedBlock) -> Self {
-        let commitment = Commitment::from(&value.commitment_config);
+impl From<&ProducedBlock> for PostgresBlock {
+    fn from(value: &ProducedBlock) -> Self {
         let rewards = value
             .rewards
             .as_ref()
@@ -31,15 +25,59 @@ impl From<ProducedBlock> for PostgresBlock {
             .unwrap_or(None);
 
         Self {
-            leader_id: value.leader_id,
-            blockhash: value.blockhash,
+            blockhash: value.blockhash.clone(),
             block_height: value.block_height as i64,
             slot: value.slot as i64,
             parent_slot: value.parent_slot as i64,
             block_time: value.block_time as i64,
-            commitment_config: commitment as i8,
-            previous_blockhash: value.previous_blockhash,
+            previous_blockhash: value.previous_blockhash.clone(),
             rewards,
         }
+    }
+}
+
+impl PostgresBlock {
+    pub fn create_statement(schema: &String) -> String {
+        format!(
+            "
+            CREATE TABLE {}.BLOCKS (
+                slot BIGINT PRIMARY KEY,
+                blockhash STRING NOT NULL,
+                leader_id STRING,
+                block_height BIGINT NOT NULL,
+                parent_slot BIGINT NOT NULL,
+                block_time BIGINT NOT NULL,
+                previous_blockhash STRING NOT NULL,
+                rewards STRING,
+            );
+        ",
+            schema
+        )
+    }
+
+    pub async fn save(
+        &self,
+        postgres_session: &PostgresSession,
+        schema: &String,
+    ) -> anyhow::Result<()> {
+        let mut query = format!(
+            r#"
+            INSERT INTO {}.BLOCKS (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards) VALUES 
+        "#,
+            schema
+        );
+
+        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARUMENTS);
+        args.push(&self.slot);
+        args.push(&self.blockhash);
+        args.push(&self.block_height);
+        args.push(&self.parent_slot);
+        args.push(&self.block_time);
+        args.push(&self.previous_blockhash);
+        args.push(&self.rewards);
+
+        PostgresSession::multiline_query(&mut query, NB_ARUMENTS, 1, &[]);
+        postgres_session.execute(&query, &args).await?;
+        Ok(())
     }
 }

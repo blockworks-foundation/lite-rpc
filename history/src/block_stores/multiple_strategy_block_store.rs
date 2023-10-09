@@ -4,11 +4,12 @@
 // Fetches legacy blocks from faithful
 
 use crate::block_stores::inmemory_block_store::InmemoryBlockStore;
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageImpl, BlockStorageInterface},
+    traits::block_storage_interface::{BlockStorageImpl, BlockStorageInterface, BLOCK_NOT_FOUND},
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
@@ -42,7 +43,7 @@ impl MultipleStrategyBlockStorage {
         }
     }
 
-    pub async fn get_in_memory_block(&self, slot: Slot) -> Option<ProducedBlock> {
+    pub async fn get_in_memory_block(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
         self.inmemory_for_storage
             .get(
                 slot,
@@ -60,46 +61,47 @@ impl MultipleStrategyBlockStorage {
 
 #[async_trait]
 impl BlockStorageInterface for MultipleStrategyBlockStorage {
-    async fn save(&self, block: ProducedBlock) {
+    async fn save(&self, block: ProducedBlock) -> Result<()> {
         let slot = block.slot;
         let commitment = Commitment::from(block.commitment_config);
         match commitment {
             Commitment::Confirmed | Commitment::Processed => {
-                self.inmemory_for_storage.save(block).await;
+                self.inmemory_for_storage.save(block).await?;
             }
             Commitment::Finalized => {
                 let block_in_mem = self.get_in_memory_block(block.slot).await;
                 match block_in_mem {
-                    Some(block_in_mem) => {
+                    Ok(block_in_mem) => {
                         // check if inmemory blockhash is same as finalized, update it if they are not
                         // we can have two machines with same identity publishing two different blocks on same slot
                         if block_in_mem.blockhash != block.blockhash {
-                            self.inmemory_for_storage.save(block.clone()).await;
+                            self.inmemory_for_storage.save(block.clone()).await?;
                         }
                     }
-                    None => self.inmemory_for_storage.save(block.clone()).await,
+                    Err(_) => self.inmemory_for_storage.save(block.clone()).await?,
                 }
-                self.persistent_block_storage.save(block).await;
+                self.persistent_block_storage.save(block).await?;
             }
         };
         if slot > self.last_confirmed_slot.load(Ordering::Relaxed) {
             self.last_confirmed_slot.store(slot, Ordering::Relaxed);
         }
+        Ok(())
     }
 
     async fn get(
         &self,
         slot: solana_sdk::slot_history::Slot,
         config: RpcBlockConfig,
-    ) -> Option<ProducedBlock> {
+    ) -> Result<ProducedBlock> {
         let last_confirmed_slot = self.last_confirmed_slot.load(Ordering::Relaxed);
         if slot > last_confirmed_slot {
-            None
+            bail!(BLOCK_NOT_FOUND);
         } else {
             let range = self.inmemory_for_storage.get_slot_range().await;
             if range.contains(&slot) {
                 let block = self.inmemory_for_storage.get(slot, config).await;
-                if block.is_some() {
+                if block.is_ok() {
                     return block;
                 }
             }
@@ -113,15 +115,15 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                     .get_block_with_config(slot, config)
                     .await
                 {
-                    Ok(block) => Some(ProducedBlock::from_ui_block(
+                    Ok(block) => Ok(ProducedBlock::from_ui_block(
                         block,
                         slot,
                         CommitmentConfig::finalized(),
                     )),
-                    Err(_) => None,
+                    Err(_) => bail!(BLOCK_NOT_FOUND),
                 }
             } else {
-                None
+                bail!(BLOCK_NOT_FOUND);
             }
         }
     }

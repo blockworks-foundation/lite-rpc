@@ -4307,6 +4307,7 @@ dependencies = [
  "bincode",
  "chrono",
  "dashmap",
+ "itertools",
  "log",
  "native-tls",
  "postgres-native-tls",
