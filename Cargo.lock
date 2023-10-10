@@ -223,7 +223,7 @@ dependencies = [
  "ark-std",
  "derivative",
  "hashbrown 0.13.2",
- "itertools 0.10.5",
+ "itertools",
  "num-traits 0.2.16",
  "zeroize",
 ]
@@ -240,7 +240,7 @@ dependencies = [
  "ark-std",
  "derivative",
  "digest 0.10.7",
- "itertools 0.10.5",
+ "itertools",
  "num-bigint 0.4.4",
  "num-traits 0.2.16",
  "paste",
@@ -606,7 +606,7 @@ dependencies = [
  "dashmap 5.5.3",
  "dirs",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "rand 0.8.5",
@@ -2119,12 +2119,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "443144c8cdadd93ebf52ddb4056d257f5b52c04d3c804e657d19eb73fc33668b"
 
 [[package]]
-name = "hex"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-
-[[package]]
 name = "histogram"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2403,15 +2397,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
 dependencies = [
  "either",
 ]
@@ -3674,7 +3659,7 @@ checksum = "119533552c9a7ffacc21e099c24a0ac8bb19c2a2a3f363de84cd9b844feab270"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "multimap",
@@ -3696,7 +3681,7 @@ checksum = "8bdf592881d821b83d471f8af290226c8d51402259e9bb5be7f9f8bdebbb11ac"
 dependencies = [
  "bytes",
  "heck",
- "itertools 0.10.5",
+ "itertools",
  "log",
  "multimap",
  "once_cell",
@@ -3717,7 +3702,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5d2d8d10f3c6ded6da8b05b5fb3b8a5082514344d56c9f871412d29b4e075b4"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools",
  "proc-macro2 1.0.66",
  "quote 1.0.33",
  "syn 1.0.109",
@@ -3730,7 +3715,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "265baba7fabd416cf5078179f7d2cbeca4ce7a9041111900675ea7c4cb8a4c32"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools",
  "proc-macro2 1.0.66",
  "quote 1.0.33",
  "syn 2.0.31",
@@ -4900,7 +4885,7 @@ dependencies = [
  "dashmap 4.0.2",
  "fs_extra",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "libc",
  "log",
@@ -4960,7 +4945,7 @@ dependencies = [
  "dashmap 5.5.3",
  "derive_more",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "log",
  "quinn",
  "rustls 0.20.8",
@@ -4994,7 +4979,7 @@ dependencies = [
  "chrono",
  "dashmap 5.5.3",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "log",
  "quinn",
  "rustls 0.20.8",
@@ -5024,7 +5009,7 @@ dependencies = [
  "bincode",
  "chrono",
  "dashmap 5.5.3",
- "itertools 0.10.5",
+ "itertools",
  "log",
  "native-tls",
  "postgres-native-tls",
@@ -5053,7 +5038,7 @@ dependencies = [
  "dashmap 5.5.3",
  "dotenv",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "native-tls",
@@ -5093,7 +5078,7 @@ dependencies = [
  "dashmap 5.5.3",
  "dotenv",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "native-tls",
@@ -5132,7 +5117,7 @@ dependencies = [
  "crossbeam-channel",
  "dashmap 5.5.3",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "prometheus",
@@ -5165,11 +5150,8 @@ dependencies = [
  "bs58",
  "futures",
  "futures-util",
- "hex",
- "itertools 0.11.0",
+ "itertools",
  "log",
- "nom",
- "reqwest",
  "serde",
  "serde_json",
  "solana-account-decoder",
@@ -5183,7 +5165,6 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
- "tracing-subscriber",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
@@ -5322,7 +5303,7 @@ dependencies = [
  "console_log",
  "curve25519-dalek",
  "getrandom 0.2.10",
- "itertools 0.10.5",
+ "itertools",
  "js-sys",
  "lazy_static",
  "libc",
@@ -5362,7 +5343,7 @@ dependencies = [
  "bincode",
  "eager",
  "enum-iterator",
- "itertools 0.10.5",
+ "itertools",
  "libc",
  "log",
  "num-derive",
@@ -5414,7 +5395,7 @@ dependencies = [
  "async-mutex",
  "async-trait",
  "futures",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "quinn",
@@ -5543,7 +5524,7 @@ dependencies = [
  "fnv",
  "im",
  "index_list",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "log",
  "lru",
@@ -5613,7 +5594,7 @@ dependencies = [
  "ed25519-dalek-bip32",
  "generic-array",
  "hmac 0.12.1",
- "itertools 0.10.5",
+ "itertools",
  "js-sys",
  "lazy_static",
  "libsecp256k1",
@@ -5736,7 +5717,7 @@ dependencies = [
  "futures-util",
  "histogram",
  "indexmap 1.9.3",
- "itertools 0.10.5",
+ "itertools",
  "libc",
  "log",
  "nix",
@@ -5918,7 +5899,7 @@ dependencies = [
  "byteorder",
  "curve25519-dalek",
  "getrandom 0.1.16",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "merlin",
  "num-derive",
