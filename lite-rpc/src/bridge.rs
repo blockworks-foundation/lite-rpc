@@ -4,6 +4,7 @@ use crate::{
     rpc::LiteRpcServer,
 };
 use solana_sdk::epoch_info::EpochInfo;
+use std::collections::HashMap;
 
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
@@ -21,8 +22,8 @@ use solana_lite_rpc_history::history::History;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
-        RpcBlockConfig, RpcContextConfig, RpcEncodingConfigWrapper, RpcRequestAirdropConfig,
-        RpcSignatureStatusConfig,
+        RpcBlockConfig, RpcContextConfig, RpcEncodingConfigWrapper, RpcLeaderScheduleConfig,
+        RpcRequestAirdropConfig, RpcSignatureStatusConfig,
     },
     response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
 };
@@ -357,5 +358,19 @@ impl LiteRpcServer for LiteBridge {
             .await
             .into_epoch_info(block_info.block_height, None);
         Ok(epoch_info)
+    }
+
+    async fn get_leader_schedule(
+        &self,
+        slot: Option<u64>,
+        config: Option<RpcLeaderScheduleConfig>,
+    ) -> crate::rpc::Result<Option<HashMap<String, Vec<usize>>>> {
+        //TODO verify leader identity.
+        let schedule = self
+            .data_cache
+            .leader_schedule
+            .get_leader_schedule_for_slot(slot, config.and_then(|c| c.commitment), &self.data_cache)
+            .await;
+        Ok(schedule)
     }
 }

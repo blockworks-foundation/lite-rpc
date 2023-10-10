@@ -1,16 +1,16 @@
+use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
 use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::proc_macros::rpc;
 use solana_rpc_client_api::config::{
-    RpcBlockConfig, RpcContextConfig, RpcEncodingConfigWrapper, RpcRequestAirdropConfig,
-    RpcSignatureStatusConfig,
+    RpcBlockConfig, RpcContextConfig, RpcEncodingConfigWrapper, RpcLeaderScheduleConfig,
+    RpcRequestAirdropConfig, RpcSignatureStatusConfig,
 };
 use solana_rpc_client_api::response::{Response as RpcResponse, RpcBlockhash, RpcVersionInfo};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
-
-use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
+use std::collections::HashMap;
 
 pub type Result<T> = std::result::Result<T, jsonrpsee::core::Error>;
 
@@ -76,4 +76,11 @@ pub trait LiteRpc {
         &self,
         config: Option<RpcContextConfig>,
     ) -> crate::rpc::Result<EpochInfo>;
+
+    #[method(name = "getLeaderSchedule")]
+    async fn get_leader_schedule(
+        &self,
+        slot: Option<u64>,
+        config: Option<RpcLeaderScheduleConfig>,
+    ) -> crate::rpc::Result<Option<HashMap<String, Vec<usize>>>>;
 }
