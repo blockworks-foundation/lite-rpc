@@ -7,6 +7,7 @@ members = [
     "quic-forward-proxy-integration-test",
     "cluster-endpoints",
     "history",
+    "stake_vote",
     "bench"
 ]
 
@@ -28,6 +29,8 @@ solana-net-utils = "~1.16.3"
 solana-pubsub-client = "~1.16.3"
 solana-streamer = "~1.16.3"
 solana-account-decoder = "~1.16.3"
+solana-ledger = "~1.16.3"
+solana-program = "~1.16.3"
 itertools = "0.10.5"
 serde = { version = "1.0.160", features = ["derive"] }
 serde_json = "1.0.96"
@@ -58,6 +61,7 @@ solana-lite-rpc-services = {path = "services", version="0.2.3"}
 solana-lite-rpc-core = {path = "core", version="0.2.3"}
 solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.3"}
 solana-lite-rpc-history = {path = "history", version="0.2.3"}
+solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.3"}
 
 async-trait = "0.1.68"
 yellowstone-grpc-client = "1.11.0"

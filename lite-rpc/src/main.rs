@@ -1,5 +1,6 @@
 pub mod rpc_tester;
 
+use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use std::time::Duration;
 
 use anyhow::bail;
@@ -110,7 +111,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         create_grpc_subscription(
             rpc_client.clone(),
-            grpc_addr,
+            grpc_addr.clone(),
             grpc_x_token,
             GRPC_VERSION.to_string(),
         )?
@@ -141,6 +142,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             store: Arc::new(DashMap::new()),
         },
         epoch_data,
+        leader_schedule: Arc::new(CalculatedSchedule::default()),
     };
 
     let lata_cache_service = DataCachingService {
@@ -199,6 +201,16 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         maximum_retries_per_tx,
         slot_notifier.resubscribe(),
     );
+
+    //start stake vote and leader schedule.
+    let stake_vote_jh = solana_lite_rpc_stakevote::start_stakes_and_votes_loop(
+        data_cache.clone(),
+        slot_notifier.resubscribe(),
+        Arc::clone(&rpc_client),
+        grpc_addr,
+    )
+    .await?;
+
     drop(slot_notifier);
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
@@ -217,6 +229,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
     tokio::select! {
+        res = stake_vote_jh => {
+            anyhow::bail!("Stakes Votes Services {res:?}")
+        }
         res = tx_service_jh => {
             anyhow::bail!("Tx Services {res:?}")
         }
