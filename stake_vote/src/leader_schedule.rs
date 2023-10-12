@@ -106,8 +106,8 @@ fn process_leadershedule_event(
                 VoteStore::take_votestore(votestore),
             ) {
                 (Ok((stake_map, mut stake_history)), Ok(vote_map)) => {
-                    //For test TODO put in extract and restore process to avoid to clone.
                     log::info!("LeaderScheduleEvent::CalculateScedule");
+                    //do the calculus in a blocking task.
                     let jh = tokio::task::spawn_blocking({
                         move || {
                             let next_epoch = current_epoch + 1;
