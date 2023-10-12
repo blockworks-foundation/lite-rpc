@@ -1,8 +1,11 @@
 use anyhow::bail;
 use borsh::BorshDeserialize;
+use solana_sdk::account::Account;
+use solana_sdk::account::AccountSharedData;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::stake::state::Delegation;
 use solana_sdk::stake::state::StakeState;
+use solana_sdk::stake_history::StakeHistory;
 use solana_sdk::vote::state::VoteState;
 use yellowstone_grpc_proto::prelude::SubscribeUpdateAccount;
 
@@ -54,21 +57,7 @@ impl AccountPretty {
     }
 
     pub fn read_stake(&self) -> anyhow::Result<Option<Delegation>> {
-        if self.data.is_empty() {
-            log::warn!("Stake account with empty data. Can't read vote.");
-            bail!("Error: read Stake account with empty data");
-        }
-
-        if self.data.is_empty() {
-            log::warn!("Stake account with empty data. Can't read stake.");
-            bail!("Error: read Stake account with empty data");
-        }
-        match BorshDeserialize::deserialize(&mut self.data.as_slice())? {
-            StakeState::Stake(_, stake) => Ok(Some(stake.delegation)),
-            StakeState::Initialized(_) => Ok(None),
-            StakeState::Uninitialized => Ok(None),
-            StakeState::RewardsPool => Ok(None),
-        }
+        read_stake_from_account_data(&mut self.data.as_slice())
     }
 
     pub fn read_vote(&self) -> anyhow::Result<VoteState> {
@@ -90,4 +79,21 @@ impl std::fmt::Display for AccountPretty {
             self.lamports
         )
     }
+}
+
+pub fn read_stake_from_account_data(mut data: &[u8]) -> anyhow::Result<Option<Delegation>> {
+    if data.is_empty() {
+        log::warn!("Stake account with empty data. Can't read stake.");
+        bail!("Error: read Stake account with empty data");
+    }
+    match BorshDeserialize::deserialize(&mut data)? {
+        StakeState::Stake(_, stake) => Ok(Some(stake.delegation)),
+        StakeState::Initialized(_) => Ok(None),
+        StakeState::Uninitialized => Ok(None),
+        StakeState::RewardsPool => Ok(None),
+    }
+}
+
+pub fn read_historystake_from_account(account: Account) -> Option<StakeHistory> {
+    solana_sdk::account::from_account::<StakeHistory, _>(&AccountSharedData::from(account))
 }

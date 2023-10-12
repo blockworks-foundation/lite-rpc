@@ -1,13 +1,17 @@
+use crate::utils::TakableContent;
+use crate::utils::TakableMap;
 use crate::AccountPretty;
 use crate::Slot;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
+use solana_sdk::account::Account;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::stake::state::Delegation;
 use solana_sdk::stake_history::StakeHistory;
 use std::collections::HashMap;
 
 pub type StakeMap = HashMap<Pubkey, StoredStake>;
+type StakeContent = (StakeMap, Option<StakeHistory>);
 
 #[derive(Debug, Default)]
 pub enum StakeAction {
@@ -43,26 +47,26 @@ pub struct StoredStake {
     pub write_version: u64,
 }
 
+impl TakableContent<StakeAction> for StakeContent {
+    fn add_value(&mut self, val: StakeAction) {
+        StakeStore::process_stake_action(&mut self.0, val);
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct StakeStore {
-    stakes: StakeMap,
-    stake_history: Option<StakeHistory>,
-    pub updates: Vec<StakeAction>,
-    pub extracted: bool,
+    stakes: TakableMap<StakeAction, StakeContent>,
 }
 
 impl StakeStore {
     pub fn new(capacity: usize) -> Self {
         StakeStore {
-            stakes: HashMap::with_capacity(capacity),
-            stake_history: None,
-            updates: vec![],
-            extracted: false,
+            stakes: TakableMap::new((HashMap::with_capacity(capacity), None)),
         }
     }
 
     pub fn get_stake_history(&self) -> Option<StakeHistory> {
-        self.stake_history.clone()
+        self.stakes.content.1.clone()
     }
 
     pub fn notify_stake_change(
@@ -96,36 +100,98 @@ impl StakeStore {
 
         Ok(())
     }
+
     pub fn notify_stake_action(&mut self, action: StakeAction, current_end_epoch_slot: Slot) {
-        //during extract push the new update or
-        //don't insertnow account change that has been done in next epoch.
-        //put in update pool to be merged next epoch change.
-        let insert_stake = !self.extracted || action.get_update_slot() > current_end_epoch_slot;
-        match insert_stake {
-            false => self.updates.push(action),
-            true => self.process_stake_action(action),
-        }
+        let action_update_slot = action.get_update_slot();
+        self.stakes
+            .add_value(action, action_update_slot <= current_end_epoch_slot);
     }
 
-    fn process_stake_action(&mut self, action: StakeAction) {
+    fn process_stake_action(stakes: &mut StakeMap, action: StakeAction) {
         match action {
             StakeAction::Notify { stake } => {
-                todo!();
+                Self::notify_stake(stakes, stake);
             }
-            StakeAction::Remove(account_pk, slot) => self.remove_from_store(&account_pk, slot),
+            StakeAction::Remove(account_pk, slot) => Self::remove_stake(stakes, &account_pk, slot),
             StakeAction::None => (),
         }
     }
+    fn notify_stake(map: &mut StakeMap, stake: StoredStake) {
+        //log::info!("stake_map_notify_stake stake:{stake:?}");
+        match map.entry(stake.pubkey) {
+            // If value already exists, then increment it by one
+            std::collections::hash_map::Entry::Occupied(occupied) => {
+                let strstake = occupied.into_mut(); // <-- get mut reference to existing value
+                                                    //doesn't erase new state with an old one. Can arrive during bootstrapping.
+                                                    //several instructions can be done in the same slot.
+                if strstake.last_update_slot <= stake.last_update_slot {
+                    log::info!("stake_map_notify_stake Stake store updated stake: {} old_stake:{strstake:?} stake:{stake:?}", stake.pubkey);
+                    *strstake = stake;
+                }
+            }
+            // If value doesn't exist yet, then insert a new value of 1
+            std::collections::hash_map::Entry::Vacant(vacant) => {
+                log::info!(
+                    "stake_map_notify_stake Stake store insert stake: {} stake:{stake:?}",
+                    stake.pubkey
+                );
+                vacant.insert(stake);
+            }
+        };
+    }
 
-    fn remove_from_store(&mut self, account_pk: &Pubkey, update_slot: Slot) {
-        if self
-            .stakes
+    fn remove_stake(stakes: &mut StakeMap, account_pk: &Pubkey, update_slot: Slot) {
+        if stakes
             .get(account_pk)
             .map(|stake| stake.last_update_slot <= update_slot)
             .unwrap_or(false)
         {
             log::info!("Stake remove_from_store for {}", account_pk.to_string());
-            self.stakes.remove(account_pk);
+            stakes.remove(account_pk);
         }
     }
+
+    //helper method to extract and merge stakes.
+    pub fn take_stakestore(
+        stakestore: &mut StakeStore,
+    ) -> anyhow::Result<(StakeMap, Option<StakeHistory>)> {
+        crate::utils::take(&mut stakestore.stakes)
+    }
+
+    pub fn merge_stakestore(
+        stakestore: &mut StakeStore,
+        stake_map: StakeMap,
+        stake_history: Option<StakeHistory>,
+    ) -> anyhow::Result<()> {
+        crate::utils::merge(&mut stakestore.stakes, (stake_map, stake_history))
+    }
+}
+
+pub fn merge_program_account_in_strake_map(
+    stake_map: &mut StakeMap,
+    stakes_list: Vec<(Pubkey, Account)>,
+    last_update_slot: Slot,
+) {
+    stakes_list
+        .into_iter()
+        .filter_map(|(pk, account)| {
+            match crate::account::read_stake_from_account_data(&account.data) {
+                Ok(opt_stake) => opt_stake.map(|stake| (pk, stake, account.lamports)),
+                Err(err) => {
+                    log::warn!("Error during pa account data deserialisation:{err}");
+                    None
+                }
+            }
+        })
+        .for_each(|(pk, delegated_stake, lamports)| {
+            let stake = StoredStake {
+                pubkey: pk,
+                lamports,
+                stake: delegated_stake,
+                last_update_slot,
+                write_version: 0,
+            };
+
+            StakeStore::notify_stake(stake_map, stake);
+        });
 }

@@ -1,8 +1,10 @@
 use crate::account::AccountPretty;
+use crate::leader_schedule::LeaderScheduleGeneratedData;
 use futures::Stream;
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
+use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use solana_lite_rpc_core::types::SlotStream;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use std::collections::HashMap;
@@ -138,7 +140,20 @@ pub async fn start_stakes_and_votes_loop(
                     //only done once epoch. Avoid to use a Mutex.
                     let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
                     data_schedule.current = data_schedule.next.take();
-                    data_schedule.next = new_leader_schedule;
+                    match new_leader_schedule {
+                        //TODO use vote_stakes for vote accounts RPC call.
+                        Some(LeaderScheduleGeneratedData{schedule, vote_stakes, epoch}) => {
+                            let new_schedule_data = LeaderScheduleData{
+                                    schedule,
+                                    epoch
+                            };
+                            data_schedule.next = Some(new_schedule_data);
+                        }
+                        None => {
+                            log::warn!("Error during schedule calculus. No schedule for this epoch.");
+                            data_schedule.next = None;
+                        }
+                    };
                 }
             }
         }

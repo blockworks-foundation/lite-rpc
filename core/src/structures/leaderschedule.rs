@@ -1,8 +1,6 @@
 use crate::stores::block_information_store::BlockInformation;
 use crate::stores::data_cache::DataCache;
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::pubkey::Pubkey;
-use solana_sdk::vote::state::VoteState;
 use std::collections::HashMap;
 
 #[derive(Clone, Default)]
@@ -43,6 +41,5 @@ impl CalculatedSchedule {
 #[derive(Clone)]
 pub struct LeaderScheduleData {
     pub schedule: HashMap<String, Vec<usize>>,
-    pub vote_stakes: HashMap<Pubkey, (u64, VoteState)>,
     pub epoch: u64,
 }
