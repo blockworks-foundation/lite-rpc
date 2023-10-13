@@ -17,6 +17,13 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::time::Duration;
+use itertools::Itertools;
+use log::info;
+use solana_sdk::pubkey::Pubkey;
+use solana_lite_rpc_core::structures::leader_data::LeaderData;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -123,7 +130,7 @@ impl TpuService {
             .get_slot_leaders(current_slot, last_slot)
             .await?;
         // get next leader with its tpu port
-        let connections_to_keep = next_leaders
+        let connections_to_keep: HashMap<Pubkey, SocketAddr> = next_leaders
             .iter()
             .map(|x| {
                 let contact_info = cluster_nodes.get(&x.pubkey);
@@ -141,6 +148,9 @@ impl TpuService {
                 (x.0, addr)
             })
             .collect();
+
+        // disclaimer - do not know how expensive that is
+        ping_leaders(&connections_to_keep.values().cloned().collect_vec()).await;
 
         match &self.connection_manager {
             DirectTpu {
@@ -189,4 +199,22 @@ impl TpuService {
             }
         })
     }
+}
+
+async fn ping_leaders(leader_addrs: &Vec<SocketAddr>) {
+
+    // TODO tokio
+    for leader_addr in leader_addrs {
+        // Mango Validator mainnet - 202.8.9.108:8009
+        info!("ping leader {}", leader_addr);
+
+        let elapsed = quinn_quicping::pingo::quicping(*leader_addr, Some(Duration::from_millis(1500)));
+
+        info!("quic-ping to {}: {:.3}ms", leader_addr, elapsed.as_secs_f64() * 1000.0);
+    }
+
+
+
+
+
 }

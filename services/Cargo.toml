@@ -40,6 +40,8 @@ chrono = { workspace = true }
 rustls = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
 
+quinn-quicping = { package = "quinn-proto", path = "/Users/stefan/mango/code/quinn/quinn-proto" }
+
 [dev-dependencies]
 tracing = { workspace = true }
 # note: version 0.5.6 has a known bug
