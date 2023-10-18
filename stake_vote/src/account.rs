@@ -57,7 +57,7 @@ impl AccountPretty {
     }
 
     pub fn read_stake(&self) -> anyhow::Result<Option<Delegation>> {
-        read_stake_from_account_data(&mut self.data.as_slice())
+        read_stake_from_account_data(self.data.as_slice())
     }
 
     pub fn read_vote(&self) -> anyhow::Result<VoteState> {
@@ -74,9 +74,7 @@ impl std::fmt::Display for AccountPretty {
         write!(
             f,
             "{} at slot:{} lpt:{}",
-            self.pubkey.to_string(),
-            self.slot,
-            self.lamports
+            self.pubkey, self.slot, self.lamports
         )
     }
 }

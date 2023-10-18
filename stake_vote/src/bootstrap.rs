@@ -28,7 +28,7 @@ pub async fn bootstrap_scheduleepoch_data(data_cache: &DataCache) -> ScheduleEpo
         .new_warmup_cooldown_rate_epoch(data_cache.epoch_data.get_epoch_schedule());
 
     let bootstrap_epoch = crate::utils::get_current_epoch(data_cache).await;
-    let current_schedule_epoch = ScheduleEpochData {
+    ScheduleEpochData {
         current_epoch: bootstrap_epoch.epoch,
         slots_in_epoch: bootstrap_epoch.slots_in_epoch,
         last_slot_in_epoch: data_cache
@@ -36,9 +36,7 @@ pub async fn bootstrap_scheduleepoch_data(data_cache: &DataCache) -> ScheduleEpo
             .get_last_slot_in_epoch(bootstrap_epoch.epoch),
         current_confirmed_slot: bootstrap_epoch.absolute_slot,
         new_rate_activation_epoch,
-    };
-
-    current_schedule_epoch
+    }
 }
 
 /*
@@ -111,6 +109,7 @@ pub enum BootstrapEvent {
     Exit,
 }
 
+#[allow(clippy::large_enum_variant)] //214 byte large and only use during bootstrap.
 enum BootsrapProcessResult {
     TaskHandle(JoinHandle<BootstrapEvent>),
     Event(BootstrapEvent),
@@ -225,6 +224,7 @@ fn process_bootstrap_event(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn bootstrap_accounts(
     rpc_url: String,
 ) -> Result<(Vec<(Pubkey, Account)>, Vec<(Pubkey, Account)>, Account), ClientError> {
