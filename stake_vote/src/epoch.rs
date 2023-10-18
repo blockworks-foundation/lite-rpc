@@ -47,7 +47,7 @@ impl ScheduleEpochData {
             Some(crate::leader_schedule::LeaderScheduleEvent::Init(
                 self.current_epoch,
                 self.slots_in_epoch,
-                self.new_rate_activation_epoch.clone(),
+                self.new_rate_activation_epoch,
             ))
         } else {
             None
