@@ -34,6 +34,7 @@ struct StringSavedStake {
     stake_vote_map: HashMap<String, (u64, Arc<StoredVote>)>,
 }
 
+#[allow(clippy::type_complexity)]
 pub fn read_schedule_vote_stakes(
     file_path: &str,
 ) -> anyhow::Result<(u64, HashMap<Pubkey, (u64, Arc<StoredVote>)>)> {

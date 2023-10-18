@@ -16,7 +16,7 @@ impl CalculatedSchedule {
         commitment: Option<CommitmentConfig>,
         data_cache: &DataCache,
     ) -> Option<HashMap<String, Vec<usize>>> {
-        let commitment = commitment.unwrap_or_else(|| CommitmentConfig::confirmed());
+        let commitment = commitment.unwrap_or_else(CommitmentConfig::confirmed);
         let slot = match slot {
             Some(slot) => slot,
             None => {

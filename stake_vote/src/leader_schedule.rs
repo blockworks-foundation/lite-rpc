@@ -46,6 +46,7 @@ InitLeaderscedule        MergeStore(stakes, votes, schedule)
                       InitLeaderscedule
 */
 
+#[allow(clippy::large_enum_variant)] //256 byte large and only use during schedule calculus.
 pub enum LeaderScheduleEvent {
     Init(u64, u64, Option<solana_sdk::clock::Epoch>),
     MergeStoreAndSaveSchedule(
