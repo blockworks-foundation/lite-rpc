@@ -4,23 +4,13 @@ use crate::vote::{VoteMap, VoteStore};
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use solana_client::rpc_client::RpcClient;
 use solana_ledger::leader_schedule::LeaderSchedule;
-use solana_program::sysvar::epoch_schedule::EpochSchedule;
 use solana_sdk::clock::NUM_CONSECUTIVE_LEADER_SLOTS;
-use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::feature_set::FeatureSet;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::stake::state::StakeActivationStatus;
 use solana_sdk::stake_history::StakeHistory;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Write;
-use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::task::JoinHandle;
 
 #[derive(Debug)]
@@ -125,6 +115,32 @@ fn process_leadershedule_event(
                                 next_epoch,
                                 slots_in_epoch,
                             );
+
+                            if std::path::Path::new(crate::bootstrap::NEXT_EPOCH_VOTE_STAKES_FILE)
+                                .exists()
+                            {
+                                if let Err(err) = std::fs::rename(
+                                    crate::bootstrap::NEXT_EPOCH_VOTE_STAKES_FILE,
+                                    crate::bootstrap::CURRENT_EPOCH_VOTE_STAKES_FILE,
+                                ) {
+                                    log::error!(
+                                    "Fail to rename current leader schedule on disk because :{err}"
+                                );
+                                }
+                            }
+
+                            //save new vote stake in a file for bootstrap.
+                            if let Err(err) = crate::utils::save_schedule_vote_stakes(
+                                crate::bootstrap::NEXT_EPOCH_VOTE_STAKES_FILE,
+                                &epoch_vote_stakes,
+                                next_epoch,
+                            ) {
+                                log::error!(
+                                    "Error during saving the new leader schedule of epoch:{} in a file error:{err}",
+                                    next_epoch
+                                );
+                            }
+
                             log::info!("End calculate leader schedule");
                             LeaderScheduleEvent::MergeStoreAndSaveSchedule(
                                 stake_map,
@@ -187,6 +203,7 @@ fn calculate_epoch_stakes(
     mut stake_history: Option<&mut StakeHistory>,
     new_rate_activation_epoch: Option<solana_sdk::clock::Epoch>,
 ) -> HashMap<Pubkey, (u64, Arc<StoredVote>)> {
+    //code taken from Solana code: runtime::stakes::activate_epoch function
     //update stake history with current end epoch stake values.
     let stake_history_entry =
         stake_map
@@ -240,7 +257,7 @@ fn calculate_epoch_stakes(
 
 //Copied from leader_schedule_utils.rs
 // Mostly cribbed from leader_schedule_utils
-fn calculate_leader_schedule(
+pub fn calculate_leader_schedule(
     stake_vote_map: &HashMap<Pubkey, (u64, Arc<StoredVote>)>,
     epoch: u64,
     slots_in_epoch: u64,

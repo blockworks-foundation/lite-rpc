@@ -65,9 +65,9 @@ impl StakeStore {
         }
     }
 
-    pub fn get_stake_history(&self) -> Option<StakeHistory> {
-        self.stakes.content.1.clone()
-    }
+    // pub fn get_stake_history(&self) -> Option<StakeHistory> {
+    //     self.stakes.content.1.clone()
+    // }
 
     pub fn notify_stake_change(
         &mut self,
