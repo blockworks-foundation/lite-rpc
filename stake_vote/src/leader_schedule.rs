@@ -264,11 +264,16 @@ pub fn calculate_leader_schedule(
     epoch: u64,
     slots_in_epoch: u64,
 ) -> HashMap<String, Vec<usize>> {
-    let mut stakes: Vec<(Pubkey, u64)> = stake_vote_map
+    let stakes_map: HashMap<Pubkey, u64> = stake_vote_map
         .iter()
         .filter_map(|(_, (stake, vote_account))| {
-            (*stake > 0).then_some((vote_account.vote_data.node_pubkey, *stake))
+            (*stake != 0u64).then_some((vote_account.vote_data.node_pubkey, *stake))
         })
+        .into_grouping_map()
+        .aggregate(|acc, _node_pubkey, stake| Some(acc.unwrap_or_default() + stake));
+    let mut stakes: Vec<(Pubkey, u64)> = stakes_map
+        .into_iter()
+        .map(|(key, stake)| (key, stake))
         .collect();
 
     let mut seed = [0u8; 32];
