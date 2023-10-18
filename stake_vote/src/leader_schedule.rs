@@ -91,7 +91,7 @@ fn process_leadershedule_event(
     votestore: &mut VoteStore,
 ) -> LeaderScheduleResult {
     match event {
-        LeaderScheduleEvent::Init(current_epoch, slots_in_epoch, new_rate_activation_epoch) => {
+        LeaderScheduleEvent::Init(new_epoch, slots_in_epoch, new_rate_activation_epoch) => {
             match (
                 StakeStore::take_stakestore(stakestore),
                 VoteStore::take_votestore(votestore),
@@ -101,16 +101,15 @@ fn process_leadershedule_event(
                     //do the calculus in a blocking task.
                     let jh = tokio::task::spawn_blocking({
                         move || {
-                            let next_epoch = current_epoch + 1;
                             let epoch_vote_stakes = calculate_epoch_stakes(
                                 &stake_map,
                                 &vote_map,
-                                current_epoch,
-                                next_epoch,
+                                new_epoch,
                                 stake_history.as_mut(),
                                 new_rate_activation_epoch,
                             );
 
+                            let next_epoch = new_epoch + 1;
                             let leader_schedule = calculate_leader_schedule(
                                 &epoch_vote_stakes,
                                 next_epoch,
@@ -151,7 +150,7 @@ fn process_leadershedule_event(
                                     vote_stakes: epoch_vote_stakes,
                                     epoch: next_epoch,
                                 },
-                                (current_epoch, slots_in_epoch, new_rate_activation_epoch),
+                                (new_epoch, slots_in_epoch, new_rate_activation_epoch),
                                 stake_history,
                             )
                         }
@@ -161,7 +160,7 @@ fn process_leadershedule_event(
                 _ => {
                     log::error!("Create leadershedule init event error during extract store");
                     LeaderScheduleResult::Event(LeaderScheduleEvent::Init(
-                        current_epoch,
+                        new_epoch,
                         slots_in_epoch,
                         new_rate_activation_epoch,
                     ))
@@ -172,7 +171,7 @@ fn process_leadershedule_event(
             stake_map,
             vote_map,
             schedule_data,
-            (current_epoch, slots_in_epoch, epoch_schedule),
+            (new_epoch, slots_in_epoch, epoch_schedule),
             stake_history,
         ) => {
             log::info!("LeaderScheduleEvent::MergeStoreAndSaveSchedule RECV");
@@ -186,7 +185,7 @@ fn process_leadershedule_event(
                     //TODO remove this error using type state
                     log::warn!("LeaderScheduleEvent::MergeStoreAndSaveSchedule merge stake or vote fail, -restart Schedule");
                     LeaderScheduleResult::Event(LeaderScheduleEvent::Init(
-                        current_epoch,
+                        new_epoch,
                         slots_in_epoch,
                         epoch_schedule,
                     ))
@@ -199,30 +198,32 @@ fn process_leadershedule_event(
 fn calculate_epoch_stakes(
     stake_map: &StakeMap,
     vote_map: &VoteMap,
-    current_epoch: u64,
-    next_epoch: u64,
+    new_epoch: u64,
     mut stake_history: Option<&mut StakeHistory>,
     new_rate_activation_epoch: Option<solana_sdk::clock::Epoch>,
 ) -> HashMap<Pubkey, (u64, Arc<StoredVote>)> {
     //code taken from Solana code: runtime::stakes::activate_epoch function
     //update stake history with current end epoch stake values.
+    //stake history is added for the ended epoch using all stakes at the end of the epoch.
+    let ended_epoch = new_epoch - 1;
     let stake_history_entry =
         stake_map
             .values()
             .fold(StakeActivationStatus::default(), |acc, stake_account| {
                 let delegation = stake_account.stake;
                 acc + delegation.stake_activating_and_deactivating(
-                    current_epoch,
+                    ended_epoch,
                     stake_history.as_deref(),
                     new_rate_activation_epoch,
                 )
             });
     match stake_history {
-        Some(ref mut stake_history) => stake_history.add(current_epoch, stake_history_entry),
+        Some(ref mut stake_history) => stake_history.add(ended_epoch, stake_history_entry),
         None => log::warn!("Vote stake calculus without Stake History"),
     };
 
-    //calculate schedule stakes.
+    //calculate schedule stakes at beginning of new epoch.
+    //Next epoch schedule use the stake at the beginning of last epoch.
     let delegated_stakes: HashMap<Pubkey, u64> =
         stake_map
             .values()
@@ -230,7 +231,7 @@ fn calculate_epoch_stakes(
                 let delegation = stake_account.stake;
                 let entry = delegated_stakes.entry(delegation.voter_pubkey).or_default();
                 *entry += delegation.stake(
-                    next_epoch,
+                    new_epoch,
                     stake_history.as_deref(),
                     new_rate_activation_epoch,
                 );
