@@ -78,3 +78,13 @@ test('get epoch info', async () => {
 
 });
 
+
+test('get leader schedule', async () => {
+    {
+        const leaderSchedule = await connection.getLeaderSchedule();
+        expect(Object.keys(leaderSchedule).length > 0);        
+    }
+});
+
+
+
