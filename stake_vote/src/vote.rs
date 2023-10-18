@@ -74,10 +74,6 @@ impl VoteStore {
         crate::utils::merge(&mut votestore.votes, vote_map)
     }
 
-    fn insert_vote(&mut self, vote_account: Pubkey, vote_data: StoredVote) {
-        Self::vote_map_insert_vote(&mut self.votes.content, vote_account, vote_data);
-    }
-
     fn remove_from_store(&mut self, account_pk: &Pubkey, update_slot: Slot) {
         if self
             .votes

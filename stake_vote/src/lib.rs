@@ -1,4 +1,5 @@
 use crate::account::AccountPretty;
+use crate::bootstrap::BootstrapEvent;
 use crate::leader_schedule::LeaderScheduleGeneratedData;
 use futures::Stream;
 use futures_util::stream::FuturesUnordered;
@@ -36,7 +37,9 @@ pub async fn start_stakes_and_votes_loop(
     rpc_client: Arc<RpcClient>,
     grpc_url: String,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
+    log::info!("Start Stake and Vote loop.");
     let mut account_gyzer_stream = subscribe_geyzer(grpc_url).await?;
+    log::info!("Stake and Vote geyzer subscription done.");
     let jh = tokio::spawn(async move {
         //Stake account management struct
         let mut stakestore = stake::StakeStore::new(STAKESTORE_INITIAL_CAPACITY);
@@ -45,19 +48,41 @@ pub async fn start_stakes_and_votes_loop(
         let mut votestore = vote::VoteStore::new(VOTESTORE_INITIAL_CAPACITY);
 
         //Init bootstrap process
-        let (mut current_schedule_epoch, bootstrap_data) =
-            crate::bootstrap::bootstrap_process_data(&data_cache, rpc_client.clone()).await;
+        let mut current_schedule_epoch =
+            crate::bootstrap::bootstrap_scheduleepoch_data(&data_cache).await;
+
+        match crate::bootstrap::bootstrap_current_leader_schedule(
+            current_schedule_epoch.slots_in_epoch,
+        ) {
+            Ok(current_schedule_data) => {
+                data_cache.leader_schedule = Arc::new(current_schedule_data)
+            }
+            Err(err) => {
+                log::warn!("Error during current leader schedule bootstrap from files:{err}")
+            }
+        }
 
         //future execution collection.
         let mut spawned_leader_schedule_task = FuturesUnordered::new();
+        let mut spawned_bootstrap_task = FuturesUnordered::new();
+        let jh = tokio::spawn(async move {
+            BootstrapEvent::InitBootstrap {
+                sleep_time: 1,
+                rpc_url: rpc_client.url(),
+            }
+        });
+        spawned_bootstrap_task.push(jh);
+
+        let mut bootstrap_done = false;
 
         loop {
             tokio::select! {
                 //manage confirm new slot notification to detect epoch change.
                 Ok(_) = slot_notification.recv() => {
+                    //log::info!("Stake and Vote receive a slot.");
                     let new_slot = crate::utils::get_current_confirmed_slot(&data_cache).await;
                     let schedule_event = current_schedule_epoch.process_new_confirmed_slot(new_slot, &data_cache).await;
-                    if bootstrap_data.done {
+                    if bootstrap_done {
                         if let Some(init_event) = schedule_event {
                             crate::leader_schedule::run_leader_schedule_events(
                                 init_event,
@@ -79,11 +104,16 @@ pub async fn start_stakes_and_votes_loop(
                                 Ok(msg) => {
                                     match msg.update_oneof {
                                         Some(UpdateOneof::Account(account)) => {
+                                            // log::info!("Stake and Vote geyzer receive an account:{}.",
+                                            //     account.account.clone().map(|a|
+                                            //         solana_sdk::pubkey::Pubkey::try_from(a.pubkey).map(|k| k.to_string())
+                                            //         .unwrap_or("bad pubkey".to_string()).to_string())
+                                            //         .unwrap_or("no content".to_string())
+                                            // );
                                             //store new account stake.
                                             let current_slot = crate::utils::get_current_confirmed_slot(&data_cache).await;
 
                                             if let Some(account) = AccountPretty::new_from_geyzer(account, current_slot) {
-                                                //log::trace!("Geyser receive new account");
                                                 match account.owner {
                                                     solana_sdk::stake::program::ID => {
                                                         log::info!("Geyser notif stake account:{}", account);
@@ -96,7 +126,7 @@ pub async fn start_stakes_and_votes_loop(
                                                         }
                                                     }
                                                     solana_sdk::vote::program::ID => {
-                                                        // Generatea lot of logs. log::info!("Geyser notif VOTE account:{}", account);
+                                                        //log::info!("Geyser notif VOTE account:{}", account);
                                                         let account_pubkey = account.pubkey;
                                                         //process vote accout notification
                                                         if let Err(err) = votestore.add_vote(account, current_schedule_epoch.last_slot_in_epoch) {
@@ -109,6 +139,9 @@ pub async fn start_stakes_and_votes_loop(
                                             }
                                         }
                                         Some(UpdateOneof::Ping(_)) => log::trace!("UpdateOneof::Ping"),
+                                        Some(UpdateOneof::Slot(slot)) => {
+                                            log::trace!("Receive slot slot: {slot:?}");
+                                        }
                                         bad_msg => {
                                             log::info!("Geyser stream unexpected message received:{:?}", bad_msg);
                                         }
@@ -126,6 +159,14 @@ pub async fn start_stakes_and_votes_loop(
                             log::error!("The geyser stream close try to reconnect and resynchronize.");
                             break;
                          }
+                    }
+                }
+                //manage bootstrap event
+                Some(Ok(event)) = spawned_bootstrap_task.next() =>  {
+                    match crate::bootstrap::run_bootstrap_events(event, &mut spawned_bootstrap_task, &mut stakestore, &mut votestore) {
+                        Ok(Some(boot_res))=> bootstrap_done = boot_res,
+                        Ok(None) => (),
+                        Err(err) => log::error!("Stake / Vote Account bootstrap fail because '{err}'"),
                     }
                 }
                 //Manage leader schedule generation process
@@ -190,7 +231,8 @@ async fn subscribe_geyzer(
 
     let confirmed_stream = client
         .subscribe_once(
-            slots.clone(),
+            Default::default(), //slots
+            //slots.clone(),
             accounts.clone(),   //accounts
             Default::default(), //tx
             Default::default(), //entry
