@@ -140,7 +140,7 @@ impl TpuService {
                 addr.set_port(addr.port() + QUIC_PORT_OFFSET);
                 (x.0, addr)
             })
-            .dedup()
+            .unique()
             .collect_vec();
 
         // disclaimer - do not know how expensive that is
