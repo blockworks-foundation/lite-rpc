@@ -266,9 +266,9 @@ async fn ping_tpus(leaders: &Vec<(Pubkey, SocketAddr)>) {
 
     for stat in quicping_stats {
         if stat.2 < timeout {
-            println!("CSV {}\t{}\t{}", stat.0, stat.1.ip(), (stat.2.as_secs_f64() * 1000.0) as u64);
+            println!("CSV {}\t{}\t{}\t{}", stat.0, stat.1.ip(), stat.1.port(), (stat.2.as_secs_f64() * 1000.0) as u64);
         } else {
-            println!("CSV {}\t{}\tTIMEOUT", stat.0, stat.1.ip());
+            println!("CSV {}\t{}\t{}\tTIMEOUT", stat.0, stat.1.ip(), stat.1.port());
         }
     }
 
