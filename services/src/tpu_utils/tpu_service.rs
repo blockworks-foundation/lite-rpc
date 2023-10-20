@@ -114,6 +114,44 @@ impl TpuService {
         Ok(())
     }
 
+    async fn ping_tpus_by_leader_schedule(
+        &self,
+        slot: Slot
+    ) -> anyhow::Result<()> {
+        let cluster_nodes = self.data_cache.cluster_info.cluster_nodes.clone();
+
+        let leader_pingtpu_list = self
+            .leader_schedule
+            .get_slot_leaders(slot, slot + 1024) // 1024 = leaders to cache
+            .await?
+            .iter()
+            .map(|x| {
+                let contact_info = cluster_nodes.get(&x.pubkey);
+                let tpu_port = match contact_info {
+                    Some(info) => info.tpu,
+                    _ => None,
+                };
+                (x.pubkey, tpu_port)
+            })
+            .filter(|x| x.1.is_some())
+            .map(|x| {
+                let mut addr = x.1.unwrap();
+                // add quic port offset
+                addr.set_port(addr.port() + QUIC_PORT_OFFSET);
+                (x.0, addr)
+            })
+            .dedup()
+            .collect_vec();
+
+        // disclaimer - do not know how expensive that is
+        // run once!
+        tokio::spawn(async move {
+            ping_tpus(&leader_pingtpu_list).await;
+        });
+
+        Ok(())
+    }
+
     // update/reconfigure connections on slot change
     async fn update_quic_connections(
         &self,
@@ -149,9 +187,6 @@ impl TpuService {
             })
             .collect();
 
-        // disclaimer - do not know how expensive that is
-        ping_leaders(&connections_to_keep.values().cloned().collect_vec()).await;
-
         match &self.connection_manager {
             DirectTpu {
                 tpu_connection_manager,
@@ -184,8 +219,12 @@ impl TpuService {
 
     pub fn start(&self, slot_notifications: SlotStream) -> AnyhowJoinHandle {
         let this = self.clone();
+
         tokio::spawn(async move {
             let mut slot_notifications = slot_notifications;
+
+            this.ping_tpus_by_leader_schedule(slot_notifications.recv().await.unwrap().processed_slot).await?;
+
             loop {
                 let notification = slot_notifications
                     .recv()
@@ -201,19 +240,34 @@ impl TpuService {
     }
 }
 
-async fn ping_leaders(leader_addrs: &Vec<SocketAddr>) {
+async fn ping_tpus(leaders: &Vec<(Pubkey, SocketAddr)>) {
 
+    // truncate for testing
+    // let leaders = &leaders[0..3];
+
+    let mut quicping_stats: Vec<(Pubkey, SocketAddr, Duration)> = vec![];
+
+    info!("Send out pings to {} leaders...", leaders.len());
     // TODO tokio
-    for leader_addr in leader_addrs {
+    for (pubkey, socket_addr) in leaders {
         // Mango Validator mainnet - 202.8.9.108:8009
-        info!("ping leader {}", leader_addr);
 
-        let elapsed = quinn_quicping::pingo::quicping(*leader_addr, Some(Duration::from_millis(1500)));
+        let elapsed = quinn_quicping::pingo::quicping(*socket_addr, Some(Duration::from_millis(1500)));
 
-        info!("quic-ping to {}: {:.3}ms", leader_addr, elapsed.as_secs_f64() * 1000.0);
+        quicping_stats.push((*pubkey, *socket_addr, elapsed));
+
+        info!("quic-ping to {} ({}): {:.3}ms", socket_addr, pubkey, elapsed.as_secs_f64() * 1000.0);
+    }
+    info!("Done pinging leaders");
+
+    info!("dump CSV....");
+    quicping_stats.sort_by(|lhs, rhs| lhs.2.cmp(&rhs.2).reverse());
+
+    for stat in quicping_stats {
+        println!("CSV {}\t{}\t{:.3}", stat.0, stat.1.ip(), stat.2.as_secs_f64() * 1000.0);
     }
 
-
+    info!("dump CSV..done");
 
 
 
