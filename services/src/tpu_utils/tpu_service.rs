@@ -245,6 +245,7 @@ async fn ping_tpus(leaders: &Vec<(Pubkey, SocketAddr)>) {
     // truncate for testing
     // let leaders = &leaders[0..3];
 
+    let timeout = Duration::from_millis(1500);
     let mut quicping_stats: Vec<(Pubkey, SocketAddr, Duration)> = vec![];
 
     info!("Send out pings to {} leaders...", leaders.len());
@@ -252,7 +253,7 @@ async fn ping_tpus(leaders: &Vec<(Pubkey, SocketAddr)>) {
     for (pubkey, socket_addr) in leaders {
         // Mango Validator mainnet - 202.8.9.108:8009
 
-        let elapsed = quinn_quicping::pingo::quicping(*socket_addr, Some(Duration::from_millis(1500)));
+        let elapsed = quinn_quicping::pingo::quicping(*socket_addr, Some(timeout));
 
         quicping_stats.push((*pubkey, *socket_addr, elapsed));
 
@@ -264,7 +265,11 @@ async fn ping_tpus(leaders: &Vec<(Pubkey, SocketAddr)>) {
     quicping_stats.sort_by(|lhs, rhs| lhs.2.cmp(&rhs.2).reverse());
 
     for stat in quicping_stats {
-        println!("CSV {}\t{}\t{:.3}", stat.0, stat.1.ip(), stat.2.as_secs_f64() * 1000.0);
+        if stat.2 < timeout {
+            println!("CSV {}\t{}\t{}", stat.0, stat.1.ip(), (stat.2.as_secs_f64() * 1000.0) as u64);
+        } else {
+            println!("CSV {}\t{}\tTIMEOUT", stat.0, stat.1.ip());
+        }
     }
 
     info!("dump CSV..done");
