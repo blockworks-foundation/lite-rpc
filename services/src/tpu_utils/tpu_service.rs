@@ -122,7 +122,7 @@ impl TpuService {
 
         let leader_pingtpu_list = self
             .leader_schedule
-            .get_slot_leaders(slot, slot + 1024) // 1024 = leaders to cache
+            .get_slot_leaders(slot, slot + 5000) // 5000 = leaders to cache
             .await?
             .iter()
             .map(|x| {
@@ -246,6 +246,7 @@ async fn ping_tpus(leaders: &Vec<(Pubkey, SocketAddr)>) {
     // let leaders = &leaders[0..3];
 
     let timeout = Duration::from_millis(1500);
+    // TODO run at least 3x and calculate average and deviation
     let mut quicping_stats: Vec<(Pubkey, SocketAddr, Duration)> = vec![];
 
     info!("Send out pings to {} leaders...", leaders.len());
