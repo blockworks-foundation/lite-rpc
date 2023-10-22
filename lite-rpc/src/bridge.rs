@@ -21,10 +21,11 @@ use solana_lite_rpc_history::history::History;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
-    RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
-    RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
-    RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
-    RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsFilter, RpcTransactionLogsConfig,
+        RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
+        RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
+        RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
+        RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsConfig,
+        RpcTransactionLogsFilter,
     },
     response::{
         Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
@@ -158,7 +159,6 @@ impl LiteRpcServer for LiteBridge {
     async fn get_cluster_nodes(&self) -> crate::rpc::Result<Vec<RpcContactInfo>> {
         todo!()
     }
-
 
     async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
         let commitment_config = config
@@ -410,25 +410,35 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn program_subscribe(
-        &self, _pending: PendingSubscriptionSink,
+        &self,
+        _pending: PendingSubscriptionSink,
         _pubkey_str: String,
         _config: Option<RpcProgramAccountsConfig>,
-    ) -> SubscriptionResult { todo!() }
+    ) -> SubscriptionResult {
+        todo!()
+    }
 
-    async fn slot_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult { todo!() }
+    async fn slot_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
+        todo!()
+    }
 
     async fn block_subscribe(
-        &self, _pending: PendingSubscriptionSink,
+        &self,
+        _pending: PendingSubscriptionSink,
         _filter: RpcBlockSubscribeFilter,
         _config: Option<RpcBlockSubscribeConfig>,
-    ) -> SubscriptionResult { todo!() }
-
+    ) -> SubscriptionResult {
+        todo!()
+    }
 
     async fn logs_subscribe(
-        &self, _pending: PendingSubscriptionSink,
+        &self,
+        _pending: PendingSubscriptionSink,
         _filter: RpcTransactionLogsFilter,
         _config: Option<RpcTransactionLogsConfig>,
-    ) -> SubscriptionResult { todo!() }
+    ) -> SubscriptionResult {
+        todo!()
+    }
 
     // WARN: enable_received_notification: bool is ignored
     async fn signature_subscribe(
@@ -450,12 +460,14 @@ impl LiteRpcServer for LiteBridge {
         Ok(())
     }
 
-    async fn slot_updates_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
+    async fn slot_updates_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+    ) -> SubscriptionResult {
         todo!()
     }
 
     async fn vote_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
         todo!()
     }
-
 }

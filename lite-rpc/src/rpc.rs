@@ -4,7 +4,8 @@ use solana_rpc_client_api::config::{
     RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
     RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
     RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
-    RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsFilter, RpcTransactionLogsConfig,
+    RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsConfig,
+    RpcTransactionLogsFilter,
 };
 use solana_rpc_client_api::response::{
     Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
@@ -222,8 +223,6 @@ pub trait LiteRpc {
     #[subscription(name = "slotUpdatesSubscribe" => "slotUpdatesNotification", unsubscribe="slotUpdatesUnsubscribe", item=SlotUpdate)]
     async fn slot_updates_subscribe(&self) -> SubscriptionResult;
 
-
     #[subscription(name = "voteSubscribe" => "voteNotification", unsubscribe="voteUnsubscribe", item=RpcVote)]
     async fn vote_subscribe(&self) -> SubscriptionResult;
-
 }
