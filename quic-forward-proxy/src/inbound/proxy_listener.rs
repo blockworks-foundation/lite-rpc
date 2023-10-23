@@ -7,6 +7,7 @@ use crate::util::FALLBACK_TIMEOUT;
 use anyhow::{anyhow, bail, Context};
 use log::{debug, error, info, trace, warn};
 use quinn::{Connecting, Endpoint, ServerConfig, VarInt};
+use solana_lite_rpc_core::quic_connection_utils::apply_gso_workaround;
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -71,7 +72,7 @@ impl ProxyListener {
         let mut quinn_server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
 
         // note: this config must be aligned with lite-rpc's client config
-        let transport_config = Arc::get_mut(&mut quinn_server_config.transport).unwrap();
+        let mut transport_config = Arc::get_mut(&mut quinn_server_config.transport).unwrap();
         transport_config.max_concurrent_uni_streams(VarInt::from_u32(MAX_CONCURRENT_UNI_STREAMS));
         // no bidi streams used
         transport_config.max_concurrent_bidi_streams(VarInt::from_u32(0));
@@ -81,6 +82,7 @@ impl ProxyListener {
         transport_config.stream_receive_window((PACKET_DATA_SIZE as u32).into());
         transport_config
             .receive_window((PACKET_DATA_SIZE as u32 * MAX_CONCURRENT_UNI_STREAMS).into());
+        apply_gso_workaround(transport_config);
 
         Endpoint::server(quinn_server_config, proxy_listener_addr).unwrap()
     }

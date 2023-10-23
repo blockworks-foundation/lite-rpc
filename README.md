@@ -53,7 +53,7 @@ Find a new file named `metrics.csv` in the project root.
 ### Environment Variables
 
 | env               | purpose                                        | required?           |
-| ---------         | ------                                         | ----------          |
+|-------------------|------------------------------------------------|---------------------|
 | `RPC_URL`         | HTTP URL for a full RPC node                   | yes, for docker     |
 | `WS_URL`          | WS URL for a full RPC node                     | yes, for docker     |
 | `IDENTITY`        | Staked validator identity keypair              | no                  |
@@ -62,6 +62,7 @@ Find a new file named `metrics.csv` in the project root.
 | `CA_PEM_B64`      | Base64 encoded `ca.pem`                        | if postgres enabled |
 | `CLIENT_PKS_B64`  | Base64 encoded `client.pks`                    | if postgres enabled |
 | `CLIENT_PKS_PASS` | Password to `client.pks`                       | if postgres enabled |
+| `DISABLE_GSO`     | Disable GSO completely                         | no                  |
 
 ### Postgres
 lite-rpc implements an optional postgres service that can write to postgres database tables as defined
@@ -76,6 +77,8 @@ While lite-rpc can be deployed on any cloud infrastructure, it has been tested e
 An example configuration has been provided in `fly.toml`. We recommend a `dedicated-cpu-2x` VM with at least 4GB RAM.
 
 The app listens by default on ports 8890 and 8891 for HTTP and Websockets respectively. Since only a subset of RPC methods are implemented, we recommend serving unimplemented methods from a full RPC node using a reverse proxy such as HAProxy or Kong. Alternatively, you can connect directly to lite-rpc using a web3.js Connection object that is _only_ used for sending and confirming transactions.
+
+Troubleshooting: if you encounter issues with QUIC _sendmsg_ check [this](https://github.com/blockworks-foundation/lite-rpc/issues/199) - you might need to explicitly disable GSO (Generic Segmenatin Offload) see ```DISABLE_GSO=true```
 
 #### Example
 ```bash

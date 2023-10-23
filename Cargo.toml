@@ -52,8 +52,8 @@ prometheus = "0.13.3"
 lazy_static = "1.4.0"
 dotenv = "0.15.0"
 async-channel = "1.8.0"
-quinn = "0.9.3"
-rustls = { version = "=0.20.8", default-features = false }
+quinn = "0.9.4"
+rustls = { version = "0.20.9", default-features = false }
 solana-lite-rpc-services = {path = "services", version="0.2.3"}
 solana-lite-rpc-core = {path = "core", version="0.2.3"}
 solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.3"}
