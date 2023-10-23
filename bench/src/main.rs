@@ -1,8 +1,14 @@
-use bench::{cli::Args, helpers::BenchHelper, metrics::{AvgMetric, Metric, TxMetricData}, pingthing};
+use bench::pingthing::PingThing;
+use bench::{
+    cli::Args,
+    helpers::BenchHelper,
+    metrics::{AvgMetric, Metric, TxMetricData},
+    pingthing,
+};
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
-use log::{debug, error, info, warn};
+use log::{error, info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signature;
 use solana_sdk::{
@@ -17,7 +23,6 @@ use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
-use bench::pingthing::PingThing;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
@@ -52,7 +57,6 @@ async fn main() {
     } else {
         None
     });
-
 
     info!("Connecting to LiteRPC using {lite_rpc_addr}");
 
@@ -269,9 +273,13 @@ async fn bench(
 
                     if let Some(pingthing) = pingthing_config.as_ref() {
                         pingthing.submit_stats(
-                            time_to_confirm, signature.clone(), true, tx_data.sent_slot, current_slot.load(Ordering::Relaxed));
+                            time_to_confirm,
+                            *signature,
+                            true,
+                            tx_data.sent_slot,
+                            current_slot.load(Ordering::Relaxed),
+                        );
                         // TODO check
-
                     }
 
                     drop(tx_data);
