@@ -42,6 +42,8 @@ pub struct PingThing {
     pub va_api_key: String,
 }
 
+
+/// request format see https://github.com/Block-Logic/ping-thing-client/blob/4c008c741164702a639c282f1503a237f7d95e64/ping-thing-client.mjs#L160
 #[derive(Debug, Serialize, Deserialize)]
 struct Request {
     time: u128,
