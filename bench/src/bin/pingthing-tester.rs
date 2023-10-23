@@ -13,7 +13,7 @@ use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::genesis_config::ClusterType;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
-use bench::pingthing::PingThing;
+use bench::pingthing::{ClusterKeys, PingThing};
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -38,9 +38,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "http://api.mainnet-beta.solana.com/",
         CommitmentConfig::confirmed(),
     ));
+    let pingthing = PingThing {
+        cluster: ClusterKeys::Mainnet,
+        va_api_key,
+    };
 
     let current_slot = rpc_client.get_slot().unwrap();
     info!("Current slot: {}", current_slot);
+
 
     // some random transaction
     let hardcoded_example = Signature::from_str("3yKgzowsEUnXXv7TdbLcHFRqrFvn4CtaNKMELzfqrvokp8Pgw4LGFVAZqvnSLp92B9oY4HGhSEZhSuYqLzkT9sC8").unwrap();
@@ -50,9 +55,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Target slot: {}", current_slot);
 
 
-    let pingthing = PingThing {
-        va_api_key,
-    };
     pingthing.submit_stats(Duration::from_millis(5555), hardcoded_example, tx_success, target_slot, target_slot).await??;
 
     Ok(())

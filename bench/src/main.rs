@@ -32,6 +32,7 @@ async fn main() {
         transaction_save_file,
         large_transactions,
         pingthing_enable,
+        pingthing_cluster,
         pingthing_va_api_key,
     } = Args::parse();
 
@@ -45,6 +46,7 @@ async fn main() {
 
     let pingthing_config = Arc::new(if pingthing_enable {
         Some(PingThing {
+            cluster: pingthing::ClusterKeys::from_arg(pingthing_cluster.expect("cluster must be set")),
             va_api_key: pingthing_va_api_key.expect("va_api_key must be provided - see https://github.com/Block-Logic/ping-thing-client/tree/main#install-notes")
         })
     } else {

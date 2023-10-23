@@ -25,6 +25,8 @@ pub struct Args {
     pub large_transactions: bool,
     #[arg(long, default_value_t = false)]
     pub pingthing_enable: bool,
-    #[arg(long,)]
+    #[arg(long)]
+    pub pingthing_cluster: Option<String>,
+    #[arg(long)]
     pub pingthing_va_api_key: Option<String>,
 }
