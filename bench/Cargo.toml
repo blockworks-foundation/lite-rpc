@@ -23,6 +23,7 @@ lazy_static = "1.4.0"
 bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
+reqwest = "0.11"
 
 [dev-dependencies]
 bincode = { workspace = true }

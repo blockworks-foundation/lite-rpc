@@ -23,4 +23,8 @@ pub struct Args {
     // choose between small (179 bytes) and large (1186 bytes) transactions
     #[arg(short = 'L', long, default_value_t = false)]
     pub large_transactions: bool,
+    #[arg(long, default_value_t = false)]
+    pub pingthing_enable: bool,
+    #[arg(long,)]
+    pub pingthing_va_api_key: Option<String>,
 }

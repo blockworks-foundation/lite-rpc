@@ -1,12 +1,8 @@
-use bench::{
-    cli::Args,
-    helpers::BenchHelper,
-    metrics::{AvgMetric, Metric, TxMetricData},
-};
+use bench::{cli::Args, helpers::BenchHelper, metrics::{AvgMetric, Metric, TxMetricData}, pingthing};
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signature;
 use solana_sdk::{
@@ -21,6 +17,7 @@ use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
+use bench::pingthing::PingThing;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
@@ -34,6 +31,8 @@ async fn main() {
         lite_rpc_addr,
         transaction_save_file,
         large_transactions,
+        pingthing_enable,
+        pingthing_va_api_key,
     } = Args::parse();
 
     let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
@@ -43,6 +42,15 @@ async fn main() {
     } else {
         TransactionSize::Small
     };
+
+    let pingthing_config = Arc::new(if pingthing_enable {
+        Some(PingThing {
+            va_api_key: pingthing_va_api_key.expect("va_api_key must be provided - see https://github.com/Block-Logic/ping-thing-client/tree/main#install-notes")
+        })
+    } else {
+        None
+    });
+
 
     info!("Connecting to LiteRPC using {lite_rpc_addr}");
 
@@ -113,6 +121,7 @@ async fn main() {
             tx_log_sx.clone(),
             log_transactions,
             transaction_size,
+            pingthing_config.clone(),
         )));
         // wait for an interval
         run_interval_ms.tick().await;
@@ -169,6 +178,7 @@ async fn bench(
     tx_metric_sx: UnboundedSender<TxMetricData>,
     log_txs: bool,
     transaction_size: TransactionSize,
+    pingthing_config: Arc<Option<PingThing>>,
 ) -> Metric {
     let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
     // transaction sender task
@@ -254,6 +264,14 @@ async fn bench(
                             time_to_confirm_in_millis: time_to_confirm.as_millis() as u64,
                         });
                     }
+
+                    if let Some(pingthing) = pingthing_config.as_ref() {
+                        pingthing.submit_stats(
+                            time_to_confirm, signature.clone(), true, tx_data.sent_slot, current_slot.load(Ordering::Relaxed));
+                        // TODO check
+
+                    }
+
                     drop(tx_data);
                     map_of_txs.remove(signature);
                     confirmed_count += 1;
