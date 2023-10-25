@@ -19,10 +19,12 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use futures::join;
 use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
+use tokio::task::JoinHandle;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
@@ -249,6 +251,9 @@ async fn bench(
         }
 
         if let Ok(res) = rpc_client.get_signature_statuses(&signatures).await {
+
+            let mut pingthing_tasks: Vec<JoinHandle<anyhow::Result<()>>> = vec![];
+
             for (i, signature) in signatures.iter().enumerate() {
                 let tx_status = &res.value[i];
                 if tx_status.is_some() {
@@ -272,30 +277,25 @@ async fn bench(
                     }
 
                     if let Some(pingthing) = pingthing_config.as_ref() {
-                        let pingthing_result = pingthing.submit_stats(
+                        let pingthing_jh = pingthing.submit_stats(
                             time_to_confirm,
                             *signature,
                             true,
                             tx_data.sent_slot,
                             current_slot.load(Ordering::Relaxed),
-                        ).await;
-                        match pingthing_result {
-                            Err(err) => {
-                                error!("pingthing thread error {} - continue", err);
-                            }
-                            Ok(inner) => {
-                                if let Err(err) = inner {
-                                    error!("pingthing submit error {} - continue", err);
-                                }
-                            }
-                        }
+                        );
+
+                        pingthing_tasks.push(pingthing_jh);
                     }
 
                     drop(tx_data);
                     map_of_txs.remove(signature);
                     confirmed_count += 1;
                 }
-            }
+            } // -- for all signatures
+
+            join_all(pingthing_tasks).await;
+
         }
     }
 
