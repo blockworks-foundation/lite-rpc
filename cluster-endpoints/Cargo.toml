@@ -38,3 +38,5 @@ solana-lite-rpc-core = { workspace = true }
 yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 itertools = {workspace = true}
+prometheus = { workspace = true }
+lazy_static = { workspace = true }

@@ -54,15 +54,11 @@ impl DataCache {
     pub async fn check_if_confirmed_or_expired_blockheight(
         &self,
         sent_transaction_info: &SentTransactionInfo,
+        current_blockheight: u64,
     ) -> bool {
         self.txs
             .is_transaction_confirmed(&sent_transaction_info.signature)
-            || self
-                .block_information_store
-                .get_latest_block(CommitmentConfig::processed())
-                .await
-                .block_height
-                > sent_transaction_info.last_valid_block_height
+            || current_blockheight > sent_transaction_info.last_valid_block_height
     }
 
     pub async fn get_current_epoch(&self, commitment: CommitmentConfig) -> Epoch {

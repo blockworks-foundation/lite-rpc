@@ -60,10 +60,10 @@ impl TxStore {
         self.store.get(signature).map(|x| x.value().clone())
     }
 
-    pub fn clean(&self, current_finalized_blochash: u64) {
+    pub fn clean(&self, current_finalized_blockhash: u64) {
         let length_before = self.store.len();
         self.store.retain(|_k, v| {
-            v.last_valid_blockheight >= current_finalized_blochash + self.save_for_additional_slots
+            v.last_valid_blockheight >= current_finalized_blockhash + self.save_for_additional_slots
         });
         log::info!("Cleaned {} transactions", length_before - self.store.len());
     }
