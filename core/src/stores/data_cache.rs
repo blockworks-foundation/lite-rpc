@@ -84,7 +84,6 @@ impl DataCache {
             slot_cache: SlotCache::new(0),
             tx_subs: SubscriptionStore::default(),
             txs: TxStore {
-                save_for_additional_slots: 0,
                 store: Arc::new(DashMap::new()),
             },
             epoch_data: EpochCache::new_for_tests(),

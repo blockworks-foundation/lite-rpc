@@ -21,10 +21,7 @@ use std::{
         Arc,
     },
 };
-use tokio::{
-    sync::{broadcast::Receiver, broadcast::Sender},
-    time::Instant,
-};
+use tokio::sync::{broadcast::Receiver, broadcast::Sender};
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
@@ -96,13 +93,6 @@ impl ActiveConnection {
             max_uni_stream_connections,
         );
 
-        let mut current_blockheight = self
-            .data_cache
-            .block_information_store
-            .get_latest_block_info(solana_sdk::commitment_config::CommitmentConfig::processed())
-            .await
-            .block_height;
-        let mut block_height_update_time = Instant::now();
         loop {
             // exit signal set
             if exit_signal.load(Ordering::Relaxed) {
@@ -118,12 +108,7 @@ impl ActiveConnection {
 
                     let tx: Vec<u8> = match tx {
                         Ok(transaction_sent_info) => {
-                            if Instant::now() - block_height_update_time > std::time::Duration::from_secs(1) {
-                                // update block height information every second
-                                current_blockheight = self.data_cache.block_information_store.get_latest_block_info(solana_sdk::commitment_config::CommitmentConfig::processed()).await.block_height;
-                                block_height_update_time = Instant::now();
-                            }
-                            if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info, current_blockheight).await {
+                            if self.data_cache.txs.is_transaction_confirmed(&transaction_sent_info.signature) {
                                 // transaction is already confirmed/ no need to send
                                 continue;
                             }
@@ -203,7 +188,7 @@ impl TpuConnectionManager {
         key: rustls::PrivateKey,
         fanout: usize,
     ) -> Self {
-        let number_of_clients = fanout * 2;
+        let number_of_clients = fanout * 4;
         Self {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())

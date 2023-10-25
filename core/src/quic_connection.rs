@@ -193,6 +193,7 @@ pub struct QuicConnectionPool {
     // counting semaphore is ideal way to manage backpressure on the connection
     // because a connection can create only N unistream connections
     transactions_in_sending_semaphore: Vec<Arc<Semaphore>>,
+    permit_threshold: usize,
 }
 
 pub struct PooledConnection {
@@ -231,6 +232,9 @@ impl QuicConnectionPool {
                 });
                 v
             },
+            permit_threshold: max_number_of_unistream_connection
+                .saturating_mul(90)
+                .saturating_div(100),
         }
     }
 
@@ -238,7 +242,11 @@ impl QuicConnectionPool {
         // pefer getting connection that were already established
         for (index, sem) in self.transactions_in_sending_semaphore.iter().enumerate() {
             let connection = &self.connections[index];
-            if !connection.has_connected_atleast_once() || connection.is_connected().await {
+
+            if !connection.has_connected_atleast_once()
+                || (connection.is_connected().await
+                    && sem.available_permits() > self.permit_threshold)
+            {
                 // if it is connection is not yet connected even once or connection is still open
                 if let Ok(permit) = sem.clone().try_acquire_owned() {
                     return Ok((permit, index));
