@@ -279,8 +279,15 @@ async fn bench(
                             tx_data.sent_slot,
                             current_slot.load(Ordering::Relaxed),
                         ).await;
-                        if let Err(err) = pingthing_result {
-                            error!("pingthing submit error {} - continue", err);
+                        match pingthing_result {
+                            Err(err) => {
+                                error!("pingthing thread error {} - continue", err);
+                            }
+                            Ok(inner) => {
+                                if let Err(err) = inner {
+                                    error!("pingthing submit error {} - continue", err);
+                                }
+                            }
                         }
                     }
 
