@@ -272,14 +272,16 @@ async fn bench(
                     }
 
                     if let Some(pingthing) = pingthing_config.as_ref() {
-                        pingthing.submit_stats(
+                        let pingthing_result = pingthing.submit_stats(
                             time_to_confirm,
                             *signature,
                             true,
                             tx_data.sent_slot,
                             current_slot.load(Ordering::Relaxed),
-                        );
-                        // TODO check
+                        ).await;
+                        if let Err(err) = pingthing_result {
+                            error!("pingthing submit error {} - continue", err);
+                        }
                     }
 
                     drop(tx_data);
