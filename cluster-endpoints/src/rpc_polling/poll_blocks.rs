@@ -15,7 +15,7 @@ use std::{
 use tokio::sync::broadcast::{Receiver, Sender};
 
 lazy_static::lazy_static! {
-    static ref NB_BLOCK_FETCHING_TASKS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc-num-blockfetching-tasks", "Transactions in store")).unwrap();
+    static ref NB_BLOCK_FETCHING_TASKS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_num_blockfetching_tasks", "Transactions in store")).unwrap();
 }
 
 pub async fn process_block(
