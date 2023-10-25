@@ -14,7 +14,6 @@ pub struct TxProps {
 #[derive(Clone, Debug)]
 pub struct TxStore {
     pub store: Arc<DashMap<String, TxProps>>,
-    pub save_for_additional_slots: u64,
 }
 
 impl TxStore {
@@ -60,11 +59,10 @@ impl TxStore {
         self.store.get(signature).map(|x| x.value().clone())
     }
 
-    pub fn clean(&self, current_finalized_blockhash: u64) {
+    pub fn clean(&self, current_finalized_blockheight: u64) {
         let length_before = self.store.len();
-        self.store.retain(|_k, v| {
-            v.last_valid_blockheight >= current_finalized_blockhash + self.save_for_additional_slots
-        });
+        self.store
+            .retain(|_k, v| v.last_valid_blockheight >= current_finalized_blockheight);
         log::info!("Cleaned {} transactions", length_before - self.store.len());
     }
 
