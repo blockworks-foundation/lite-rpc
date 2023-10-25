@@ -42,6 +42,35 @@ pub async fn process_block(
     }
 }
 
+pub async fn check_finalized(rpc_client: &RpcClient, slot: Slot, blockhash: &String) -> bool {
+    let block = rpc_client
+        .get_block_with_config(
+            slot,
+            RpcBlockConfig {
+                transaction_details: None,
+                commitment: Some(CommitmentConfig::finalized()),
+                max_supported_transaction_version: Some(0),
+                encoding: Some(UiTransactionEncoding::Base64),
+                rewards: None,
+            },
+        )
+        .await;
+    match block {
+        Ok(block) => {
+            if block.blockhash != *blockhash {
+                log::error!(
+                    "blockhash mismatch confirmed : {} finalized : {} for slot: {}",
+                    blockhash,
+                    block.blockhash,
+                    slot
+                );
+            }
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 pub fn poll_block(
     rpc_client: Arc<RpcClient>,
     block_notification_sender: Sender<ProducedBlock>,
@@ -72,43 +101,49 @@ pub fn poll_block(
                     let block_notification_sender = block_notification_sender.clone();
                     let current_slot = current_slot.clone();
                     tokio::spawn(async move {
-                        let mut confirmed_slot_fetch = false;
+                        let mut confirmed_block = None;
                         while current_slot
                             .load(std::sync::atomic::Ordering::Relaxed)
                             .saturating_sub(slot)
-                            < 128
+                            < 64
                         {
-                            if let Some(processed_block) = process_block(
+                            if let Some(produced_block) = process_block(
                                 rpc_client.as_ref(),
                                 slot,
                                 CommitmentConfig::confirmed(),
                             )
                             .await
                             {
-                                let _ = block_notification_sender.send(processed_block);
-                                confirmed_slot_fetch = true;
+                                let _ = block_notification_sender.send(produced_block.clone());
+                                confirmed_block = Some(produced_block);
+                                tokio::time::sleep(Duration::from_secs(2)).await;
                                 break;
                             }
                             tokio::time::sleep(Duration::from_millis(50)).await;
                         }
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        while confirmed_slot_fetch
-                            && current_slot
-                                .load(std::sync::atomic::Ordering::Relaxed)
-                                .saturating_sub(slot)
-                                < 256
+                        while current_slot
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                            .saturating_sub(slot)
+                            < 256
                         {
-                            if let Some(processed_block) = process_block(
-                                rpc_client.as_ref(),
-                                slot,
-                                CommitmentConfig::finalized(),
-                            )
-                            .await
-                            {
-                                let _ = block_notification_sender.send(processed_block);
+                            if let Some(confirmed_block) = &confirmed_block {
+                                if check_finalized(
+                                    rpc_client.as_ref(),
+                                    slot,
+                                    &confirmed_block.blockhash,
+                                )
+                                .await
+                                {
+                                    let mut finalized_block = confirmed_block.clone();
+                                    finalized_block.commitment_config =
+                                        CommitmentConfig::finalized();
+                                    let _ = block_notification_sender.send(finalized_block);
+                                    break;
+                                }
+                                tokio::time::sleep(Duration::from_millis(50)).await;
+                            } else {
                                 break;
                             }
-                            tokio::time::sleep(Duration::from_millis(50)).await;
                         }
                         NB_BLOCK_FETCHING_TASKS.dec();
                         drop(premit)
