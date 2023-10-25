@@ -1,9 +1,14 @@
 use crate::utils::TakableContent;
 use crate::utils::TakableMap;
+use crate::utils::UpdateAction;
 use crate::AccountPretty;
 use crate::Slot;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
+use solana_lite_rpc_core::structures::leaderschedule::GetVoteAccountsConfig;
+use solana_rpc_client_api::request::MAX_RPC_VOTE_ACCOUNT_INFO_EPOCH_CREDITS_HISTORY;
+use solana_rpc_client_api::response::RpcVoteAccountInfo;
+use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use solana_sdk::account::Account;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::vote::state::VoteState;
@@ -12,9 +17,15 @@ use std::sync::Arc;
 
 pub type VoteMap = HashMap<Pubkey, Arc<StoredVote>>;
 
+#[derive(Debug, Clone)]
+pub struct EpochVoteStakes {
+    pub vote_stakes: HashMap<Pubkey, (u64, Arc<StoredVote>)>,
+    pub epoch: u64,
+}
+
 impl TakableContent<StoredVote> for VoteMap {
-    fn add_value(&mut self, val: StoredVote) {
-        VoteStore::vote_map_insert_vote(self, val.pubkey, val);
+    fn add_value(&mut self, val: UpdateAction<StoredVote>) {
+        VoteStore::process_vote_action(self, val);
     }
 }
 
@@ -26,28 +37,83 @@ pub struct StoredVote {
     pub write_version: u64,
 }
 
+impl StoredVote {
+    pub fn convert_to_rpc_vote_account_info(
+        &self,
+        activated_stake: u64,
+        epoch_vote_account: bool,
+    ) -> RpcVoteAccountInfo {
+        let last_vote = self
+            .vote_data
+            .votes
+            .iter()
+            .last()
+            .map(|vote| vote.slot())
+            .unwrap_or_default();
+
+        RpcVoteAccountInfo {
+            vote_pubkey: self.pubkey.to_string(),
+            node_pubkey: self.vote_data.node_pubkey.to_string(),
+            activated_stake,
+            commission: self.vote_data.commission,
+            epoch_vote_account,
+            epoch_credits: self.vote_data.epoch_credits.clone(),
+            last_vote,
+            root_slot: self.vote_data.root_slot.unwrap_or_default(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct VoteStore {
-    votes: TakableMap<StoredVote, VoteMap>,
+    pub votes: TakableMap<StoredVote, VoteMap>,
+    epoch_vote_stake_map: HashMap<u64, EpochVoteStakes>,
 }
 
 impl VoteStore {
     pub fn new(capacity: usize) -> Self {
         VoteStore {
             votes: TakableMap::new(HashMap::with_capacity(capacity)),
+            epoch_vote_stake_map: HashMap::new(),
         }
     }
-    pub fn add_vote(
+
+    pub fn add_epoch_vote_stake(&mut self, stakes: EpochVoteStakes) {
+        self.epoch_vote_stake_map.insert(stakes.epoch, stakes);
+    }
+
+    pub fn vote_stakes_for_epoch(&self, epoch: u64) -> Option<EpochVoteStakes> {
+        self.epoch_vote_stake_map.get(&epoch).cloned()
+    }
+
+    pub fn notify_vote_change(
         &mut self,
         new_account: AccountPretty,
         current_end_epoch_slot: Slot,
     ) -> anyhow::Result<()> {
         if new_account.lamports == 0 {
-            self.remove_from_store(&new_account.pubkey, new_account.slot);
+            //self.remove_from_store(&new_account.pubkey, new_account.slot);
+            self.votes.add_value(
+                UpdateAction::Remove(new_account.pubkey, new_account.slot),
+                new_account.slot <= current_end_epoch_slot,
+            );
         } else {
-            let Ok(vote_data) = new_account.read_vote() else {
+            let Ok(mut vote_data) = new_account.read_vote() else {
                 bail!("Can't read Vote from account data");
             };
+
+            //remove unnecessary entry. See Solana code rpc::rpc::get_vote_accounts
+            let epoch_credits = vote_data.epoch_credits();
+            vote_data.epoch_credits =
+                if epoch_credits.len() > MAX_RPC_VOTE_ACCOUNT_INFO_EPOCH_CREDITS_HISTORY {
+                    epoch_credits
+                        .iter()
+                        .skip(epoch_credits.len() - MAX_RPC_VOTE_ACCOUNT_INFO_EPOCH_CREDITS_HISTORY)
+                        .cloned()
+                        .collect()
+                } else {
+                    epoch_credits.clone()
+                };
 
             //log::info!("add_vote {} :{vote_data:?}", new_account.pubkey);
 
@@ -59,35 +125,49 @@ impl VoteStore {
             };
 
             let action_update_slot = new_voteacc.last_update_slot;
-            self.votes
-                .add_value(new_voteacc, action_update_slot <= current_end_epoch_slot);
+            self.votes.add_value(
+                UpdateAction::Notify(action_update_slot, new_voteacc),
+                action_update_slot <= current_end_epoch_slot,
+            );
         }
 
         Ok(())
     }
-    //helper method to extract and merge stakes.
-    pub fn take_votestore(votestore: &mut VoteStore) -> anyhow::Result<VoteMap> {
-        crate::utils::take(&mut votestore.votes)
+
+    fn process_vote_action(votes: &mut VoteMap, action: UpdateAction<StoredVote>) {
+        match action {
+            UpdateAction::Notify(_, vote) => {
+                Self::vote_map_insert_vote(votes, vote);
+            }
+            UpdateAction::Remove(account_pk, slot) => {
+                Self::remove_from_store(votes, &account_pk, slot)
+            }
+        }
     }
 
-    pub fn merge_votestore(votestore: &mut VoteStore, vote_map: VoteMap) -> anyhow::Result<()> {
-        crate::utils::merge(&mut votestore.votes, vote_map)
-    }
+    // //helper method to extract and merge stakes.
+    // pub fn take_votestore(&mut self) -> TakeResult<VoteMap> {
+    //     self.votes.take()
+    // }
 
-    fn remove_from_store(&mut self, account_pk: &Pubkey, update_slot: Slot) {
-        if self
-            .votes
-            .content
+    // pub fn merge_votestore(&mut self, vote_map: VoteMap) -> anyhow::Result<()> {
+    //     self.votes.merge(vote_map)
+    // }
+
+    fn remove_from_store(votes: &mut VoteMap, account_pk: &Pubkey, update_slot: Slot) {
+        //TODO use action.
+        if votes
             .get(account_pk)
             .map(|vote| vote.last_update_slot <= update_slot)
             .unwrap_or(true)
         {
             log::info!("Vote remove_from_store for {}", account_pk.to_string());
-            self.votes.content.remove(account_pk);
+            votes.remove(account_pk);
         }
     }
 
-    fn vote_map_insert_vote(map: &mut VoteMap, vote_account_pk: Pubkey, vote_data: StoredVote) {
+    fn vote_map_insert_vote(map: &mut VoteMap, vote_data: StoredVote) {
+        let vote_account_pk = vote_data.pubkey;
         match map.entry(vote_account_pk) {
             std::collections::hash_map::Entry::Occupied(occupied) => {
                 let voteacc = occupied.into_mut(); // <-- get mut reference to existing value
@@ -147,6 +227,54 @@ pub fn merge_program_account_in_vote_map(
                 last_update_slot,
                 write_version: 0,
             };
-            VoteStore::vote_map_insert_vote(vote_map, pk, vote);
+            VoteStore::vote_map_insert_vote(vote_map, vote);
         });
+}
+
+//TODO put in config instead of const.
+// Validators that are this number of slots behind are considered delinquent
+pub const DELINQUENT_VALIDATOR_SLOT_DISTANCE: u64 = 128;
+pub fn get_rpc_vote_accounts_info(
+    current_slot: Slot,
+    votes: &VoteMap,
+    vote_accounts: &HashMap<Pubkey, (u64, Arc<StoredVote>)>,
+    config: GetVoteAccountsConfig,
+) -> RpcVoteAccountStatus {
+    //TODO
+    //manage
+
+    //From Solana rpc::rpc::metaz::get_vote_accounts() code.
+    let (current_vote_accounts, delinquent_vote_accounts): (
+        Vec<RpcVoteAccountInfo>,
+        Vec<RpcVoteAccountInfo>,
+    ) = votes
+        .values()
+        .map(|vote| {
+            let (stake, epoch_vote_account) = vote_accounts
+                .get(&vote.pubkey)
+                .map(|(stake, _)| (*stake, true))
+                .unwrap_or((0, false));
+            vote.convert_to_rpc_vote_account_info(stake, epoch_vote_account)
+        })
+        .partition(|vote_account_info| {
+            if current_slot >= DELINQUENT_VALIDATOR_SLOT_DISTANCE {
+                vote_account_info.last_vote > current_slot - DELINQUENT_VALIDATOR_SLOT_DISTANCE
+            } else {
+                vote_account_info.last_vote > 0
+            }
+        });
+    let keep_unstaked_delinquents = config.keep_unstaked_delinquents.unwrap_or_default();
+    let delinquent_vote_accounts = if !keep_unstaked_delinquents {
+        delinquent_vote_accounts
+            .into_iter()
+            .filter(|vote_account_info| vote_account_info.activated_stake > 0)
+            .collect::<Vec<_>>()
+    } else {
+        delinquent_vote_accounts
+    };
+
+    RpcVoteAccountStatus {
+        current: current_vote_accounts,
+        delinquent: delinquent_vote_accounts,
+    }
 }

@@ -1,15 +1,19 @@
 use crate::account::AccountPretty;
 use crate::bootstrap::BootstrapEvent;
 use crate::leader_schedule::LeaderScheduleGeneratedData;
+use crate::utils::{Takable, TakeResult};
 use futures::Stream;
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
+use solana_lite_rpc_core::structures::leaderschedule::GetVoteAccountsConfig;
 use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use solana_lite_rpc_core::types::SlotStream;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::mpsc::Receiver;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::CommitmentLevel;
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterAccounts;
@@ -34,6 +38,10 @@ type Slot = u64;
 pub async fn start_stakes_and_votes_loop(
     mut data_cache: DataCache,
     mut slot_notification: SlotStream,
+    mut vote_account_rpc_request: Receiver<(
+        GetVoteAccountsConfig,
+        tokio::sync::oneshot::Sender<RpcVoteAccountStatus>,
+    )>,
     rpc_client: Arc<RpcClient>,
     grpc_url: String,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
@@ -51,20 +59,11 @@ pub async fn start_stakes_and_votes_loop(
         let mut current_schedule_epoch =
             crate::bootstrap::bootstrap_scheduleepoch_data(&data_cache).await;
 
-        match crate::bootstrap::bootstrap_current_leader_schedule(
-            current_schedule_epoch.slots_in_epoch,
-        ) {
-            Ok(current_schedule_data) => {
-                data_cache.leader_schedule = Arc::new(current_schedule_data)
-            }
-            Err(err) => {
-                log::warn!("Error during current leader schedule bootstrap from files:{err}")
-            }
-        }
-
         //future execution collection.
         let mut spawned_leader_schedule_task = FuturesUnordered::new();
         let mut spawned_bootstrap_task = FuturesUnordered::new();
+        let mut rpc_notify_task = FuturesUnordered::new();
+        let mut rpc_exec_task = FuturesUnordered::new();
         let jh = tokio::spawn(async move {
             BootstrapEvent::InitBootstrap {
                 sleep_time: 1,
@@ -74,6 +73,7 @@ pub async fn start_stakes_and_votes_loop(
         spawned_bootstrap_task.push(jh);
 
         let mut bootstrap_done = false;
+        let mut pending_rpc_request = vec![];
 
         loop {
             tokio::select! {
@@ -90,6 +90,84 @@ pub async fn start_stakes_and_votes_loop(
                                 &mut stakestore,
                                 &mut votestore,
                             );
+                        }
+                    }
+                }
+                Some((config, return_channel)) = vote_account_rpc_request.recv() => {
+                    pending_rpc_request.push(return_channel);
+                    let current_slot = crate::utils::get_current_confirmed_slot(&data_cache).await;
+                    let vote_accounts = votestore.vote_stakes_for_epoch(0); //TODO define epoch storage.
+                    match votestore.votes.take() {
+                        TakeResult::Map(votes) => {
+                            let jh = tokio::task::spawn_blocking({
+                                move || {
+                                    let rpc_vote_accounts = crate::vote::get_rpc_vote_accounts_info(
+                                        current_slot,
+                                        &votes,
+                                        &vote_accounts.as_ref().unwrap().vote_stakes, //TODO put in take.
+                                        config,
+                                    );
+                                    (votes, vote_accounts, rpc_vote_accounts)
+                                }
+                            });
+                            rpc_exec_task.push(jh);
+                        }
+                        TakeResult::Taken(mut stake_notify) => {
+                            let notif_jh = tokio::spawn({
+                                async move {
+                                    stake_notify.pop().unwrap().notified().await;
+                                    (current_slot, vote_accounts, config)
+                                }
+                            });
+                            rpc_notify_task.push(notif_jh);
+                        }
+                    }
+                }
+                //manage rpc waiting request notification.
+                Some(Ok((votes, vote_accounts, rpc_vote_accounts))) = rpc_exec_task.next() =>  {
+                    if let Err(err) = votestore.votes.merge(votes) {
+                        log::info!("Error during  RPC get vote account merge:{err}");
+                    }
+
+                    //avoid clone on the first request
+                    //TODO change the logic use take less one.
+                    if pending_rpc_request.len() == 1 {
+                        if let Err(_) = pending_rpc_request.pop().unwrap().send(rpc_vote_accounts.clone()) {
+                            log::error!("Vote accounts RPC channel send closed.");
+                        }
+                    } else {
+                        for return_channel in pending_rpc_request.drain(..) {
+                            if let Err(_) = return_channel.send(rpc_vote_accounts.clone()) {
+                                log::error!("Vote accounts RPC channel send closed.");
+                            }
+                        }
+                    }
+                }
+                //manage rpc waiting request notification.
+                Some(Ok((current_slot, vote_accounts, config))) = rpc_notify_task.next() =>  {
+                    match votestore.votes.take() {
+                        TakeResult::Map(votes) => {
+                            let jh = tokio::task::spawn_blocking({
+                                move || {
+                                    let rpc_vote_accounts = crate::vote::get_rpc_vote_accounts_info(
+                                        current_slot,
+                                        &votes,
+                                        &vote_accounts.as_ref().unwrap().vote_stakes, //TODO put in take.
+                                        config,
+                                    );
+                                    (votes, vote_accounts, rpc_vote_accounts)
+                                }
+                            });
+                            rpc_exec_task.push(jh);
+                        }
+                        TakeResult::Taken(mut stake_notify) => {
+                            let notif_jh = tokio::spawn({
+                                async move {
+                                    stake_notify.pop().unwrap().notified().await;
+                                     (current_slot, vote_accounts, config)
+                                }
+                            });
+                            rpc_notify_task.push(notif_jh);
                         }
                     }
                 }
@@ -129,7 +207,7 @@ pub async fn start_stakes_and_votes_loop(
                                                         //log::info!("Geyser notif VOTE account:{}", account);
                                                         let account_pubkey = account.pubkey;
                                                         //process vote accout notification
-                                                        if let Err(err) = votestore.add_vote(account, current_schedule_epoch.last_slot_in_epoch) {
+                                                        if let Err(err) = votestore.notify_vote_change(account, current_schedule_epoch.last_slot_in_epoch) {
                                                             log::warn!("Can't add new stake from account data err:{} account:{}", err, account_pubkey);
                                                             continue;
                                                         }
@@ -163,8 +241,22 @@ pub async fn start_stakes_and_votes_loop(
                 }
                 //manage bootstrap event
                 Some(Ok(event)) = spawned_bootstrap_task.next() =>  {
-                    match crate::bootstrap::run_bootstrap_events(event, &mut spawned_bootstrap_task, &mut stakestore, &mut votestore) {
-                        Ok(Some(boot_res))=> bootstrap_done = boot_res,
+                    match crate::bootstrap::run_bootstrap_events(event, &mut spawned_bootstrap_task, &mut stakestore, &mut votestore, current_schedule_epoch.slots_in_epoch) {
+                        Ok(Some(boot_res))=> {
+
+                            match boot_res {
+                                Ok(current_schedule_data) => {
+                                    //let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
+
+                                    data_cache.leader_schedule = Arc::new(current_schedule_data);
+                                     bootstrap_done = true;
+                                }
+                                Err(err) => {
+                                    log::warn!("Error during current leader schedule bootstrap from files:{err}")
+                                }
+                            }
+
+                        },
                         Ok(None) => (),
                         Err(err) => log::error!("Stake / Vote Account bootstrap fail because '{err}'"),
                     }
@@ -183,10 +275,11 @@ pub async fn start_stakes_and_votes_loop(
                     data_schedule.current = data_schedule.next.take();
                     match new_leader_schedule {
                         //TODO use vote_stakes for vote accounts RPC call.
-                        Some(LeaderScheduleGeneratedData{schedule, vote_stakes, epoch}) => {
+                        Some(schedule_data) => {
                             let new_schedule_data = LeaderScheduleData{
-                                    schedule,
-                                    epoch
+                                    schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&schedule_data.schedule),
+                                    schedule_by_slot: schedule_data.schedule.get_slot_leaders().to_vec(),
+                                    epoch: schedule_data.epoch
                             };
                             data_schedule.next = Some(new_schedule_data);
                         }

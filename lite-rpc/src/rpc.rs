@@ -1,6 +1,7 @@
 use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
 use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::proc_macros::rpc;
+use solana_rpc_client_api::config::RpcGetVoteAccountsConfig;
 use solana_rpc_client_api::config::{
     RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
     RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
@@ -13,9 +14,9 @@ use solana_rpc_client_api::response::{
     RpcContactInfo, RpcLeaderSchedule, RpcPerfSample, RpcPrioritizationFee, RpcVersionInfo,
     RpcVoteAccountStatus,
 };
-
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::epoch_info::EpochInfo;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::collections::HashMap;
@@ -238,4 +239,17 @@ pub trait LiteRpc {
         slot: Option<u64>,
         config: Option<RpcLeaderScheduleConfig>,
     ) -> crate::rpc::Result<Option<HashMap<String, Vec<usize>>>>;
+
+    #[method(name = "getSlotLeaders")]
+    async fn get_slot_leaders(
+        &self,
+        start_slot: u64,
+        limit: u64,
+    ) -> crate::rpc::Result<Vec<Pubkey>>;
+
+    #[method(name = "getVoteAccounts")]
+    async fn get_vote_accounts(
+        &self,
+        config: Option<RpcGetVoteAccountsConfig>,
+    ) -> crate::rpc::Result<RpcVoteAccountStatus>;
 }

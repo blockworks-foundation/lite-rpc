@@ -1,6 +1,8 @@
 use crate::stake::{StakeMap, StakeStore};
+use crate::utils::{Takable, TakeResult};
 use crate::vote::StoredVote;
 use crate::vote::{VoteMap, VoteStore};
+use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -15,9 +17,22 @@ use tokio::task::JoinHandle;
 
 #[derive(Debug)]
 pub struct LeaderScheduleGeneratedData {
-    pub schedule: HashMap<String, Vec<usize>>,
-    pub vote_stakes: HashMap<Pubkey, (u64, Arc<StoredVote>)>,
+    pub schedule: LeaderSchedule,
+    pub epoch_vote_stakes: HashMap<Pubkey, (u64, Arc<StoredVote>)>,
     pub epoch: u64,
+}
+
+impl LeaderScheduleGeneratedData {
+    pub fn get_schedule_by_nodes(schedule: &LeaderSchedule) -> HashMap<String, Vec<usize>> {
+        schedule
+            .get_slot_leaders()
+            .iter()
+            .enumerate()
+            .map(|(i, pk)| (pk.to_string(), i))
+            .into_group_map()
+            .into_iter()
+            .collect()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -92,11 +107,8 @@ fn process_leadershedule_event(
 ) -> LeaderScheduleResult {
     match event {
         LeaderScheduleEvent::Init(new_epoch, slots_in_epoch, new_rate_activation_epoch) => {
-            match (
-                StakeStore::take_stakestore(stakestore),
-                VoteStore::take_votestore(votestore),
-            ) {
-                (Ok((stake_map, mut stake_history)), Ok(vote_map)) => {
+            match (&mut stakestore.stakes, &mut votestore.votes).take() {
+                TakeResult::Map(((stake_map, mut stake_history), vote_map)) => {
                     log::info!("LeaderScheduleEvent::CalculateScedule");
                     //do the calculus in a blocking task.
                     let jh = tokio::task::spawn_blocking({
@@ -142,12 +154,13 @@ fn process_leadershedule_event(
                             }
 
                             log::info!("End calculate leader schedule");
+
                             LeaderScheduleEvent::MergeStoreAndSaveSchedule(
                                 stake_map,
                                 vote_map,
                                 LeaderScheduleGeneratedData {
                                     schedule: leader_schedule,
-                                    vote_stakes: epoch_vote_stakes,
+                                    epoch_vote_stakes,
                                     epoch: next_epoch,
                                 },
                                 (new_epoch, slots_in_epoch, new_rate_activation_epoch),
@@ -157,13 +170,22 @@ fn process_leadershedule_event(
                     });
                     LeaderScheduleResult::TaskHandle(jh)
                 }
-                _ => {
-                    log::error!("Create leadershedule init event error during extract store");
-                    LeaderScheduleResult::Event(LeaderScheduleEvent::Init(
-                        new_epoch,
-                        slots_in_epoch,
-                        new_rate_activation_epoch,
-                    ))
+                TakeResult::Taken(stake_notify) => {
+                    let notif_jh = tokio::spawn({
+                        async move {
+                            let notifs = stake_notify
+                                .iter()
+                                .map(|n| n.notified())
+                                .collect::<Vec<tokio::sync::futures::Notified>>();
+                            join_all(notifs).await;
+                            LeaderScheduleEvent::Init(
+                                new_epoch,
+                                slots_in_epoch,
+                                new_rate_activation_epoch,
+                            )
+                        }
+                    });
+                    LeaderScheduleResult::TaskHandle(notif_jh)
                 }
             }
         }
@@ -176,8 +198,8 @@ fn process_leadershedule_event(
         ) => {
             log::info!("LeaderScheduleEvent::MergeStoreAndSaveSchedule RECV");
             match (
-                StakeStore::merge_stakestore(stakestore, stake_map, stake_history),
-                VoteStore::merge_votestore(votestore, vote_map),
+                stakestore.stakes.merge((stake_map, stake_history)),
+                votestore.votes.merge(vote_map),
             ) {
                 (Ok(()), Ok(())) => LeaderScheduleResult::End(schedule_data),
                 _ => {
@@ -263,7 +285,7 @@ pub fn calculate_leader_schedule(
     stake_vote_map: &HashMap<Pubkey, (u64, Arc<StoredVote>)>,
     epoch: u64,
     slots_in_epoch: u64,
-) -> HashMap<String, Vec<usize>> {
+) -> LeaderSchedule {
     let stakes_map: HashMap<Pubkey, u64> = stake_vote_map
         .iter()
         .filter_map(|(_, (stake, vote_account))| {
@@ -281,16 +303,7 @@ pub fn calculate_leader_schedule(
     sort_stakes(&mut stakes);
     log::info!("calculate_leader_schedule stakes:{stakes:?} epoch:{epoch}");
     let schedule = LeaderSchedule::new(&stakes, seed, slots_in_epoch, NUM_CONSECUTIVE_LEADER_SLOTS);
-
-    let slot_schedule = schedule
-        .get_slot_leaders()
-        .iter()
-        .enumerate()
-        .map(|(i, pk)| (pk.to_string(), i))
-        .into_group_map()
-        .into_iter()
-        .collect();
-    slot_schedule
+    schedule
 }
 
 // Cribbed from leader_schedule_utils

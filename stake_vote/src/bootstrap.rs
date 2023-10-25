@@ -1,9 +1,13 @@
 use crate::epoch::ScheduleEpochData;
+use crate::leader_schedule::LeaderScheduleGeneratedData;
 use crate::stake::StakeMap;
 use crate::stake::StakeStore;
+use crate::utils::{Takable, TakeResult};
+use crate::vote::EpochVoteStakes;
 use crate::vote::VoteMap;
 use crate::vote::VoteStore;
 use anyhow::bail;
+use futures::future::join_all;
 use futures_util::stream::FuturesUnordered;
 use solana_client::client_error::ClientError;
 use solana_client::rpc_client::RpcClient;
@@ -71,17 +75,22 @@ pub fn run_bootstrap_events(
     bootstrap_tasks: &mut FuturesUnordered<JoinHandle<BootstrapEvent>>,
     stakestore: &mut StakeStore,
     votestore: &mut VoteStore,
-) -> anyhow::Result<Option<bool>> {
-    let result = process_bootstrap_event(event, stakestore, votestore);
+    slots_in_epoch: u64,
+) -> anyhow::Result<Option<anyhow::Result<CalculatedSchedule>>> {
+    let result = process_bootstrap_event(event, stakestore, votestore, slots_in_epoch);
     match result {
         BootsrapProcessResult::TaskHandle(jh) => {
             bootstrap_tasks.push(jh);
             Ok(None)
         }
-        BootsrapProcessResult::Event(event) => {
-            run_bootstrap_events(event, bootstrap_tasks, stakestore, votestore)
-        }
-        BootsrapProcessResult::End => Ok(Some(true)),
+        BootsrapProcessResult::Event(event) => run_bootstrap_events(
+            event,
+            bootstrap_tasks,
+            stakestore,
+            votestore,
+            slots_in_epoch,
+        ),
+        BootsrapProcessResult::End(leader_schedule_result) => Ok(Some(leader_schedule_result)),
         BootsrapProcessResult::Error(err) => bail!(err),
     }
 }
@@ -105,7 +114,13 @@ pub enum BootstrapEvent {
         Account,
         String,
     ),
-    AccountsMerged(StakeMap, Option<StakeHistory>, VoteMap, String),
+    AccountsMerged(
+        StakeMap,
+        Option<StakeHistory>,
+        VoteMap,
+        String,
+        anyhow::Result<CalculatedSchedule>,
+    ),
     Exit,
 }
 
@@ -114,13 +129,14 @@ enum BootsrapProcessResult {
     TaskHandle(JoinHandle<BootstrapEvent>),
     Event(BootstrapEvent),
     Error(String),
-    End,
+    End(anyhow::Result<CalculatedSchedule>),
 }
 
 fn process_bootstrap_event(
     event: BootstrapEvent,
     stakestore: &mut StakeStore,
     votestore: &mut VoteStore,
+    slots_in_epoch: u64,
 ) -> BootsrapProcessResult {
     match event {
         BootstrapEvent::InitBootstrap {
@@ -148,24 +164,30 @@ fn process_bootstrap_event(
         }
         BootstrapEvent::BootstrapAccountsFetched(stakes, votes, history, rpc_url) => {
             log::info!("BootstrapEvent::BootstrapAccountsFetched RECV");
-            match (
-                StakeStore::take_stakestore(stakestore),
-                VoteStore::take_votestore(votestore),
-            ) {
-                (Ok((stake_map, _)), Ok(vote_map)) => {
+            match (&mut stakestore.stakes, &mut votestore.votes).take() {
+                TakeResult::Map(((stake_map, _), vote_map)) => {
                     BootsrapProcessResult::Event(BootstrapEvent::StoreExtracted(
                         stake_map, vote_map, stakes, votes, history, rpc_url,
                     ))
                 }
-                _ => {
-                    let jh = tokio::spawn(async move {
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        BootstrapEvent::BootstrapAccountsFetched(stakes, votes, history, rpc_url)
+                TakeResult::Taken(stake_notify) => {
+                    let notif_jh = tokio::spawn({
+                        async move {
+                            let notifs = stake_notify
+                                .iter()
+                                .map(|n| n.notified())
+                                .collect::<Vec<tokio::sync::futures::Notified>>();
+                            join_all(notifs).await;
+                            BootstrapEvent::BootstrapAccountsFetched(
+                                stakes, votes, history, rpc_url,
+                            )
+                        }
                     });
-                    BootsrapProcessResult::TaskHandle(jh)
+                    BootsrapProcessResult::TaskHandle(notif_jh)
                 }
             }
         }
+
         BootstrapEvent::StoreExtracted(
             mut stake_map,
             mut vote_map,
@@ -198,18 +220,33 @@ fn process_bootstrap_event(
                         0, //with RPC no way to know the slot of the account update. Set to 0.
                     );
 
-                    BootstrapEvent::AccountsMerged(stake_map, stake_history, vote_map, rpc_url)
+                    let leader_schedule_result = bootstrap_current_leader_schedule(slots_in_epoch);
+
+                    BootstrapEvent::AccountsMerged(
+                        stake_map,
+                        stake_history,
+                        vote_map,
+                        rpc_url,
+                        leader_schedule_result,
+                    )
                 }
             });
             BootsrapProcessResult::TaskHandle(jh)
         }
-        BootstrapEvent::AccountsMerged(stake_map, stake_history, vote_map, rpc_url) => {
+        BootstrapEvent::AccountsMerged(
+            stake_map,
+            stake_history,
+            vote_map,
+            rpc_url,
+            leader_schedule_result,
+        ) => {
             log::info!("BootstrapEvent::AccountsMerged RECV");
+
             match (
-                StakeStore::merge_stakestore(stakestore, stake_map, stake_history),
-                VoteStore::merge_votestore(votestore, vote_map),
+                stakestore.stakes.merge((stake_map, stake_history)),
+                votestore.votes.merge(vote_map),
             ) {
-                (Ok(()), Ok(())) => BootsrapProcessResult::End,
+                (Ok(()), Ok(())) => BootsrapProcessResult::End(leader_schedule_result),
                 _ => {
                     //TODO remove this error using type state
                     log::warn!("BootstrapEvent::AccountsMerged merge stake or vote fail,  non extracted stake/vote map err, restart bootstrap");
@@ -273,33 +310,41 @@ pub fn get_stakehistory_account(rpc_url: String) -> Result<Account, ClientError>
     res_stake
 }
 
+// pub struct BootstrapScheduleResult {
+//     schedule: CalculatedSchedule,
+//     vote_stakes: Vec<EpochVoteStakes>,
+// }
+
 pub fn bootstrap_current_leader_schedule(
     slots_in_epoch: u64,
 ) -> anyhow::Result<CalculatedSchedule> {
-    let (current_epoch, current_stakes) =
+    let (current_epoch, current_epoch_stakes) =
         crate::utils::read_schedule_vote_stakes(CURRENT_EPOCH_VOTE_STAKES_FILE)?;
-    let (next_epoch, next_stakes) =
+    let (next_epoch, next_epoch_stakes) =
         crate::utils::read_schedule_vote_stakes(NEXT_EPOCH_VOTE_STAKES_FILE)?;
 
     //calcualte leader schedule for all vote stakes.
     let current_schedule = crate::leader_schedule::calculate_leader_schedule(
-        &current_stakes,
+        &current_epoch_stakes,
         current_epoch,
         slots_in_epoch,
     );
-    let next_schedule =
-        crate::leader_schedule::calculate_leader_schedule(&next_stakes, next_epoch, slots_in_epoch);
+
+    let next_schedule = crate::leader_schedule::calculate_leader_schedule(
+        &next_epoch_stakes,
+        next_epoch,
+        slots_in_epoch,
+    );
 
     Ok(CalculatedSchedule {
         current: Some(LeaderScheduleData {
-            schedule: current_schedule,
-            //TODO use epoch stake for get_vote_accounts
+            schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&current_schedule),
+            schedule_by_slot: current_schedule.get_slot_leaders().to_vec(),
             epoch: current_epoch,
         }),
         next: Some(LeaderScheduleData {
-            schedule: next_schedule,
-            //TODO use epoch stake for get_vote_accounts
-            //            vote_stakes: next_stakes.stake_vote_map,
+            schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&next_schedule),
+            schedule_by_slot: next_schedule.get_slot_leaders().to_vec(),
             epoch: next_epoch,
         }),
     })
