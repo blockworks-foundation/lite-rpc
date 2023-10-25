@@ -1,4 +1,5 @@
 use anyhow::Context;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
     structures::{produced_block::ProducedBlock, slot_notification::SlotNotification},
@@ -12,6 +13,10 @@ use std::{
     time::Duration,
 };
 use tokio::sync::broadcast::{Receiver, Sender};
+
+lazy_static::lazy_static! {
+    static ref NB_BLOCK_FETCHING_TASKS: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc-num-blockfetching-tasks", "Transactions in store")).unwrap();
+}
 
 pub async fn process_block(
     rpc_client: &RpcClient,
@@ -62,6 +67,7 @@ pub fn poll_block(
 
                 for slot in last_processed_slot + 1..processed_slot + 1 {
                     let premit = counting_semaphore.clone().acquire_owned().await?;
+                    NB_BLOCK_FETCHING_TASKS.inc();
                     let rpc_client = rpc_client.clone();
                     let block_notification_sender = block_notification_sender.clone();
                     let current_slot = current_slot.clone();
@@ -70,7 +76,7 @@ pub fn poll_block(
                         while current_slot
                             .load(std::sync::atomic::Ordering::Relaxed)
                             .saturating_sub(slot)
-                            < 32
+                            < 128
                         {
                             if let Some(processed_block) = process_block(
                                 rpc_client.as_ref(),
@@ -85,12 +91,12 @@ pub fn poll_block(
                             }
                             tokio::time::sleep(Duration::from_millis(50)).await;
                         }
-
+                        tokio::time::sleep(Duration::from_secs(5)).await;
                         while confirmed_slot_fetch
                             && current_slot
                                 .load(std::sync::atomic::Ordering::Relaxed)
                                 .saturating_sub(slot)
-                                < 128
+                                < 256
                         {
                             if let Some(processed_block) = process_block(
                                 rpc_client.as_ref(),
@@ -104,6 +110,7 @@ pub fn poll_block(
                             }
                             tokio::time::sleep(Duration::from_millis(50)).await;
                         }
+                        NB_BLOCK_FETCHING_TASKS.dec();
                         drop(premit)
                     });
                 }
