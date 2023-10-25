@@ -3,6 +3,8 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
+use solana_rpc_client_api::config::RpcGetVoteAccountsConfig;
+use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use solana_sdk::epoch_info::EpochInfo;
 use std::collections::HashMap;
 
@@ -484,5 +486,21 @@ impl LiteRpcServer for LiteBridge {
             .get_leader_schedule_for_slot(slot, config.and_then(|c| c.commitment), &self.data_cache)
             .await;
         Ok(schedule)
+    }
+    async fn get_slot_leaders(
+        &self,
+        start_slot: u64,
+        limit: u64,
+    ) -> crate::rpc::Result<Vec<Pubkey>> {
+        todo!()
+    }
+
+    async fn get_vote_accounts(
+        &self,
+        config: Option<RpcGetVoteAccountsConfig>,
+    ) -> crate::rpc::Result<RpcVoteAccountStatus> {
+        let config: GetVoteAccountsConfig =
+            GetVoteAccountsConfig::try_from(config.unwrap_or_default())?;
+        todo!();
     }
 }

@@ -1,5 +1,8 @@
+use crate::utils::Takable;
 use crate::utils::TakableContent;
 use crate::utils::TakableMap;
+use crate::utils::TakeResult;
+use crate::utils::UpdateAction;
 use crate::AccountPretty;
 use crate::Slot;
 use anyhow::bail;
@@ -13,30 +16,30 @@ use std::collections::HashMap;
 pub type StakeMap = HashMap<Pubkey, StoredStake>;
 type StakeContent = (StakeMap, Option<StakeHistory>);
 
-#[derive(Debug, Default)]
-pub enum StakeAction {
-    Notify {
-        stake: StoredStake,
-    },
-    Remove(Pubkey, Slot),
-    // Merge {
-    //     source_account: Pubkey,
-    //     destination_account: Pubkey,
-    //     update_slot: Slot,
-    // },
-    #[default]
-    None,
-}
+// #[derive(Debug, Default)]
+// pub enum StakeAction {
+//     Notify {
+//         stake: StoredStake,
+//     },
+//     Remove(Pubkey, Slot),
+//     // Merge {
+//     //     source_account: Pubkey,
+//     //     destination_account: Pubkey,
+//     //     update_slot: Slot,
+//     // },
+//     #[default]
+//     None,
+// }
 
-impl StakeAction {
-    fn get_update_slot(&self) -> u64 {
-        match self {
-            StakeAction::Notify { stake } => stake.last_update_slot,
-            StakeAction::Remove(_, slot) => *slot,
-            StakeAction::None => 0,
-        }
-    }
-}
+// impl StakeAction {
+//     fn get_update_slot(&self) -> u64 {
+//         match self {
+//             StakeAction::Notify { stake } => stake.last_update_slot,
+//             StakeAction::Remove(_, slot) => *slot,
+//             StakeAction::None => 0,
+//         }
+//     }
+// }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct StoredStake {
@@ -47,15 +50,15 @@ pub struct StoredStake {
     pub write_version: u64,
 }
 
-impl TakableContent<StakeAction> for StakeContent {
-    fn add_value(&mut self, val: StakeAction) {
+impl TakableContent<StoredStake> for StakeContent {
+    fn add_value(&mut self, val: UpdateAction<StoredStake>) {
         StakeStore::process_stake_action(&mut self.0, val);
     }
 }
 
 #[derive(Debug, Default)]
 pub struct StakeStore {
-    stakes: TakableMap<StakeAction, StakeContent>,
+    pub stakes: TakableMap<StoredStake, StakeContent>,
 }
 
 impl StakeStore {
@@ -76,9 +79,9 @@ impl StakeStore {
     ) -> anyhow::Result<()> {
         //if lamport == 0 the account has been removed.
         if account.lamports == 0 {
-            self.notify_stake_action(
-                StakeAction::Remove(account.pubkey, account.slot),
-                current_end_epoch_slot,
+            self.stakes.add_value(
+                UpdateAction::Remove(account.pubkey, account.slot),
+                account.slot <= current_end_epoch_slot,
             );
         } else {
             let Ok(delegated_stake_opt) = account.read_stake() else {
@@ -94,26 +97,36 @@ impl StakeStore {
                     write_version: account.write_version,
                 };
 
-                self.notify_stake_action(StakeAction::Notify { stake }, current_end_epoch_slot);
+                let action_update_slot = stake.last_update_slot;
+                self.stakes.add_value(
+                    UpdateAction::Notify(action_update_slot, stake),
+                    action_update_slot <= current_end_epoch_slot,
+                );
             }
         }
 
         Ok(())
     }
 
-    pub fn notify_stake_action(&mut self, action: StakeAction, current_end_epoch_slot: Slot) {
-        let action_update_slot = action.get_update_slot();
-        self.stakes
-            .add_value(action, action_update_slot <= current_end_epoch_slot);
-    }
+    //helper method to extract and merge stakes.
+    // pub fn take_stakestore(&mut self) -> TakeResult<StakeContent> {
+    //     self.stakes.take()
+    // }
 
-    fn process_stake_action(stakes: &mut StakeMap, action: StakeAction) {
+    // pub fn merge_stakestore(
+    //     &mut self,
+    //     stake_map: StakeMap,
+    //     stake_hisotry: Option<StakeHistory>,
+    // ) -> anyhow::Result<()> {
+    //     self.stakes.merge((stake_map, stake_hisotry))
+    // }
+
+    fn process_stake_action(stakes: &mut StakeMap, action: UpdateAction<StoredStake>) {
         match action {
-            StakeAction::Notify { stake } => {
+            UpdateAction::Notify(_, stake) => {
                 Self::notify_stake(stakes, stake);
             }
-            StakeAction::Remove(account_pk, slot) => Self::remove_stake(stakes, &account_pk, slot),
-            StakeAction::None => (),
+            UpdateAction::Remove(account_pk, slot) => Self::remove_stake(stakes, &account_pk, slot),
         }
     }
     fn notify_stake(map: &mut StakeMap, stake: StoredStake) {
@@ -151,20 +164,20 @@ impl StakeStore {
         }
     }
 
-    //helper method to extract and merge stakes.
-    pub fn take_stakestore(
-        stakestore: &mut StakeStore,
-    ) -> anyhow::Result<(StakeMap, Option<StakeHistory>)> {
-        crate::utils::take(&mut stakestore.stakes)
-    }
+    // //helper method to extract and merge stakes.
+    // pub fn take_stakestore(
+    //     stakestore: &mut StakeStore,
+    // ) -> anyhow::Result<(StakeMap, Option<StakeHistory>)> {
+    //     crate::utils::take(&mut stakestore.stakes)
+    // }
 
-    pub fn merge_stakestore(
-        stakestore: &mut StakeStore,
-        stake_map: StakeMap,
-        stake_history: Option<StakeHistory>,
-    ) -> anyhow::Result<()> {
-        crate::utils::merge(&mut stakestore.stakes, (stake_map, stake_history))
-    }
+    // pub fn merge_stakestore(
+    //     stakestore: &mut StakeStore,
+    //     stake_map: StakeMap,
+    //     stake_history: Option<StakeHistory>,
+    // ) -> anyhow::Result<()> {
+    //     crate::utils::merge(&mut stakestore.stakes, (stake_map, stake_history))
+    // }
 }
 
 pub fn merge_program_account_in_strake_map(
