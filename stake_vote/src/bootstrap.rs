@@ -4,6 +4,7 @@ use crate::stake::StakeMap;
 use crate::stake::StakeStore;
 use crate::utils::{Takable, TakeResult};
 use crate::vote::EpochVoteStakes;
+use crate::vote::EpochVoteStakesCache;
 use crate::vote::VoteMap;
 use crate::vote::VoteStore;
 use anyhow::bail;
@@ -109,6 +110,7 @@ pub enum BootstrapEvent {
     StoreExtracted(
         StakeMap,
         VoteMap,
+        EpochVoteStakesCache,
         Vec<(Pubkey, Account)>,
         Vec<(Pubkey, Account)>,
         Account,
@@ -118,6 +120,7 @@ pub enum BootstrapEvent {
         StakeMap,
         Option<StakeHistory>,
         VoteMap,
+        EpochVoteStakesCache,
         String,
         anyhow::Result<CalculatedSchedule>,
     ),
@@ -148,7 +151,7 @@ fn process_bootstrap_event(
                 if sleep_time > 0 {
                     std::thread::sleep(Duration::from_secs(sleep_time));
                 }
-                match crate::bootstrap::bootstrap_accounts(rpc_url.clone()) {
+                match bootstrap_accounts(rpc_url.clone()) {
                     Ok((stakes, votes, history)) => {
                         BootstrapEvent::BootstrapAccountsFetched(stakes, votes, history, rpc_url)
                     }
@@ -165,9 +168,15 @@ fn process_bootstrap_event(
         BootstrapEvent::BootstrapAccountsFetched(stakes, votes, history, rpc_url) => {
             log::info!("BootstrapEvent::BootstrapAccountsFetched RECV");
             match (&mut stakestore.stakes, &mut votestore.votes).take() {
-                TakeResult::Map(((stake_map, _), vote_map)) => {
+                TakeResult::Map(((stake_map, _), (vote_map, epoch_cache))) => {
                     BootsrapProcessResult::Event(BootstrapEvent::StoreExtracted(
-                        stake_map, vote_map, stakes, votes, history, rpc_url,
+                        stake_map,
+                        vote_map,
+                        epoch_cache,
+                        stakes,
+                        votes,
+                        history,
+                        rpc_url,
                     ))
                 }
                 TakeResult::Taken(stake_notify) => {
@@ -191,6 +200,7 @@ fn process_bootstrap_event(
         BootstrapEvent::StoreExtracted(
             mut stake_map,
             mut vote_map,
+            mut epoch_cache,
             stakes,
             votes,
             history,
@@ -220,15 +230,28 @@ fn process_bootstrap_event(
                         0, //with RPC no way to know the slot of the account update. Set to 0.
                     );
 
-                    let leader_schedule_result = bootstrap_current_leader_schedule(slots_in_epoch);
-
-                    BootstrapEvent::AccountsMerged(
-                        stake_map,
-                        stake_history,
-                        vote_map,
-                        rpc_url,
-                        leader_schedule_result,
-                    )
+                    match bootstrap_current_leader_schedule(slots_in_epoch) {
+                        Ok((leader_schedule, current_epoch_stakes, next_epoch_stakes)) => {
+                            epoch_cache.add_stakes_for_epoch(current_epoch_stakes);
+                            epoch_cache.add_stakes_for_epoch(next_epoch_stakes);
+                            BootstrapEvent::AccountsMerged(
+                                stake_map,
+                                stake_history,
+                                vote_map,
+                                epoch_cache,
+                                rpc_url,
+                                Ok(leader_schedule),
+                            )
+                        }
+                        Err(err) => BootstrapEvent::AccountsMerged(
+                            stake_map,
+                            stake_history,
+                            vote_map,
+                            epoch_cache,
+                            rpc_url,
+                            Err(err),
+                        ),
+                    }
                 }
             });
             BootsrapProcessResult::TaskHandle(jh)
@@ -237,6 +260,7 @@ fn process_bootstrap_event(
             stake_map,
             stake_history,
             vote_map,
+            epoch_cache,
             rpc_url,
             leader_schedule_result,
         ) => {
@@ -244,7 +268,7 @@ fn process_bootstrap_event(
 
             match (
                 stakestore.stakes.merge((stake_map, stake_history)),
-                votestore.votes.merge(vote_map),
+                votestore.votes.merge((vote_map, epoch_cache)),
             ) {
                 (Ok(()), Ok(())) => BootsrapProcessResult::End(leader_schedule_result),
                 _ => {
@@ -317,7 +341,7 @@ pub fn get_stakehistory_account(rpc_url: String) -> Result<Account, ClientError>
 
 pub fn bootstrap_current_leader_schedule(
     slots_in_epoch: u64,
-) -> anyhow::Result<CalculatedSchedule> {
+) -> anyhow::Result<(CalculatedSchedule, EpochVoteStakes, EpochVoteStakes)> {
     let (current_epoch, current_epoch_stakes) =
         crate::utils::read_schedule_vote_stakes(CURRENT_EPOCH_VOTE_STAKES_FILE)?;
     let (next_epoch, next_epoch_stakes) =
@@ -336,16 +360,30 @@ pub fn bootstrap_current_leader_schedule(
         slots_in_epoch,
     );
 
-    Ok(CalculatedSchedule {
-        current: Some(LeaderScheduleData {
-            schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&current_schedule),
-            schedule_by_slot: current_schedule.get_slot_leaders().to_vec(),
+    Ok((
+        CalculatedSchedule {
+            current: Some(LeaderScheduleData {
+                schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(
+                    &current_schedule,
+                ),
+                schedule_by_slot: current_schedule.get_slot_leaders().to_vec(),
+                epoch: current_epoch,
+            }),
+            next: Some(LeaderScheduleData {
+                schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(
+                    &next_schedule,
+                ),
+                schedule_by_slot: next_schedule.get_slot_leaders().to_vec(),
+                epoch: next_epoch,
+            }),
+        },
+        EpochVoteStakes {
             epoch: current_epoch,
-        }),
-        next: Some(LeaderScheduleData {
-            schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&next_schedule),
-            schedule_by_slot: next_schedule.get_slot_leaders().to_vec(),
+            vote_stakes: current_epoch_stakes,
+        },
+        EpochVoteStakes {
             epoch: next_epoch,
-        }),
-    })
+            vote_stakes: next_epoch_stakes,
+        },
+    ))
 }

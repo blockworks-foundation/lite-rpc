@@ -1,6 +1,8 @@
 use crate::vote::StoredVote;
 use crate::Slot;
 use anyhow::bail;
+use futures_util::future::join_all;
+use futures_util::stream::FuturesUnordered;
 use serde::{Deserialize, Serialize};
 use solana_lite_rpc_core::stores::block_information_store::BlockInformation;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
@@ -14,6 +16,7 @@ use std::io::Write;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 
 pub async fn get_current_confirmed_slot(data_cache: &DataCache) -> u64 {
     let commitment = CommitmentConfig::confirmed();
@@ -191,6 +194,55 @@ impl<'a, T1, T2, C1: TakableContent<T1>, C2: TakableContent<T2>> Takable<(C1, C2
     }
 }
 
+// pub async fn take_or_wait<C, Notif, F, Fut>(takeMap: impl Takable<C>, f: F) -> Option<C>
+// where
+//     F: FnOnce(()) -> Fut + std::marker::Send + 'static,
+//     Fut: Future<Output = Notif> + std::marker::Send,
+//     Notif: std::marker::Send + 'static,
+// {
+//     match takeMap.take() {
+//         TakeResult::Map(content) => Some(content),
+//         TakeResult::Taken(stake_notify) => {
+//             let notif_jh = tokio::spawn({
+//                 async move {
+//                     let notifs = stake_notify
+//                         .iter()
+//                         .map(|n| n.notified())
+//                         .collect::<Vec<tokio::sync::futures::Notified>>();
+//                     join_all(notifs).await;
+//                     f(()).await
+//                 }
+//             });
+//             // waiter_futures.push(notif_jh);
+//             None
+//         }
+//     }
+// }
+
+pub async fn wait_for_merge_or_get_content<NotifyContent: std::marker::Send + 'static, C>(
+    take_map: impl Takable<C>,
+    notify_content: NotifyContent,
+    waiter_futures: &mut FuturesUnordered<JoinHandle<NotifyContent>>,
+) -> Option<(C, NotifyContent)> {
+    match take_map.take() {
+        TakeResult::Map(content) => Some((content, notify_content)),
+        TakeResult::Taken(stake_notify) => {
+            let notif_jh = tokio::spawn({
+                async move {
+                    let notifs = stake_notify
+                        .iter()
+                        .map(|n| n.notified())
+                        .collect::<Vec<tokio::sync::futures::Notified>>();
+                    join_all(notifs).await;
+                    notify_content
+                }
+            });
+            waiter_futures.push(notif_jh);
+            None
+        }
+    }
+}
+
 ///A struct that hold a collection call content that can be taken during some time and merged after.
 ///During the time the content is taken, new added values are cached and added to the content after the merge.
 ///It allow to process struct content while allowing to still update it without lock.
@@ -224,6 +276,30 @@ impl<T: Default, C: TakableContent<T> + Default> TakableMap<T, C> {
             }
         }
     }
+
+    // pub async fn wait_for_merge_or_get_content<Notify: std::marker::Send + 'static>(
+    //     &mut self,
+    //     notify_content: Notify,
+    //     waiter_futures: &mut FuturesUnordered<JoinHandle<Notify>>,
+    // ) -> Option<(C, Notify)> {
+    //     match self.take() {
+    //         TakeResult::Map(content) => Some((content, notify_content)),
+    //         TakeResult::Taken(stake_notify) => {
+    //             let notif_jh = tokio::spawn({
+    //                 async move {
+    //                     let notifs = stake_notify
+    //                         .iter()
+    //                         .map(|n| n.notified())
+    //                         .collect::<Vec<tokio::sync::futures::Notified>>();
+    //                     join_all(notifs).await;
+    //                     notify_content
+    //                 }
+    //             });
+    //             waiter_futures.push(notif_jh);
+    //             None
+    //         }
+    //     }
+    // }
 }
 
 // pub fn take<T: Default, C: TakableContent<T> + Default>(
@@ -262,7 +338,6 @@ mod tests {
                 match val {
                     UpdateAction::Notify(account, _) => self.push(account),
                     UpdateAction::Remove(_, _) => (),
-                    UpdateAction::None => (),
                 }
             }
         }
@@ -289,7 +364,7 @@ mod tests {
             TakeResult::Taken(_) => panic!("not a content"),
             TakeResult::Map(content) => content,
         };
-        takable.merge(content);
+        takable.merge(content).unwrap();
         assert_eq!(takable.content.as_ref().unwrap().len(), 3);
         assert_eq!(takable.updates.len(), 0);
 
