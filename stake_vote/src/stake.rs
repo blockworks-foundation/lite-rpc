@@ -1,7 +1,5 @@
-use crate::utils::Takable;
 use crate::utils::TakableContent;
 use crate::utils::TakableMap;
-use crate::utils::TakeResult;
 use crate::utils::UpdateAction;
 use crate::AccountPretty;
 use crate::Slot;

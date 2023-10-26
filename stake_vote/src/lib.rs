@@ -1,7 +1,6 @@
 use crate::account::AccountPretty;
 use crate::bootstrap::BootstrapEvent;
 use crate::leader_schedule::LeaderScheduleGeneratedData;
-use crate::utils::{Takable, TakeResult};
 use futures::Stream;
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
@@ -26,6 +25,7 @@ mod account;
 mod bootstrap;
 mod epoch;
 mod leader_schedule;
+mod rpcrequest;
 mod stake;
 mod utils;
 mod vote;
@@ -62,8 +62,6 @@ pub async fn start_stakes_and_votes_loop(
         //future execution collection.
         let mut spawned_leader_schedule_task = FuturesUnordered::new();
         let mut spawned_bootstrap_task = FuturesUnordered::new();
-        let mut rpc_notify_task = FuturesUnordered::new();
-        let mut rpc_exec_task = FuturesUnordered::new();
         let jh = tokio::spawn(async move {
             BootstrapEvent::InitBootstrap {
                 sleep_time: 1,
@@ -72,8 +70,9 @@ pub async fn start_stakes_and_votes_loop(
         });
         spawned_bootstrap_task.push(jh);
 
+        let mut rpc_request_processor = crate::rpcrequest::RpcRequestData::new();
+
         let mut bootstrap_done = false;
-        let mut pending_rpc_request = vec![];
 
         loop {
             tokio::select! {
@@ -94,82 +93,21 @@ pub async fn start_stakes_and_votes_loop(
                     }
                 }
                 Some((config, return_channel)) = vote_account_rpc_request.recv() => {
-                    pending_rpc_request.push(return_channel);
                     let current_slot = crate::utils::get_current_confirmed_slot(&data_cache).await;
-                    let vote_accounts = votestore.vote_stakes_for_epoch(0); //TODO define epoch storage.
-                    match votestore.votes.take() {
-                        TakeResult::Map(votes) => {
-                            let jh = tokio::task::spawn_blocking({
-                                move || {
-                                    let rpc_vote_accounts = crate::vote::get_rpc_vote_accounts_info(
-                                        current_slot,
-                                        &votes,
-                                        &vote_accounts.as_ref().unwrap().vote_stakes, //TODO put in take.
-                                        config,
-                                    );
-                                    (votes, vote_accounts, rpc_vote_accounts)
-                                }
-                            });
-                            rpc_exec_task.push(jh);
-                        }
-                        TakeResult::Taken(mut stake_notify) => {
-                            let notif_jh = tokio::spawn({
-                                async move {
-                                    stake_notify.pop().unwrap().notified().await;
-                                    (current_slot, vote_accounts, config)
-                                }
-                            });
-                            rpc_notify_task.push(notif_jh);
-                        }
-                    }
+                    rpc_request_processor.process_get_vote_accounts(current_slot, config, return_channel, &mut votestore).await;
                 }
                 //manage rpc waiting request notification.
-                Some(Ok((votes, vote_accounts, rpc_vote_accounts))) = rpc_exec_task.next() =>  {
-                    if let Err(err) = votestore.votes.merge(votes) {
-                        log::info!("Error during  RPC get vote account merge:{err}");
-                    }
-
-                    //avoid clone on the first request
-                    //TODO change the logic use take less one.
-                    if pending_rpc_request.len() == 1 {
-                        if let Err(_) = pending_rpc_request.pop().unwrap().send(rpc_vote_accounts.clone()) {
-                            log::error!("Vote accounts RPC channel send closed.");
-                        }
-                    } else {
-                        for return_channel in pending_rpc_request.drain(..) {
-                            if let Err(_) = return_channel.send(rpc_vote_accounts.clone()) {
-                                log::error!("Vote accounts RPC channel send closed.");
-                            }
-                        }
-                    }
+                Some(Ok((votes, vote_accounts, rpc_vote_accounts))) = rpc_request_processor.rpc_exec_task.next() =>  {
+                    rpc_request_processor.notify_end_rpc_get_vote_accounts(
+                        votes,
+                        vote_accounts,
+                        rpc_vote_accounts,
+                        &mut votestore,
+                    ).await;
                 }
                 //manage rpc waiting request notification.
-                Some(Ok((current_slot, vote_accounts, config))) = rpc_notify_task.next() =>  {
-                    match votestore.votes.take() {
-                        TakeResult::Map(votes) => {
-                            let jh = tokio::task::spawn_blocking({
-                                move || {
-                                    let rpc_vote_accounts = crate::vote::get_rpc_vote_accounts_info(
-                                        current_slot,
-                                        &votes,
-                                        &vote_accounts.as_ref().unwrap().vote_stakes, //TODO put in take.
-                                        config,
-                                    );
-                                    (votes, vote_accounts, rpc_vote_accounts)
-                                }
-                            });
-                            rpc_exec_task.push(jh);
-                        }
-                        TakeResult::Taken(mut stake_notify) => {
-                            let notif_jh = tokio::spawn({
-                                async move {
-                                    stake_notify.pop().unwrap().notified().await;
-                                     (current_slot, vote_accounts, config)
-                                }
-                            });
-                            rpc_notify_task.push(notif_jh);
-                        }
-                    }
+                Some(Ok((current_slot, config))) = rpc_request_processor.rpc_notify_task.next() =>  {
+                    rpc_request_processor.take_vote_accounts_and_process(&mut votestore, current_slot, config).await;
                 }
                 //manage geyser account notification
                 //Geyser delete account notification patch must be installed on the validator.
@@ -274,7 +212,6 @@ pub async fn start_stakes_and_votes_loop(
                     let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
                     data_schedule.current = data_schedule.next.take();
                     match new_leader_schedule {
-                        //TODO use vote_stakes for vote accounts RPC call.
                         Some(schedule_data) => {
                             let new_schedule_data = LeaderScheduleData{
                                     schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&schedule_data.schedule),

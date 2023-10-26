@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 pub type VoteMap = HashMap<Pubkey, Arc<StoredVote>>;
+pub type VoteContent = (VoteMap, EpochVoteStakesCache);
 
 #[derive(Debug, Clone)]
 pub struct EpochVoteStakes {
@@ -23,9 +24,27 @@ pub struct EpochVoteStakes {
     pub epoch: u64,
 }
 
-impl TakableContent<StoredVote> for VoteMap {
+//TODO define the cache invalidation.
+#[derive(Default)]
+pub struct EpochVoteStakesCache {
+    pub cache: HashMap<u64, EpochVoteStakes>,
+}
+
+impl EpochVoteStakesCache {
+    pub fn vote_stakes_for_epoch(&self, epoch: u64) -> Option<EpochVoteStakes> {
+        self.cache.get(&epoch).cloned()
+    }
+
+    pub fn add_stakes_for_epoch(&mut self, vote_stakes: EpochVoteStakes) {
+        if self.cache.insert(vote_stakes.epoch, vote_stakes).is_some() {
+            log::warn!("Override existing vote stake epoch cache for epoch:");
+        }
+    }
+}
+
+impl TakableContent<StoredVote> for VoteContent {
     fn add_value(&mut self, val: UpdateAction<StoredVote>) {
-        VoteStore::process_vote_action(self, val);
+        VoteStore::process_vote_action(&mut self.0, val);
     }
 }
 
@@ -66,24 +85,17 @@ impl StoredVote {
 
 #[derive(Default)]
 pub struct VoteStore {
-    pub votes: TakableMap<StoredVote, VoteMap>,
-    epoch_vote_stake_map: HashMap<u64, EpochVoteStakes>,
+    pub votes: TakableMap<StoredVote, VoteContent>,
 }
 
 impl VoteStore {
     pub fn new(capacity: usize) -> Self {
         VoteStore {
-            votes: TakableMap::new(HashMap::with_capacity(capacity)),
-            epoch_vote_stake_map: HashMap::new(),
+            votes: TakableMap::new((
+                HashMap::with_capacity(capacity),
+                EpochVoteStakesCache::default(),
+            )),
         }
-    }
-
-    pub fn add_epoch_vote_stake(&mut self, stakes: EpochVoteStakes) {
-        self.epoch_vote_stake_map.insert(stakes.epoch, stakes);
-    }
-
-    pub fn vote_stakes_for_epoch(&self, epoch: u64) -> Option<EpochVoteStakes> {
-        self.epoch_vote_stake_map.get(&epoch).cloned()
     }
 
     pub fn notify_vote_change(
