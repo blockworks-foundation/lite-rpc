@@ -250,6 +250,8 @@ async fn bench(
             continue;
         }
 
+        // TODO maybe sleep a bit, get_signature_statuses sampling should be 100ms (like for block hash)
+
         // This function ignores the configured confirmation level,
         // and returns the transaction status whatever it is. It does not wait for transactions to be processed.
         if let Ok(res) = rpc_client.get_signature_statuses(&signatures).await {
@@ -260,6 +262,13 @@ async fn bench(
                 let tx_status = &res.value[i];
                 if tx_status.is_some() {
                     println!("status {:?}", tx_status.as_ref().unwrap().confirmation_status);
+                    // status Some(Processed)
+                    // current_slot vs context slot: 225927119 - 225927120
+                    // status Some(Processed)
+                    // current_slot vs context slot: 225927119 - 225927120
+                    // status Some(Processed)
+                    // current_slot vs context slot: 225927120 - 225927123
+
                     let tx_data = map_of_txs.get(signature).unwrap();
                     // if we decide to use procesed status -> change this
                     let time_to_confirm = tx_data.sent_instant.elapsed();
@@ -280,16 +289,13 @@ async fn bench(
                         });
                     }
 
-                    println!("current_slot vs context slot: {} - {}", current_slot.load(Ordering::Relaxed), res.context.slot);
-
                     if let Some(pingthing) = pingthing_config.as_ref() {
                         let pingthing_jh = pingthing.submit_stats(
                             time_to_confirm,
                             *signature,
                             true,
                             tx_data.sent_slot,
-                            // check if this is correct - the code above uses  current_slot
-                            res.context.slot,
+                            current_slot.load(Ordering::Relaxed),
                         );
 
                         pingthing_tasks.push(pingthing_jh);
