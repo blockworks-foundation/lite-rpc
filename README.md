@@ -1,26 +1,32 @@
 # Lite RPC For Solana Blockchain 
 
-Submitting a [transaction](https://docs.solana.com/terminology#transaction) to be executed on the solana blockchain,
-requires the client to identify the next few leaders based on the
-[leader schedule](https://docs.solana.com/terminology#leader-schedule), look up their peering information in gossip and
-connect to them via the [quic protocol](https://en.wikipedia.org/wiki/QUIC). In order to simplify the
-process so it can be triggered from a web browser, most applications
-run full [validators](https://docs.solana.com/terminology#validator) that forward the transactions according to the
-protocol on behalf of the web browser. Running full solana [validators](https://docs.solana.com/terminology#validator)
-is incredibly resource intensive `(>256GB RAM)`, the goal of this
-project would be to create a specialized micro-service that allows
-to deploy this logic quickly and allows [horizontal scalability](https://en.wikipedia.org/wiki/Scalability) with
-commodity vms. Optionally the Lite RCP micro-services can be configured to send the transactions to a complementary __QUIC forward proxy__ instead of the solana tpu ([details](quic-forward-proxy/README.md)).
+Submitting a [transaction](https://docs.solana.com/terminology#transaction) to
+be executed on the solana blockchain, requires the client to identify the next
+few leaders based on the
+[leader schedule](https://docs.solana.com/terminology#leader-schedule), look up
+their peering information in gossip and connect to them via the
+[quic protocol](https://en.wikipedia.org/wiki/QUIC). In order to simplify the
+process so it can be triggered from a web browser, most applications run full
+[validators](https://docs.solana.com/terminology#validator) that forward the
+transactions according to the protocol on behalf of the web browser. Running
+full solana [validators](https://docs.solana.com/terminology#validator) is
+incredibly resource intensive `(>256GB RAM)`, the goal of this project would be
+to create a specialized micro-service that allows to deploy this logic quickly
+and allows [horizontal scalability](https://en.wikipedia.org/wiki/Scalability)
+with commodity vms. Optionally the Lite RCP micro-services can be configured to
+send the transactions to a complementary __QUIC forward proxy__ instead of the
+solana tpu ([details](quic-forward-proxy/README.md)).
 
 ### Confirmation strategies
 
-1) Subscribe to new blocks using [blockSubscribe](https://docs.solana.com/developing/clients/jsonrpc-api#blocksubscribe---unstable-disabled-by-default)
-2) Subscribing to signatures with pool of rpc servers. (Under development)
-3) Listening to gossip protocol. (Future roadmap)
+1) Subscribe to new blocks using websockets (deprecated)
+(depricated) 
+2) Polling blocks over RPC.(Current) 
+3) Subscribe blocks over gRPC.
+(Current) 
+4) Listening to gossip protocol. (Future roadmap)
 
 ## Executing
-
-*make sure `solana-validator` is running in the background with `--rpc-pubsub-enable-block-subscription`*
 
 *run using*
 ```bash
@@ -65,20 +71,32 @@ Find a new file named `metrics.csv` in the project root.
 | `DISABLE_GSO`     | Disable GSO completely                         | no                  |
 
 ### Postgres
-lite-rpc implements an optional postgres service that can write to postgres database tables as defined
-in `./migrations`. This can be enabled by either setting the environment variable `PG_ENABLED` to `true` or by passing the `-p` option when launching the executable. If postgres is enabled then the optional environment variables shown above must be set.
+lite-rpc implements an optional postgres service that can write to postgres
+database tables as defined in `./migrations`. This can be enabled by either
+setting the environment variable `PG_ENABLED` to `true` or by passing the `-p`
+option when launching the executable. If postgres is enabled then the optional
+environment variables shown above must be set.
 
 ### Metrics
-Various Prometheus metrics are exposed on `localhost:9091/metrics` which can be used to monitor the health of the application in production. 
-Grafana dashboard coming soon!
+Various Prometheus metrics are exposed on `localhost:9091/metrics` which can be
+used to monitor the health of the application in production.
 
 ### Deployment on fly.io
-While lite-rpc can be deployed on any cloud infrastructure, it has been tested extensively on https://fly.io.
-An example configuration has been provided in `fly.toml`. We recommend a `dedicated-cpu-2x` VM with at least 4GB RAM.
+While lite-rpc can be deployed on any cloud infrastructure, it has been tested
+extensively on https://fly.io. An example configuration has been provided in
+`fly.toml`. We recommend a `dedicated-cpu-2x` VM with at least 4GB RAM.
 
-The app listens by default on ports 8890 and 8891 for HTTP and Websockets respectively. Since only a subset of RPC methods are implemented, we recommend serving unimplemented methods from a full RPC node using a reverse proxy such as HAProxy or Kong. Alternatively, you can connect directly to lite-rpc using a web3.js Connection object that is _only_ used for sending and confirming transactions.
+The app listens by default on ports 8890 and 8891 for HTTP and Websockets
+respectively. Since only a subset of RPC methods are implemented, we recommend
+serving unimplemented methods from a full RPC node using a reverse proxy such as
+HAProxy or Kong. Alternatively, you can connect directly to lite-rpc using a
+web3.js Connection object that is _only_ used for sending and confirming
+transactions.
 
-Troubleshooting: if you encounter issues with QUIC _sendmsg_ check [this](https://github.com/blockworks-foundation/lite-rpc/issues/199) - you might need to explicitly disable GSO (Generic Segmenatin Offload) see ```DISABLE_GSO=true```
+Troubleshooting: if you encounter issues with QUIC _sendmsg_ check
+[this](https://github.com/blockworks-foundation/lite-rpc/issues/199) - you might
+need to explicitly disable GSO (Generic Segmenatin Offload) see
+```DISABLE_GSO=true```
 
 #### Example
 ```bash
