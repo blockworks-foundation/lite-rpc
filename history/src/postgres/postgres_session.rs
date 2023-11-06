@@ -36,7 +36,7 @@ pub struct PostgresSession {
 }
 
 impl PostgresSession {
-    pub async fn new() -> anyhow::Result<Self> {
+    pub async fn new_from_env() -> anyhow::Result<Self> {
         let pg_config = std::env::var("PG_CONFIG").context("env PG_CONFIG not found")?;
         let pg_config = pg_config.parse::<tokio_postgres::Config>()?;
 
@@ -148,7 +148,7 @@ pub struct PostgresSessionCache {
 
 impl PostgresSessionCache {
     pub async fn new() -> anyhow::Result<Self> {
-        let session = PostgresSession::new().await?;
+        let session = PostgresSession::new_from_env().await?;
         Ok(Self {
             session: Arc::new(RwLock::new(session)),
         })
@@ -158,7 +158,7 @@ impl PostgresSessionCache {
         let session = self.session.read().await;
         if session.client.is_closed() {
             drop(session);
-            let session = PostgresSession::new().await?;
+            let session = PostgresSession::new_from_env().await?;
             *self.session.write().await = session.clone();
             Ok(session)
         } else {
