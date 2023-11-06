@@ -40,8 +40,16 @@ impl PostgresBlockStore {
 
         let statement = format!("CREATE SCHEMA {};", schema);
         // note: requires GRANT CREATE ON DATABASE xyz
-        session.execute(&statement, &[]).await
-            .context("create schema for new epoch")?;
+        let result_create_schema = session.execute(&statement, &[]).await;
+        if let Err(err) = result_create_schema {
+            if err.code().map(|sqlstate| sqlstate == &SqlState::DUPLICATE_SCHEMA).unwrap_or_default() {
+                // TODO: do we want to allow this; continuing with existing epoch schema might lead to inconsistent data in blocks and transactions table
+                warn!("Schema {} already exists", schema);
+                return Ok(());
+            } else {
+                return Err(err).context("create schema for new epoch");
+            }
+        }
 
         // Create blocks table
         let statement = PostgresBlock::create_statement(schema);
