@@ -102,7 +102,7 @@ impl PostgresTransaction {
 
         let values = PostgresSession::values_vecvec(NB_ARUMENTS, tx_count, &[]);
         let schema = PostgresEpoch::build_schema_name(epoch);
-        let query = format!(
+        let statement = format!(
             r#"
                 INSERT INTO {}.transactions
                 (signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message)
@@ -112,7 +112,7 @@ impl PostgresTransaction {
             values
         );
 
-        let inserted = postgres_session.execute(&query, &args).await? as usize;
+        let inserted = postgres_session.execute(&statement, &args).await? as usize;
 
         if inserted < tx_count {
             warn!("Some ({}) transactions already existed and where not updated of {} total", transactions.len() - inserted, transactions.len());

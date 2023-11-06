@@ -140,14 +140,14 @@ async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> any
     }
 
     let values = PostgresSession::values_vecvec(NUMBER_OF_ARGS, txs.len(), &[]);
-    let query = format!(
+    let statement = format!(
         r#"
             INSERT INTO lite_rpc.Txs 
             (signature, recent_slot, forwarded_slot, forwarded_local_time, processed_slot, cu_consumed, cu_requested, quic_response)
             VALUES {}
         "#, values);
 
-    postgres_session.client.execute(&query, &args).await?;
+    postgres_session.client.execute(&statement, &args).await?;
 
     Ok(())
 }
@@ -187,7 +187,7 @@ async fn update_txs(
         &["text", "bigint", "bigint", "bigint", "bigint"],
     );
 
-    let query = format!(
+    let statement = format!(
         r#"
             UPDATE lite_rpc.Txs AS t1 SET
                 processed_slot  = t2.processed_slot,
@@ -200,7 +200,7 @@ async fn update_txs(
         values
     );
 
-    postgres_session.execute(&query, &args).await?;
+    postgres_session.execute(&statement, &args).await?;
 
     Ok(())
 }

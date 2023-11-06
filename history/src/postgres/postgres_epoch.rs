@@ -12,9 +12,10 @@ impl PostgresEpoch {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
             "
-            CREATE SCHEMA {} AUTHORIZATION CURRENT_ROLE;
+            CREATE SCHEMA {};
             ",
             schema
         )
     }
+
 }

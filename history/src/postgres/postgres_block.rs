@@ -66,11 +66,11 @@ impl PostgresBlock {
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
         let values = PostgresSession::values_vecvec(NB_ARUMENTS, 1, &[]);
-        let query = format!(
+        let statement = format!(
             r#"
-            INSERT INTO {}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards)
-            VALUES {} ON CONFLICT DO NOTHING;
-        "#,
+                INSERT INTO {}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards)
+                VALUES {} ON CONFLICT DO NOTHING;
+            "#,
             schema,
             values
         );
@@ -84,7 +84,7 @@ impl PostgresBlock {
         args.push(&self.previous_blockhash);
         args.push(&self.rewards);
 
-        let inserted = postgres_session.execute(&query, &args).await?;
+        let inserted = postgres_session.execute(&statement, &args).await?;
 
         // TODO: decide what to do if block already exists
         if inserted == 0 {

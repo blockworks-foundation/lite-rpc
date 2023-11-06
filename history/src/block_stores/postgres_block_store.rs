@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use itertools::Itertools;
-use log::warn;
+use log::{error, info, warn};
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
@@ -19,6 +19,9 @@ use crate::postgres::{
     postgres_transaction::PostgresTransaction,
 };
 use crate::postgres::postgres_epoch::PostgresEpoch;
+use crate::postgres::postgres_session::PostgresSession;
+
+const LITERPC_ROLE: &str = "r_literpc";
 
 #[derive(Default, Clone, Copy)]
 pub struct PostgresData {
@@ -38,6 +41,9 @@ impl PostgresBlockStore {
     pub async fn new(epoch_cache: EpochCache) -> Self {
         let session_cache = PostgresSessionCache::new().await.unwrap();
         let postgres_data = Arc::new(RwLock::new(PostgresData::default()));
+
+        Self::check_role(&session_cache).await;
+
         Self {
             session_cache,
             epoch_cache,
@@ -45,13 +51,23 @@ impl PostgresBlockStore {
         }
     }
 
+    async fn check_role(session_cache: &PostgresSessionCache) {
+        let role = LITERPC_ROLE;
+        let statement = format!("SELECT 1 FROM pg_roles WHERE rolname='{role}'");
+        let count = session_cache.get_session().await.expect("must get session")
+            .execute(&statement, &[]).await
+            .expect("must execute query to check for role");
+
+        if count == 0 {
+            panic!("Missing mandatory postgres role '{}' for Lite RPC - see permissions.sql", role);
+        } else {
+            info!("Self check - found postgres role '{}'", role);
+        }
+    }
+
     async fn start_new_epoch(&self, epoch: EpochRef) -> Result<()> {
         // create schema for new epoch
-        let session = self
-            .session_cache
-            .get_session()
-            .await
-            .expect("should get new postgres session");
+        let session = self.get_session().await;
 
         let statement = PostgresEpoch::build_create_table_statement(epoch);
         // note: requires GRANT CREATE ON DATABASE xyz
@@ -65,6 +81,11 @@ impl PostgresBlockStore {
                 return Err(err).context("create schema for new epoch");
             }
         }
+
+        // set permissions for new schema
+        let statement = build_assign_permissions_query(epoch);
+        session.execute(&statement, &[]).await
+            .context("Set postgres permissions for new schema")?;
 
         // Create blocks table
         let statement = PostgresBlock::build_create_table_statement(epoch);
@@ -83,6 +104,25 @@ impl PostgresBlockStore {
 
         Ok(())
     }
+
+    async fn get_session(&self) -> PostgresSession {
+        self
+            .session_cache
+            .get_session()
+            .await
+            .expect("should get new postgres session")
+    }
+}
+
+fn build_assign_permissions_query(epoch: EpochRef) -> String {
+    let role = LITERPC_ROLE;
+    let schema = PostgresEpoch::build_schema_name(epoch);
+    format!(
+        r#"
+            GRANT USAGE ON SCHEMA {schema} TO {role};
+            GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
+            ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
+        "#)
 }
 
 #[async_trait]
@@ -104,11 +144,7 @@ impl BlockStorageInterface for PostgresBlockStore {
             self.start_new_epoch(epoch.into()).await?;
         }
 
-        let session = self
-            .session_cache
-            .get_session()
-            .await
-            .expect("should get new postgres session");
+        let session = self.get_session().await;
 
         postgres_block.save(&session, epoch.into()).await?;
 
@@ -147,33 +183,11 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_connection() {
-        std::env::set_var("PG_CONFIG", "host=localhost dbname=literpc3 user=literpc_app password=litelitesecret sslmode=disable");
-        let pg_config = std::env::var("PG_CONFIG").context("env PG_CONFIG not found").unwrap();
-        let pg_config = pg_config.parse::<tokio_postgres::Config>().unwrap();
-
-        println!("use connection {:?}", pg_config);
-
-        let (client, _connection) = pg_config.connect(NoTls).await.unwrap();
-
-
-        let _user_row = client.execute("SELECT CURRENT_USER", &[]).await.unwrap();
-
-        // println!("user_row {:?}", user_row);
-
-
-
-
-    }
-
-
-
-    #[tokio::test]
     #[ignore]
     async fn test_save_block() {
         tracing_subscriber::fmt::init();
 
-        std::env::set_var("PG_CONFIG", "host=localhost dbname=literpc3 user=literpc_app password=litelitesecret sslmode=disable");
+        std::env::set_var("PG_CONFIG", "host=localhost dbname=literpc3 user=literpc_foobar password=litelitesecret sslmode=disable");
         let _postgres_session_cache = PostgresSessionCache::new().await.unwrap();
         let epoch_cache = EpochCache::new_for_tests();
 
