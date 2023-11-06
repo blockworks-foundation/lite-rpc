@@ -15,6 +15,11 @@ pub struct Epoch {
     pub absolute_slot: Slot,
 }
 
+
+#[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord)]
+pub struct EpochRef(u64);
+
+
 impl Epoch {
     pub fn into_epoch_info(&self, block_height: u64, transaction_count: Option<u64>) -> EpochInfo {
         EpochInfo {
@@ -27,6 +32,29 @@ impl Epoch {
         }
     }
 }
+
+impl Display for EpochRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_epoch())
+    }
+}
+
+impl From<Epoch> for EpochRef {
+    fn from(epoch: Epoch) -> Self {
+        Self(epoch.epoch)
+    }
+}
+
+impl EpochRef {
+    pub fn new(epoch: u64) -> Self {
+        Self(epoch)
+    }
+
+    pub fn get_epoch(&self) -> u64 {
+        self.0
+    }
+}
+
 
 #[derive(Clone)]
 pub struct EpochCache {
@@ -138,35 +166,5 @@ mod tests {
             },
             slot_epoch
         );
-    }
-}
-
-
-#[derive(Debug, Copy, Clone)]
-pub struct EpochRef(u64);
-
-impl Display for EpochRef {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.get_epoch())
-    }
-}
-
-impl From<Epoch> for EpochRef {
-    fn from(epoch: Epoch) -> Self {
-        Self(epoch.epoch)
-    }
-}
-
-impl EpochRef {
-    pub fn new(epoch: u64) -> Self {
-        Self(epoch)
-    }
-
-    pub fn get_epoch(&self) -> u64 {
-        self.0
-    }
-
-    pub fn get_next_epoch(&self) -> Self {
-        Self(self.0 + 1)
     }
 }
