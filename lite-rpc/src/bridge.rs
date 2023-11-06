@@ -21,10 +21,17 @@ use solana_lite_rpc_history::history::History;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
-        RpcBlockConfig, RpcContextConfig, RpcEncodingConfigWrapper, RpcRequestAirdropConfig,
-        RpcSignatureStatusConfig,
+        RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
+        RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
+        RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
+        RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsConfig,
+        RpcTransactionLogsFilter,
     },
-    response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
+    response::{
+        Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
+        RpcContactInfo, RpcLeaderSchedule, RpcPerfSample, RpcPrioritizationFee, RpcResponseContext,
+        RpcVersionInfo, RpcVoteAccountStatus,
+    },
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
@@ -117,37 +124,65 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-    async fn send_transaction(
+    async fn get_block(
         &self,
-        tx: String,
-        send_transaction_config: Option<SendTransactionConfig>,
-    ) -> crate::rpc::Result<String> {
-        RPC_SEND_TX.inc();
-
-        let SendTransactionConfig {
-            encoding,
-            max_retries,
-        } = send_transaction_config.unwrap_or_default();
-
-        let raw_tx = match encoding.decode(tx) {
-            Ok(raw_tx) => raw_tx,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
-
-        match self
-            .transaction_service
-            .send_transaction(raw_tx, max_retries)
-            .await
-        {
-            Ok(sig) => {
-                TXS_IN_CHANNEL.inc();
-
-                Ok(sig)
-            }
-            Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
+        slot: u64,
+        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+    ) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
+        let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
+        let block = self.history.block_storage.get(slot, config).await;
+        if block.is_ok() {
+            // TO DO Convert to UIConfirmed Block
+            Err(jsonrpsee::core::Error::HttpNotImplemented)
+        } else {
+            Ok(None)
         }
+    }
+
+    async fn get_blocks(
+        &self,
+        _start_slot: Slot,
+        _config: Option<RpcBlocksConfigWrapper>,
+        _commitment: Option<CommitmentConfig>,
+    ) -> crate::rpc::Result<Vec<Slot>> {
+        todo!()
+    }
+
+    async fn get_signatures_for_address(
+        &self,
+        _address: String,
+        _config: Option<RpcSignaturesForAddressConfig>,
+    ) -> crate::rpc::Result<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+        todo!()
+    }
+
+    async fn get_cluster_nodes(&self) -> crate::rpc::Result<Vec<RpcContactInfo>> {
+        todo!()
+    }
+
+    async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
+
+        let BlockInformation { slot, .. } = self
+            .data_cache
+            .block_information_store
+            .get_latest_block(commitment_config)
+            .await;
+        Ok(slot)
+    }
+
+    async fn get_block_height(&self, _config: Option<RpcContextConfig>) -> crate::rpc::Result<u64> {
+        todo!()
+    }
+
+    async fn get_block_time(&self, _block: u64) -> crate::rpc::Result<u64> {
+        todo!()
+    }
+
+    async fn get_first_available_block(&self) -> crate::rpc::Result<u64> {
+        todo!()
     }
 
     async fn get_latest_blockhash(
@@ -210,6 +245,50 @@ impl LiteRpcServer for LiteBridge {
         })
     }
 
+    async fn get_epoch_info(
+        &self,
+        config: Option<RpcContextConfig>,
+    ) -> crate::rpc::Result<EpochInfo> {
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
+        let block_info = self
+            .data_cache
+            .block_information_store
+            .get_latest_block_info(commitment_config)
+            .await;
+
+        //TODO manage transaction_count of epoch info. Currently None.
+        let epoch_info = self
+            .data_cache
+            .get_current_epoch(commitment_config)
+            .await
+            .into_epoch_info(block_info.block_height, None);
+        Ok(epoch_info)
+    }
+
+    async fn get_leader_schedule(
+        &self,
+        _slot: Option<Slot>,
+        _config: Option<RpcEncodingConfigWrapper<RpcEpochConfig>>,
+    ) -> crate::rpc::Result<Option<RpcLeaderSchedule>> {
+        todo!()
+    }
+
+    async fn get_vote_accounts(
+        &self,
+        _config: Option<RpcGetVoteAccountsConfig>,
+    ) -> crate::rpc::Result<RpcVoteAccountStatus> {
+        todo!()
+    }
+
+    async fn get_recent_performance_samples(
+        &self,
+        _limit: Option<usize>,
+    ) -> crate::rpc::Result<Vec<RpcPerfSample>> {
+        todo!()
+    }
+
     async fn get_signature_statuses(
         &self,
         sigs: Vec<String>,
@@ -234,6 +313,46 @@ impl LiteRpcServer for LiteBridge {
             },
             value: sig_statuses,
         })
+    }
+
+    async fn get_recent_prioritization_fees(
+        &self,
+        _pubkey_strs: Option<Vec<String>>,
+    ) -> crate::rpc::Result<Vec<RpcPrioritizationFee>> {
+        todo!()
+    }
+
+    async fn send_transaction(
+        &self,
+        tx: String,
+        send_transaction_config: Option<SendTransactionConfig>,
+    ) -> crate::rpc::Result<String> {
+        RPC_SEND_TX.inc();
+
+        let SendTransactionConfig {
+            encoding,
+            max_retries,
+        } = send_transaction_config.unwrap_or_default();
+
+        let raw_tx = match encoding.decode(tx) {
+            Ok(raw_tx) => raw_tx,
+            Err(err) => {
+                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+            }
+        };
+
+        match self
+            .transaction_service
+            .send_transaction(raw_tx, max_retries)
+            .await
+        {
+            Ok(sig) => {
+                TXS_IN_CHANNEL.inc();
+
+                Ok(sig)
+            }
+            Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
+        }
     }
 
     fn get_version(&self) -> crate::rpc::Result<RpcVersionInfo> {
@@ -290,24 +409,43 @@ impl LiteRpcServer for LiteBridge {
         Ok(airdrop_sig)
     }
 
-    async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
-        let commitment_config = config
-            .map(|config| config.commitment.unwrap_or_default())
-            .unwrap_or_default();
-
-        let BlockInformation { slot, .. } = self
-            .data_cache
-            .block_information_store
-            .get_latest_block(commitment_config)
-            .await;
-        Ok(slot)
+    async fn program_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+        _pubkey_str: String,
+        _config: Option<RpcProgramAccountsConfig>,
+    ) -> SubscriptionResult {
+        todo!()
     }
 
+    async fn slot_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
+        todo!()
+    }
+
+    async fn block_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+        _filter: RpcBlockSubscribeFilter,
+        _config: Option<RpcBlockSubscribeConfig>,
+    ) -> SubscriptionResult {
+        todo!()
+    }
+
+    async fn logs_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+        _filter: RpcTransactionLogsFilter,
+        _config: Option<RpcTransactionLogsConfig>,
+    ) -> SubscriptionResult {
+        todo!()
+    }
+
+    // WARN: enable_received_notification: bool is ignored
     async fn signature_subscribe(
         &self,
         pending: PendingSubscriptionSink,
         signature: String,
-        commitment_config: CommitmentConfig,
+        config: RpcSignatureSubscribeConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
         let sink = pending.accept().await?;
@@ -315,47 +453,21 @@ impl LiteRpcServer for LiteBridge {
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
         self.data_cache.tx_subs.signature_subscribe(
             signature,
-            commitment_config,
+            config.commitment.unwrap_or_default(),
             Arc::new(jsonrpsee_sink),
         );
 
         Ok(())
     }
 
-    async fn get_block(
+    async fn slot_updates_subscribe(
         &self,
-        slot: u64,
-        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-    ) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
-        let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
-        let block = self.history.block_storage.get(slot, config).await;
-        if block.is_ok() {
-            // TO DO Convert to UIConfirmed Block
-            Err(jsonrpsee::core::Error::HttpNotImplemented)
-        } else {
-            Ok(None)
-        }
+        _pending: PendingSubscriptionSink,
+    ) -> SubscriptionResult {
+        todo!()
     }
 
-    async fn get_epoch_info(
-        &self,
-        config: Option<RpcContextConfig>,
-    ) -> crate::rpc::Result<EpochInfo> {
-        let commitment_config = config
-            .map(|config| config.commitment.unwrap_or_default())
-            .unwrap_or_default();
-        let block_info = self
-            .data_cache
-            .block_information_store
-            .get_latest_block_info(commitment_config)
-            .await;
-
-        //TODO manage transaction_count of epoch info. Currently None.
-        let epoch_info = self
-            .data_cache
-            .get_current_epoch(commitment_config)
-            .await
-            .into_epoch_info(block_info.block_height, None);
-        Ok(epoch_info)
+    async fn vote_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
+        todo!()
     }
 }
