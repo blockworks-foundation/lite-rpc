@@ -1,3 +1,6 @@
+use crate::stores::data_cache::DataCache;
+use solana_sdk::commitment_config::CommitmentConfig;
+use crate::stores::block_information_store::BlockInformation;
 use serde::Serialize;
 use solana_sdk::hash::Hash;
 use solana_sdk::signature::Signature;
@@ -31,4 +34,13 @@ impl SerializableTransaction for VersionedTransaction {
     fn uses_durable_nonce(&self) -> bool {
         self.uses_durable_nonce()
     }
+}
+
+pub async fn get_current_confirmed_slot(data_cache: &DataCache) -> u64 {
+    let commitment = CommitmentConfig::confirmed();
+    let BlockInformation { slot, .. } = data_cache
+        .block_information_store
+        .get_latest_block(commitment)
+        .await;
+    slot
 }

@@ -7,7 +7,7 @@ use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct GetVoteAccountsConfig {
     pub vote_pubkey: Option<Pubkey>,
     pub commitment: Option<CommitmentConfig>,
@@ -33,7 +33,7 @@ impl TryFrom<RpcGetVoteAccountsConfig> for GetVoteAccountsConfig {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct CalculatedSchedule {
     pub current: Option<LeaderScheduleData>,
     pub next: Option<LeaderScheduleData>,
@@ -46,7 +46,7 @@ impl CalculatedSchedule {
         commitment: Option<CommitmentConfig>,
         data_cache: &DataCache,
     ) -> Option<HashMap<String, Vec<usize>>> {
-        let commitment = commitment.unwrap_or_else(CommitmentConfig::confirmed);
+        let commitment = commitment.unwrap_or_else(CommitmentConfig::default);
         let slot = match slot {
             Some(slot) => slot,
             None => {
@@ -68,7 +68,7 @@ impl CalculatedSchedule {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct LeaderScheduleData {
     pub schedule_by_node: HashMap<String, Vec<usize>>,
     pub schedule_by_slot: Vec<Pubkey>,

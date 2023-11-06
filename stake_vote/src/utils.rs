@@ -18,15 +18,6 @@ use std::sync::Arc;
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
-pub async fn get_current_confirmed_slot(data_cache: &DataCache) -> u64 {
-    let commitment = CommitmentConfig::confirmed();
-    let BlockInformation { slot, .. } = data_cache
-        .block_information_store
-        .get_latest_block(commitment)
-        .await;
-    slot
-}
-
 pub async fn get_current_epoch(data_cache: &DataCache) -> LiteRpcEpoch {
     let commitment = CommitmentConfig::confirmed();
     data_cache.get_current_epoch(commitment).await
