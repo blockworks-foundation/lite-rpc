@@ -1,7 +1,9 @@
-use log::warn;
+use log::{debug, warn};
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
 use tokio_postgres::types::ToSql;
+use solana_lite_rpc_core::structures::epoch::{Epoch, EpochRef};
+use crate::postgres::postgres_epoch::PostgresEpoch;
 
 use super::postgres_session::PostgresSession;
 
@@ -37,7 +39,8 @@ impl PostgresTransaction {
         }
     }
 
-    pub fn build_create_table_statement(schema: &String) -> String {
+    pub fn build_create_table_statement(epoch: EpochRef) -> String {
+        let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
             "\
         CREATE TABLE IF NOT EXISTS {}.transactions (
@@ -56,7 +59,8 @@ impl PostgresTransaction {
         )
     }
 
-    pub fn build_foreign_key_statement(schema: &String) -> String {
+    pub fn build_foreign_key_statement(epoch: EpochRef) -> String {
+        let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
             "\
             ALTER TABLE {}.transactions ADD CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {}.blocks (slot);
@@ -67,7 +71,7 @@ impl PostgresTransaction {
 
     pub async fn save_transactions(
         postgres_session: &PostgresSession,
-        schema: &String,
+        epoch: EpochRef,
         transactions: &[Self],
     ) -> anyhow::Result<()> {
         let tx_count = transactions.len();
@@ -97,6 +101,7 @@ impl PostgresTransaction {
         }
 
         let values = PostgresSession::values_vecvec(NB_ARUMENTS, tx_count, &[]);
+        let schema = PostgresEpoch::build_schema_name(epoch);
         let query = format!(
             r#"
                 INSERT INTO {}.transactions
@@ -112,6 +117,8 @@ impl PostgresTransaction {
         if inserted < tx_count {
             warn!("Some ({}) transactions already existed and where not updated of {} total", transactions.len() - inserted, transactions.len());
         }
+
+        debug!("Inserted {} transactions in epoch schema {}", inserted, schema);
 
         Ok(())
     }

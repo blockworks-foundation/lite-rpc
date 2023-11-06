@@ -1,6 +1,8 @@
 use log::warn;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use tokio_postgres::types::ToSql;
+use solana_lite_rpc_core::structures::epoch::EpochRef;
+use crate::postgres::postgres_epoch::PostgresEpoch;
 
 use super::postgres_session::PostgresSession;
 
@@ -38,7 +40,8 @@ impl From<&ProducedBlock> for PostgresBlock {
 }
 
 impl PostgresBlock {
-    pub fn build_create_table_statement(schema: &String) -> String {
+    pub fn build_create_table_statement(epoch: EpochRef) -> String {
+        let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
             "
             CREATE TABLE IF NOT EXISTS {}.blocks (
@@ -59,8 +62,9 @@ impl PostgresBlock {
     pub async fn save(
         &self,
         postgres_session: &PostgresSession,
-        schema: &String,
+        epoch: EpochRef,
     ) -> anyhow::Result<()> {
+        let schema = PostgresEpoch::build_schema_name(epoch);
         let values = PostgresSession::values_vecvec(NB_ARUMENTS, 1, &[]);
         let query = format!(
             r#"

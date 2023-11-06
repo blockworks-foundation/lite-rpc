@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use itertools::Itertools;
-use log::{info, warn};
+use log::warn;
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
@@ -11,12 +11,14 @@ use solana_lite_rpc_core::{
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{slot_history::Slot, stake_history::Epoch};
 use tokio::sync::RwLock;
-use tokio_postgres::error::{DbError, SqlState};
+use tokio_postgres::error::SqlState;
+use solana_lite_rpc_core::structures::epoch::EpochRef;
 
 use crate::postgres::{
     postgres_block::PostgresBlock, postgres_session::PostgresSessionCache,
     postgres_transaction::PostgresTransaction,
 };
+use crate::postgres::postgres_epoch::PostgresEpoch;
 
 #[derive(Default, Clone, Copy)]
 pub struct PostgresData {
@@ -43,7 +45,7 @@ impl PostgresBlockStore {
         }
     }
 
-    async fn start_new_epoch(&self, schema: &String) -> Result<()> {
+    async fn start_new_epoch(&self, epoch: EpochRef) -> Result<()> {
         // create schema for new epoch
         let session = self
             .session_cache
@@ -51,13 +53,13 @@ impl PostgresBlockStore {
             .await
             .expect("should get new postgres session");
 
-        let statement = format!("CREATE SCHEMA {} AUTHORIZATION CURRENT_ROLE;", schema);
+        let statement = PostgresEpoch::build_create_table_statement(epoch);
         // note: requires GRANT CREATE ON DATABASE xyz
         let result_create_schema = session.execute(&statement, &[]).await;
         if let Err(err) = result_create_schema {
             if err.code().map(|sqlstate| sqlstate == &SqlState::DUPLICATE_SCHEMA).unwrap_or_default() {
                 // TODO: do we want to allow this; continuing with existing epoch schema might lead to inconsistent data in blocks and transactions table
-                warn!("Schema {} already exists - data will be appended", schema);
+                warn!("Schema for epoch {} already exists - data will be appended", epoch);
                 return Ok(());
             } else {
                 return Err(err).context("create schema for new epoch");
@@ -65,17 +67,17 @@ impl PostgresBlockStore {
         }
 
         // Create blocks table
-        let statement = PostgresBlock::build_create_table_statement(schema);
+        let statement = PostgresBlock::build_create_table_statement(epoch);
         session.execute(&statement, &[]).await
             .context("create blocks table for new epoch")?;
 
         // create transaction table
-        let statement = PostgresTransaction::build_create_table_statement(schema);
+        let statement = PostgresTransaction::build_create_table_statement(epoch);
         session.execute(&statement, &[]).await
             .context("create transaction table for new epoch")?;
 
         // add foreign key constraint between transactions and blocks
-        let statement = PostgresTransaction::build_foreign_key_statement(schema);
+        let statement = PostgresTransaction::build_foreign_key_statement(epoch);
         session.execute(&statement, &[]).await
             .context("create foreign key constraint between transactions and blocks")?;
 
@@ -97,25 +99,26 @@ impl BlockStorageInterface for PostgresBlockStore {
         let postgres_block = PostgresBlock::from(&block);
 
         let epoch = self.epoch_cache.get_epoch_at_slot(slot);
-        let schema = format!("lite_rpc_epoch_{}", epoch.epoch);
         if current_epoch == 0 || current_epoch < epoch.epoch {
             self.postgres_data.write().await.current_epoch = epoch.epoch;
-            self.start_new_epoch(&schema).await?;
+            self.start_new_epoch(epoch.into()).await?;
         }
 
-        const NUMBER_OF_TRANSACTION: usize = 20;
-
-        // save transaction
-        let chunks = transactions.chunks(NUMBER_OF_TRANSACTION);
         let session = self
             .session_cache
             .get_session()
             .await
             .expect("should get new postgres session");
+
+        postgres_block.save(&session, epoch.into()).await?;
+
+        const NUMBER_OF_TRANSACTION: usize = 20;
+
+        // save transaction
+        let chunks = transactions.chunks(NUMBER_OF_TRANSACTION);
         for chunk in chunks {
-            PostgresTransaction::save_transactions(&session, &schema, chunk).await?;
+            PostgresTransaction::save_transactions(&session, epoch.into(), chunk).await?;
         }
-        postgres_block.save(&session, &schema).await?;
         Ok(())
     }
 
@@ -191,7 +194,7 @@ mod tests {
             blockhash: "blockhash".to_string(),
             previous_blockhash: "previous_blockhash".to_string(),
             parent_slot: 666,
-            slot: 667,
+            slot: 223555999,
             transactions: vec![
                 create_test_tx(sig1),
                 create_test_tx(sig2),

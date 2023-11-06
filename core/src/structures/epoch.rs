@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use anyhow::bail;
 use solana_account_decoder::parse_sysvar::SysvarAccountType;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -137,5 +138,35 @@ mod tests {
             },
             slot_epoch
         );
+    }
+}
+
+
+#[derive(Debug, Copy, Clone)]
+pub struct EpochRef(u64);
+
+impl Display for EpochRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_epoch())
+    }
+}
+
+impl From<Epoch> for EpochRef {
+    fn from(epoch: Epoch) -> Self {
+        Self(epoch.epoch)
+    }
+}
+
+impl EpochRef {
+    pub fn new(epoch: u64) -> Self {
+        Self(epoch)
+    }
+
+    pub fn get_epoch(&self) -> u64 {
+        self.0
+    }
+
+    pub fn get_next_epoch(&self) -> Self {
+        Self(self.0 + 1)
     }
 }
