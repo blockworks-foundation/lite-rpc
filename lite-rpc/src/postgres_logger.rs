@@ -180,29 +180,24 @@ async fn update_txs(
         args.push(cu_price);
     }
 
-    let mut query = String::from(
+
+    let values = PostgresSession::values_vecvec(
+        NUMBER_OF_ARGS,
+        txs.len(),
+        &["text", "bigint", "bigint", "bigint", "bigint"],
+    );
+
+    let query = format!(
         r#"
             UPDATE lite_rpc.Txs AS t1 SET
                 processed_slot  = t2.processed_slot,
                 cu_consumed = t2.cu_consumed,
                 cu_requested = t2.cu_requested,
                 cu_price = t2.cu_price
-            FROM (VALUES
-        "#,
-    );
-
-    PostgresSession::multiline_query(
-        &mut query,
-        NUMBER_OF_ARGS,
-        txs.len(),
-        &["text", "bigint", "bigint", "bigint", "bigint"],
-    );
-
-    query.push_str(
-        r#"
-            ) AS t2(signature, processed_slot, cu_consumed, cu_requested, cu_price)
+            FROM (VALUES {}) AS t2(signature, processed_slot, cu_consumed, cu_requested, cu_price)
             WHERE t1.signature = t2.signature
         "#,
+        values
     );
 
     postgres_session.execute(&query, &args).await?;

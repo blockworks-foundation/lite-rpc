@@ -176,9 +176,22 @@ fn multiline_query_test() {
 }
 
 #[test]
+fn value_query_test() {
+    let values = PostgresSession::values_vecvec(3, 2, &[]);
+    assert_eq!(values, "($1,$2,$3),($4,$5,$6)");
+}
+
+#[test]
 fn multiline_query_test_types() {
     let mut query = String::new();
 
     PostgresSession::multiline_query(&mut query, 3, 2, &["text", "int", "int"]);
     assert_eq!(query, "(($1)::text,($2)::int,($3)::int),($4,$5,$6)");
 }
+
+#[test]
+fn value_vecvec_test_types() {
+    let values = PostgresSession::values_vecvec(3, 2, &["text", "int", "int"]);
+    assert_eq!(values, "(($1)::text,($2)::int,($3)::int),($4,$5,$6)");
+}
+
