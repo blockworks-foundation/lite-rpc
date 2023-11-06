@@ -124,6 +124,14 @@ impl PostgresSession {
         }
     }
 
+    pub fn values_vecvec(args: usize, rows: usize, types: &[&str]) -> String {
+        let mut query = String::new();
+
+        Self::multiline_query(&mut query, args, rows, types);
+
+        query
+    }
+
     pub async fn execute(
         &self,
         statement: &String,

@@ -1,3 +1,4 @@
+use log::warn;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
 use tokio_postgres::types::ToSql;
@@ -9,7 +10,7 @@ pub struct PostgresTransaction {
     pub signature: String,
     pub slot: i64,
     pub err: Option<String>,
-    pub cu_requested: Option<i32>,
+    pub cu_requested: Option<i64>,
     pub prioritization_fees: Option<i64>,
     pub cu_consumed: Option<i64>,
     pub recent_blockhash: String,
@@ -27,7 +28,7 @@ impl PostgresTransaction {
                 .clone()
                 .map(|x| BASE64.serialize(&x).ok())
                 .unwrap_or(None),
-            cu_requested: value.cu_requested.map(|x| x as i32),
+            cu_requested: value.cu_requested.map(|x| x as i64),
             prioritization_fees: value.prioritization_fees.map(|x| x as i64),
             cu_consumed: value.cu_consumed.map(|x| x as i64),
             recent_blockhash: value.recent_blockhash.clone(),
@@ -36,21 +37,29 @@ impl PostgresTransaction {
         }
     }
 
-    pub fn create_statement(schema: &String) -> String {
+    pub fn build_create_table_statement(schema: &String) -> String {
         format!(
             "\
-        CREATE TABLE {}.TRANSACTIONS (
+        CREATE TABLE IF NOT EXISTS {}.transactions (
             signature CHAR(88) NOT NULL,
             slot BIGINT, 
-            err STRING,
+            err TEXT,
             cu_requested BIGINT,
             prioritization_fees BIGINT,
             cu_consumed BIGINT,
-            recent_blockhash STRING NOT NULL,
-            message STRING NOT NULL,
+            recent_blockhash TEXT NOT NULL,
+            message TEXT NOT NULL,
             PRIMARY KEY (signature)
-            CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {}.BLOCKS(slot);
           );
+        ",
+            schema
+        )
+    }
+
+    pub fn build_foreign_key_statement(schema: &String) -> String {
+        format!(
+            "\
+            ALTER TABLE {}.transactions ADD CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {}.blocks (slot);
         ",
             schema, schema
         )
@@ -61,8 +70,9 @@ impl PostgresTransaction {
         schema: &String,
         transactions: &[Self],
     ) -> anyhow::Result<()> {
+        let tx_count = transactions.len();
         let mut args: Vec<&(dyn ToSql + Sync)> =
-            Vec::with_capacity(NB_ARUMENTS * transactions.len());
+            Vec::with_capacity(NB_ARUMENTS * tx_count);
 
         for tx in transactions.iter() {
             let PostgresTransaction {
@@ -86,17 +96,23 @@ impl PostgresTransaction {
             args.push(message);
         }
 
-        let mut query = format!(
+        let values = PostgresSession::values_vecvec(NB_ARUMENTS, tx_count, &[]);
+        let query = format!(
             r#"
-                INSERT INTO {}.TRANSACTIONS 
+                INSERT INTO {}.transactions
                 (signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message)
-                VALUES
+                VALUES {} ON CONFLICT DO NOTHING;
             "#,
-            schema
+            schema,
+            values
         );
 
-        PostgresSession::multiline_query(&mut query, NB_ARUMENTS, transactions.len(), &[]);
-        postgres_session.execute(&query, &args).await?;
+        let inserted = postgres_session.execute(&query, &args).await? as usize;
+
+        if inserted < tx_count {
+            warn!("Some ({}) transactions already existed and where not updated of {} total", transactions.len() - inserted, transactions.len());
+        }
+
         Ok(())
     }
 
@@ -105,7 +121,7 @@ impl PostgresTransaction {
         schema: &String,
         slot: Slot,
     ) -> Vec<TransactionInfo> {
-        let statement = format!("SELECT signature, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message FROM {}.TRANSACTIONS WHERE SLOT = {}", schema, slot);
+        let statement = format!("SELECT signature, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message FROM {}.transactions WHERE slot = {}", schema, slot);
         let _ = postgres_session.client.query(&statement, &[]).await;
         todo!()
     }

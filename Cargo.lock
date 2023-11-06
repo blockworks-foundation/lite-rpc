@@ -4320,6 +4320,7 @@ dependencies = [
  "solana-transaction-status",
  "tokio",
  "tokio-postgres",
+ "tracing-subscriber",
 ]
 
 [[package]]

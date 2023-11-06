@@ -139,15 +139,13 @@ async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> any
         args.push(quic_response);
     }
 
-    let mut query = String::from(
+    let values = PostgresSession::values_vecvec(NUMBER_OF_ARGS, txs.len(), &[]);
+    let query = format!(
         r#"
             INSERT INTO lite_rpc.Txs 
             (signature, recent_slot, forwarded_slot, forwarded_local_time, processed_slot, cu_consumed, cu_requested, quic_response)
-            VALUES
-        "#,
-    );
-
-    PostgresSession::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &[]);
+            VALUES {}
+        "#, values);
 
     postgres_session.client.execute(&query, &args).await?;
 

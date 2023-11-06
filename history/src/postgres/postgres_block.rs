@@ -1,3 +1,4 @@
+use log::warn;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use tokio_postgres::types::ToSql;
 
@@ -37,18 +38,18 @@ impl From<&ProducedBlock> for PostgresBlock {
 }
 
 impl PostgresBlock {
-    pub fn create_statement(schema: &String) -> String {
+    pub fn build_create_table_statement(schema: &String) -> String {
         format!(
             "
-            CREATE TABLE {}.BLOCKS (
+            CREATE TABLE IF NOT EXISTS {}.blocks (
                 slot BIGINT PRIMARY KEY,
-                blockhash STRING NOT NULL,
-                leader_id STRING,
+                blockhash TEXT NOT NULL,
+                leader_id TEXT,
                 block_height BIGINT NOT NULL,
                 parent_slot BIGINT NOT NULL,
                 block_time BIGINT NOT NULL,
-                previous_blockhash STRING NOT NULL,
-                rewards STRING,
+                previous_blockhash TEXT NOT NULL,
+                rewards TEXT
             );
         ",
             schema
@@ -60,11 +61,14 @@ impl PostgresBlock {
         postgres_session: &PostgresSession,
         schema: &String,
     ) -> anyhow::Result<()> {
-        let mut query = format!(
+        let values = PostgresSession::values_vecvec(NB_ARUMENTS, 1, &[]);
+        let query = format!(
             r#"
-            INSERT INTO {}.BLOCKS (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards) VALUES 
+            INSERT INTO {}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards)
+            VALUES {} ON CONFLICT DO NOTHING;
         "#,
-            schema
+            schema,
+            values
         );
 
         let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARUMENTS);
@@ -76,8 +80,13 @@ impl PostgresBlock {
         args.push(&self.previous_blockhash);
         args.push(&self.rewards);
 
-        PostgresSession::multiline_query(&mut query, NB_ARUMENTS, 1, &[]);
-        postgres_session.execute(&query, &args).await?;
+        let inserted = postgres_session.execute(&query, &args).await?;
+
+        // TODO: decide what to do if block already exists
+        if inserted == 0 {
+            warn!("Block {} already exists - not updated", self.slot);
+        }
+
         Ok(())
     }
 }
