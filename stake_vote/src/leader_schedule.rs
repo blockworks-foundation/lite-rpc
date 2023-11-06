@@ -1,3 +1,4 @@
+use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use crate::stake::{StakeMap, StakeStore};
 use crate::utils::{Takable, TakeResult};
 use crate::vote::EpochVoteStakes;
@@ -20,6 +21,7 @@ use tokio::task::JoinHandle;
 #[derive(Debug)]
 pub struct LeaderScheduleGeneratedData {
     pub schedule: LeaderSchedule,
+    pub rpc_data: LeaderScheduleData,
     pub epoch: u64,
 }
 
@@ -162,12 +164,19 @@ fn process_leadershedule_event(
 
                             log::info!("End calculate leader schedule");
 
+                            let rpc_data = LeaderScheduleData{
+                                    schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&leader_schedule),
+                                    schedule_by_slot: leader_schedule.get_slot_leaders().to_vec(),
+                                    epoch: next_epoch,
+                            };
+
                             LeaderScheduleEvent::MergeStoreAndSaveSchedule(
                                 stake_map,
                                 vote_map,
                                 epoch_cache,
                                 LeaderScheduleGeneratedData {
                                     schedule: leader_schedule,
+                                    rpc_data,
                                     epoch: next_epoch,
                                 },
                                 (new_epoch, slots_in_epoch, new_rate_activation_epoch),

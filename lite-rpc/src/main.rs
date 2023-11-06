@@ -198,7 +198,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         prometheus_addr,
         data_cache: data_cache.clone(),
     };
-    let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128));
+    let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 10, 128));
 
     let tpu_service: TpuService = TpuService::new(
         tpu_config,
@@ -221,9 +221,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     );
 
     //start stake vote and leader schedule.
+    let (rpc_stakes_send, rpc_stakes_recv) = mpsc::channel(1000);
     let stake_vote_jh = solana_lite_rpc_stakevote::start_stakes_and_votes_loop(
         data_cache.clone(),
         slot_notifier.resubscribe(),
+        rpc_stakes_recv,
         Arc::clone(&rpc_client),
         grpc_addr,
     )
@@ -243,6 +245,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             data_cache.clone(),
             transaction_service,
             history,
+            rpc_stakes_send,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );

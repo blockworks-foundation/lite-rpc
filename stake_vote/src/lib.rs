@@ -1,12 +1,10 @@
 use crate::account::AccountPretty;
 use crate::bootstrap::BootstrapEvent;
-use crate::leader_schedule::LeaderScheduleGeneratedData;
 use futures::Stream;
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::leaderschedule::GetVoteAccountsConfig;
-use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use solana_lite_rpc_core::types::SlotStream;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::response::RpcVoteAccountStatus;
@@ -78,8 +76,8 @@ pub async fn start_stakes_and_votes_loop(
             tokio::select! {
                 //manage confirm new slot notification to detect epoch change.
                 Ok(_) = slot_notification.recv() => {
-                    //log::info!("Stake and Vote receive a slot.");
-                    let new_slot = crate::utils::get_current_confirmed_slot(&data_cache).await;
+                    log::info!("Stake and Vote receive a slot.");
+                    let new_slot = solana_lite_rpc_core::solana_utils::get_current_confirmed_slot(&data_cache).await;
                     let schedule_event = current_schedule_epoch.process_new_confirmed_slot(new_slot, &data_cache).await;
                     if bootstrap_done {
                         if let Some(init_event) = schedule_event {
@@ -93,7 +91,7 @@ pub async fn start_stakes_and_votes_loop(
                     }
                 }
                 Some((config, return_channel)) = vote_account_rpc_request.recv() => {
-                    let current_slot = crate::utils::get_current_confirmed_slot(&data_cache).await;
+                    let current_slot = solana_lite_rpc_core::solana_utils::get_current_confirmed_slot(&data_cache).await;
                     rpc_request_processor.process_get_vote_accounts(current_slot, config, return_channel, &mut votestore).await;
                 }
                 //manage rpc waiting request notification.
@@ -127,7 +125,7 @@ pub async fn start_stakes_and_votes_loop(
                                             //         .unwrap_or("no content".to_string())
                                             // );
                                             //store new account stake.
-                                            let current_slot = crate::utils::get_current_confirmed_slot(&data_cache).await;
+                                            let current_slot = solana_lite_rpc_core::solana_utils::get_current_confirmed_slot(&data_cache).await;
 
                                             if let Some(account) = AccountPretty::new_from_geyzer(account, current_slot) {
                                                 match account.owner {
@@ -181,18 +179,17 @@ pub async fn start_stakes_and_votes_loop(
                 Some(Ok(event)) = spawned_bootstrap_task.next() =>  {
                     match crate::bootstrap::run_bootstrap_events(event, &mut spawned_bootstrap_task, &mut stakestore, &mut votestore, current_schedule_epoch.slots_in_epoch) {
                         Ok(Some(boot_res))=> {
-
                             match boot_res {
                                 Ok(current_schedule_data) => {
                                     //let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
-
                                     data_cache.leader_schedule = Arc::new(current_schedule_data);
-                                     bootstrap_done = true;
                                 }
                                 Err(err) => {
                                     log::warn!("Error during current leader schedule bootstrap from files:{err}")
                                 }
                             }
+                            log::info!("Bootstrap done.");
+                            bootstrap_done = true;
 
                         },
                         Ok(None) => (),
@@ -207,24 +204,14 @@ pub async fn start_stakes_and_votes_loop(
                         &mut stakestore,
                         &mut votestore,
                     );
-                    //clone old schedule values is there's other use.
-                    //only done once epoch. Avoid to use a Mutex.
-                    let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
-                    data_schedule.current = data_schedule.next.take();
-                    match new_leader_schedule {
-                        Some(schedule_data) => {
-                            let new_schedule_data = LeaderScheduleData{
-                                    schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&schedule_data.schedule),
-                                    schedule_by_slot: schedule_data.schedule.get_slot_leaders().to_vec(),
-                                    epoch: schedule_data.epoch
-                            };
-                            data_schedule.next = Some(new_schedule_data);
-                        }
-                        None => {
-                            log::warn!("Error during schedule calculus. No schedule for this epoch.");
-                            data_schedule.next = None;
-                        }
-                    };
+                    if let Some(new_leader_schedule) = new_leader_schedule {
+                        //clone old schedule values is there's other use.
+                        //only done once epoch. Avoid to use a Mutex.
+                        let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
+                        data_schedule.current = data_schedule.next.take();
+                        data_schedule.next = Some(new_leader_schedule.rpc_data);  
+                    }
+
                 }
             }
         }
