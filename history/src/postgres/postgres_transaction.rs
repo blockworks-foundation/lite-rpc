@@ -41,7 +41,7 @@ impl PostgresTransaction {
         format!(
             "\
         CREATE TABLE IF NOT EXISTS {}.transactions (
-            signature CHAR(88) NOT NULL,
+            signature TEXT NOT NULL,
             slot BIGINT, 
             err TEXT,
             cu_requested BIGINT,
