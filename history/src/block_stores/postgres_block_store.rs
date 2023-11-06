@@ -39,16 +39,21 @@ impl PostgresBlockStore {
             .expect("should get new postgres session");
 
         let statement = format!("CREATE SCHEMA {};", schema);
-        session.execute(&statement, &[]).await?;
+        // note: requires GRANT CREATE ON DATABASE xyz
+        session.execute(&statement, &[]).await
+            .context("create schema for new epoch")?;
 
         // Create blocks table
         let statement = PostgresBlock::create_statement(schema);
-        session.execute(&statement, &[]).await?;
+        session.execute(&statement, &[]).await
+            .context("create blocks table for new epoch")?;
 
         // create transaction table
         let statement = PostgresTransaction::create_statement(schema);
-        session.execute(&statement, &[]).await?;
+        session.execute(&statement, &[]).await
+            .context("create transaction table for new epoch")?;
         Ok(())
+
     }
 }
 
