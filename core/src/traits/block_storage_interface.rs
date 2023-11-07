@@ -10,10 +10,9 @@ pub trait BlockStorageInterface: Send + Sync {
     // will save a block
     async fn save(&self, block: &ProducedBlock) -> Result<()>;
     // will get a block
-    async fn get(&self, slot: Slot, config: RpcBlockConfig) -> Result<ProducedBlock>;
+    async fn get(&self, slot: Slot) -> Result<ProducedBlock>;
     // will get range of slots that are stored in the storage
     async fn get_slot_range(&self) -> Range<Slot>;
 }
 
 pub type BlockStorageImpl = Arc<dyn BlockStorageInterface>;
-pub const BLOCK_NOT_FOUND: &str = "Block not found";

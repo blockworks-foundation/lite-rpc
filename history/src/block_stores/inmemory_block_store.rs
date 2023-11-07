@@ -2,11 +2,12 @@ use async_trait::async_trait;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageInterface, BLOCK_NOT_FOUND},
+    traits::block_storage_interface::{BlockStorageInterface},
 };
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::slot_history::Slot;
 use std::{collections::BTreeMap, ops::Range};
+use anyhow::anyhow;
 use tokio::sync::RwLock;
 
 pub struct InmemoryBlockStore {
@@ -58,13 +59,13 @@ impl BlockStorageInterface for InmemoryBlockStore {
         Ok(())
     }
 
-    async fn get(&self, slot: Slot, _: RpcBlockConfig) -> anyhow::Result<ProducedBlock> {
+    async fn get(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
         self.block_storage
             .read()
             .await
             .get(&slot)
             .cloned()
-            .ok_or(anyhow::Error::msg(BLOCK_NOT_FOUND))
+            .ok_or(anyhow!("Block {} not found in in-memory storage", slot))
     }
 
     async fn get_slot_range(&self) -> Range<Slot> {

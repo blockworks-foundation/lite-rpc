@@ -4,12 +4,12 @@
 // Fetches legacy blocks from faithful
 
 use crate::block_stores::inmemory_block_store::InmemoryBlockStore;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageImpl, BlockStorageInterface, BLOCK_NOT_FOUND},
+    traits::block_storage_interface::{BlockStorageImpl, BlockStorageInterface},
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
@@ -21,6 +21,8 @@ use std::{
         Arc,
     },
 };
+use log::debug;
+use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 
 pub struct MultipleStrategyBlockStorage {
     inmemory_for_storage: InmemoryBlockStore, // for confirmed blocks
@@ -45,16 +47,7 @@ impl MultipleStrategyBlockStorage {
 
     pub async fn get_in_memory_block(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
         self.inmemory_for_storage
-            .get(
-                slot,
-                RpcBlockConfig {
-                    encoding: None,
-                    transaction_details: None,
-                    rewards: None,
-                    commitment: None,
-                    max_supported_transaction_version: None,
-                },
-            )
+            .get(slot)
             .await
     }
 }
@@ -92,39 +85,69 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
     async fn get(
         &self,
         slot: solana_sdk::slot_history::Slot,
-        config: RpcBlockConfig,
     ) -> Result<ProducedBlock> {
         let last_confirmed_slot = self.last_confirmed_slot.load(Ordering::Relaxed);
+
         if slot > last_confirmed_slot {
-            bail!(BLOCK_NOT_FOUND);
-        } else {
-            let range = self.inmemory_for_storage.get_slot_range().await;
-            if range.contains(&slot) {
-                let block = self.inmemory_for_storage.get(slot, config).await;
-                if block.is_ok() {
+            bail!(format!("Block {} not found (last_confirmed_slot={})", slot, last_confirmed_slot));
+        }
+
+        let range = self.inmemory_for_storage.get_slot_range().await;
+        if range.contains(&slot) {
+            let block = self.inmemory_for_storage.get(slot).await;
+            match block {
+                Ok(_) => {
+                    debug!("Lookup for block {} successful in in-memory-storage", slot);
                     return block;
                 }
+                Err(_) => {
+                    debug!("Block {} not found in in-memory-storage - continue", slot);
+                }
             }
-            // TODO: Define what data is expected that is definetly not in persistant block storage like data after epoch - 1
-            // check persistant block
-            let persistent_block_range = self.persistent_block_storage.get_slot_range().await;
-            if persistent_block_range.contains(&slot) {
-                self.persistent_block_storage.get(slot, config).await
-            } else if let Some(faithful_rpc_client) = self.faithful_rpc_client.clone() {
-                match faithful_rpc_client
-                    .get_block_with_config(slot, config)
-                    .await
-                {
-                    Ok(block) => Ok(ProducedBlock::from_ui_block(
+        }
+
+        // TODO: Define what data is expected that is definetly not in persistant block storage like data after epoch - 1
+        // check persistant block
+        let persistent_block_range = self.persistent_block_storage.get_slot_range().await;
+        match persistent_block_range.contains(&slot) {
+            true => {
+                debug!("Lookup for block {} successful in persistent block-storage", slot);
+                return self.persistent_block_storage.get(slot).await;
+            }
+            false => {
+                debug!("Block {} not found in persistent block-storage - continue", slot);
+            }
+        }
+
+        if let Some(faithful_rpc_client) = self.faithful_rpc_client.clone() {
+            // TODO check what parameters we want
+            let faithful_config = RpcBlockConfig {
+                encoding: Some(UiTransactionEncoding::Base58),
+                transaction_details: Some(TransactionDetails::Full),
+                rewards: None,
+                commitment: None,
+                max_supported_transaction_version: None,
+            };
+
+            match faithful_rpc_client
+                .get_block_with_config(slot, faithful_config)
+                .await {
+                Ok(block) => {
+                    return Ok(ProducedBlock::from_ui_block(
                         block,
                         slot,
                         CommitmentConfig::finalized(),
-                    )),
-                    Err(_) => bail!(BLOCK_NOT_FOUND),
+                    ));
                 }
-            } else {
-                bail!(BLOCK_NOT_FOUND);
+                Err(_) => {
+                    debug!("Block {} not found in faithful storage - giving up", slot);
+                    bail!(format!("Block {} not found in faithful", slot));
+                }
             }
+
+        } else {
+            // no faithful available
+            bail!(format!("Block {} not found - faithful not available", slot));
         }
     }
 
