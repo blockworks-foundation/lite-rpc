@@ -1,3 +1,4 @@
+-- note: this schema is only used for postgres_logger
 CREATE SCHEMA lite_rpc;
 
 CREATE TABLE lite_rpc.Txs (
