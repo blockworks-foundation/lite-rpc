@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{self, Duration},
+};
 
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
