@@ -157,15 +157,6 @@ impl VoteStore {
         }
     }
 
-    // //helper method to extract and merge stakes.
-    // pub fn take_votestore(&mut self) -> TakeResult<VoteMap> {
-    //     self.votes.take()
-    // }
-
-    // pub fn merge_votestore(&mut self, vote_map: VoteMap) -> anyhow::Result<()> {
-    //     self.votes.merge(vote_map)
-    // }
-
     fn remove_from_store(votes: &mut VoteMap, account_pk: &Pubkey, update_slot: Slot) {
         //TODO use action.
         if votes
@@ -252,9 +243,6 @@ pub fn get_rpc_vote_accounts_info(
     vote_accounts: &HashMap<Pubkey, (u64, Arc<StoredVote>)>,
     config: GetVoteAccountsConfig,
 ) -> RpcVoteAccountStatus {
-    //TODO
-    //manage
-
     //From Solana rpc::rpc::metaz::get_vote_accounts() code.
     let (current_vote_accounts, delinquent_vote_accounts): (
         Vec<RpcVoteAccountInfo>,

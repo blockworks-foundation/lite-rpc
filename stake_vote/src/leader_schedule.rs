@@ -1,4 +1,3 @@
-use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use crate::stake::{StakeMap, StakeStore};
 use crate::utils::{Takable, TakeResult};
 use crate::vote::EpochVoteStakes;
@@ -10,9 +9,9 @@ use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use solana_ledger::leader_schedule::LeaderSchedule;
+use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use solana_sdk::clock::NUM_CONSECUTIVE_LEADER_SLOTS;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::stake::state::StakeActivationStatus;
 use solana_sdk::stake_history::StakeHistory;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -66,14 +65,14 @@ InitLeaderscedule        MergeStore(stakes, votes, schedule)
 
 #[allow(clippy::large_enum_variant)] //256 byte large and only use during schedule calculus.
 pub enum LeaderScheduleEvent {
-    Init(u64, u64, Option<solana_sdk::clock::Epoch>),
+    Init(u64, u64, Option<solana_sdk::clock::Epoch>, StakeHistory),
     MergeStoreAndSaveSchedule(
         StakeMap,
         VoteMap,
         EpochVoteStakesCache,
         LeaderScheduleGeneratedData,
         (u64, u64, Option<solana_sdk::clock::Epoch>),
-        Option<StakeHistory>,
+        StakeHistory,
     ),
 }
 
@@ -110,9 +109,14 @@ fn process_leadershedule_event(
     votestore: &mut VoteStore,
 ) -> LeaderScheduleResult {
     match event {
-        LeaderScheduleEvent::Init(new_epoch, slots_in_epoch, new_rate_activation_epoch) => {
+        LeaderScheduleEvent::Init(
+            new_epoch,
+            slots_in_epoch,
+            new_rate_activation_epoch,
+            stake_history,
+        ) => {
             match (&mut stakestore.stakes, &mut votestore.votes).take() {
-                TakeResult::Map(((stake_map, mut stake_history), (vote_map, mut epoch_cache))) => {
+                TakeResult::Map((stake_map, (vote_map, mut epoch_cache))) => {
                     log::info!("LeaderScheduleEvent::CalculateScedule");
                     //do the calculus in a blocking task.
                     let jh = tokio::task::spawn_blocking({
@@ -121,7 +125,7 @@ fn process_leadershedule_event(
                                 &stake_map,
                                 &vote_map,
                                 new_epoch,
-                                stake_history.as_mut(),
+                                &stake_history,
                                 new_rate_activation_epoch,
                             );
 
@@ -164,10 +168,13 @@ fn process_leadershedule_event(
 
                             log::info!("End calculate leader schedule");
 
-                            let rpc_data = LeaderScheduleData{
-                                    schedule_by_node: LeaderScheduleGeneratedData::get_schedule_by_nodes(&leader_schedule),
-                                    schedule_by_slot: leader_schedule.get_slot_leaders().to_vec(),
-                                    epoch: next_epoch,
+                            let rpc_data = LeaderScheduleData {
+                                schedule_by_node:
+                                    LeaderScheduleGeneratedData::get_schedule_by_nodes(
+                                        &leader_schedule,
+                                    ),
+                                schedule_by_slot: leader_schedule.get_slot_leaders().to_vec(),
+                                epoch: next_epoch,
                             };
 
                             LeaderScheduleEvent::MergeStoreAndSaveSchedule(
@@ -198,6 +205,7 @@ fn process_leadershedule_event(
                                 new_epoch,
                                 slots_in_epoch,
                                 new_rate_activation_epoch,
+                                stake_history,
                             )
                         }
                     });
@@ -215,7 +223,7 @@ fn process_leadershedule_event(
         ) => {
             log::info!("LeaderScheduleEvent::MergeStoreAndSaveSchedule RECV");
             match (
-                stakestore.stakes.merge((stake_map, stake_history)),
+                stakestore.stakes.merge(stake_map),
                 votestore.votes.merge((vote_map, epoch_cache)),
             ) {
                 (Ok(()), Ok(())) => LeaderScheduleResult::End(schedule_data),
@@ -227,6 +235,7 @@ fn process_leadershedule_event(
                         new_epoch,
                         slots_in_epoch,
                         epoch_schedule,
+                        stake_history,
                     ))
                 }
             }
@@ -238,29 +247,9 @@ fn calculate_epoch_stakes(
     stake_map: &StakeMap,
     vote_map: &VoteMap,
     new_epoch: u64,
-    mut stake_history: Option<&mut StakeHistory>,
+    stake_history: &StakeHistory,
     new_rate_activation_epoch: Option<solana_sdk::clock::Epoch>,
 ) -> HashMap<Pubkey, (u64, Arc<StoredVote>)> {
-    //code taken from Solana code: runtime::stakes::activate_epoch function
-    //update stake history with current end epoch stake values.
-    //stake history is added for the ended epoch using all stakes at the end of the epoch.
-    let ended_epoch = new_epoch - 1;
-    let stake_history_entry =
-        stake_map
-            .values()
-            .fold(StakeActivationStatus::default(), |acc, stake_account| {
-                let delegation = stake_account.stake;
-                acc + delegation.stake_activating_and_deactivating(
-                    ended_epoch,
-                    stake_history.as_deref(),
-                    new_rate_activation_epoch,
-                )
-            });
-    match stake_history {
-        Some(ref mut stake_history) => stake_history.add(ended_epoch, stake_history_entry),
-        None => log::warn!("Vote stake calculus without Stake History"),
-    };
-
     //calculate schedule stakes at beginning of new epoch.
     //Next epoch schedule use the stake at the beginning of last epoch.
     let delegated_stakes: HashMap<Pubkey, u64> =
@@ -269,11 +258,8 @@ fn calculate_epoch_stakes(
             .fold(HashMap::default(), |mut delegated_stakes, stake_account| {
                 let delegation = stake_account.stake;
                 let entry = delegated_stakes.entry(delegation.voter_pubkey).or_default();
-                *entry += delegation.stake(
-                    new_epoch,
-                    stake_history.as_deref(),
-                    new_rate_activation_epoch,
-                );
+                *entry +=
+                    delegation.stake(new_epoch, Some(stake_history), new_rate_activation_epoch);
                 delegated_stakes
             });
 

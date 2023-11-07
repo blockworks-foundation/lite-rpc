@@ -4,7 +4,6 @@ use anyhow::bail;
 use futures_util::future::join_all;
 use futures_util::stream::FuturesUnordered;
 use serde::{Deserialize, Serialize};
-use solana_lite_rpc_core::stores::block_information_store::BlockInformation;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::epoch::Epoch as LiteRpcEpoch;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -75,14 +74,6 @@ pub enum UpdateAction<Account> {
     Remove(Pubkey, Slot),
 }
 
-// impl<Account> UpdateAction<Account> {
-//     pub fn get_update_slot(&self) -> u64 {
-//         match self {
-//             UpdateAction::Notify(slot, _) | UpdateAction::Remove(_, slot) => *slot,
-//         }
-//     }
-// }
-
 pub enum TakeResult<C> {
     //Vec because can wait on several collection to be merged
     Taken(Vec<Arc<Notify>>),
@@ -102,13 +93,6 @@ impl<C1> TakeResult<C1> {
             _ => unreachable!("Bad take result association."), //TODO add mix result.
         }
     }
-
-    // pub fn get_content(self) -> Option<C1> {
-    //     match self {
-    //         TakeResult::Taken(_) => None,
-    //         TakeResult::Map(content) => Some(content),
-    //     }
-    // }
 }
 
 //Takable struct code
@@ -185,31 +169,6 @@ impl<'a, T1, T2, C1: TakableContent<T1>, C2: TakableContent<T2>> Takable<(C1, C2
     }
 }
 
-// pub async fn take_or_wait<C, Notif, F, Fut>(takeMap: impl Takable<C>, f: F) -> Option<C>
-// where
-//     F: FnOnce(()) -> Fut + std::marker::Send + 'static,
-//     Fut: Future<Output = Notif> + std::marker::Send,
-//     Notif: std::marker::Send + 'static,
-// {
-//     match takeMap.take() {
-//         TakeResult::Map(content) => Some(content),
-//         TakeResult::Taken(stake_notify) => {
-//             let notif_jh = tokio::spawn({
-//                 async move {
-//                     let notifs = stake_notify
-//                         .iter()
-//                         .map(|n| n.notified())
-//                         .collect::<Vec<tokio::sync::futures::Notified>>();
-//                     join_all(notifs).await;
-//                     f(()).await
-//                 }
-//             });
-//             // waiter_futures.push(notif_jh);
-//             None
-//         }
-//     }
-// }
-
 pub async fn wait_for_merge_or_get_content<NotifyContent: std::marker::Send + 'static, C>(
     take_map: impl Takable<C>,
     notify_content: NotifyContent,
@@ -267,56 +226,7 @@ impl<T: Default, C: TakableContent<T> + Default> TakableMap<T, C> {
             }
         }
     }
-
-    // pub async fn wait_for_merge_or_get_content<Notify: std::marker::Send + 'static>(
-    //     &mut self,
-    //     notify_content: Notify,
-    //     waiter_futures: &mut FuturesUnordered<JoinHandle<Notify>>,
-    // ) -> Option<(C, Notify)> {
-    //     match self.take() {
-    //         TakeResult::Map(content) => Some((content, notify_content)),
-    //         TakeResult::Taken(stake_notify) => {
-    //             let notif_jh = tokio::spawn({
-    //                 async move {
-    //                     let notifs = stake_notify
-    //                         .iter()
-    //                         .map(|n| n.notified())
-    //                         .collect::<Vec<tokio::sync::futures::Notified>>();
-    //                     join_all(notifs).await;
-    //                     notify_content
-    //                 }
-    //             });
-    //             waiter_futures.push(notif_jh);
-    //             None
-    //         }
-    //     }
-    // }
 }
-
-// pub fn take<T: Default, C: TakableContent<T> + Default>(
-//     map: &mut TakableMap<T, C>,
-// ) -> anyhow::Result<C> {
-//     if map.is_taken() {
-//         bail!("TakableMap already taken. Try later");
-//     }
-//     let new_store = std::mem::take(map);
-//     let (new_store, content) = new_store.take();
-//     *map = new_store;
-//     Ok(content)
-// }
-
-// pub fn merge<T: Default, C: TakableContent<T> + Default>(
-//     map: &mut TakableMap<T, C>,
-//     content: C,
-// ) -> anyhow::Result<()> {
-//     if !map.is_taken() {
-//         bail!("TakableMap merge of non taken map. Try later");
-//     }
-//     let new_store = std::mem::take(map);
-//     let new_store = new_store.merge(content);
-//     *map = new_store;
-//     Ok(())
-// }
 
 #[cfg(test)]
 mod tests {
