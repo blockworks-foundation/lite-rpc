@@ -22,7 +22,7 @@ use std::{
     },
 };
 use std::future::Future;
-use log::debug;
+use log::{debug, warn};
 use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use crate::block_stores::faithful_block_store::FaithfulBlockStore;
 
@@ -59,8 +59,20 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
         let slot = block.slot;
         let commitment = block.commitment_level;
+
+        if let Ok(prev_block) = self.inmemory_for_storage.get(slot).await {
+            if prev_block.commitment_level > block.commitment_level {
+                // note: this is most likely not what we want - need to discuss an heuristic how to fix that
+                warn!("The new block will revert the commitment level of {} back to {}",
+                    slot, block.commitment_level.into_commitment_level());
+            }
+        }
+
         match commitment {
-            Commitment::Confirmed | Commitment::Processed => {
+            Commitment::Processed => {
+                self.inmemory_for_storage.save(block).await?;
+            }
+            Commitment::Confirmed => {
                 self.inmemory_for_storage.save(block).await?;
             }
             Commitment::Finalized => {
@@ -73,14 +85,17 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                             self.inmemory_for_storage.save(block).await?;
                         }
                     }
-                    Err(_) => self.inmemory_for_storage.save(block).await?,
+                    Err(_not_found) => self.inmemory_for_storage.save(block).await?,
                 }
                 self.persistent_block_storage.save(block).await?;
             }
         };
-        if slot > self.last_confirmed_slot.load(Ordering::Relaxed) {
+
+        if commitment >= Commitment::Confirmed
+            && slot > self.last_confirmed_slot.load(Ordering::Relaxed) {
             self.last_confirmed_slot.store(slot, Ordering::Relaxed);
         }
+
         Ok(())
     }
 
