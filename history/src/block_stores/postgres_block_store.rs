@@ -1,3 +1,4 @@
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -174,7 +175,7 @@ impl BlockStorageInterface for PostgresBlockStore {
         todo!()
     }
 
-    async fn get_slot_range(&self) -> std::ops::Range<Slot> {
+    async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         // let lk = self.postgres_data.read().await;
         // lk.from_slot..lk.to_slot + 1
         todo!()

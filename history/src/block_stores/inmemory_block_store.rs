@@ -5,6 +5,7 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::slot_history::Slot;
 use std::{collections::BTreeMap, ops::Range};
+use std::ops::{RangeInclusive, RangeToInclusive};
 use anyhow::anyhow;
 use tokio::sync::RwLock;
 
@@ -66,17 +67,16 @@ impl BlockStorageInterface for InmemoryBlockStore {
             .ok_or(anyhow!("Block {} not found in in-memory storage", slot))
     }
 
-    async fn get_slot_range(&self) -> Range<Slot> {
-        let lk = self.block_storage.read().await;
-        let first = lk.first_key_value();
-        let last = lk.last_key_value();
-        if let Some((first_slot, _)) = first {
-            let Some((last_slot, _)) = last else {
-                return Range::default();
-            };
-            *first_slot..(*last_slot + 1)
-        } else {
-            Range::default()
+    async fn get_slot_range(&self) -> RangeInclusive<Slot> {
+        let slots_in_map = self.block_storage.read().await.keys();
+        let first = slots_in_map.min();
+        let last = slots_in_map.max();
+
+        assert_eq!(first.is_some(), last.is_some());
+
+        match (first, last) {
+            (Some(a), Some(b)) => RangeInclusive::new(*a, *b),
+            _ => RangeInclusive::new(1, 0),
         }
     }
 }

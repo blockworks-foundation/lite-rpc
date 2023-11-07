@@ -21,8 +21,12 @@ use std::{
         Arc,
     },
 };
+use std::cmp::min;
 use std::future::Future;
+use std::ops::{RangeFrom, RangeInclusive, RangeTo};
+use itertools::Itertools;
 use log::{debug, warn};
+use rangetools::{Rangetools, RangeUnion};
 use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use crate::block_stores::faithful_block_store::FaithfulBlockStore;
 
@@ -156,14 +160,32 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
         }
     }
 
-    async fn get_slot_range(&self) -> Range<Slot> {
-        let in_memory = self.inmemory_for_storage.get_slot_range().await;
-        // if faithful is available we assume that we have all the blocks
-        if self.faithful_block_storage.is_some() {
-            0..in_memory.end
-        } else {
+    // we need to build the slots from right to left; in-memory defines the right most slots
+    async fn get_slot_range(&self) -> RangeInclusive<Slot> {
+        let in_memory_slots = self.inmemory_for_storage.get_slot_range().await;
+
+        // merge them
+
+        let mut lower: Slot = *in_memory_slots.start();
+
+        {
             let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
-            persistent_storage_range.start..in_memory.end
+            //         x------
+            // |------x
+            if lower - persistent_storage_range.end() <= 1 {
+                // move the lower bound to the left
+                lower = lower.min(*persistent_storage_range.start());
+            }
         }
+
+        if let Some(faithful_block_storage) = &self.faithful_block_storage {
+            let faithful_storage_range = faithful_block_storage.get_slot_range();
+            if lower - faithful_storage_range.end() <= 1 {
+                // move the lower bound to the left
+                lower = lower.min(*faithful_storage_range.start());
+            }
+        }
+
+        RangeInclusive::new(lower, *in_memory_slots.end())
     }
 }

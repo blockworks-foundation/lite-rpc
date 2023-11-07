@@ -1,6 +1,7 @@
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 use anyhow::bail;
-use log::debug;
+use log::{debug, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::clock::Slot;
@@ -18,6 +19,12 @@ impl FaithfulBlockStore {
         Self {
             faithful_rpc_client,
         }
+    }
+
+    pub fn get_slot_range(&self) -> RangeInclusive<Slot> {
+        // TODO
+        warn!("slot_range not implemented for FaithfulBlockStore");
+        RangeInclusive::new(1, 0) // empty
     }
 
     pub async fn get_block(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
