@@ -148,6 +148,26 @@ pub async fn start_stakes_and_votes_loop(
                                                             continue;
                                                         }
                                                     }
+                                                    //stake history account must be updated before new leader schedule calculus.
+                                                    solana_sdk::sysvar::stake_history::ID => {
+                                                        log::info!("Geyser notifstake_history");
+                                                        match account.read_stake_history()  {
+                                                            Some(stake_history) => {
+                                                                let schedule_event = current_schedule_epoch.set_epoch_stake_history(stake_history);
+                                                                if bootstrap_done {
+                                                                    if let Some(init_event) = schedule_event {
+                                                                        crate::leader_schedule::run_leader_schedule_events(
+                                                                            init_event,
+                                                                            &mut spawned_leader_schedule_task,
+                                                                            &mut stakestore,
+                                                                            &mut votestore,
+                                                                        );
+                                                                    }
+                                                                }
+                                                            }
+                                                            None => log::error!("Bootstrap error, can't read stake history from geyzer account data."),
+                                                        }
+                                                    }
                                                     _ => log::warn!("receive an account notification from a unknown owner:{account:?}"),
                                                 }
                                             }
@@ -209,7 +229,7 @@ pub async fn start_stakes_and_votes_loop(
                         //only done once epoch. Avoid to use a Mutex.
                         let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
                         data_schedule.current = data_schedule.next.take();
-                        data_schedule.next = Some(new_leader_schedule.rpc_data);  
+                        data_schedule.next = Some(new_leader_schedule.rpc_data);
                     }
 
                 }
@@ -233,7 +253,7 @@ async fn subscribe_geyzer(
     accounts.insert(
         "client".to_owned(),
         SubscribeRequestFilterAccounts {
-            account: vec![],
+            account: vec![solana_sdk::sysvar::stake_history::ID.to_string()],
             owner: vec![
                 solana_sdk::stake::program::ID.to_string(),
                 solana_sdk::vote::program::ID.to_string(),

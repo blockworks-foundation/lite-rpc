@@ -1,7 +1,5 @@
 use anyhow::bail;
 use borsh::BorshDeserialize;
-use solana_sdk::account::Account;
-use solana_sdk::account::AccountSharedData;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::stake::state::Delegation;
 use solana_sdk::stake::state::StakeState;
@@ -60,6 +58,10 @@ impl AccountPretty {
         read_stake_from_account_data(self.data.as_slice())
     }
 
+    pub fn read_stake_history(&self) -> Option<StakeHistory> {
+        read_historystake_from_account(self.data.as_slice())
+    }
+
     pub fn read_vote(&self) -> anyhow::Result<VoteState> {
         if self.data.is_empty() {
             log::warn!("Vote account with empty data. Can't read vote.");
@@ -92,6 +94,7 @@ pub fn read_stake_from_account_data(mut data: &[u8]) -> anyhow::Result<Option<De
     }
 }
 
-pub fn read_historystake_from_account(account: Account) -> Option<StakeHistory> {
-    solana_sdk::account::from_account::<StakeHistory, _>(&AccountSharedData::from(account))
+pub fn read_historystake_from_account(account_data: &[u8]) -> Option<StakeHistory> {
+    //solana_sdk::account::from_account::<StakeHistory, _>(&AccountSharedData::from(account))
+    bincode::deserialize(account_data).ok()
 }

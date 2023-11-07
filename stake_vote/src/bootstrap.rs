@@ -18,7 +18,6 @@ use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use solana_sdk::account::Account;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::stake_history::StakeHistory;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -33,15 +32,15 @@ pub async fn bootstrap_scheduleepoch_data(data_cache: &DataCache) -> ScheduleEpo
         .new_warmup_cooldown_rate_epoch(data_cache.epoch_data.get_epoch_schedule());
 
     let bootstrap_epoch = crate::utils::get_current_epoch(data_cache).await;
-    ScheduleEpochData {
-        current_epoch: bootstrap_epoch.epoch,
-        slots_in_epoch: bootstrap_epoch.slots_in_epoch,
-        last_slot_in_epoch: data_cache
+    ScheduleEpochData::new(
+        bootstrap_epoch.epoch,
+        bootstrap_epoch.slots_in_epoch,
+        data_cache
             .epoch_data
             .get_last_slot_in_epoch(bootstrap_epoch.epoch),
-        current_confirmed_slot: bootstrap_epoch.absolute_slot,
+        bootstrap_epoch.absolute_slot,
         new_rate_activation_epoch,
-    }
+    )
 }
 
 /*
@@ -118,7 +117,6 @@ pub enum BootstrapEvent {
     ),
     AccountsMerged(
         StakeMap,
-        Option<StakeHistory>,
         VoteMap,
         EpochVoteStakesCache,
         String,
@@ -168,7 +166,7 @@ fn process_bootstrap_event(
         BootstrapEvent::BootstrapAccountsFetched(stakes, votes, history, rpc_url) => {
             log::info!("BootstrapEvent::BootstrapAccountsFetched RECV");
             match (&mut stakestore.stakes, &mut votestore.votes).take() {
-                TakeResult::Map(((stake_map, _), (vote_map, epoch_cache))) => {
+                TakeResult::Map((stake_map, (vote_map, epoch_cache))) => {
                     BootsrapProcessResult::Event(BootstrapEvent::StoreExtracted(
                         stake_map,
                         vote_map,
@@ -208,7 +206,7 @@ fn process_bootstrap_event(
         ) => {
             log::info!("BootstrapEvent::StoreExtracted RECV");
 
-            let stake_history = crate::account::read_historystake_from_account(history);
+            let stake_history = crate::account::read_historystake_from_account(&history.data);
             if stake_history.is_none() {
                 return BootsrapProcessResult::Error(
                     "Bootstrap error, can't read stake history from account data.".to_string(),
@@ -236,7 +234,6 @@ fn process_bootstrap_event(
                             epoch_cache.add_stakes_for_epoch(next_epoch_stakes);
                             BootstrapEvent::AccountsMerged(
                                 stake_map,
-                                stake_history,
                                 vote_map,
                                 epoch_cache,
                                 rpc_url,
@@ -245,7 +242,6 @@ fn process_bootstrap_event(
                         }
                         Err(err) => BootstrapEvent::AccountsMerged(
                             stake_map,
-                            stake_history,
                             vote_map,
                             epoch_cache,
                             rpc_url,
@@ -258,7 +254,6 @@ fn process_bootstrap_event(
         }
         BootstrapEvent::AccountsMerged(
             stake_map,
-            stake_history,
             vote_map,
             epoch_cache,
             rpc_url,
@@ -267,7 +262,7 @@ fn process_bootstrap_event(
             log::info!("BootstrapEvent::AccountsMerged RECV");
 
             match (
-                stakestore.stakes.merge((stake_map, stake_history)),
+                stakestore.stakes.merge(stake_map),
                 votestore.votes.merge((vote_map, epoch_cache)),
             ) {
                 (Ok(()), Ok(())) => BootsrapProcessResult::End(leader_schedule_result),
