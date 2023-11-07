@@ -69,11 +69,11 @@ impl PostgresBlockStore {
         // create schema for new epoch
         let session = self.get_session().await;
 
-        let statement = PostgresEpoch::build_create_table_statement(epoch);
+        let statement = PostgresEpoch::build_create_schema_statement(epoch);
         // note: requires GRANT CREATE ON DATABASE xyz
         let result_create_schema = session.execute(&statement, &[]).await;
         if let Err(err) = result_create_schema {
-            if err.code().map(|sqlstate| sqlstate == &SqlState::DUPLICATE_SCHEMA).unwrap_or_default() {
+            if err.code().map(|sqlstate| sqlstate == &SqlState::DUPLICATE_SCHEMA).unwrap_or(false) {
                 // TODO: do we want to allow this; continuing with existing epoch schema might lead to inconsistent data in blocks and transactions table
                 warn!("Schema for epoch {} already exists - data will be appended", epoch);
                 return Ok(());
@@ -83,9 +83,10 @@ impl PostgresBlockStore {
         }
 
         // set permissions for new schema
-        let statement = build_assign_permissions_query(epoch);
-        session.execute(&statement, &[]).await
-            .context("Set postgres permissions for new schema")?;
+        for statement in build_assign_permissions_statements(epoch) {
+            session.execute(&statement, &[]).await
+                .context("Set postgres permissions for new schema")?;
+        }
 
         // Create blocks table
         let statement = PostgresBlock::build_create_table_statement(epoch);
@@ -114,15 +115,24 @@ impl PostgresBlockStore {
     }
 }
 
-fn build_assign_permissions_query(epoch: EpochRef) -> String {
+fn build_assign_permissions_statements(epoch: EpochRef) -> Vec<String> {
     let role = LITERPC_ROLE;
     let schema = PostgresEpoch::build_schema_name(epoch);
-    format!(
+
+    vec![
+        format!(
+            r#"
+            GRANT USAGE ON SCHEMA {schema} TO {role}
+        "#),
+        format!(
+            r#"
+            GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role}
+        "#),
+        format!(
         r#"
-            GRANT USAGE ON SCHEMA {schema} TO {role};
-            GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
-            ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
-        "#)
+            ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role}
+        "#),
+    ]
 }
 
 #[async_trait]
@@ -187,7 +197,7 @@ mod tests {
     async fn test_save_block() {
         tracing_subscriber::fmt::init();
 
-        std::env::set_var("PG_CONFIG", "host=localhost dbname=literpc3 user=literpc_foobar password=litelitesecret sslmode=disable");
+        std::env::set_var("PG_CONFIG", "host=localhost dbname=literpc3 user=literpc_app password=litelitesecret sslmode=disable");
         let _postgres_session_cache = PostgresSessionCache::new().await.unwrap();
         let epoch_cache = EpochCache::new_for_tests();
 
