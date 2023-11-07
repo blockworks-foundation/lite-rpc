@@ -29,6 +29,7 @@ use crate::block_stores::faithful_block_store::FaithfulBlockStore;
 pub struct MultipleStrategyBlockStorage {
     inmemory_for_storage: InmemoryBlockStore, // for confirmed blocks
     persistent_block_storage: BlockStorageImpl, // for persistent block storage
+    // note supported ATM
     faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful
     last_confirmed_slot: Arc<AtomicU64>,
 }
@@ -36,13 +37,15 @@ pub struct MultipleStrategyBlockStorage {
 impl MultipleStrategyBlockStorage {
     pub fn new(
         persistent_block_storage: BlockStorageImpl,
-        faithful_rpc_client: Option<Arc<RpcClient>>,
+        _faithful_rpc_client: Option<Arc<RpcClient>>,
         number_of_slots_in_memory: usize,
     ) -> Self {
         Self {
             inmemory_for_storage: InmemoryBlockStore::new(number_of_slots_in_memory),
             persistent_block_storage,
-            faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
+            // faithful not used ATM
+            faithful_block_storage: None,
+            // faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
             last_confirmed_slot: Arc::new(AtomicU64::new(0)),
         }
     }

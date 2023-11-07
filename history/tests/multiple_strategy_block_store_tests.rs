@@ -31,7 +31,7 @@ async fn test_in_multiple_stategy_block_store() {
     let number_of_slots_in_memory = 3;
     let block_storage = MultipleStrategyBlockStorage::new(
         persistent_store.clone(),
-        None,
+        None, // not supported
         number_of_slots_in_memory,
     );
 
