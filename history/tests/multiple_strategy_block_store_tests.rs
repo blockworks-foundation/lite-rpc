@@ -6,11 +6,11 @@ use solana_lite_rpc_history::{
     block_stores::inmemory_block_store::InmemoryBlockStore,
     block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage,
 };
-use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
+use solana_sdk::{hash::Hash};
 use std::sync::Arc;
+use solana_lite_rpc_core::commitment_utils::Commitment;
 
-pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
+pub fn create_test_block(slot: u64, commitment_level: Commitment) -> ProducedBlock {
     ProducedBlock {
         block_height: slot,
         blockhash: Hash::new_unique().to_string(),
@@ -18,7 +18,7 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
         parent_slot: slot - 1,
         transactions: vec![],
         block_time: 0,
-        commitment_config,
+        commitment_level,
         leader_id: None,
         slot,
         rewards: None,
@@ -36,75 +36,75 @@ async fn test_in_multiple_stategy_block_store() {
     );
 
     block_storage
-        .save(&create_test_block(1235, CommitmentConfig::confirmed()))
+        .save(&create_test_block(1235, Commitment::Confirmed))
         .await
         .unwrap();
     block_storage
-        .save(&create_test_block(1236, CommitmentConfig::confirmed()))
+        .save(&create_test_block(1236, Commitment::Confirmed))
         .await
         .unwrap();
 
     assert!(block_storage
-        .get(1235, RpcBlockConfig::default())
+        .get(1235)
         .await
         .ok()
         .is_some());
     assert!(block_storage
-        .get(1236, RpcBlockConfig::default())
+        .get(1236)
         .await
         .ok()
         .is_some());
     assert!(persistent_store
-        .get(1235, RpcBlockConfig::default())
+        .get(1235)
         .await
         .ok()
         .is_none());
     assert!(persistent_store
-        .get(1236, RpcBlockConfig::default())
+        .get(1236)
         .await
         .ok()
         .is_none());
 
     block_storage
-        .save(&create_test_block(1235, CommitmentConfig::finalized()))
+        .save(&create_test_block(1235, Commitment::Finalized))
         .await
         .unwrap();
     block_storage
-        .save(&create_test_block(1236, CommitmentConfig::finalized()))
+        .save(&create_test_block(1236, Commitment::Finalized))
         .await
         .unwrap();
     block_storage
-        .save(&create_test_block(1237, CommitmentConfig::finalized()))
+        .save(&create_test_block(1237, Commitment::Finalized))
         .await
         .unwrap();
 
     assert!(block_storage
-        .get(1235, RpcBlockConfig::default())
+        .get(1235)
         .await
         .ok()
         .is_some());
     assert!(block_storage
-        .get(1236, RpcBlockConfig::default())
+        .get(1236)
         .await
         .ok()
         .is_some());
     assert!(block_storage
-        .get(1237, RpcBlockConfig::default())
+        .get(1237)
         .await
         .ok()
         .is_some());
     assert!(persistent_store
-        .get(1235, RpcBlockConfig::default())
+        .get(1235)
         .await
         .ok()
         .is_some());
     assert!(persistent_store
-        .get(1236, RpcBlockConfig::default())
+        .get(1236)
         .await
         .ok()
         .is_some());
     assert!(persistent_store
-        .get(1237, RpcBlockConfig::default())
+        .get(1237)
         .await
         .ok()
         .is_some());
@@ -113,7 +113,7 @@ async fn test_in_multiple_stategy_block_store() {
     // blocks are replaced by finalized blocks
     assert_eq!(
         persistent_store
-            .get(1235, RpcBlockConfig::default())
+            .get(1235)
             .await
             .unwrap()
             .blockhash,
@@ -125,7 +125,7 @@ async fn test_in_multiple_stategy_block_store() {
     );
     assert_eq!(
         persistent_store
-            .get(1236, RpcBlockConfig::default())
+            .get(1236)
             .await
             .unwrap()
             .blockhash,
@@ -137,7 +137,7 @@ async fn test_in_multiple_stategy_block_store() {
     );
     assert_eq!(
         persistent_store
-            .get(1237, RpcBlockConfig::default())
+            .get(1237)
             .await
             .unwrap()
             .blockhash,
@@ -150,7 +150,7 @@ async fn test_in_multiple_stategy_block_store() {
 
     // no block yet added returns none
     assert!(block_storage
-        .get(1238, RpcBlockConfig::default())
+        .get(1238)
         .await
         .ok()
         .is_none());

@@ -8,7 +8,6 @@ use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
 };
-use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{slot_history::Slot, stake_history::Epoch};
 use tokio::sync::RwLock;
 use tokio_postgres::error::SqlState;
@@ -190,6 +189,7 @@ mod tests {
     use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::signature::Signature;
     use tokio_postgres::NoTls;
+    use solana_lite_rpc_core::commitment_utils::Commitment;
     use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
     use super::*;
 
@@ -226,7 +226,7 @@ mod tests {
             ],
             // TODO double if this is unix millis or seconds
             block_time: 1699260872000,
-            commitment_config: CommitmentConfig::finalized(),
+            commitment_level: Commitment::Finalized,
             leader_id: None,
             rewards: None,
         }

@@ -17,6 +17,7 @@ use crate::{
         transaction_sent_info::SentTransactionInfo,
     },
 };
+use crate::commitment_utils::Commitment;
 
 use super::block_information_store::BlockInformation;
 pub type TxSubKey = (String, CommitmentConfig);
@@ -43,7 +44,7 @@ impl DataCache {
     pub async fn clean(&self, ttl_duration: std::time::Duration) {
         let block_info = self
             .block_information_store
-            .get_latest_block_info(CommitmentConfig::finalized())
+            .get_latest_block_info(Commitment::Finalized)
             .await;
         self.block_information_store.clean().await;
         self.txs.clean(block_info.block_height);
@@ -61,10 +62,10 @@ impl DataCache {
             || current_blockheight > sent_transaction_info.last_valid_block_height
     }
 
-    pub async fn get_current_epoch(&self, commitment: CommitmentConfig) -> Epoch {
+    pub async fn get_current_epoch(&self, commitment_level: Commitment) -> Epoch {
         let BlockInformation { slot, .. } = self
             .block_information_store
-            .get_latest_block(commitment)
+            .get_latest_block(commitment_level)
             .await;
         self.epoch_data.get_epoch_at_slot(slot)
     }
@@ -75,7 +76,7 @@ impl DataCache {
                 block_height: 0,
                 blockhash: Hash::new_unique().to_string(),
                 cleanup_slot: 1000,
-                commitment_config: CommitmentConfig::finalized(),
+                commitment_level: Commitment::Finalized,
                 last_valid_blockheight: 300,
                 slot: 0,
             }),

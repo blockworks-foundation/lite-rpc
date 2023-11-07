@@ -13,7 +13,7 @@ use solana_lite_rpc_core::{
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
+use solana_sdk::{slot_history::Slot};
 use std::{
     ops::Range,
     sync::{
@@ -56,7 +56,7 @@ impl MultipleStrategyBlockStorage {
 impl BlockStorageInterface for MultipleStrategyBlockStorage {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
         let slot = block.slot;
-        let commitment = Commitment::from(block.commitment_config);
+        let commitment = block.commitment_level;
         match commitment {
             Commitment::Confirmed | Commitment::Processed => {
                 self.inmemory_for_storage.save(block).await?;
@@ -136,7 +136,7 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                     return Ok(ProducedBlock::from_ui_block(
                         block,
                         slot,
-                        CommitmentConfig::finalized(),
+                        Commitment::Finalized,
                     ));
                 }
                 Err(_) => {
