@@ -21,13 +21,15 @@ use std::{
         Arc,
     },
 };
+use std::future::Future;
 use log::debug;
 use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
+use crate::block_stores::faithful_block_store::FaithfulBlockStore;
 
 pub struct MultipleStrategyBlockStorage {
     inmemory_for_storage: InmemoryBlockStore, // for confirmed blocks
     persistent_block_storage: BlockStorageImpl, // for persistent block storage
-    faithful_rpc_client: Option<Arc<RpcClient>>, // to fetch legacy blocks from faithful
+    faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful
     last_confirmed_slot: Arc<AtomicU64>,
 }
 
@@ -40,7 +42,7 @@ impl MultipleStrategyBlockStorage {
         Self {
             inmemory_for_storage: InmemoryBlockStore::new(number_of_slots_in_memory),
             persistent_block_storage,
-            faithful_rpc_client,
+            faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
             last_confirmed_slot: Arc::new(AtomicU64::new(0)),
         }
     }
@@ -119,32 +121,17 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
             }
         }
 
-        if let Some(faithful_rpc_client) = self.faithful_rpc_client.clone() {
-            // TODO check what parameters we want
-            let faithful_config = RpcBlockConfig {
-                encoding: Some(UiTransactionEncoding::Base58),
-                transaction_details: Some(TransactionDetails::Full),
-                rewards: None,
-                commitment: None,
-                max_supported_transaction_version: None,
-            };
-
-            match faithful_rpc_client
-                .get_block_with_config(slot, faithful_config)
-                .await {
+        if let Some(faithful_block_storage) = &self.faithful_block_storage {
+            match faithful_block_storage.get_block(slot).await {
                 Ok(block) => {
-                    return Ok(ProducedBlock::from_ui_block(
-                        block,
-                        slot,
-                        Commitment::Finalized,
-                    ));
+                    debug!("Lookup for block {} successful in faithful block-storage", slot);
+                    return Ok(block);
                 }
                 Err(_) => {
                     debug!("Block {} not found in faithful storage - giving up", slot);
                     bail!(format!("Block {} not found in faithful", slot));
                 }
             }
-
         } else {
             // no faithful available
             bail!(format!("Block {} not found - faithful not available", slot));
@@ -154,7 +141,7 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
     async fn get_slot_range(&self) -> Range<Slot> {
         let in_memory = self.inmemory_for_storage.get_slot_range().await;
         // if faithful is available we assume that we have all the blocks
-        if self.faithful_rpc_client.is_some() {
+        if self.faithful_block_storage.is_some() {
             0..in_memory.end
         } else {
             let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
