@@ -2,7 +2,7 @@ use log::{debug, warn};
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
 use tokio_postgres::types::ToSql;
-use solana_lite_rpc_core::structures::epoch::{Epoch, EpochRef};
+use solana_lite_rpc_core::structures::epoch::{EpochRef};
 use crate::postgres::postgres_epoch::PostgresEpoch;
 
 use super::postgres_session::PostgresSession;

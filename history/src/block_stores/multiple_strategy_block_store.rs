@@ -4,7 +4,7 @@
 // Fetches legacy blocks from faithful
 
 use crate::block_stores::inmemory_block_store::InmemoryBlockStore;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,

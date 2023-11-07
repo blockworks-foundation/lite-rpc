@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use itertools::Itertools;
-use log::{error, info, warn};
+use log::{info, warn};
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
@@ -185,10 +185,7 @@ impl BlockStorageInterface for PostgresBlockStore {
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
-    use anyhow::Context;
-    use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::signature::Signature;
-    use tokio_postgres::NoTls;
     use solana_lite_rpc_core::commitment_utils::Commitment;
     use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
     use super::*;

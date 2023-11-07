@@ -3,7 +3,6 @@ use log::info;
 
 use solana_sdk::{
     clock::MAX_RECENT_BLOCKHASHES,
-    commitment_config::{CommitmentConfig, CommitmentLevel},
     slot_history::Slot,
 };
 use std::sync::Arc;
