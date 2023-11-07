@@ -8,7 +8,7 @@ use std::{ops::Range, sync::Arc};
 #[async_trait]
 pub trait BlockStorageInterface: Send + Sync {
     // will save a block
-    async fn save(&self, block: ProducedBlock) -> Result<()>;
+    async fn save(&self, block: &ProducedBlock) -> Result<()>;
     // will get a block
     async fn get(&self, slot: Slot, config: RpcBlockConfig) -> Result<ProducedBlock>;
     // will get range of slots that are stored in the storage

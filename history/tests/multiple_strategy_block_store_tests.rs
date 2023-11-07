@@ -36,11 +36,11 @@ async fn test_in_multiple_stategy_block_store() {
     );
 
     block_storage
-        .save(create_test_block(1235, CommitmentConfig::confirmed()))
+        .save(&create_test_block(1235, CommitmentConfig::confirmed()))
         .await
         .unwrap();
     block_storage
-        .save(create_test_block(1236, CommitmentConfig::confirmed()))
+        .save(&create_test_block(1236, CommitmentConfig::confirmed()))
         .await
         .unwrap();
 
@@ -66,15 +66,15 @@ async fn test_in_multiple_stategy_block_store() {
         .is_none());
 
     block_storage
-        .save(create_test_block(1235, CommitmentConfig::finalized()))
+        .save(&create_test_block(1235, CommitmentConfig::finalized()))
         .await
         .unwrap();
     block_storage
-        .save(create_test_block(1236, CommitmentConfig::finalized()))
+        .save(&create_test_block(1236, CommitmentConfig::finalized()))
         .await
         .unwrap();
     block_storage
-        .save(create_test_block(1237, CommitmentConfig::finalized()))
+        .save(&create_test_block(1237, CommitmentConfig::finalized()))
         .await
         .unwrap();
 

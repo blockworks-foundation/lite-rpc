@@ -22,7 +22,7 @@ impl InmemoryBlockStore {
         }
     }
 
-    pub async fn store(&self, block: ProducedBlock) {
+    pub async fn store(&self, block: &ProducedBlock) {
         let slot = block.slot;
         let mut block_storage = self.block_storage.write().await;
         let min_slot = match block_storage.first_key_value() {
@@ -37,11 +37,11 @@ impl InmemoryBlockStore {
                     let commitment_block = Commitment::from(block.commitment_config);
                     let overwrite = commitment_block > commitment_store;
                     if overwrite {
-                        *x = block;
+                        *x = block.clone();
                     }
                 }
                 None => {
-                    block_storage.insert(slot, block);
+                    block_storage.insert(slot, block.clone());
                 }
             }
             if block_storage.len() > self.number_of_blocks_to_store {
@@ -53,7 +53,7 @@ impl InmemoryBlockStore {
 
 #[async_trait]
 impl BlockStorageInterface for InmemoryBlockStore {
-    async fn save(&self, block: ProducedBlock) -> anyhow::Result<()> {
+    async fn save(&self, block: &ProducedBlock) -> anyhow::Result<()> {
         self.store(block).await;
         Ok(())
     }

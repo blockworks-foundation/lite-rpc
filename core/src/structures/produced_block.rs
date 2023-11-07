@@ -23,7 +23,7 @@ pub struct TransactionInfo {
     pub message: String,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ProducedBlock {
     pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,

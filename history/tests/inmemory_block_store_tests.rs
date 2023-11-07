@@ -30,7 +30,7 @@ async fn inmemory_block_store_tests() {
     // add 10 blocks
     for i in 1..11 {
         store
-            .save(create_test_block(i, CommitmentConfig::finalized()))
+            .save(&create_test_block(i, CommitmentConfig::finalized()))
             .await
             .unwrap();
     }
@@ -41,7 +41,7 @@ async fn inmemory_block_store_tests() {
     }
     // add 11th block
     store
-        .save(create_test_block(11, CommitmentConfig::finalized()))
+        .save(&create_test_block(11, CommitmentConfig::finalized()))
         .await
         .unwrap();
 
@@ -56,7 +56,7 @@ async fn inmemory_block_store_tests() {
 
     // cannot add old blocks
     store
-        .save(create_test_block(1, CommitmentConfig::finalized()))
+        .save(&create_test_block(1, CommitmentConfig::finalized()))
         .await
         .unwrap();
     assert!(store.get(1, RpcBlockConfig::default()).await.ok().is_none());

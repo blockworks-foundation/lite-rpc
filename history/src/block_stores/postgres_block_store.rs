@@ -138,7 +138,7 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> Vec<String> {
 
 #[async_trait]
 impl BlockStorageInterface for PostgresBlockStore {
-    async fn save(&self, block: ProducedBlock) -> Result<()> {
+    async fn save(&self, block: &ProducedBlock) -> Result<()> {
         let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
         let slot = block.slot;
@@ -147,7 +147,7 @@ impl BlockStorageInterface for PostgresBlockStore {
             .iter()
             .map(|x| PostgresTransaction::new(x, slot))
             .collect_vec();
-        let postgres_block = PostgresBlock::from(&block);
+        let postgres_block = PostgresBlock::from(block);
 
         let epoch = self.epoch_cache.get_epoch_at_slot(slot);
         if current_epoch == 0 || current_epoch < epoch.epoch {
@@ -204,7 +204,7 @@ mod tests {
 
         let postgres_block_store = PostgresBlockStore::new(epoch_cache.clone()).await;
 
-        postgres_block_store.save(create_test_block()).await.unwrap();
+        postgres_block_store.save(&create_test_block()).await.unwrap();
 
 
     }

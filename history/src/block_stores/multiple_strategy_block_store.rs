@@ -61,7 +61,7 @@ impl MultipleStrategyBlockStorage {
 
 #[async_trait]
 impl BlockStorageInterface for MultipleStrategyBlockStorage {
-    async fn save(&self, block: ProducedBlock) -> Result<()> {
+    async fn save(&self, block: &ProducedBlock) -> Result<()> {
         let slot = block.slot;
         let commitment = Commitment::from(block.commitment_config);
         match commitment {
@@ -75,10 +75,10 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                         // check if inmemory blockhash is same as finalized, update it if they are not
                         // we can have two machines with same identity publishing two different blocks on same slot
                         if block_in_mem.blockhash != block.blockhash {
-                            self.inmemory_for_storage.save(block.clone()).await?;
+                            self.inmemory_for_storage.save(block).await?;
                         }
                     }
-                    Err(_) => self.inmemory_for_storage.save(block.clone()).await?,
+                    Err(_) => self.inmemory_for_storage.save(block).await?,
                 }
                 self.persistent_block_storage.save(block).await?;
             }
