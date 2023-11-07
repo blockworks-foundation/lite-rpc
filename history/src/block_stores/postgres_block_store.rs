@@ -24,29 +24,29 @@ const LITERPC_ROLE: &str = "r_literpc";
 
 #[derive(Default, Clone, Copy)]
 pub struct PostgresData {
-    from_slot: Slot,
-    to_slot: Slot,
-    current_epoch: Epoch,
+    // from_slot: Slot,
+    // to_slot: Slot,
+    // current_epoch: Epoch,
 }
 
 pub struct PostgresBlockStore {
     session_cache: PostgresSessionCache,
     epoch_cache: EpochCache,
-    postgres_data: Arc<RwLock<PostgresData>>,
+    // postgres_data: Arc<RwLock<PostgresData>>,
 }
 
 impl PostgresBlockStore {
 
     pub async fn new(epoch_cache: EpochCache) -> Self {
         let session_cache = PostgresSessionCache::new().await.unwrap();
-        let postgres_data = Arc::new(RwLock::new(PostgresData::default()));
+        // let postgres_data = Arc::new(RwLock::new(PostgresData::default()));
 
         Self::check_role(&session_cache).await;
 
         Self {
             session_cache,
             epoch_cache,
-            postgres_data,
+            // postgres_data,
         }
     }
 
@@ -64,7 +64,7 @@ impl PostgresBlockStore {
         }
     }
 
-    async fn start_new_epoch(&self, epoch: EpochRef) -> Result<()> {
+    async fn start_new_epoch_if_necessary(&self, epoch: EpochRef) -> Result<()> {
         // create schema for new epoch
         let session = self.get_session().await;
 
@@ -138,7 +138,7 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> Vec<String> {
 #[async_trait]
 impl BlockStorageInterface for PostgresBlockStore {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
-        let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
+        // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
         let slot = block.slot;
         let transactions = block
@@ -149,10 +149,10 @@ impl BlockStorageInterface for PostgresBlockStore {
         let postgres_block = PostgresBlock::from(block);
 
         let epoch = self.epoch_cache.get_epoch_at_slot(slot);
-        if current_epoch == 0 || current_epoch < epoch.epoch {
-            self.postgres_data.write().await.current_epoch = epoch.epoch;
-            self.start_new_epoch(epoch.into()).await?;
-        }
+        // if current_epoch == 0 || current_epoch < epoch.epoch {
+        //     self.postgres_data.write().await.current_epoch = epoch.epoch;
+        self.start_new_epoch_if_necessary(epoch.into()).await?;
+        // }
 
         let session = self.get_session().await;
 
@@ -175,8 +175,9 @@ impl BlockStorageInterface for PostgresBlockStore {
     }
 
     async fn get_slot_range(&self) -> std::ops::Range<Slot> {
-        let lk = self.postgres_data.read().await;
-        lk.from_slot..lk.to_slot + 1
+        // let lk = self.postgres_data.read().await;
+        // lk.from_slot..lk.to_slot + 1
+        todo!()
     }
 }
 
