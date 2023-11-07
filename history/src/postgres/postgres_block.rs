@@ -1,4 +1,5 @@
-use log::warn;
+use log::{debug, warn};
+use tokio_postgres::Row;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use tokio_postgres::types::ToSql;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
@@ -43,8 +44,8 @@ impl PostgresBlock {
     pub fn build_create_table_statement(epoch: EpochRef) -> String {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
-            "
-            CREATE TABLE IF NOT EXISTS {}.blocks (
+            r#"
+            CREATE TABLE IF NOT EXISTS {schema}.blocks (
                 slot BIGINT PRIMARY KEY,
                 blockhash TEXT NOT NULL,
                 leader_id TEXT,
@@ -53,9 +54,9 @@ impl PostgresBlock {
                 block_time BIGINT NOT NULL,
                 previous_blockhash TEXT NOT NULL,
                 rewards TEXT
-            );
-        ",
-            schema
+            )
+        "#,
+            schema = schema
         )
     }
 
@@ -66,13 +67,22 @@ impl PostgresBlock {
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
         let values = PostgresSession::values_vecvec(NB_ARUMENTS, 1, &[]);
+
         let statement = format!(
             r#"
-                INSERT INTO {}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards)
-                VALUES {} ON CONFLICT DO NOTHING;
+                INSERT INTO {schema}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards)
+                VALUES {}
+                -- prevent updates
+                ON CONFLICT DO NOTHING
+                RETURNING (
+                    -- get previous max slot
+                    SELECT max(all_blocks.slot) as prev_max_slot
+                    FROM {schema}.blocks AS all_blocks
+                    WHERE all_blocks.slot!={schema}.blocks.slot
+                )
             "#,
-            schema,
-            values
+            values,
+            schema = schema,
         );
 
         let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARUMENTS);
@@ -84,11 +94,29 @@ impl PostgresBlock {
         args.push(&self.previous_blockhash);
         args.push(&self.rewards);
 
-        let inserted = postgres_session.execute(&statement, &args).await?;
+        let returning = postgres_session.execute_and_return(&statement, &args).await?;
 
         // TODO: decide what to do if block already exists
-        if inserted == 0 {
-            warn!("Block {} already exists - not updated", self.slot);
+        match returning {
+            Some(row) => {
+                // check if monotonic
+                let prev_max_slot = row.get::<&str, Option<i64>>("prev_max_slot");
+                // None -> no previous rows
+                debug!("Inserted block {} with prev highest slot being {}", self.slot, prev_max_slot.unwrap_or(-1));
+                if let Some(prev_max_slot) = prev_max_slot {
+                    if prev_max_slot > self.slot {
+                        // note: unclear if this is desired behavior!
+                        warn!(
+                            "Block {} was inserted behind tip of highest slot number {} (epoch {})",
+                            self.slot, prev_max_slot, epoch
+                        );
+                    }
+                }
+            }
+            None => {
+                // database detected conflict
+                warn!("Block {} already exists - not updated", self.slot);
+            }
         }
 
         Ok(())

@@ -42,30 +42,31 @@ impl PostgresTransaction {
     pub fn build_create_table_statement(epoch: EpochRef) -> String {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
-            "\
-        CREATE TABLE IF NOT EXISTS {}.transactions (
-            signature TEXT NOT NULL,
-            slot BIGINT, 
-            err TEXT,
-            cu_requested BIGINT,
-            prioritization_fees BIGINT,
-            cu_consumed BIGINT,
-            recent_blockhash TEXT NOT NULL,
-            message TEXT NOT NULL,
-            PRIMARY KEY (signature)
-          );
-        ",
-            schema
+            r#"
+                CREATE TABLE IF NOT EXISTS {schema}.transactions (
+                    signature TEXT NOT NULL,
+                    slot BIGINT,
+                    err TEXT,
+                    cu_requested BIGINT,
+                    prioritization_fees BIGINT,
+                    cu_consumed BIGINT,
+                    recent_blockhash TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    PRIMARY KEY (signature)
+                  )
+            "#,
+            schema = schema
         )
     }
 
     pub fn build_foreign_key_statement(epoch: EpochRef) -> String {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
-            "\
-            ALTER TABLE {}.transactions ADD CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {}.blocks (slot);
-        ",
-            schema, schema
+            r#"
+                ALTER TABLE {schema}.transactions
+                ADD CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {schema}.blocks (slot)
+            "#,
+            schema = schema
         )
     }
 
@@ -104,18 +105,20 @@ impl PostgresTransaction {
         let schema = PostgresEpoch::build_schema_name(epoch);
         let statement = format!(
             r#"
-                INSERT INTO {}.transactions
+                INSERT INTO {schema}.transactions
                 (signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message)
-                VALUES {} ON CONFLICT DO NOTHING;
+                VALUES {}
+                ON CONFLICT DO NOTHING
             "#,
-            schema,
-            values
+            values,
+            schema = schema,
         );
 
         let inserted = postgres_session.execute(&statement, &args).await? as usize;
 
         if inserted < tx_count {
-            warn!("Some ({}) transactions already existed and where not updated of {} total", transactions.len() - inserted, transactions.len());
+            warn!("Some ({}) transactions already existed and where not updated of {} total in schema {schema}",
+                transactions.len() - inserted, transactions.len(), schema = schema);
         }
 
         debug!("Inserted {} transactions in epoch schema {}", inserted, schema);
@@ -128,7 +131,15 @@ impl PostgresTransaction {
         schema: &String,
         slot: Slot,
     ) -> Vec<TransactionInfo> {
-        let statement = format!("SELECT signature, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message FROM {}.transactions WHERE slot = {}", schema, slot);
+        let statement = format!(
+            r#"
+                SELECT signature, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                FROM {schema}.transactions
+                WHERE slot = {}
+            "#,
+            slot,
+            schema = schema
+        );
         let _ = postgres_session.client.query(&statement, &[]).await;
         todo!()
     }

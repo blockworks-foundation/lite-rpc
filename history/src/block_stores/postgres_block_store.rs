@@ -103,6 +103,7 @@ impl PostgresBlockStore {
         session.execute(&statement, &[]).await
             .context("create foreign key constraint between transactions and blocks")?;
 
+        info!("Start new epoch in postgres schema {}", PostgresEpoch::build_schema_name(epoch));
         Ok(())
     }
 
