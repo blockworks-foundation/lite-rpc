@@ -115,7 +115,7 @@ impl PostgresTransaction {
             schema = schema,
         );
 
-        let inserted = postgres_session.execute(&statement, &args).await? as usize;
+        let inserted = postgres_session.execute_prepared(&statement, &args).await? as usize;
 
         if inserted < tx_count {
             warn!("Some ({}) transactions already existed and where not updated of {} total in schema {schema}",

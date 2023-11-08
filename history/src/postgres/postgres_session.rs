@@ -141,6 +141,15 @@ impl PostgresSession {
         self.client.execute(statement, params).await
     }
 
+    pub async fn execute_prepared(
+        &self,
+        statement: &String,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, tokio_postgres::error::Error> {
+        let prepared_stmt = self.client.prepare(statement).await?;
+        self.client.execute(&prepared_stmt, params).await
+    }
+
     pub async fn execute_and_return(
         &self,
         statement: &String,

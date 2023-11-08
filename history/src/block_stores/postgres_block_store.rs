@@ -161,7 +161,7 @@ impl BlockStorageInterface for PostgresBlockStore {
 
         postgres_block.save(&session, epoch.into()).await?;
 
-        const NUM_TX_PER_CHUNK: usize = 20;
+        const NUM_TX_PER_CHUNK: usize = 100;
 
         // save transaction
         let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
