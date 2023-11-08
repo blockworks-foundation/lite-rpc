@@ -56,6 +56,7 @@ impl ScheduleEpochData {
         &mut self,
         history: StakeHistory,
     ) -> Option<LeaderScheduleEvent> {
+        log::info!("set_epoch_stake_history");
         self.new_stake_history = Some(history);
         self.verify_epoch_change()
     }
@@ -67,7 +68,11 @@ impl ScheduleEpochData {
         //to avoid to delay too much the schedule, start the calculus at the end of the epoch.
         //the first epoch slot arrive very late cause of the stake account notification from the validator.
         if self.current_confirmed_slot >= self.last_slot_in_epoch {
-            log::info!("Change epoch at slot:{}", self.current_confirmed_slot);
+            log::info!(
+                "manage_change_epoch at slot:{} last_slot_in_epoch:{}",
+                self.current_confirmed_slot,
+                self.last_slot_in_epoch
+            );
             let next_epoch = data_cache
                 .epoch_data
                 .get_epoch_at_slot(self.last_slot_in_epoch + 1);
