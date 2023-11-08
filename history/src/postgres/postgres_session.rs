@@ -148,6 +148,23 @@ impl PostgresSession {
         self.client.query_opt(statement, params).await
     }
 
+    pub async fn query_opt(
+        &self,
+        statement: &String,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        self.client.query_opt(statement, params).await
+    }
+
+    pub async fn query_list(
+        &self,
+        statement: &String,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<Row>, Error> {
+        self.client.query(statement, params).await
+    }
+
+
 }
 
 #[derive(Clone)]
