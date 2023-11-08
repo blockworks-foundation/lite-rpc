@@ -69,12 +69,12 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
         let commitment = Commitment::from(block.commitment_config);
 
         if let Ok(prev_block) = self.inmemory_for_storage.get(slot).await {
-            // TODO
-            // if prev_block.commitment_config.commitment > block.commitment_config.commitment {
-            //     // note: this is most likely not what we want - need to discuss an heuristic how to fix that
-            //     warn!("The new block will revert the commitment level of {} back to {}",
-            //         slot, block.commitment_config.commitment);
-            // }
+            if Commitment::from(prev_block.commitment_config) > Commitment::from(block.commitment_config.commitment) {
+                // note: this is most likely not what we want - need to discuss an heuristic how to fix that
+                // remove this check if it never happens in production
+                warn!("The new block will revert the commitment level of {} back to {}",
+                    slot, block.commitment_config.commitment);
+            }
         }
         match commitment {
             Commitment::Processed => {
