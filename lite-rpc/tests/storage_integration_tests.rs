@@ -1,19 +1,25 @@
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Instant;
 use jsonrpsee::tracing::field::debug;
-use log::{debug, error, info, Level};
+use jsonrpsee::tracing::warn;
+use log::{debug, error, info, Level, trace};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Signature;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter::LevelFilter;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
+use solana_lite_rpc_core::structures::epoch::EpochCache;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlock, TransactionInfo};
 use solana_lite_rpc_core::traits::block_storage_interface::BlockStorageInterface;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
+use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
+use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
 use solana_lite_rpc_history::history::History;
 
 #[tokio::test]
@@ -37,12 +43,15 @@ async fn storage_test() {
         vote_account_notifier,
     } = subscriptions;
 
-    let block_storage = Arc::new(InmemoryBlockStore::new(1024));
+    let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
-    let jh = storage_listen(blocks_notifier, block_storage.clone());
+    let block_storage = Arc::new(PostgresBlockStore::new(epoch_data).await);
 
+    let jh1 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
+    let jh2 = block_debug_listen(blocks_notifier.resubscribe());
+    drop(blocks_notifier);
 
-    let _task_done = jh.await.expect("no error");
+    let _task_done = jh1.await.expect("no error");
     panic!();
 
     // should never be reached
@@ -54,24 +63,62 @@ fn storage_listen(block_notifier: BlockStream, block_storage: Arc<dyn BlockStora
     let block_cache_jh = tokio::spawn(async move {
         let mut block_notifier = block_notifier;
         loop {
-            let block = block_notifier.recv().await.expect("Should recv blocks");
-            debug!("Received block: {} with {} txs", block.slot, block.transactions.len());
+            match block_notifier.recv().await {
+                Ok(block) => {
+                    debug!("Received block: {} with {} txs", block.slot, block.transactions.len());
 
-            let produced_block = ProducedBlock {
-                transactions: block.transactions,
-                leader_id: block.leader_id,
-                blockhash: block.blockhash,
-                block_height: block.block_height,
-                slot: block.slot,
-                parent_slot: block.parent_slot,
-                block_time: block.block_time,
-                commitment_config: block.commitment_config,
-                previous_blockhash: block.previous_blockhash,
-                rewards: block.rewards,
-            };
+                    let produced_block = ProducedBlock {
+                        transactions: block.transactions,
+                        leader_id: block.leader_id,
+                        blockhash: block.blockhash,
+                        block_height: block.block_height,
+                        slot: block.slot,
+                        parent_slot: block.parent_slot,
+                        block_time: block.block_time,
+                        commitment_config: block.commitment_config,
+                        previous_blockhash: block.previous_blockhash,
+                        rewards: block.rewards,
+                    };
 
-            block_storage.save(&produced_block).await;
 
+                    let started = Instant::now();
+                    block_storage.save(&produced_block).await.unwrap();
+                    debug!("Saving block to postgres took {:.2}ms", started.elapsed().as_secs_f64() * 1000.0);
+                } // -- Ok
+                Err(RecvError::Lagged(missed_blocks)) => {
+                    warn!("Could not keep up with producer - missed {} blocks", missed_blocks);
+                }
+                Err(other_err) => {
+                    panic!("Error receiving block: {:?}", other_err);
+                }
+            }
+
+
+            // ...
+        }
+    });
+
+    block_cache_jh
+
+}
+
+
+
+fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
+    let block_cache_jh = tokio::spawn(async move {
+        let mut block_notifier = block_notifier;
+        loop {
+            match block_notifier.recv().await {
+                Ok(block) => {
+                    debug!("Saw block: {} with {} txs", block.slot, block.transactions.len());
+                } // -- Ok
+                Err(RecvError::Lagged(missed_blocks)) => {
+                    warn!("Could not keep up with producer - missed {} blocks", missed_blocks);
+                }
+                Err(other_err) => {
+                    panic!("Error receiving block: {:?}", other_err);
+                }
+            }
 
 
             // ...

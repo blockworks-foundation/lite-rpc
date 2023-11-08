@@ -1,5 +1,4 @@
 use log::{debug, warn};
-use tokio_postgres::Row;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use tokio_postgres::types::ToSql;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
@@ -102,7 +101,8 @@ impl PostgresBlock {
                 // check if monotonic
                 let prev_max_slot = row.get::<&str, Option<i64>>("prev_max_slot");
                 // None -> no previous rows
-                debug!("Inserted block {} with prev highest slot being {}", self.slot, prev_max_slot.unwrap_or(-1));
+                debug!("Inserted block {} with prev highest slot being {}, parent={}",
+                    self.slot, prev_max_slot.unwrap_or(-1), self.parent_slot);
                 if let Some(prev_max_slot) = prev_max_slot {
                     if prev_max_slot > self.slot {
                         // note: unclear if this is desired behavior!

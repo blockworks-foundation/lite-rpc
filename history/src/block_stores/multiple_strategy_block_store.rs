@@ -64,7 +64,7 @@ impl MultipleStrategyBlockStorage {
 #[async_trait]
 impl BlockStorageInterface for MultipleStrategyBlockStorage {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
-        trace!("Saving block {} using multiple-strategy facadee", block.slot);
+        trace!("Saving block {} using multiple-strategy facade...", block.slot);
         let slot = block.slot;
         let commitment = Commitment::from(block.commitment_config);
 

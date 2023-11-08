@@ -1,10 +1,11 @@
 use std::ops::RangeInclusive;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use itertools::Itertools;
-use log::{info, trace, warn};
+use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
@@ -76,7 +77,7 @@ impl PostgresBlockStore {
         if let Err(err) = result_create_schema {
             if err.code().map(|sqlstate| sqlstate == &SqlState::DUPLICATE_SCHEMA).unwrap_or(false) {
                 // TODO: do we want to allow this; continuing with existing epoch schema might lead to inconsistent data in blocks and transactions table
-                warn!("Schema for epoch {} already exists - data will be appended", epoch);
+                info!("Schema for epoch {} already exists - data will be appended", epoch);
                 return Ok(());
             } else {
                 return Err(err).context("create schema for new epoch");
@@ -140,7 +141,8 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> Vec<String> {
 #[async_trait]
 impl BlockStorageInterface for PostgresBlockStore {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
-        trace!("Saving block {} to postgres storage", block.slot);
+        let started = Instant::now();
+        trace!("Saving block {} to postgres storage...", block.slot);
 
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
@@ -153,22 +155,21 @@ impl BlockStorageInterface for PostgresBlockStore {
         let postgres_block = PostgresBlock::from(block);
 
         let epoch = self.epoch_cache.get_epoch_at_slot(slot);
-        // if current_epoch == 0 || current_epoch < epoch.epoch {
-        //     self.postgres_data.write().await.current_epoch = epoch.epoch;
         self.start_new_epoch_if_necessary(epoch.into()).await?;
-        // }
 
         let session = self.get_session().await;
 
         postgres_block.save(&session, epoch.into()).await?;
 
-        const NUMBER_OF_TRANSACTION: usize = 20;
+        const NUM_TX_PER_CHUNK: usize = 20;
 
         // save transaction
-        let chunks = transactions.chunks(NUMBER_OF_TRANSACTION);
+        let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
         for chunk in chunks {
-            PostgresTransaction::save_transactions(&session, epoch.into(), chunk).await?;
+            PostgresTransaction::save_transaction_batch(&session, epoch.into(), slot, chunk).await?;
         }
+        debug!("Saving block {} with {} txs to postgres took {:.2}ms",
+            slot, transactions.len(), started.elapsed().as_secs_f64() * 1000.0);
         Ok(())
     }
 

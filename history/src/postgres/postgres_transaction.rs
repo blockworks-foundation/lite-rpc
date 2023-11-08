@@ -70,9 +70,10 @@ impl PostgresTransaction {
         )
     }
 
-    pub async fn save_transactions(
+    pub async fn save_transaction_batch(
         postgres_session: &PostgresSession,
         epoch: EpochRef,
+        slot: Slot,
         transactions: &[Self],
     ) -> anyhow::Result<()> {
         let tx_count = transactions.len();
@@ -121,7 +122,7 @@ impl PostgresTransaction {
                 transactions.len() - inserted, transactions.len(), schema = schema);
         }
 
-        debug!("Inserted {} transactions in epoch schema {}", inserted, schema);
+        debug!("Inserted {} transactions into epoch schema {} for block {}", inserted, schema, slot);
 
         Ok(())
     }
