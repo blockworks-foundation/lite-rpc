@@ -58,9 +58,9 @@ impl AccountPretty {
         read_stake_from_account_data(self.data.as_slice())
     }
 
-    pub fn read_stake_history(&self) -> Option<StakeHistory> {
-        read_historystake_from_account(self.data.as_slice())
-    }
+    // pub fn read_stake_history(&self) -> Option<StakeHistory> {
+    //     read_historystake_from_account(self.data.as_slice())
+    // }
 
     pub fn read_vote(&self) -> anyhow::Result<VoteState> {
         if self.data.is_empty() {
