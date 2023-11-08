@@ -9,6 +9,7 @@ use std::ops::{RangeInclusive, RangeToInclusive};
 #[async_trait]
 pub trait BlockStorageInterface: Send + Sync {
     // will save a block
+    // TODO: slot might change for a sig if the block gets confirmed/finalized
     async fn save(&self, block: &ProducedBlock) -> Result<()>;
     // will get a block
     async fn get(&self, slot: Slot) -> Result<ProducedBlock>;

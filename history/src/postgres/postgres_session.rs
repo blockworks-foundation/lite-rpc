@@ -5,7 +5,7 @@ use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
-use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket, Error, Row};
+use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket, Error, Row, SimpleQueryMessage};
 
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 
@@ -138,6 +138,22 @@ impl PostgresSession {
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
         self.client.execute(statement, params).await
+    }
+
+    pub async fn execute_simple(
+        &self,
+        statement: &String,
+    ) -> Result<Vec<SimpleQueryMessage>, Error> {
+        self.client.simple_query(statement).await
+    }
+
+    pub async fn execute_prepared(
+        &self,
+        statement: &String,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, tokio_postgres::error::Error> {
+        let prepared_stmt = self.client.prepare(statement).await?;
+        self.client.execute(&prepared_stmt, params).await
     }
 
     pub async fn execute_and_return(

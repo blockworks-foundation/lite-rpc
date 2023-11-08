@@ -45,15 +45,18 @@ impl PostgresTransaction {
             r#"
                 CREATE TABLE IF NOT EXISTS {schema}.transactions (
                     signature TEXT NOT NULL,
-                    slot BIGINT,
+                    slot BIGINT NOT NULL,
                     err TEXT,
                     cu_requested BIGINT,
                     prioritization_fees BIGINT,
                     cu_consumed BIGINT,
                     recent_blockhash TEXT NOT NULL,
                     message TEXT NOT NULL,
-                    PRIMARY KEY (signature)
-                  )
+                    CONSTRAINT pk_transaction_sig PRIMARY KEY(signature)
+                  );
+                  CREATE EXTENSION IF NOT EXISTS btree_gin;
+                  CREATE INDEX idx_slot ON {schema}.transactions USING btree (slot);
+                  CLUSTER {schema}.transactions USING idx_slot;
             "#,
             schema = schema
         )
@@ -64,7 +67,7 @@ impl PostgresTransaction {
         format!(
             r#"
                 ALTER TABLE {schema}.transactions
-                ADD CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {schema}.blocks (slot)
+                ADD CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {schema}.blocks (slot);
             "#,
             schema = schema
         )
