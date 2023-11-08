@@ -66,6 +66,46 @@ impl CalculatedSchedule {
         };
         get_schedule(self.current.as_ref()).or_else(|| get_schedule(self.next.as_ref()))
     }
+
+    // pub async fn get_slot_leaders(&self, start_slot: Slot, limit: u64) -> Result<Vec<String>> {
+    //     debug!(
+    //         "get_slot_leaders rpc request received (start: {} limit: {})",
+    //         start_slot, limit
+    //     );
+
+    //     let limit = limit as usize;
+    //     if limit > MAX_GET_SLOT_LEADERS {
+    //         return Err(Error::invalid_params(format!(
+    //             "Invalid limit; max {MAX_GET_SLOT_LEADERS}"
+    //         )));
+    //     }
+    //     let bank = self.bank(commitment);
+
+    //     let (mut epoch, mut slot_index) =
+    //         bank.epoch_schedule().get_epoch_and_slot_index(start_slot);
+
+    //     let mut slot_leaders = Vec::with_capacity(limit);
+    //     while slot_leaders.len() < limit {
+    //         if let Some(leader_schedule) =
+    //             self.leader_schedule_cache.get_epoch_leader_schedule(epoch)
+    //         {
+    //             slot_leaders.extend(
+    //                 leader_schedule
+    //                     .get_slot_leaders()
+    //                     .iter()
+    //                     .skip(slot_index as usize)
+    //                     .take(limit.saturating_sub(slot_leaders.len())),
+    //             );
+    //         } else {
+    //             return Err(Error::invalid_params(format!(
+    //                 "Invalid slot range: leader schedule for epoch {epoch} is unavailable"
+    //             )));
+    //         }
+
+    //         epoch += 1;
+    //         slot_index = 0;
+    //     }
+    // }
 }
 
 #[derive(Clone, Debug)]
