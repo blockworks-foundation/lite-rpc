@@ -1,6 +1,6 @@
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use jsonrpsee::tracing::field::debug;
 use jsonrpsee::tracing::warn;
 use log::{debug, error, info, Level, trace};
@@ -9,6 +9,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Signature;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
+use tokio::time::{sleep, timeout};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter::LevelFilter;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
@@ -51,10 +52,14 @@ async fn storage_test() {
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
-    let _task_done = jh1.await.expect("no error");
-    panic!();
+    info!("Run tests for some time ...");
+    sleep(Duration::from_secs(10)).await;
 
-    // should never be reached
+    jh1.abort();
+    jh2.abort();
+
+    info!("Tests aborted forcefully by design.");
+
 
 }
 

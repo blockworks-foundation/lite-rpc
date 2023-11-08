@@ -69,15 +69,16 @@ impl PostgresBlockStore {
 
     async fn start_new_epoch_if_necessary(&self, epoch: EpochRef) -> Result<()> {
         // create schema for new epoch
+        let schema_name = PostgresEpoch::build_schema_name(epoch);
         let session = self.get_session().await;
 
         let statement = PostgresEpoch::build_create_schema_statement(epoch);
         // note: requires GRANT CREATE ON DATABASE xyz
-        let result_create_schema = session.execute(&statement, &[]).await;
+        let result_create_schema = session.execute_simple(&statement).await;
         if let Err(err) = result_create_schema {
             if err.code().map(|sqlstate| sqlstate == &SqlState::DUPLICATE_SCHEMA).unwrap_or(false) {
                 // TODO: do we want to allow this; continuing with existing epoch schema might lead to inconsistent data in blocks and transactions table
-                info!("Schema for epoch {} already exists - data will be appended", epoch);
+                info!("Schema {} for epoch {} already exists - data will be appended", schema_name, epoch);
                 return Ok(());
             } else {
                 return Err(err).context("create schema for new epoch");
@@ -85,27 +86,26 @@ impl PostgresBlockStore {
         }
 
         // set permissions for new schema
-        for statement in build_assign_permissions_statements(epoch) {
-            session.execute(&statement, &[]).await
-                .context("Set postgres permissions for new schema")?;
-        }
+        let statement = build_assign_permissions_statements(epoch);
+        session.execute_simple(&statement).await
+            .context("Set postgres permissions for new schema")?;
 
         // Create blocks table
         let statement = PostgresBlock::build_create_table_statement(epoch);
-        session.execute(&statement, &[]).await
+        session.execute_simple(&statement).await
             .context("create blocks table for new epoch")?;
 
         // create transaction table
         let statement = PostgresTransaction::build_create_table_statement(epoch);
-        session.execute(&statement, &[]).await
+        session.execute_simple(&statement).await
             .context("create transaction table for new epoch")?;
 
         // add foreign key constraint between transactions and blocks
         let statement = PostgresTransaction::build_foreign_key_statement(epoch);
-        session.execute(&statement, &[]).await
+        session.execute_simple(&statement).await
             .context("create foreign key constraint between transactions and blocks")?;
 
-        info!("Start new epoch in postgres schema {}", PostgresEpoch::build_schema_name(epoch));
+        info!("Start new epoch in postgres schema {}", schema_name);
         Ok(())
     }
 
@@ -118,24 +118,16 @@ impl PostgresBlockStore {
     }
 }
 
-fn build_assign_permissions_statements(epoch: EpochRef) -> Vec<String> {
+fn build_assign_permissions_statements(epoch: EpochRef) -> String {
     let role = LITERPC_ROLE;
     let schema = PostgresEpoch::build_schema_name(epoch);
 
-    vec![
-        format!(
-            r#"
-            GRANT USAGE ON SCHEMA {schema} TO {role}
-        "#),
-        format!(
-            r#"
-            GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role}
-        "#),
-        format!(
+    format!(
         r#"
-            ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role}
-        "#),
-    ]
+        GRANT USAGE ON SCHEMA {schema} TO {role};
+        GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
+        ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
+    "#)
 }
 
 #[async_trait]

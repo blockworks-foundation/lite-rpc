@@ -45,15 +45,17 @@ impl PostgresBlock {
         format!(
             r#"
             CREATE TABLE IF NOT EXISTS {schema}.blocks (
-                slot BIGINT PRIMARY KEY,
+                slot BIGINT NOT NULL,
                 blockhash TEXT NOT NULL,
                 leader_id TEXT,
                 block_height BIGINT NOT NULL,
                 parent_slot BIGINT NOT NULL,
                 block_time BIGINT NOT NULL,
                 previous_blockhash TEXT NOT NULL,
-                rewards TEXT
-            )
+                rewards TEXT,
+                CONSTRAINT pk_block_slot PRIMARY KEY(slot)
+            );
+            CLUSTER {schema}.blocks USING pk_block_slot;
         "#,
             schema = schema
         )
