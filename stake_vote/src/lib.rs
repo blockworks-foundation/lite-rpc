@@ -14,10 +14,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::CommitmentLevel;
+use yellowstone_grpc_proto::prelude::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterAccounts;
-use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::prelude::SubscribeUpdate;
-use yellowstone_grpc_proto::prelude::{subscribe_update::UpdateOneof, SubscribeRequestFilterSlots};
 use yellowstone_grpc_proto::tonic::Status;
 
 mod account;
