@@ -168,7 +168,7 @@ pub async fn start_stakes_and_votes_loop(
                                             if let Some(account) = AccountPretty::new_from_geyzer(account, current_slot) {
                                                 match account.owner {
                                                     solana_sdk::stake::program::ID => {
-                                                        log::info!("Geyser notif stake account:{}", account);
+                                                        log::trace!("Geyser notif stake account:{}", account);
                                                         if let Err(err) = stakestore.notify_stake_change(
                                                             account,
                                                             current_schedule_epoch.last_slot_in_epoch,
