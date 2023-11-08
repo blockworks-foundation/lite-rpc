@@ -1,6 +1,7 @@
 use crate::structures::produced_block::ProducedBlock;
 use anyhow::Result;
 use async_trait::async_trait;
+use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::slot_history::Slot;
 use std::{ops::Range, sync::Arc};
 use std::ops::{RangeInclusive, RangeToInclusive};

@@ -5,6 +5,7 @@ use log::{debug, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::clock::Slot;
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use solana_lite_rpc_core::commitment_utils::Commitment;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
@@ -45,7 +46,7 @@ impl FaithfulBlockStore {
                 return Ok(ProducedBlock::from_ui_block(
                     block,
                     slot,
-                    Commitment::Finalized,
+                    CommitmentConfig::finalized(),
                 ));
             }
             Err(err) => {

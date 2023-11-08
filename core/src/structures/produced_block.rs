@@ -4,11 +4,11 @@ use solana_sdk::{
     slot_history::Slot,
     transaction::TransactionError,
 };
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::{
     option_serializer::OptionSerializer, Reward, RewardType, UiConfirmedBlock,
     UiTransactionStatusMeta,
 };
-use crate::commitment_utils::Commitment;
 
 use crate::encoding::BinaryEncoding;
 
@@ -32,7 +32,7 @@ pub struct ProducedBlock {
     pub slot: Slot,
     pub parent_slot: Slot,
     pub block_time: u64,
-    pub commitment_level: Commitment,
+    pub commitment_config: CommitmentConfig,
     pub previous_blockhash: String,
     pub rewards: Option<Vec<Reward>>,
 }
@@ -41,7 +41,7 @@ impl ProducedBlock {
     pub fn from_ui_block(
         block: UiConfirmedBlock,
         slot: Slot,
-        commitment_level: Commitment,
+        commitment_config: CommitmentConfig,
     ) -> Self {
         let block_height = block.block_height.unwrap_or_default();
         let txs = block.transactions.unwrap_or_default();
@@ -161,7 +161,7 @@ impl ProducedBlock {
             parent_slot,
             block_time,
             slot,
-            commitment_level,
+            commitment_config,
             rewards,
         }
     }

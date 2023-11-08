@@ -9,6 +9,7 @@ use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
 };
+use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{slot_history::Slot, stake_history::Epoch};
 use tokio::sync::RwLock;
 use tokio_postgres::error::SqlState;
@@ -188,8 +189,8 @@ impl BlockStorageInterface for PostgresBlockStore {
                 ORDER BY epoch_number
             "#,
             schema_prefix = "rpc2a_epoch_");
-        let result = session.query_list(&query, &[]).await;
-        for epoch in result {
+        let epochs = session.query_list(&query, &[]).await.unwrap();
+        for epoch in epochs {
 
             println!("epoch: {:?}", epoch);
         }
@@ -205,8 +206,8 @@ impl BlockStorageInterface for PostgresBlockStore {
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
+    use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::signature::Signature;
-    use solana_lite_rpc_core::commitment_utils::Commitment;
     use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
     use super::*;
 
@@ -243,7 +244,7 @@ mod tests {
             ],
             // TODO double if this is unix millis or seconds
             block_time: 1699260872000,
-            commitment_level: Commitment::Finalized,
+            commitment_config: CommitmentConfig::finalized(),
             leader_id: None,
             rewards: None,
         }

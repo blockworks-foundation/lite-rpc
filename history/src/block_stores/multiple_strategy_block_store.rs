@@ -13,7 +13,7 @@ use solana_lite_rpc_core::{
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{slot_history::Slot};
+use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use std::{
     ops::Range,
     sync::{
@@ -66,16 +66,16 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
         trace!("Saving block {} using multiple-strategy facadee", block.slot);
         let slot = block.slot;
-        let commitment = block.commitment_level;
+        let commitment = Commitment::from(block.commitment_config);
 
         if let Ok(prev_block) = self.inmemory_for_storage.get(slot).await {
-            if prev_block.commitment_level > block.commitment_level {
-                // note: this is most likely not what we want - need to discuss an heuristic how to fix that
-                warn!("The new block will revert the commitment level of {} back to {}",
-                    slot, block.commitment_level.into_commitment_level());
-            }
+            // TODO
+            // if prev_block.commitment_config.commitment > block.commitment_config.commitment {
+            //     // note: this is most likely not what we want - need to discuss an heuristic how to fix that
+            //     warn!("The new block will revert the commitment level of {} back to {}",
+            //         slot, block.commitment_config.commitment);
+            // }
         }
-
         match commitment {
             Commitment::Processed => {
                 self.inmemory_for_storage.save(block).await?;

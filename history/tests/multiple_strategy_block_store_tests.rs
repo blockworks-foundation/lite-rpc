@@ -6,11 +6,11 @@ use solana_lite_rpc_history::{
     block_stores::inmemory_block_store::InmemoryBlockStore,
     block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage,
 };
-use solana_sdk::{hash::Hash};
+use solana_rpc_client_api::config::RpcBlockConfig;
+use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use std::sync::Arc;
-use solana_lite_rpc_core::commitment_utils::Commitment;
 
-pub fn create_test_block(slot: u64, commitment_level: Commitment) -> ProducedBlock {
+pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
     ProducedBlock {
         block_height: slot,
         blockhash: Hash::new_unique().to_string(),
@@ -18,7 +18,7 @@ pub fn create_test_block(slot: u64, commitment_level: Commitment) -> ProducedBlo
         parent_slot: slot - 1,
         transactions: vec![],
         block_time: 0,
-        commitment_level,
+        commitment_config,
         leader_id: None,
         slot,
         rewards: None,
@@ -36,11 +36,11 @@ async fn test_in_multiple_stategy_block_store() {
     );
 
     block_storage
-        .save(&create_test_block(1235, Commitment::Confirmed))
+        .save(&create_test_block(1235, CommitmentConfig::confirmed()))
         .await
         .unwrap();
     block_storage
-        .save(&create_test_block(1236, Commitment::Confirmed))
+        .save(&create_test_block(1236, CommitmentConfig::confirmed()))
         .await
         .unwrap();
 
@@ -66,15 +66,15 @@ async fn test_in_multiple_stategy_block_store() {
         .is_none());
 
     block_storage
-        .save(&create_test_block(1235, Commitment::Finalized))
+        .save(&create_test_block(1235, CommitmentConfig::finalized()))
         .await
         .unwrap();
     block_storage
-        .save(&create_test_block(1236, Commitment::Finalized))
+        .save(&create_test_block(1236, CommitmentConfig::finalized()))
         .await
         .unwrap();
     block_storage
-        .save(&create_test_block(1237, Commitment::Finalized))
+        .save(&create_test_block(1237, CommitmentConfig::finalized()))
         .await
         .unwrap();
 

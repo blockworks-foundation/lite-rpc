@@ -3,11 +3,11 @@ use solana_lite_rpc_core::{
     traits::block_storage_interface::BlockStorageInterface,
 };
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
-use solana_sdk::{hash::Hash};
+use solana_rpc_client_api::config::RpcBlockConfig;
+use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use std::sync::Arc;
-use solana_lite_rpc_core::commitment_utils::Commitment;
 
-pub fn create_test_block(slot: u64, commitment_level: Commitment) -> ProducedBlock {
+pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
     ProducedBlock {
         block_height: slot,
         blockhash: Hash::new_unique().to_string(),
@@ -15,7 +15,7 @@ pub fn create_test_block(slot: u64, commitment_level: Commitment) -> ProducedBlo
         parent_slot: slot - 1,
         transactions: vec![],
         block_time: 0,
-        commitment_level,
+        commitment_config,
         leader_id: None,
         slot,
         rewards: None,
@@ -30,7 +30,7 @@ async fn inmemory_block_store_tests() {
     // add 10 blocks
     for i in 1..11 {
         store
-            .save(&create_test_block(i, Commitment::Finalized))
+            .save(&create_test_block(i, CommitmentConfig::finalized()))
             .await
             .unwrap();
     }
@@ -41,7 +41,7 @@ async fn inmemory_block_store_tests() {
     }
     // add 11th block
     store
-        .save(&create_test_block(11, Commitment::Finalized))
+        .save(&create_test_block(11, CommitmentConfig::finalized()))
         .await
         .unwrap();
 
@@ -56,7 +56,7 @@ async fn inmemory_block_store_tests() {
 
     // cannot add old blocks
     store
-        .save(&create_test_block(1, Commitment::Finalized))
+        .save(&create_test_block(1, CommitmentConfig::finalized()))
         .await
         .unwrap();
     assert!(store.get(1).await.ok().is_none());

@@ -6,8 +6,8 @@ use solana_sdk::{
     slot_history::Slot,
 };
 use std::sync::Arc;
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use tokio::sync::RwLock;
-use crate::commitment_utils::Commitment;
 
 use crate::structures::produced_block::ProducedBlock;
 
@@ -18,7 +18,7 @@ pub struct BlockInformation {
     pub last_valid_blockheight: u64,
     pub cleanup_slot: Slot,
     pub blockhash: String,
-    pub commitment_level: Commitment,
+    pub commitment_config: CommitmentConfig,
 }
 
 impl BlockInformation {
@@ -29,7 +29,7 @@ impl BlockInformation {
             last_valid_blockheight: block.block_height + MAX_RECENT_BLOCKHASHES as u64,
             cleanup_slot: block.block_height + 1000,
             blockhash: block.blockhash.clone(),
-            commitment_level: block.commitment_level,
+            commitment_config: block.commitment_config,
         }
     }
 }
@@ -67,16 +67,17 @@ impl BlockInformationStore {
 
     fn get_latest_block_arc(
         &self,
-        commitment_level: Commitment,
+        commitment_config: CommitmentConfig,
     ) -> Arc<RwLock<BlockInformation>> {
-        match commitment_level {
-            Commitment::Processed | Commitment::Confirmed => self.latest_confirmed_block.clone(),
-            Commitment::Finalized => self.latest_finalized_block.clone(),
+        if commitment_config.is_finalized() {
+            self.latest_finalized_block.clone()
+        } else {
+            self.latest_confirmed_block.clone()
         }
     }
 
-    pub async fn get_latest_blockhash(&self, commitment_level: Commitment) -> String {
-        self.get_latest_block_arc(commitment_level)
+    pub async fn get_latest_blockhash(&self, commitment_config: CommitmentConfig) -> String {
+        self.get_latest_block_arc(commitment_config)
             .read()
             .await
             .blockhash
@@ -85,16 +86,16 @@ impl BlockInformationStore {
 
     pub async fn get_latest_block_info(
         &self,
-        commitment_level: Commitment,
+        commitment_config: CommitmentConfig,
     ) -> BlockInformation {
-        self.get_latest_block_arc(commitment_level)
+        self.get_latest_block_arc(commitment_config)
             .read()
             .await
             .clone()
     }
 
-    pub async fn get_latest_block(&self, commitment_level: Commitment) -> BlockInformation {
-        self.get_latest_block_arc(commitment_level)
+    pub async fn get_latest_block(&self, commitment_config: CommitmentConfig) -> BlockInformation {
+        self.get_latest_block_arc(commitment_config)
             .read()
             .await
             .clone()
@@ -103,18 +104,18 @@ impl BlockInformationStore {
     pub async fn add_block(&self, block_info: BlockInformation) -> bool {
         // save slot copy to avoid borrow issues
         let slot = block_info.slot;
-        let commitment_level = block_info.commitment_level;
+        let commitment_config = block_info.commitment_config;
         // check if the block has already been added with higher commitment level
         match self.blocks.get_mut(&block_info.blockhash) {
             Some(mut prev_block_info) => {
-                let should_update = match prev_block_info.commitment_level {
-                    Commitment::Finalized => false, // should never update blocks of finalized commitment
-                    Commitment::Confirmed => {
-                        commitment_level == Commitment::Finalized
+                let should_update = match prev_block_info.commitment_config.commitment {
+                    CommitmentLevel::Finalized => false, // should never update blocks of finalized commitment
+                    CommitmentLevel::Confirmed => {
+                        commitment_config == CommitmentConfig::finalized()
                     } // should only updated confirmed with finalized block
                     _ => {
-                        commitment_level == Commitment::Confirmed
-                            || commitment_level == Commitment::Finalized
+                        commitment_config == CommitmentConfig::confirmed()
+                            || commitment_config == CommitmentConfig::finalized()
                     }
                 };
                 if !should_update {
@@ -129,7 +130,7 @@ impl BlockInformationStore {
         }
 
         // update latest block
-        let latest_block = self.get_latest_block_arc(commitment_level);
+        let latest_block = self.get_latest_block_arc(commitment_config);
         if slot > latest_block.read().await.slot {
             *latest_block.write().await = block_info;
         }
@@ -138,7 +139,7 @@ impl BlockInformationStore {
 
     pub async fn clean(&self) {
         let finalized_block_information = self
-            .get_latest_block_info(Commitment::Finalized)
+            .get_latest_block_info(CommitmentConfig::finalized())
             .await;
         let before_length = self.blocks.len();
         self.blocks
@@ -157,9 +158,9 @@ impl BlockInformationStore {
     pub async fn is_blockhash_valid(
         &self,
         blockhash: &String,
-        commitment_level: Commitment,
+        commitment_config: CommitmentConfig,
     ) -> (bool, Slot) {
-        let latest_block = self.get_latest_block(commitment_level).await;
+        let latest_block = self.get_latest_block(commitment_config).await;
         match self.blocks.get(blockhash) {
             Some(block_information) => (
                 latest_block.block_height <= block_information.last_valid_blockheight,

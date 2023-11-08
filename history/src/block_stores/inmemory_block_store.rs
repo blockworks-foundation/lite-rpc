@@ -1,8 +1,10 @@
 use async_trait::async_trait;
 use solana_lite_rpc_core::{
+    commitment_utils::Commitment,
     structures::produced_block::ProducedBlock,
     traits::block_storage_interface::{BlockStorageInterface},
 };
+use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::slot_history::Slot;
 use std::{collections::BTreeMap, ops::Range};
 use std::ops::{RangeInclusive, RangeToInclusive};
@@ -34,8 +36,8 @@ impl InmemoryBlockStore {
             // overwrite block only if confirmation has changed
             match block_storage.get_mut(&slot) {
                 Some(x) => {
-                    let commitment_store = x.commitment_level;
-                    let commitment_block = block.commitment_level;
+                    let commitment_store = Commitment::from(x.commitment_config);
+                    let commitment_block = Commitment::from(block.commitment_config);
                     let overwrite = commitment_block > commitment_store;
                     if overwrite {
                         *x = block.clone();
@@ -70,9 +72,9 @@ impl BlockStorageInterface for InmemoryBlockStore {
     }
 
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
-        let slots_in_map = self.block_storage.read().await.keys();
-        let first = slots_in_map.min();
-        let last = slots_in_map.max();
+        let storage = self.block_storage.read().await;
+        let first = storage.keys().min();
+        let last = storage.keys().max();
 
         assert_eq!(first.is_some(), last.is_some());
 

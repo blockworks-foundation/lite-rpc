@@ -328,7 +328,7 @@ impl LiteRpcServer for LiteBridge {
         config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
     ) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
         let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
-        let block = self.history.block_storage.get(slot, config).await;
+        let block = self.history.block_storage.get(slot).await;
         if block.is_ok() {
             // TO DO Convert to UIConfirmed Block
             Err(jsonrpsee::core::Error::HttpNotImplemented)
