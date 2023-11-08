@@ -7,6 +7,7 @@ use solana_sdk::slot_history::Slot;
 use std::{collections::BTreeMap, ops::Range};
 use std::ops::{RangeInclusive, RangeToInclusive};
 use anyhow::anyhow;
+use log::trace;
 use tokio::sync::RwLock;
 
 pub struct InmemoryBlockStore {
@@ -54,6 +55,7 @@ impl InmemoryBlockStore {
 #[async_trait]
 impl BlockStorageInterface for InmemoryBlockStore {
     async fn save(&self, block: &ProducedBlock) -> anyhow::Result<()> {
+        trace!("Saving block {} to memory storage", block.slot);
         self.store(block).await;
         Ok(())
     }

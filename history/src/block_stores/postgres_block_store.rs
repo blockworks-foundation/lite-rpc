@@ -4,7 +4,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use itertools::Itertools;
-use log::{info, warn};
+use log::{info, trace, warn};
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
@@ -139,6 +139,8 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> Vec<String> {
 #[async_trait]
 impl BlockStorageInterface for PostgresBlockStore {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
+        trace!("Saving block {} to postgres storage", block.slot);
+
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
         let slot = block.slot;
@@ -176,6 +178,22 @@ impl BlockStorageInterface for PostgresBlockStore {
     }
 
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
+
+        let session = self.get_session().await;
+        let query = format!(
+            r#"
+                SELECT replace(schema_name,'{schema_prefix}','')::bigint as epoch_number
+                FROM information_schema.schemata
+                WHERE schema_name like '{schema_prefix}%'
+                ORDER BY epoch_number
+            "#,
+            schema_prefix = "rpc2a_epoch_");
+        let result = session.query_list(&query, &[]).await;
+        for epoch in result {
+
+            println!("epoch: {:?}", epoch);
+        }
+
         // let lk = self.postgres_data.read().await;
         // lk.from_slot..lk.to_slot + 1
         todo!()

@@ -25,7 +25,7 @@ use std::cmp::min;
 use std::future::Future;
 use std::ops::{RangeFrom, RangeInclusive, RangeTo};
 use itertools::Itertools;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use rangetools::{Rangetools, RangeUnion};
 use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use crate::block_stores::faithful_block_store::FaithfulBlockStore;
@@ -64,6 +64,7 @@ impl MultipleStrategyBlockStorage {
 #[async_trait]
 impl BlockStorageInterface for MultipleStrategyBlockStorage {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
+        trace!("Saving block {} using multiple-strategy facadee", block.slot);
         let slot = block.slot;
         let commitment = block.commitment_level;
 
