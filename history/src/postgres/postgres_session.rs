@@ -132,6 +132,15 @@ impl PostgresSession {
         query
     }
 
+    // workaround: produces ((a,b,c)) while (a,b,c) would suffice
+    pub fn values_vec(args: usize, types: &[&str]) -> String {
+        let mut query = String::new();
+
+        Self::multiline_query(&mut query, args, 1, types);
+
+        query
+    }
+
     pub async fn execute(
         &self,
         statement: &String,
@@ -143,8 +152,25 @@ impl PostgresSession {
     pub async fn execute_simple(
         &self,
         statement: &String,
-    ) -> Result<Vec<SimpleQueryMessage>, Error> {
-        self.client.simple_query(statement).await
+    ) -> Result<(), Error> {
+        self.client.batch_execute(statement).await
+    }
+
+    pub async fn execute_prepared_batch(
+        &self,
+        statement: &String,
+        params: &Vec<Vec<&(dyn ToSql + Sync)>>,
+    ) -> Result<u64, Error> {
+        let prepared_stmt = self.client.prepare(statement).await?;
+        let mut total_inserted = 0;
+        for row in params {
+            let result = self.client.execute(&prepared_stmt, row).await;
+            if let Err(err) = result {
+                return Err(err);
+            }
+            total_inserted += result.unwrap();
+        }
+        return Ok(total_inserted);
     }
 
     pub async fn execute_prepared(
@@ -237,3 +263,10 @@ fn value_vecvec_test_types() {
     assert_eq!(values, "(($1)::text,($2)::int,($3)::int),($4,$5,$6)");
 }
 
+
+
+#[test]
+fn value_vec_test_types() {
+    let values = PostgresSession::values_vec(3, &["text", "int", "int"]);
+    assert_eq!(values, "(($1)::text,($2)::int,($3)::int)");
+}
