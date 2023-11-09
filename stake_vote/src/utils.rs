@@ -122,7 +122,7 @@ impl<'a, T, C: TakableContent<T>> Takable<C> for &'a mut TakableMap<T, C> {
                 content.add_value(val);
             }
             self.content = Some(content);
-            self.notifier.notify_waiters();
+            self.notifier.notify_one();
             Ok(())
         } else {
             bail!("TakableMap with a existing content".to_string())
@@ -232,8 +232,8 @@ impl<T: Default, C: TakableContent<T> + Default> TakableMap<T, C> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_takable_struct() {
+    #[tokio::test]
+    async fn test_takable_struct() {
         impl TakableContent<u64> for Vec<u64> {
             fn add_value(&mut self, val: UpdateAction<u64>) {
                 match val {
@@ -254,23 +254,35 @@ mod tests {
 
         let take_content = (&mut takable).take();
         assert_take_content_map(&take_content, 1);
-        assert_eq!(takable.updates.len(), 1);
-        let take_content = (&mut takable).take();
-        assert_take_content_taken(&take_content);
-        assert!(takable.content.is_none());
-        assert_eq!(takable.updates.len(), 1);
-        takable.add_value(UpdateAction::Notify(25, 0), false);
-        assert_eq!(takable.updates.len(), 2);
         let content = match take_content {
             TakeResult::Taken(_) => panic!("not a content"),
             TakeResult::Map(content) => content,
         };
+        assert_eq!(takable.updates.len(), 1);
+        let take_content = (&mut takable).take();
+        assert_take_content_taken(&take_content);
+        let notifier = match take_content {
+            TakeResult::Taken(notifier) => notifier,
+            TakeResult::Map(_) => panic!("not a notifier"),
+        };
+        assert_eq!(notifier.len(), 1);
+        let notif_jh = tokio::spawn(async move {
+            notifier[0].as_ref().notified().await;
+        });
+
+        assert!(takable.content.is_none());
+        assert_eq!(takable.updates.len(), 1);
+        takable.add_value(UpdateAction::Notify(25, 0), false);
+        assert_eq!(takable.updates.len(), 2);
         takable.merge(content).unwrap();
         assert_eq!(takable.content.as_ref().unwrap().len(), 3);
         assert_eq!(takable.updates.len(), 0);
 
-        //merge(&mut takable, vec![]);
-        //assert!(err.is_err());
+        //wait for notifier
+        if let Err(_) = tokio::time::timeout(std::time::Duration::from_millis(1000), notif_jh).await
+        {
+            assert!(false, "take notifier timeout");
+        }
     }
 
     fn assert_take_content_map(take_content: &TakeResult<Vec<u64>>, len: usize) {

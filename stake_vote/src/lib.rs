@@ -3,11 +3,13 @@ use crate::bootstrap::BootstrapEvent;
 use futures::Stream;
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
+use solana_lite_rpc_core::stores::block_information_store::BlockInformation;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::leaderschedule::GetVoteAccountsConfig;
 use solana_lite_rpc_core::types::SlotStream;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::response::RpcVoteAccountStatus;
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -92,8 +94,14 @@ pub async fn start_stakes_and_votes_loop(
                     }
                 }
                 Some((config, return_channel)) = vote_account_rpc_request.recv() => {
-                    let current_slot = solana_lite_rpc_core::solana_utils::get_current_confirmed_slot(&data_cache).await;
-                    rpc_request_processor.process_get_vote_accounts(current_slot, config, return_channel, &mut votestore).await;
+                    let commitment = config.commitment.unwrap_or(CommitmentConfig::confirmed());
+                    let BlockInformation { slot, .. } = data_cache
+                        .block_information_store
+                        .get_latest_block(commitment)
+                        .await;
+
+                    let current_epoch = data_cache.get_current_epoch(commitment).await;
+                    rpc_request_processor.process_get_vote_accounts(slot, current_epoch.epoch, config, return_channel, &mut votestore).await;
                 }
                 //manage rpc waiting request notification.
                 Some(Ok((votes, vote_accounts, rpc_vote_accounts))) = rpc_request_processor.rpc_exec_task.next() =>  {
@@ -105,8 +113,8 @@ pub async fn start_stakes_and_votes_loop(
                     ).await;
                 }
                 //manage rpc waiting request notification.
-                Some(Ok((current_slot, config))) = rpc_request_processor.rpc_notify_task.next() =>  {
-                    rpc_request_processor.take_vote_accounts_and_process(&mut votestore, current_slot, config).await;
+                Some(Ok((current_slot, epoch, config))) = rpc_request_processor.rpc_notify_task.next() =>  {
+                    rpc_request_processor.take_vote_accounts_and_process(&mut votestore, current_slot, epoch, config).await;
                 }
                 //manage geyser stake_history notification
                 ret = stake_history_geyzer_stream.next() => {

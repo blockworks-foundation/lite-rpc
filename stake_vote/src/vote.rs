@@ -31,11 +31,12 @@ pub struct EpochVoteStakesCache {
 }
 
 impl EpochVoteStakesCache {
-    pub fn vote_stakes_for_epoch(&self, epoch: u64) -> Option<EpochVoteStakes> {
-        self.cache.get(&epoch).cloned()
+    pub fn vote_stakes_for_epoch(&self, epoch: u64) -> Option<&EpochVoteStakes> {
+        self.cache.get(&epoch)
     }
 
     pub fn add_stakes_for_epoch(&mut self, vote_stakes: EpochVoteStakes) {
+        log::info!("add_stakes_for_epoch :{}", vote_stakes.epoch);
         if self.cache.insert(vote_stakes.epoch, vote_stakes).is_some() {
             log::warn!("Override existing vote stake epoch cache for epoch:");
         }
