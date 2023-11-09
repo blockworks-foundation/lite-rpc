@@ -490,6 +490,7 @@ impl LiteRpcServer for LiteBridge {
         slot: Option<u64>,
         config: Option<RpcLeaderScheduleConfig>,
     ) -> crate::rpc::Result<Option<HashMap<String, Vec<usize>>>> {
+        log::warn!("receive get_leader_schedule rpc call");
         //TODO verify leader identity.
         let schedule = self
             .data_cache
