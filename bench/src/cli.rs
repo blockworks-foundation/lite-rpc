@@ -8,9 +8,10 @@ pub struct Args {
     pub tx_count: usize,
     /// Number of bench runs
     #[arg(short = 'r', long, default_value_t = 1)]
-    pub runs: usize,
+    pub runs: u64,
     /// Interval between each bench run (ms)
-    #[arg(short = 'i', long, default_value_t = 1000)]
+    /// if set to 0, then the bench will run parallelly
+    #[arg(short = 'i', long, default_value_t = 0)]
     pub run_interval_ms: u64,
     /// Metrics output file name
     #[arg(short = 'm', long, default_value_t = String::from("metrics.csv"))]

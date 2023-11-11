@@ -39,10 +39,10 @@ impl BenchHelper {
         let payer = tokio::fs::read_to_string(USER_KEYPAIR.as_path())
             .await
             .context("Error reading payer file")?;
-        let payer: Vec<u8> = serde_json::from_str(&payer)?;
-        let payer = Keypair::from_bytes(&payer)?;
 
-        Ok(payer)
+        let payer: Vec<u8> = serde_json::from_str(&payer)?;
+
+        Keypair::from_bytes(&payer).context("Error converting payer to keypair")
     }
 
     pub async fn wait_till_signature_status(
