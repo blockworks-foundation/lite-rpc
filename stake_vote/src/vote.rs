@@ -235,15 +235,18 @@ pub fn merge_program_account_in_vote_map(
         });
 }
 
-//TODO put in config instead of const.
 // Validators that are this number of slots behind are considered delinquent
-pub const DELINQUENT_VALIDATOR_SLOT_DISTANCE: u64 = 128;
 pub fn get_rpc_vote_accounts_info(
     current_slot: Slot,
     votes: &VoteMap,
     vote_accounts: &HashMap<Pubkey, (u64, Arc<StoredVote>)>,
     config: GetVoteAccountsConfig,
 ) -> RpcVoteAccountStatus {
+    pub const DELINQUENT_VALIDATOR_SLOT_DISTANCE: u64 =
+        solana_rpc_client_api::request::DELINQUENT_VALIDATOR_SLOT_DISTANCE;
+    let delinquent_validator_slot_distance = config
+        .delinquent_slot_distance
+        .unwrap_or(DELINQUENT_VALIDATOR_SLOT_DISTANCE);
     //From Solana rpc::rpc::metaz::get_vote_accounts() code.
     let (current_vote_accounts, delinquent_vote_accounts): (
         Vec<RpcVoteAccountInfo>,
@@ -258,8 +261,8 @@ pub fn get_rpc_vote_accounts_info(
             vote.convert_to_rpc_vote_account_info(stake, epoch_vote_account)
         })
         .partition(|vote_account_info| {
-            if current_slot >= DELINQUENT_VALIDATOR_SLOT_DISTANCE {
-                vote_account_info.last_vote > current_slot - DELINQUENT_VALIDATOR_SLOT_DISTANCE
+            if current_slot >= delinquent_validator_slot_distance {
+                vote_account_info.last_vote > current_slot - delinquent_validator_slot_distance
             } else {
                 vote_account_info.last_vote > 0
             }
