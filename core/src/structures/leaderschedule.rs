@@ -4,6 +4,8 @@ use solana_rpc_client_api::config::RpcGetVoteAccountsConfig;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::ParsePubkeyError;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::slot_history::Slot;
+use solana_sdk::sysvar::epoch_schedule::EpochSchedule;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -46,7 +48,13 @@ impl CalculatedSchedule {
         commitment: Option<CommitmentConfig>,
         data_cache: &DataCache,
     ) -> Option<HashMap<String, Vec<usize>>> {
-        let commitment = commitment.unwrap_or_else(CommitmentConfig::default);
+        log::info!(
+            "get_leader_schedule_for_slot current:{:?} next:{:?} ",
+            self.current.clone().unwrap_or_default(),
+            self.next.clone().unwrap_or_default()
+        );
+
+        let commitment = commitment.unwrap_or_default();
         let slot = match slot {
             Some(slot) => slot,
             None => {
@@ -67,48 +75,69 @@ impl CalculatedSchedule {
         get_schedule(self.current.as_ref()).or_else(|| get_schedule(self.next.as_ref()))
     }
 
-    // pub async fn get_slot_leaders(&self, start_slot: Slot, limit: u64) -> Result<Vec<String>> {
-    //     debug!(
-    //         "get_slot_leaders rpc request received (start: {} limit: {})",
-    //         start_slot, limit
-    //     );
+    pub async fn get_slot_leaders(
+        &self,
+        start_slot: Slot,
+        limit: u64,
+        epock_schedule: &EpochSchedule,
+    ) -> Result<Vec<Pubkey>, String> {
+        log::debug!(
+            "get_slot_leaders rpc request received (start: {} limit: {})",
+            start_slot,
+            limit
+        );
+        pub const MAX_GET_SLOT_LEADERS: usize =
+            solana_rpc_client_api::request::MAX_GET_SLOT_LEADERS;
 
-    //     let limit = limit as usize;
-    //     if limit > MAX_GET_SLOT_LEADERS {
-    //         return Err(Error::invalid_params(format!(
-    //             "Invalid limit; max {MAX_GET_SLOT_LEADERS}"
-    //         )));
-    //     }
-    //     let bank = self.bank(commitment);
+        let mut limit = limit as usize;
+        if limit > MAX_GET_SLOT_LEADERS {
+            return Err(format!(
+                "Invalid Params: Invalid limit; max {MAX_GET_SLOT_LEADERS}"
+            ));
+        }
 
-    //     let (mut epoch, mut slot_index) =
-    //         bank.epoch_schedule().get_epoch_and_slot_index(start_slot);
+        let (epoch, slot_index) = epock_schedule.get_epoch_and_slot_index(start_slot);
+        let mut slot_leaders = Vec::with_capacity(limit);
 
-    //     let mut slot_leaders = Vec::with_capacity(limit);
-    //     while slot_leaders.len() < limit {
-    //         if let Some(leader_schedule) =
-    //             self.leader_schedule_cache.get_epoch_leader_schedule(epoch)
-    //         {
-    //             slot_leaders.extend(
-    //                 leader_schedule
-    //                     .get_slot_leaders()
-    //                     .iter()
-    //                     .skip(slot_index as usize)
-    //                     .take(limit.saturating_sub(slot_leaders.len())),
-    //             );
-    //         } else {
-    //             return Err(Error::invalid_params(format!(
-    //                 "Invalid slot range: leader schedule for epoch {epoch} is unavailable"
-    //             )));
-    //         }
+        let mut extend_slot_from_epoch = |leader_schedule: &[Pubkey], slot_index: usize| {
+            let take = limit.saturating_sub(slot_leaders.len());
+            slot_leaders.extend(leader_schedule.iter().skip(slot_index).take(take));
+            limit -= slot_leaders.len();
+        };
 
-    //         epoch += 1;
-    //         slot_index = 0;
-    //     }
-    // }
+        // log::info!(
+        //     "get_slot_leaders  epoch:{epoch} current:{:?} next:{:?} ",
+        //     self.current.clone().unwrap_or_default(),
+        //     self.next.clone().unwrap_or_default()
+        // );
+
+        //TODO manage more leader schedule data in storage.
+        //Here  only search  on current and next epoch
+        let res = [
+            (&self.current, slot_index as usize, epoch),
+            (&self.next, slot_index as usize, epoch),
+            (&self.next, 0, epoch + 1),
+        ]
+        .into_iter()
+        .filter_map(|(epoch_data, slot_index, epoch)| {
+            epoch_data.as_ref().and_then(|epoch_data| {
+                (epoch_data.epoch == epoch).then_some((epoch_data, slot_index))
+            })
+        })
+        .map(|(epoch_data, slot_index)| {
+            extend_slot_from_epoch(&epoch_data.schedule_by_slot, slot_index);
+        })
+        .collect::<Vec<()>>();
+        match res.is_empty()  {
+            true => Err(format!(
+                "Invalid Params: Invalid slot range: leader schedule for epoch {epoch} is unavailable"
+            )),
+            false => Ok(slot_leaders),
+        }
+    }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct LeaderScheduleData {
     pub schedule_by_node: HashMap<String, Vec<usize>>,
     pub schedule_by_slot: Vec<Pubkey>,

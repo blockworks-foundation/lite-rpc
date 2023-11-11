@@ -36,7 +36,7 @@ const VOTESTORE_INITIAL_CAPACITY: usize = 600000;
 type Slot = u64;
 
 pub async fn start_stakes_and_votes_loop(
-    mut data_cache: DataCache,
+    data_cache: DataCache,
     mut slot_notification: SlotStream,
     mut vote_account_rpc_request: Receiver<(
         GetVoteAccountsConfig,
@@ -226,8 +226,8 @@ pub async fn start_stakes_and_votes_loop(
                         Ok(Some(boot_res))=> {
                             match boot_res {
                                 Ok(current_schedule_data) => {
-                                    //let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
-                                    data_cache.leader_schedule = Arc::new(current_schedule_data);
+                                    let mut data_schedule = data_cache.leader_schedule.write().await;
+                                    *data_schedule = current_schedule_data;
                                 }
                                 Err(err) => {
                                     log::warn!("Error during current leader schedule bootstrap from files:{err}")
@@ -254,7 +254,8 @@ pub async fn start_stakes_and_votes_loop(
                     if let Some(new_leader_schedule) = new_leader_schedule {
                         //clone old schedule values is there's other use.
                         //only done once epoch. Avoid to use a Mutex.
-                        let data_schedule = Arc::make_mut(&mut data_cache.leader_schedule);
+                        log::info!("End leader schedule calculus  for epoch:{}", new_leader_schedule.epoch);
+                        let mut data_schedule = data_cache.leader_schedule.write().await;
                         data_schedule.current = data_schedule.next.take();
                         data_schedule.next = Some(new_leader_schedule.rpc_data);
                     }

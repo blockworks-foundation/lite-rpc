@@ -4,6 +4,7 @@ use solana_sdk::hash::Hash;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 use std::sync::{atomic::AtomicU64, Arc};
+use tokio::sync::RwLock;
 
 use crate::{
     stores::{
@@ -37,7 +38,7 @@ pub struct DataCache {
     pub identity_stakes: IdentityStakes,
     pub cluster_info: ClusterInfo,
     pub epoch_data: EpochCache,
-    pub leader_schedule: Arc<CalculatedSchedule>,
+    pub leader_schedule: Arc<RwLock<CalculatedSchedule>>,
 }
 
 impl DataCache {
@@ -88,7 +89,7 @@ impl DataCache {
                 store: Arc::new(DashMap::new()),
             },
             epoch_data: EpochCache::new_for_tests(),
-            leader_schedule: Arc::new(CalculatedSchedule::default()),
+            leader_schedule: Arc::new(RwLock::new(CalculatedSchedule::default())),
         }
     }
 }

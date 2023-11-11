@@ -490,11 +490,12 @@ impl LiteRpcServer for LiteBridge {
         slot: Option<u64>,
         config: Option<RpcLeaderScheduleConfig>,
     ) -> crate::rpc::Result<Option<HashMap<String, Vec<usize>>>> {
-        log::warn!("receive get_leader_schedule rpc call");
         //TODO verify leader identity.
         let schedule = self
             .data_cache
             .leader_schedule
+            .read()
+            .await
             .get_leader_schedule_for_slot(slot, config.and_then(|c| c.commitment), &self.data_cache)
             .await;
         Ok(schedule)
@@ -504,7 +505,17 @@ impl LiteRpcServer for LiteBridge {
         start_slot: u64,
         limit: u64,
     ) -> crate::rpc::Result<Vec<Pubkey>> {
-        todo!()
+        let epock_schedule = self.data_cache.epoch_data.get_epoch_schedule();
+
+        self.data_cache
+            .leader_schedule
+            .read()
+            .await
+            .get_slot_leaders(start_slot, limit, epock_schedule)
+            .await
+            .map_err(|err| {
+                jsonrpsee::core::Error::Custom(format!("error during query processing:{err}"))
+            })
     }
 
     async fn get_vote_accounts(
