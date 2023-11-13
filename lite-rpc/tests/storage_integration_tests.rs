@@ -53,7 +53,7 @@ async fn storage_test() {
     drop(blocks_notifier);
 
     info!("Run tests for some time ...");
-    sleep(Duration::from_secs(10)).await;
+    sleep(Duration::from_secs(30)).await;
 
     jh1.abort();
     jh2.abort();

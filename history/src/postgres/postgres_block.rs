@@ -1,3 +1,4 @@
+use std::time::Instant;
 use log::{debug, warn};
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use tokio_postgres::types::ToSql;
@@ -66,6 +67,8 @@ impl PostgresBlock {
         postgres_session: &PostgresSession,
         epoch: EpochRef,
     ) -> anyhow::Result<()> {
+
+        let started = Instant::now();
         let schema = PostgresEpoch::build_schema_name(epoch);
         let values = PostgresSession::values_vecvec(NB_ARUMENTS, 1, &[]);
 
@@ -120,6 +123,8 @@ impl PostgresBlock {
                 warn!("Block {} already exists - not updated", self.slot);
             }
         }
+
+        debug!("Inserting block row to postgres took {:.2}ms", started.elapsed().as_secs_f64() * 1000.0);
 
         Ok(())
     }
