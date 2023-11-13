@@ -19,8 +19,6 @@ pub struct PostgresTransaction {
     pub message: String,
 }
 
-const NB_ARUMENTS: usize = 8;
-
 impl PostgresTransaction {
     pub fn new(value: &TransactionInfo, slot: Slot) -> Self {
         Self {
@@ -79,8 +77,9 @@ impl PostgresTransaction {
         slot: Slot,
         transactions: &[Self],
     ) -> anyhow::Result<()> {
+        const NB_ARGUMENTS: usize = 8;
         let tx_count = transactions.len();
-        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARUMENTS * tx_count);
+        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS * tx_count);
 
         for tx in transactions.iter() {
             let PostgresTransaction {
@@ -104,7 +103,7 @@ impl PostgresTransaction {
             args.push(message);
         }
 
-        let values = PostgresSession::values_vecvec(NB_ARUMENTS, tx_count, &[]);
+        let values = PostgresSession::values_vecvec(NB_ARGUMENTS, tx_count, &[]);
         let schema = PostgresEpoch::build_schema_name(epoch);
         let statement = format!(
             r#"

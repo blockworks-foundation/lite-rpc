@@ -18,8 +18,6 @@ pub struct PostgresBlock {
     pub rewards: Option<String>,
 }
 
-const NB_ARUMENTS: usize = 7;
-
 impl From<&ProducedBlock> for PostgresBlock {
     fn from(value: &ProducedBlock) -> Self {
         let rewards = value
@@ -67,9 +65,11 @@ impl PostgresBlock {
         postgres_session: &PostgresSession,
         epoch: EpochRef,
     ) -> anyhow::Result<()> {
+        const NB_ARGUMENTS: usize = 7;
+
         let started = Instant::now();
         let schema = PostgresEpoch::build_schema_name(epoch);
-        let values = PostgresSession::values_vecvec(NB_ARUMENTS, 1, &[]);
+        let values = PostgresSession::values_vecvec(NB_ARGUMENTS, 1, &[]);
 
         let statement = format!(
             r#"
@@ -88,7 +88,7 @@ impl PostgresBlock {
             schema = schema,
         );
 
-        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARUMENTS);
+        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS);
         args.push(&self.slot);
         args.push(&self.blockhash);
         args.push(&self.block_height);
