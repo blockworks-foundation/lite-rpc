@@ -109,13 +109,14 @@ const fn get_max_safe_updates<T: SchemaSize>() -> usize {
 }
 
 async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> anyhow::Result<()> {
-    const NUMBER_OF_ARGS: usize = 8;
 
     if txs.is_empty() {
         return Ok(());
     }
 
-    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * txs.len());
+    const NB_ARGUMENTS: usize = 8;
+
+    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS * txs.len());
 
     for tx in txs.iter() {
         let PostgresTx {
@@ -139,7 +140,7 @@ async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> any
         args.push(quic_response);
     }
 
-    let values = PostgresSession::values_vecvec(NUMBER_OF_ARGS, txs.len(), &[]);
+    let values = PostgresSession::values_vecvec(NB_ARGUMENTS, txs.len(), &[]);
     let statement = format!(
         r#"
             INSERT INTO lite_rpc.Txs 
@@ -158,13 +159,13 @@ async fn update_txs(
     postgres_session: &PostgresSession,
     txs: &[PostgresTxUpdate],
 ) -> anyhow::Result<()> {
-    const NUMBER_OF_ARGS: usize = 5;
+    const NB_ARGUMENTS: usize = 5;
 
     if txs.is_empty() {
         return Ok(());
     }
 
-    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * txs.len());
+    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS * txs.len());
 
     for tx in txs.iter() {
         let PostgresTxUpdate {
@@ -183,7 +184,7 @@ async fn update_txs(
     }
 
     let values = PostgresSession::values_vecvec(
-        NUMBER_OF_ARGS,
+        NB_ARGUMENTS,
         txs.len(),
         &["text", "bigint", "bigint", "bigint", "bigint"],
     );

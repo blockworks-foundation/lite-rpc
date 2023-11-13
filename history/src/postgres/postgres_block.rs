@@ -69,7 +69,7 @@ impl PostgresBlock {
 
         let started = Instant::now();
         let schema = PostgresEpoch::build_schema_name(epoch);
-        let values = PostgresSession::values_vecvec(NB_ARGUMENTS, 1, &[]);
+        let values = PostgresSession::values_vec(NB_ARGUMENTS, &[]);
 
         let statement = format!(
             r#"

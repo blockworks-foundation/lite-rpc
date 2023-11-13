@@ -51,6 +51,7 @@ async fn storage_test() {
     info!("Tests aborted forcefully by design.");
 }
 
+// note: the consumer lags far behind the ingress of blocks and transactions
 fn storage_listen(
     block_notifier: BlockStream,
     block_storage: Arc<dyn BlockStorageInterface>,

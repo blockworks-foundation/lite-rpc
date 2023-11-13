@@ -2,7 +2,7 @@
 
 -- YOU NEED TO adjust the script
 
--- create role and user
+-- create role and user; role is defined in code as LITERPC_ROLE constant
 CREATE ROLE r_literpc;
 CREATE USER literpc_app IN GROUP r_literpc;
 -- ALTER USER literpc_app PASSWORD 'secret'; -- TODO provide your authentication
