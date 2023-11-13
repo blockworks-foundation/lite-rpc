@@ -1,10 +1,10 @@
-use std::fmt::Display;
 use anyhow::bail;
 use solana_account_decoder::parse_sysvar::SysvarAccountType;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::sysvar::epoch_schedule::EpochSchedule;
+use std::fmt::Display;
 use std::sync::Arc;
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord)]
@@ -15,10 +15,8 @@ pub struct Epoch {
     pub absolute_slot: Slot,
 }
 
-
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord)]
 pub struct EpochRef(u64);
-
 
 impl Epoch {
     pub fn into_epoch_info(&self, block_height: u64, transaction_count: Option<u64>) -> EpochInfo {
@@ -54,7 +52,6 @@ impl EpochRef {
         self.0
     }
 }
-
 
 #[derive(Clone)]
 pub struct EpochCache {

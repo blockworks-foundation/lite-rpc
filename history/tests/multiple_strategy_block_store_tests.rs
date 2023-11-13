@@ -44,26 +44,10 @@ async fn test_in_multiple_stategy_block_store() {
         .await
         .unwrap();
 
-    assert!(block_storage
-        .get(1235)
-        .await
-        .ok()
-        .is_some());
-    assert!(block_storage
-        .get(1236)
-        .await
-        .ok()
-        .is_some());
-    assert!(persistent_store
-        .get(1235)
-        .await
-        .ok()
-        .is_none());
-    assert!(persistent_store
-        .get(1236)
-        .await
-        .ok()
-        .is_none());
+    assert!(block_storage.get(1235).await.ok().is_some());
+    assert!(block_storage.get(1236).await.ok().is_some());
+    assert!(persistent_store.get(1235).await.ok().is_none());
+    assert!(persistent_store.get(1236).await.ok().is_none());
 
     block_storage
         .save(&create_test_block(1235, CommitmentConfig::finalized()))
@@ -78,45 +62,17 @@ async fn test_in_multiple_stategy_block_store() {
         .await
         .unwrap();
 
-    assert!(block_storage
-        .get(1235)
-        .await
-        .ok()
-        .is_some());
-    assert!(block_storage
-        .get(1236)
-        .await
-        .ok()
-        .is_some());
-    assert!(block_storage
-        .get(1237)
-        .await
-        .ok()
-        .is_some());
-    assert!(persistent_store
-        .get(1235)
-        .await
-        .ok()
-        .is_some());
-    assert!(persistent_store
-        .get(1236)
-        .await
-        .ok()
-        .is_some());
-    assert!(persistent_store
-        .get(1237)
-        .await
-        .ok()
-        .is_some());
+    assert!(block_storage.get(1235).await.ok().is_some());
+    assert!(block_storage.get(1236).await.ok().is_some());
+    assert!(block_storage.get(1237).await.ok().is_some());
+    assert!(persistent_store.get(1235).await.ok().is_some());
+    assert!(persistent_store.get(1236).await.ok().is_some());
+    assert!(persistent_store.get(1237).await.ok().is_some());
     assert!(block_storage.get_in_memory_block(1237).await.ok().is_some());
 
     // blocks are replaced by finalized blocks
     assert_eq!(
-        persistent_store
-            .get(1235)
-            .await
-            .unwrap()
-            .blockhash,
+        persistent_store.get(1235).await.unwrap().blockhash,
         block_storage
             .get_in_memory_block(1235)
             .await
@@ -124,11 +80,7 @@ async fn test_in_multiple_stategy_block_store() {
             .blockhash
     );
     assert_eq!(
-        persistent_store
-            .get(1236)
-            .await
-            .unwrap()
-            .blockhash,
+        persistent_store.get(1236).await.unwrap().blockhash,
         block_storage
             .get_in_memory_block(1236)
             .await
@@ -136,11 +88,7 @@ async fn test_in_multiple_stategy_block_store() {
             .blockhash
     );
     assert_eq!(
-        persistent_store
-            .get(1237)
-            .await
-            .unwrap()
-            .blockhash,
+        persistent_store.get(1237).await.unwrap().blockhash,
         block_storage
             .get_in_memory_block(1237)
             .await
@@ -149,9 +97,5 @@ async fn test_in_multiple_stategy_block_store() {
     );
 
     // no block yet added returns none
-    assert!(block_storage
-        .get(1238)
-        .await
-        .ok()
-        .is_none());
+    assert!(block_storage.get(1238).await.ok().is_none());
 }

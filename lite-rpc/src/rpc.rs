@@ -1,11 +1,10 @@
 use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::proc_macros::rpc;
 use solana_rpc_client_api::config::{
-    RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
-    RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
-    RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
-    RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsConfig,
-    RpcTransactionLogsFilter,
+    RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper, RpcContextConfig,
+    RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig, RpcProgramAccountsConfig,
+    RpcRequestAirdropConfig, RpcSignatureStatusConfig, RpcSignatureSubscribeConfig,
+    RpcSignaturesForAddressConfig, RpcTransactionLogsConfig, RpcTransactionLogsFilter,
 };
 use solana_rpc_client_api::response::{
     Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
@@ -29,11 +28,7 @@ pub trait LiteRpc {
     // ***********************
 
     #[method(name = "getBlock")]
-    async fn get_block(
-        &self,
-        slot: u64,
-        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-    ) -> Result<Option<UiConfirmedBlock>>;
+    async fn get_block(&self, slot: u64) -> Result<Option<UiConfirmedBlock>>;
 
     #[method(name = "getBlocks")]
     async fn get_blocks(

@@ -1,27 +1,24 @@
 use std::ops::RangeInclusive;
-use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{debug, info, trace};
+use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
 };
-use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{slot_history::Slot, stake_history::Epoch};
-use tokio::sync::RwLock;
+use solana_sdk::slot_history::Slot;
 use tokio_postgres::error::SqlState;
-use solana_lite_rpc_core::structures::epoch::EpochRef;
 
+use crate::postgres::postgres_epoch::{PostgresEpoch, EPOCH_SCHEMA_PREFIX};
+use crate::postgres::postgres_session::PostgresSession;
 use crate::postgres::{
     postgres_block::PostgresBlock, postgres_session::PostgresSessionCache,
     postgres_transaction::PostgresTransaction,
 };
-use crate::postgres::postgres_epoch::PostgresEpoch;
-use crate::postgres::postgres_session::PostgresSession;
 
 const LITERPC_ROLE: &str = "r_literpc";
 
@@ -39,7 +36,6 @@ pub struct PostgresBlockStore {
 }
 
 impl PostgresBlockStore {
-
     pub async fn new(epoch_cache: EpochCache) -> Self {
         let session_cache = PostgresSessionCache::new().await.unwrap();
         // let postgres_data = Arc::new(RwLock::new(PostgresData::default()));
@@ -56,12 +52,19 @@ impl PostgresBlockStore {
     async fn check_role(session_cache: &PostgresSessionCache) {
         let role = LITERPC_ROLE;
         let statement = format!("SELECT 1 FROM pg_roles WHERE rolname='{role}'");
-        let count = session_cache.get_session().await.expect("must get session")
-            .execute(&statement, &[]).await
+        let count = session_cache
+            .get_session()
+            .await
+            .expect("must get session")
+            .execute(&statement, &[])
+            .await
             .expect("must execute query to check for role");
 
         if count == 0 {
-            panic!("Missing mandatory postgres role '{}' for Lite RPC - see permissions.sql", role);
+            panic!(
+                "Missing mandatory postgres role '{}' for Lite RPC - see permissions.sql",
+                role
+            );
         } else {
             info!("Self check - found postgres role '{}'", role);
         }
@@ -76,9 +79,16 @@ impl PostgresBlockStore {
         // note: requires GRANT CREATE ON DATABASE xyz
         let result_create_schema = session.execute_simple(&statement).await;
         if let Err(err) = result_create_schema {
-            if err.code().map(|sqlstate| sqlstate == &SqlState::DUPLICATE_SCHEMA).unwrap_or(false) {
+            if err
+                .code()
+                .map(|sqlstate| sqlstate == &SqlState::DUPLICATE_SCHEMA)
+                .unwrap_or(false)
+            {
                 // TODO: do we want to allow this; continuing with existing epoch schema might lead to inconsistent data in blocks and transactions table
-                info!("Schema {} for epoch {} already exists - data will be appended", schema_name, epoch);
+                info!(
+                    "Schema {} for epoch {} already exists - data will be appended",
+                    schema_name, epoch
+                );
                 return Ok(());
             } else {
                 return Err(err).context("create schema for new epoch");
@@ -87,22 +97,30 @@ impl PostgresBlockStore {
 
         // set permissions for new schema
         let statement = build_assign_permissions_statements(epoch);
-        session.execute_simple(&statement).await
+        session
+            .execute_simple(&statement)
+            .await
             .context("Set postgres permissions for new schema")?;
 
         // Create blocks table
         let statement = PostgresBlock::build_create_table_statement(epoch);
-        session.execute_simple(&statement).await
+        session
+            .execute_simple(&statement)
+            .await
             .context("create blocks table for new epoch")?;
 
         // create transaction table
         let statement = PostgresTransaction::build_create_table_statement(epoch);
-        session.execute_simple(&statement).await
+        session
+            .execute_simple(&statement)
+            .await
             .context("create transaction table for new epoch")?;
 
         // add foreign key constraint between transactions and blocks
         let statement = PostgresTransaction::build_foreign_key_statement(epoch);
-        session.execute_simple(&statement).await
+        session
+            .execute_simple(&statement)
+            .await
             .context("create foreign key constraint between transactions and blocks")?;
 
         info!("Start new epoch in postgres schema {}", schema_name);
@@ -110,8 +128,7 @@ impl PostgresBlockStore {
     }
 
     async fn get_session(&self) -> PostgresSession {
-        self
-            .session_cache
+        self.session_cache
             .get_session()
             .await
             .expect("should get new postgres session")
@@ -127,7 +144,8 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> String {
         GRANT USAGE ON SCHEMA {schema} TO {role};
         GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
         ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
-    "#)
+    "#
+    )
 }
 
 #[async_trait]
@@ -159,10 +177,15 @@ impl BlockStorageInterface for PostgresBlockStore {
         // save transaction
         let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
         for chunk in chunks {
-            PostgresTransaction::save_transaction_batch(&session, epoch.into(), slot, chunk).await?;
+            PostgresTransaction::save_transaction_batch(&session, epoch.into(), slot, chunk)
+                .await?;
         }
-        debug!("Saving block {} with {} txs to postgres took {:.2}ms",
-            slot, transactions.len(), started.elapsed().as_secs_f64() * 1000.0);
+        debug!(
+            "Saving block {} with {} txs to postgres took {:.2}ms",
+            slot,
+            transactions.len(),
+            started.elapsed().as_secs_f64() * 1000.0
+        );
         Ok(())
     }
 
@@ -173,7 +196,6 @@ impl BlockStorageInterface for PostgresBlockStore {
     }
 
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
-
         let session = self.get_session().await;
         let query = format!(
             r#"
@@ -182,10 +204,10 @@ impl BlockStorageInterface for PostgresBlockStore {
                 WHERE schema_name like '{schema_prefix}%'
                 ORDER BY epoch_number
             "#,
-            schema_prefix = "rpc2a_epoch_");
+            schema_prefix = EPOCH_SCHEMA_PREFIX
+        );
         let epochs = session.query_list(&query, &[]).await.unwrap();
         for epoch in epochs {
-
             println!("epoch: {:?}", epoch);
         }
 
@@ -195,15 +217,13 @@ impl BlockStorageInterface for PostgresBlockStore {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use super::*;
+    use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
     use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::signature::Signature;
-    use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
-    use super::*;
+    use std::str::FromStr;
 
     #[tokio::test]
     #[ignore]
@@ -216,13 +236,13 @@ mod tests {
 
         let postgres_block_store = PostgresBlockStore::new(epoch_cache.clone()).await;
 
-        postgres_block_store.save(&create_test_block()).await.unwrap();
-
-
+        postgres_block_store
+            .save(&create_test_block())
+            .await
+            .unwrap();
     }
 
     fn create_test_block() -> ProducedBlock {
-
         let sig1 = Signature::from_str("5VBroA4MxsbZdZmaSEb618WRRwhWYW9weKhh3md1asGRx7nXDVFLua9c98voeiWdBE7A9isEoLL7buKyaVRSK1pV").unwrap();
         let sig2 = Signature::from_str("3d9x3rkVQEoza37MLJqXyadeTbEJGUB6unywK4pjeRLJc16wPsgw3dxPryRWw3UaLcRyuxEp1AXKGECvroYxAEf2").unwrap();
 
@@ -232,10 +252,7 @@ mod tests {
             previous_blockhash: "previous_blockhash".to_string(),
             parent_slot: 666,
             slot: 223555999,
-            transactions: vec![
-                create_test_tx(sig1),
-                create_test_tx(sig2),
-            ],
+            transactions: vec![create_test_tx(sig1), create_test_tx(sig2)],
             // TODO double if this is unix millis or seconds
             block_time: 1699260872000,
             commitment_config: CommitmentConfig::finalized(),
@@ -256,5 +273,3 @@ mod tests {
         }
     }
 }
-
-

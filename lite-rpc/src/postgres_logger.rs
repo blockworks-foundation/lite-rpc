@@ -145,7 +145,9 @@ async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> any
             INSERT INTO lite_rpc.Txs 
             (signature, recent_slot, forwarded_slot, forwarded_local_time, processed_slot, cu_consumed, cu_requested, quic_response)
             VALUES {}
-        "#, values);
+        "#,
+        values
+    );
 
     postgres_session.client.execute(&statement, &args).await?;
 
@@ -179,7 +181,6 @@ async fn update_txs(
         args.push(cu_requested);
         args.push(cu_price);
     }
-
 
     let values = PostgresSession::values_vecvec(
         NUMBER_OF_ARGS,

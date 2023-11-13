@@ -1,15 +1,13 @@
-use async_trait::async_trait;
-use solana_lite_rpc_core::{
-    commitment_utils::Commitment,
-    structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageInterface},
-};
-use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::slot_history::Slot;
-use std::{collections::BTreeMap, ops::Range};
-use std::ops::{RangeInclusive, RangeToInclusive};
 use anyhow::anyhow;
+use async_trait::async_trait;
 use log::trace;
+use solana_lite_rpc_core::{
+    commitment_utils::Commitment, structures::produced_block::ProducedBlock,
+    traits::block_storage_interface::BlockStorageInterface,
+};
+use solana_sdk::slot_history::Slot;
+use std::collections::BTreeMap;
+use std::ops::RangeInclusive;
 use tokio::sync::RwLock;
 
 pub struct InmemoryBlockStore {

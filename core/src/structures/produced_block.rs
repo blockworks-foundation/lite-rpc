@@ -1,10 +1,10 @@
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
     compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
     transaction::TransactionError,
 };
-use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::{
     option_serializer::OptionSerializer, Reward, RewardType, UiConfirmedBlock,
     UiTransactionStatusMeta,

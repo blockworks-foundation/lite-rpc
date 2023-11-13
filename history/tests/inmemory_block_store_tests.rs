@@ -46,11 +46,7 @@ async fn inmemory_block_store_tests() {
         .unwrap();
 
     // can get 11th block
-    assert!(store
-        .get(11)
-        .await
-        .ok()
-        .is_some());
+    assert!(store.get(11).await.ok().is_some());
     // first block is removed
     assert!(store.get(1).await.ok().is_none());
 

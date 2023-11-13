@@ -1,9 +1,9 @@
+use crate::postgres::postgres_epoch::PostgresEpoch;
 use log::{debug, warn};
+use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
 use tokio_postgres::types::ToSql;
-use solana_lite_rpc_core::structures::epoch::{EpochRef};
-use crate::postgres::postgres_epoch::PostgresEpoch;
 
 use super::postgres_session::PostgresSession;
 
@@ -80,8 +80,7 @@ impl PostgresTransaction {
         transactions: &[Self],
     ) -> anyhow::Result<()> {
         let tx_count = transactions.len();
-        let mut args: Vec<&(dyn ToSql + Sync)> =
-            Vec::with_capacity(NB_ARUMENTS * tx_count);
+        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARUMENTS * tx_count);
 
         for tx in transactions.iter() {
             let PostgresTransaction {
@@ -125,7 +124,10 @@ impl PostgresTransaction {
                 transactions.len() - inserted, transactions.len(), schema = schema);
         }
 
-        debug!("Inserted {} transactions chunk into epoch schema {} for block {}", inserted, schema, slot);
+        debug!(
+            "Inserted {} transactions chunk into epoch schema {} for block {}",
+            inserted, schema, slot
+        );
 
         Ok(())
     }

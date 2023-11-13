@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -6,7 +5,9 @@ use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
-use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket, Error, Row, SimpleQueryMessage};
+use tokio_postgres::{
+    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, Error, NoTls, Row, Socket,
+};
 
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 
@@ -144,39 +145,33 @@ impl PostgresSession {
 
     pub async fn execute(
         &self,
-        statement: &String,
+        statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
         self.client.execute(statement, params).await
     }
 
-    pub async fn execute_simple(
-        &self,
-        statement: &String,
-    ) -> Result<(), Error> {
+    pub async fn execute_simple(&self, statement: &str) -> Result<(), Error> {
         self.client.batch_execute(statement).await
     }
 
     pub async fn execute_prepared_batch(
         &self,
-        statement: &String,
+        statement: &str,
         params: &Vec<Vec<&(dyn ToSql + Sync)>>,
     ) -> Result<u64, Error> {
         let prepared_stmt = self.client.prepare(statement).await?;
         let mut total_inserted = 0;
         for row in params {
             let result = self.client.execute(&prepared_stmt, row).await;
-            if let Err(err) = result {
-                return Err(err);
-            }
-            total_inserted += result.unwrap();
+            total_inserted += result?;
         }
-        return Ok(total_inserted);
+        Ok(total_inserted)
     }
 
     pub async fn execute_prepared(
         &self,
-        statement: &String,
+        statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
         let prepared_stmt = self.client.prepare(statement).await?;
@@ -185,7 +180,7 @@ impl PostgresSession {
 
     pub async fn execute_and_return(
         &self,
-        statement: &String,
+        statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<Row>, Error> {
         self.client.query_opt(statement, params).await
@@ -193,7 +188,7 @@ impl PostgresSession {
 
     pub async fn query_opt(
         &self,
-        statement: &String,
+        statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<Row>, Error> {
         self.client.query_opt(statement, params).await
@@ -201,13 +196,11 @@ impl PostgresSession {
 
     pub async fn query_list(
         &self,
-        statement: &String,
+        statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<Row>, Error> {
         self.client.query(statement, params).await
     }
-
-
 }
 
 #[derive(Clone)]
@@ -263,8 +256,6 @@ fn value_vecvec_test_types() {
     let values = PostgresSession::values_vecvec(3, 2, &["text", "int", "int"]);
     assert_eq!(values, "(($1)::text,($2)::int,($3)::int),($4,$5,$6)");
 }
-
-
 
 #[test]
 fn value_vec_test_types() {

@@ -3,32 +3,23 @@
 // Finalized blocks in long term storage of your choice
 // Fetches legacy blocks from faithful
 
+use crate::block_stores::faithful_block_store::FaithfulBlockStore;
 use crate::block_stores::inmemory_block_store::InmemoryBlockStore;
 use anyhow::{bail, Result};
 use async_trait::async_trait;
+use log::{debug, trace, warn};
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::produced_block::ProducedBlock,
     traits::block_storage_interface::{BlockStorageImpl, BlockStorageInterface},
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
-use std::{
-    ops::Range,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
+use solana_sdk::slot_history::Slot;
+use std::ops::RangeInclusive;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
 };
-use std::cmp::min;
-use std::future::Future;
-use std::ops::{RangeFrom, RangeInclusive, RangeTo};
-use itertools::Itertools;
-use log::{debug, trace, warn};
-use rangetools::{Rangetools, RangeUnion};
-use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
-use crate::block_stores::faithful_block_store::FaithfulBlockStore;
 
 pub struct MultipleStrategyBlockStorage {
     inmemory_for_storage: InmemoryBlockStore, // for confirmed blocks
@@ -55,25 +46,30 @@ impl MultipleStrategyBlockStorage {
     }
 
     pub async fn get_in_memory_block(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
-        self.inmemory_for_storage
-            .get(slot)
-            .await
+        self.inmemory_for_storage.get(slot).await
     }
 }
 
 #[async_trait]
 impl BlockStorageInterface for MultipleStrategyBlockStorage {
     async fn save(&self, block: &ProducedBlock) -> Result<()> {
-        trace!("Saving block {} using multiple-strategy facade...", block.slot);
+        trace!(
+            "Saving block {} using multiple-strategy facade...",
+            block.slot
+        );
         let slot = block.slot;
         let commitment = Commitment::from(block.commitment_config);
 
         if let Ok(prev_block) = self.inmemory_for_storage.get(slot).await {
-            if Commitment::from(prev_block.commitment_config) > Commitment::from(block.commitment_config.commitment) {
+            if Commitment::from(prev_block.commitment_config)
+                > Commitment::from(block.commitment_config.commitment)
+            {
                 // note: this is most likely not what we want - need to discuss an heuristic how to fix that
                 // remove this check if it never happens in production
-                warn!("The new block will revert the commitment level of {} back to {}",
-                    slot, block.commitment_config.commitment);
+                warn!(
+                    "The new block will revert the commitment level of {} back to {}",
+                    slot, block.commitment_config.commitment
+                );
             }
         }
         match commitment {
@@ -100,21 +96,22 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
         };
 
         if commitment >= Commitment::Confirmed
-            && slot > self.last_confirmed_slot.load(Ordering::Relaxed) {
+            && slot > self.last_confirmed_slot.load(Ordering::Relaxed)
+        {
             self.last_confirmed_slot.store(slot, Ordering::Relaxed);
         }
 
         Ok(())
     }
 
-    async fn get(
-        &self,
-        slot: solana_sdk::slot_history::Slot,
-    ) -> Result<ProducedBlock> {
+    async fn get(&self, slot: solana_sdk::slot_history::Slot) -> Result<ProducedBlock> {
         let last_confirmed_slot = self.last_confirmed_slot.load(Ordering::Relaxed);
 
         if slot > last_confirmed_slot {
-            bail!(format!("Block {} not found (last_confirmed_slot={})", slot, last_confirmed_slot));
+            bail!(format!(
+                "Block {} not found (last_confirmed_slot={})",
+                slot, last_confirmed_slot
+            ));
         }
 
         let range = self.inmemory_for_storage.get_slot_range().await;
@@ -136,18 +133,27 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
         let persistent_block_range = self.persistent_block_storage.get_slot_range().await;
         match persistent_block_range.contains(&slot) {
             true => {
-                debug!("Lookup for block {} successful in persistent block-storage", slot);
+                debug!(
+                    "Lookup for block {} successful in persistent block-storage",
+                    slot
+                );
                 return self.persistent_block_storage.get(slot).await;
             }
             false => {
-                debug!("Block {} not found in persistent block-storage - continue", slot);
+                debug!(
+                    "Block {} not found in persistent block-storage - continue",
+                    slot
+                );
             }
         }
 
         if let Some(faithful_block_storage) = &self.faithful_block_storage {
             match faithful_block_storage.get_block(slot).await {
                 Ok(block) => {
-                    debug!("Lookup for block {} successful in faithful block-storage", slot);
+                    debug!(
+                        "Lookup for block {} successful in faithful block-storage",
+                        slot
+                    );
                     return Ok(block);
                 }
                 Err(_) => {

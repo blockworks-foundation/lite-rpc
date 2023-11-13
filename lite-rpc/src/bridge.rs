@@ -21,8 +21,8 @@ use solana_lite_rpc_history::history::History;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
-        RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
-        RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
+        RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper, RpcContextConfig,
+        RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
         RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
         RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsConfig,
         RpcTransactionLogsFilter,
@@ -124,11 +124,7 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-    async fn get_block(
-        &self,
-        slot: u64,
-        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-    ) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
+    async fn get_block(&self, slot: u64) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
         let block = self.history.block_storage.get(slot).await;
         if block.is_ok() {
             // TO DO Convert to UIConfirmed Block
