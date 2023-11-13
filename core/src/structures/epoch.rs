@@ -19,7 +19,7 @@ pub struct Epoch {
 pub struct EpochRef(u64);
 
 impl Epoch {
-    pub fn into_epoch_info(&self, block_height: u64, transaction_count: Option<u64>) -> EpochInfo {
+    pub fn as_epoch_info(&self, block_height: u64, transaction_count: Option<u64>) -> EpochInfo {
         EpochInfo {
             epoch: self.epoch,
             slot_index: self.slot_index,

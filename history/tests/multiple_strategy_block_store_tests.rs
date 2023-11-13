@@ -6,7 +6,6 @@ use solana_lite_rpc_history::{
     block_stores::inmemory_block_store::InmemoryBlockStore,
     block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage,
 };
-use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use std::sync::Arc;
 

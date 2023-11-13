@@ -258,7 +258,7 @@ impl LiteRpcServer for LiteBridge {
             .data_cache
             .get_current_epoch(commitment_config)
             .await
-            .into_epoch_info(block_info.block_height, None);
+            .as_epoch_info(block_info.block_height, None);
         Ok(epoch_info)
     }
 

@@ -3,7 +3,6 @@ use solana_lite_rpc_core::{
     traits::block_storage_interface::BlockStorageInterface,
 };
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
-use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use std::sync::Arc;
 
