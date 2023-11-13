@@ -1,5 +1,5 @@
+use std::time::Instant;
 use log::{debug, warn};
-use tokio_postgres::Row;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use tokio_postgres::types::ToSql;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
@@ -67,6 +67,8 @@ impl PostgresBlock {
         postgres_session: &PostgresSession,
         epoch: EpochRef,
     ) -> anyhow::Result<()> {
+
+        let started = Instant::now();
         let schema = PostgresEpoch::build_schema_name(epoch);
         let values = PostgresSession::values_vecvec(NB_ARUMENTS, 1, &[]);
 
@@ -104,7 +106,8 @@ impl PostgresBlock {
                 // check if monotonic
                 let prev_max_slot = row.get::<&str, Option<i64>>("prev_max_slot");
                 // None -> no previous rows
-                debug!("Inserted block {} with prev highest slot being {}", self.slot, prev_max_slot.unwrap_or(-1));
+                debug!("Inserted block {} with prev highest slot being {}, parent={}",
+                    self.slot, prev_max_slot.unwrap_or(-1), self.parent_slot);
                 if let Some(prev_max_slot) = prev_max_slot {
                     if prev_max_slot > self.slot {
                         // note: unclear if this is desired behavior!
@@ -120,6 +123,8 @@ impl PostgresBlock {
                 warn!("Block {} already exists - not updated", self.slot);
             }
         }
+
+        debug!("Inserting block row to postgres took {:.2}ms", started.elapsed().as_secs_f64() * 1000.0);
 
         Ok(())
     }

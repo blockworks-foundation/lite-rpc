@@ -73,17 +73,17 @@ impl PostgresTransaction {
         )
     }
 
-    pub async fn save_transactions(
+    pub async fn save_transaction_batch(
         postgres_session: &PostgresSession,
         epoch: EpochRef,
+        slot: Slot,
         transactions: &[Self],
     ) -> anyhow::Result<()> {
         let tx_count = transactions.len();
+        let mut args: Vec<&(dyn ToSql + Sync)> =
+            Vec::with_capacity(NB_ARUMENTS * tx_count);
 
-        let mut rows = Vec::with_capacity(tx_count);
         for tx in transactions.iter() {
-            let mut args: Vec<&(dyn ToSql + Sync)> =
-                Vec::with_capacity(NB_ARUMENTS);
             let PostgresTransaction {
                 signature,
                 slot,
@@ -103,11 +103,9 @@ impl PostgresTransaction {
             args.push(cu_consumed);
             args.push(recent_blockhash);
             args.push(message);
-
-            rows.push(args);
         }
 
-        let values = PostgresSession::values_vec(NB_ARUMENTS, &[]);
+        let values = PostgresSession::values_vecvec(NB_ARUMENTS, tx_count, &[]);
         let schema = PostgresEpoch::build_schema_name(epoch);
         let statement = format!(
             r#"
@@ -120,14 +118,14 @@ impl PostgresTransaction {
             schema = schema,
         );
 
-        let inserted = postgres_session.execute_prepared_batch(&statement, &rows).await? as usize;
+        let inserted = postgres_session.execute_prepared(&statement, &args).await? as usize;
 
         if inserted < tx_count {
             warn!("Some ({}) transactions already existed and where not updated of {} total in schema {schema}",
                 transactions.len() - inserted, transactions.len(), schema = schema);
         }
 
-        debug!("Inserted {} transactions in epoch schema {}", inserted, schema);
+        debug!("Inserted {} transactions chunk into epoch schema {} for block {}", inserted, schema, slot);
 
         Ok(())
     }

@@ -57,7 +57,7 @@ impl InmemoryBlockStore {
 #[async_trait]
 impl BlockStorageInterface for InmemoryBlockStore {
     async fn save(&self, block: &ProducedBlock) -> anyhow::Result<()> {
-        trace!("Saving block {} to memory storage", block.slot);
+        trace!("Saving block {} to memory storage...", block.slot);
         self.store(block).await;
         Ok(())
     }
