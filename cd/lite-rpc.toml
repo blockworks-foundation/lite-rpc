@@ -7,7 +7,6 @@ kill_timeout = 5
 
 [experimental]
   cmd = ["sh", "-c", "lite-rpc --rpc-addr $RPC_URL --ws-addr $WS_URL"]
-#  cmd = ["sh", "-c", "lite-rpc --rpc-addr $RPC_URL --ws-addr $WS_URL --quic-proxy-addr $QUIC_PROXY_ADDR"]
 
 [env]
   PORT_HTTP = "8890"
