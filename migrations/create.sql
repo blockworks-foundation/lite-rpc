@@ -3,7 +3,7 @@ CREATE SCHEMA lite_rpc;
 
 CREATE TABLE lite_rpc.Txs (
   id SERIAL NOT NULL PRIMARY KEY,
-  signature TEXT NOT NULL,
+  signature VARCHAR(88) NOT NULL,
   recent_slot BIGINT NOT NULL,
   forwarded_slot BIGINT NOT NULL,
   forwarded_local_time TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -25,5 +25,5 @@ CREATE TABLE lite_rpc.Blocks (
 
 CREATE TABLE lite_rpc.AccountAddrs (
   id SERIAL PRIMARY KEY,
-  addr TEXT NOT NULL
+  addr VARCHAR(45) NOT NULL
 );

@@ -42,7 +42,7 @@ impl PostgresTransaction {
         format!(
             r#"
                 CREATE TABLE IF NOT EXISTS {schema}.transactions (
-                    signature TEXT NOT NULL,
+                    signature VARCHAR(88) NOT NULL,
                     slot BIGINT NOT NULL,
                     err TEXT,
                     cu_requested BIGINT,
