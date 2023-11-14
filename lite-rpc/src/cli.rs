@@ -37,4 +37,6 @@ pub struct Args {
     /// grpc address
     #[arg(long, default_value_t = String::from(DEFAULT_GRPC_ADDR))]
     pub grpc_addr: String,
+    #[arg(long)]
+    pub grpc_x_token: Option<String>,
 }

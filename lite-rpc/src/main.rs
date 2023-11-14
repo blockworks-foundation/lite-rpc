@@ -46,6 +46,7 @@ use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
 use crate::rpc_tester::RpcTester;
 
@@ -95,6 +96,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         quic_proxy_addr,
         use_grpc,
         grpc_addr,
+        grpc_x_token,
         ..
     } = args;
 
@@ -109,7 +111,12 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
-        create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?
+        create_grpc_subscription(
+            rpc_client.clone(),
+            grpc_addr,
+            grpc_x_token,
+            GRPC_VERSION.to_string(),
+        )?
     } else {
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
