@@ -169,6 +169,9 @@ impl PostgresSession {
         Ok(total_inserted)
     }
 
+    // TODO provide an optimized version using "COPY IN" instead of "INSERT INTO" (https://trello.com/c/69MlQU6u)
+    // pub async fn execute_copyin(...)
+
     pub async fn execute_prepared(
         &self,
         statement: &str,
