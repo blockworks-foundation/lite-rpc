@@ -11,6 +11,7 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
 
+use crate::rpc_tester::RpcTester;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
@@ -46,9 +47,6 @@ use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::time::sleep;
-
-use crate::rpc_tester::RpcTester;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,

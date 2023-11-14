@@ -283,6 +283,7 @@ pub fn create_block_processing_task(
                 Default::default(),
                 Some(commitment_level),
                 Default::default(),
+                None,
             )
             .await?;
 
@@ -324,61 +325,69 @@ pub fn create_grpc_subscription(
     let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
 
     let mut slots = HashMap::new();
-    slots.insert("client".to_string(), SubscribeRequestFilterSlots {});
+    slots.insert(
+        "client".to_string(),
+        SubscribeRequestFilterSlots {
+            filter_by_commitment: Some(true),
+        },
+    );
 
-    let grpc_addr_cp: String = grpc_addr.clone();
-    let x_token_cp = grpc_x_token.clone();
-    let slot_task: AnyhowJoinHandle = tokio::spawn(async move {
-        // connect to grpc
-        let mut client = GeyserGrpcClient::connect(grpc_addr_cp, x_token_cp, None)?;
+    let slot_task: AnyhowJoinHandle = {
+        let grpc_x_token = grpc_x_token.clone();
+        let grpc_addr = grpc_addr.clone();
+        tokio::spawn(async move {
+            // connect to grpc
+            let mut client = GeyserGrpcClient::connect(grpc_addr, grpc_x_token.clone(), None)?;
 
-        let version = client.get_version().await?.version;
-        if version != expected_grpc_version {
-            log::warn!(
-                "Expected grpc version {:?}, got {:?}, continue",
-                expected_grpc_version,
-                version
-            );
-        }
-        let mut stream = client
-            .subscribe_once(
-                slots,
-                Default::default(),
-                HashMap::new(),
-                Default::default(),
-                HashMap::new(),
-                Default::default(),
-                Some(CommitmentLevel::Processed),
-                Default::default(),
-            )
-            .await?;
+            let version = client.get_version().await?.version;
+            if version != expected_grpc_version {
+                log::warn!(
+                    "Expected grpc version {:?}, got {:?}, continue",
+                    expected_grpc_version,
+                    version
+                );
+            }
+            let mut stream = client
+                .subscribe_once(
+                    slots,
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    Some(CommitmentLevel::Processed),
+                    Default::default(),
+                    None,
+                )
+                .await?;
 
-        while let Some(message) = stream.next().await {
-            let message = message?;
+            while let Some(message) = stream.next().await {
+                let message = message?;
 
-            let Some(update) = message.update_oneof else {
+                let Some(update) = message.update_oneof else {
                 continue;
             };
 
-            match update {
-                UpdateOneof::Slot(slot) => {
-                    slot_sx
-                        .send(SlotNotification {
-                            estimated_processed_slot: slot.slot,
-                            processed_slot: slot.slot,
-                        })
-                        .context("Error sending slot notification")?;
-                }
-                UpdateOneof::Ping(_) => {
-                    log::trace!("GRPC Ping");
-                }
-                k => {
-                    bail!("Unexpected update: {k:?}");
-                }
-            };
-        }
-        bail!("geyser slot stream ended");
-    });
+                match update {
+                    UpdateOneof::Slot(slot) => {
+                        slot_sx
+                            .send(SlotNotification {
+                                estimated_processed_slot: slot.slot,
+                                processed_slot: slot.slot,
+                            })
+                            .context("Error sending slot notification")?;
+                    }
+                    UpdateOneof::Ping(_) => {
+                        log::trace!("GRPC Ping");
+                    }
+                    k => {
+                        bail!("Unexpected update: {k:?}");
+                    }
+                };
+            }
+            bail!("geyser slot stream ended");
+        })
+    };
 
     let block_confirmed_task: AnyhowJoinHandle = create_block_processing_task(
         grpc_addr.clone(),
