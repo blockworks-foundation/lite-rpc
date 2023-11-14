@@ -179,7 +179,8 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
             let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
             //         x------
             // |------x
-            if lower - persistent_storage_range.end() <= 1 {
+            let gap = lower - persistent_storage_range.end() - 1 ;
+            if !gap > 0 {
                 // move the lower bound to the left
                 lower = lower.min(*persistent_storage_range.start());
             }
