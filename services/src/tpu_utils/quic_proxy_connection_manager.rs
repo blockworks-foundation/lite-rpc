@@ -155,6 +155,7 @@ impl QuicProxyConnectionManager {
         connection_parameters: QuicConnectionParameters,
     ) {
         let auto_connection = AutoReconnect::new(endpoint, proxy_addr);
+
         loop {
             // exit signal set
             if exit_signal.load(Relaxed) {
@@ -164,6 +165,7 @@ impl QuicProxyConnectionManager {
 
             tokio::select! {
                 tx = transaction_receiver.recv() => {
+
                     let first_tx: TxData = match tx {
                         Ok(SentTransactionInfo{
                             signature,
