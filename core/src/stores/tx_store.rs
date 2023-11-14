@@ -1,35 +1,40 @@
-use std::sync::Arc;
-
 use dashmap::DashMap;
 use solana_transaction_status::TransactionStatus;
+use std::sync::Arc;
+
 /// Transaction Properties
 
 #[derive(Debug, Clone)]
 pub struct TxProps {
     pub status: Option<TransactionStatus>,
     pub last_valid_blockheight: u64,
+    pub sent_by_lite_rpc: bool,
 }
 
-impl TxProps {
-    pub fn new(last_valid_blockheight: u64) -> Self {
-        Self {
-            status: Default::default(),
-            last_valid_blockheight,
-        }
-    }
-}
-
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct TxStore {
     pub store: Arc<DashMap<String, TxProps>>,
 }
 
 impl TxStore {
-    pub fn update_status(&self, signature: &str, status: TransactionStatus) -> bool {
+    pub fn update_status(
+        &self,
+        signature: &String,
+        transaction_status: TransactionStatus,
+        last_valid_blockheight: u64,
+    ) -> bool {
         if let Some(mut meta) = self.store.get_mut(signature) {
-            meta.status = Some(status);
-            true
+            meta.status = Some(transaction_status);
+            meta.value().sent_by_lite_rpc
         } else {
+            self.store.insert(
+                signature.clone(),
+                TxProps {
+                    status: Some(transaction_status),
+                    last_valid_blockheight,
+                    sent_by_lite_rpc: false,
+                },
+            );
             false
         }
     }
@@ -54,21 +59,17 @@ impl TxStore {
         self.store.get(signature).map(|x| x.value().clone())
     }
 
-    pub fn clean(&self, current_finalized_blochash: u64) {
+    pub fn clean(&self, current_finalized_blockheight: u64) {
         let length_before = self.store.len();
-        self.store.retain(|_k, v| {
-            let retain = v.last_valid_blockheight >= current_finalized_blochash;
-            if !retain && v.status.is_none() {
-                // TODO: TX_TIMED_OUT.inc();
-            }
-            retain
-        });
+        self.store
+            .retain(|_k, v| v.last_valid_blockheight >= current_finalized_blockheight);
         log::info!("Cleaned {} transactions", length_before - self.store.len());
     }
-}
 
-pub fn empty_tx_store() -> TxStore {
-    TxStore {
-        store: Arc::new(DashMap::new()),
+    pub fn is_transaction_confirmed(&self, signature: &String) -> bool {
+        match self.store.get(signature) {
+            Some(props) => props.status.is_some(),
+            None => false,
+        }
     }
 }

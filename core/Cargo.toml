@@ -3,7 +3,7 @@ name = "solana-lite-rpc-core"
 version = "0.2.3"
 edition = "2021"
 description = "Core classes and methods used by solana lite rpc"
-rust-version = "1.67.1"
+rust-version = "1.70.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
@@ -15,7 +15,9 @@ solana-version = { workspace = true }
 solana-client = { workspace = true }
 solana-net-utils = { workspace = true }
 solana-pubsub-client = { workspace = true }
+solana-rpc-client = { workspace = true }
 solana-streamer = { workspace = true }
+solana-account-decoder = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = "1.*"

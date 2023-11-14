@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
 
 use anyhow::bail;
+use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
 use std::time::Duration;
 
 use itertools::Itertools;
@@ -15,10 +16,10 @@ use solana_sdk::pubkey::Pubkey;
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::{broadcast::Receiver, RwLock};
 
-use solana_lite_rpc_core::proxy_request_format::{TpuForwardingRequest, TxData};
 use solana_lite_rpc_core::quic_connection_utils::{
-    QuicConnectionParameters, SkipServerVerification,
+    apply_gso_workaround, QuicConnectionParameters, SkipServerVerification,
 };
+use solana_lite_rpc_core::structures::proxy_request_format::{TpuForwardingRequest, TxData};
 
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;
 
@@ -62,7 +63,7 @@ impl QuicProxyConnectionManager {
 
     pub async fn update_connection(
         &self,
-        broadcast_receiver: Receiver<(String, Vec<u8>)>,
+        broadcast_receiver: Receiver<SentTransactionInfo>,
         // for duration of this slot these tpu nodes will receive the transactions
         connections_to_keep: HashMap<Pubkey, SocketAddr>,
         connection_parameters: QuicConnectionParameters,
@@ -136,7 +137,7 @@ impl QuicProxyConnectionManager {
         let timeout = Duration::from_secs(10).try_into().unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
-        transport_config.enable_segmentation_offload(false);
+        apply_gso_workaround(&mut transport_config);
 
         config.transport_config(Arc::new(transport_config));
         endpoint.set_default_client_config(config);
@@ -146,7 +147,7 @@ impl QuicProxyConnectionManager {
 
     // send transactions to quic proxy
     async fn read_transactions_and_broadcast(
-        mut transaction_receiver: Receiver<(String, Vec<u8>)>,
+        mut transaction_receiver: Receiver<SentTransactionInfo>,
         current_tpu_nodes: Arc<RwLock<Vec<TpuNode>>>,
         proxy_addr: SocketAddr,
         endpoint: Endpoint,
@@ -164,8 +165,12 @@ impl QuicProxyConnectionManager {
             tokio::select! {
                 tx = transaction_receiver.recv() => {
                     let first_tx: TxData = match tx {
-                        Ok((sig, tx_raw)) => {
-                            TxData::new(sig, tx_raw)
+                        Ok(SentTransactionInfo{
+                            signature,
+                            transaction,
+                            ..
+                        }) => {
+                            TxData::new(signature, transaction)
                         },
                         Err(e) => {
                             warn!("Broadcast channel error (close) on recv: {} - aborting", e);
@@ -176,8 +181,12 @@ impl QuicProxyConnectionManager {
                     let mut txs: Vec<TxData> = vec![first_tx];
                     for _ in 1..connection_parameters.number_of_transactions_per_unistream {
                         match transaction_receiver.try_recv() {
-                            Ok((sig, tx_raw)) => {
-                                txs.push(TxData::new(sig, tx_raw));
+                            Ok(SentTransactionInfo{
+                                signature,
+                                transaction,
+                                ..
+                            }) => {
+                                txs.push(TxData::new(signature, transaction));
                             },
                             Err(TryRecvError::Empty) => {
                                 break;

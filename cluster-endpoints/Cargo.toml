@@ -3,7 +3,7 @@ name = "solana-lite-rpc-cluster-endpoints"
 version = "0.2.3"
 edition = "2021"
 description = "Core classes and methods used by solana lite rpc"
-rust-version = "1.67.1"
+rust-version = "1.70.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
@@ -38,3 +38,5 @@ solana-lite-rpc-core = { workspace = true }
 yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 itertools = {workspace = true}
+prometheus = { workspace = true }
+lazy_static = { workspace = true }

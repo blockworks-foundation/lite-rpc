@@ -1,5 +1,5 @@
-use crate::encoding::BinaryEncoding;
 use serde::{Deserialize, Serialize};
+use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_sdk::commitment_config::CommitmentLevel;
 
 #[derive(Debug, Default, Serialize, Deserialize)]

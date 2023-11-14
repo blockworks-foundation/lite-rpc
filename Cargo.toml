@@ -6,6 +6,7 @@ members = [
     "quic-forward-proxy",
     "quic-forward-proxy-integration-test",
     "cluster-endpoints",
+    "history",
     "bench"
 ]
 
@@ -26,6 +27,7 @@ solana-client = "~1.16.3"
 solana-net-utils = "~1.16.3"
 solana-pubsub-client = "~1.16.3"
 solana-streamer = "~1.16.3"
+solana-account-decoder = "~1.16.3"
 itertools = "0.10.5"
 serde = { version = "1.0.160", features = ["derive"] }
 serde_json = "1.0.96"
@@ -50,12 +52,13 @@ prometheus = "0.13.3"
 lazy_static = "1.4.0"
 dotenv = "0.15.0"
 async-channel = "1.8.0"
-quinn = { git = "https://github.com/grooviegermanikus/quinn.git", branch = "0.9.4-manually-disable-gso", version = "0.9.4" }
-rustls = { version = "=0.20.8", default-features = false }
+quinn = "0.9.4"
+rustls = { version = "0.20.9", default-features = false }
 solana-lite-rpc-services = {path = "services", version="0.2.3"}
 solana-lite-rpc-core = {path = "core", version="0.2.3"}
 solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.3"}
+solana-lite-rpc-history = {path = "history", version="0.2.3"}
 
 async-trait = "0.1.68"
-yellowstone-grpc-client = "1.9.0"
-yellowstone-grpc-proto = "1.9.0"
+yellowstone-grpc-client = "1.11.0"
+yellowstone-grpc-proto = "1.11.0"

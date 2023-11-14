@@ -12,7 +12,7 @@ pub async fn poll_commitment_slots(
     commitment_config: CommitmentConfig,
     slot_tx: tokio::sync::mpsc::UnboundedSender<Slot>,
 ) -> anyhow::Result<()> {
-    let mut poll_frequency = tokio::time::interval(Duration::from_millis(10));
+    let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));
     let mut last_slot = 0;
     let mut errors = 0;
     loop {
@@ -84,13 +84,14 @@ pub fn poll_slots(
                     // this is because it may be a slot block
                     if estimated_slot < current_slot + 32 {
                         estimated_slot += 1;
+
+                        sender
+                            .send(SlotNotification {
+                                processed_slot: current_slot,
+                                estimated_processed_slot: estimated_slot,
+                            })
+                            .context("Connot send slot notification")?;
                     }
-                    sender
-                        .send(SlotNotification {
-                            processed_slot: current_slot,
-                            estimated_processed_slot: estimated_slot,
-                        })
-                        .context("Connot send slot notification")?;
                 }
             }
         }

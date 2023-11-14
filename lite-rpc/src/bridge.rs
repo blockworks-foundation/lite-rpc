@@ -3,6 +3,7 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
+use solana_sdk::epoch_info::EpochInfo;
 
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
@@ -13,17 +14,27 @@ use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscrip
 use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
-    block_information_store::BlockInformation, data_cache::DataCache, AnyhowJoinHandle,
+    stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
+    AnyhowJoinHandle,
 };
+use solana_lite_rpc_history::history::History;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
-    config::{RpcContextConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig},
-    response::{Response as RpcResponse, RpcBlockhash, RpcResponseContext, RpcVersionInfo},
+    config::{
+        RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
+        RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
+        RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
+        RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsConfig,
+        RpcTransactionLogsFilter,
+    },
+    response::{
+        Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
+        RpcContactInfo, RpcLeaderSchedule, RpcPerfSample, RpcPrioritizationFee, RpcResponseContext,
+        RpcVersionInfo, RpcVoteAccountStatus,
+    },
 };
-use solana_sdk::{
-    commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey, slot_history::Slot,
-};
-use solana_transaction_status::TransactionStatus;
+use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
+use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
 
@@ -50,6 +61,7 @@ pub struct LiteBridge {
     // should be removed
     rpc_client: Arc<RpcClient>,
     transaction_service: TransactionService,
+    history: History,
 }
 
 impl LiteBridge {
@@ -57,11 +69,13 @@ impl LiteBridge {
         rpc_client: Arc<RpcClient>,
         data_cache: DataCache,
         transaction_service: TransactionService,
+        history: History,
     ) -> Self {
         Self {
             rpc_client,
             data_cache,
             transaction_service,
+            history,
         }
     }
 
@@ -110,6 +124,204 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
+    async fn get_block(
+        &self,
+        slot: u64,
+        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+    ) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
+        let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
+        let block = self.history.block_storage.get(slot, config).await;
+        if block.is_ok() {
+            // TO DO Convert to UIConfirmed Block
+            Err(jsonrpsee::core::Error::HttpNotImplemented)
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn get_blocks(
+        &self,
+        _start_slot: Slot,
+        _config: Option<RpcBlocksConfigWrapper>,
+        _commitment: Option<CommitmentConfig>,
+    ) -> crate::rpc::Result<Vec<Slot>> {
+        todo!()
+    }
+
+    async fn get_signatures_for_address(
+        &self,
+        _address: String,
+        _config: Option<RpcSignaturesForAddressConfig>,
+    ) -> crate::rpc::Result<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+        todo!()
+    }
+
+    async fn get_cluster_nodes(&self) -> crate::rpc::Result<Vec<RpcContactInfo>> {
+        todo!()
+    }
+
+    async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
+
+        let BlockInformation { slot, .. } = self
+            .data_cache
+            .block_information_store
+            .get_latest_block(commitment_config)
+            .await;
+        Ok(slot)
+    }
+
+    async fn get_block_height(&self, _config: Option<RpcContextConfig>) -> crate::rpc::Result<u64> {
+        todo!()
+    }
+
+    async fn get_block_time(&self, _block: u64) -> crate::rpc::Result<u64> {
+        todo!()
+    }
+
+    async fn get_first_available_block(&self) -> crate::rpc::Result<u64> {
+        todo!()
+    }
+
+    async fn get_latest_blockhash(
+        &self,
+        config: Option<RpcContextConfig>,
+    ) -> crate::rpc::Result<RpcResponse<RpcBlockhash>> {
+        RPC_GET_LATEST_BLOCKHASH.inc();
+
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
+
+        let BlockInformation {
+            slot,
+            block_height,
+            blockhash,
+            ..
+        } = self
+            .data_cache
+            .block_information_store
+            .get_latest_block(commitment_config)
+            .await;
+
+        info!("glb {blockhash} {slot} {block_height}");
+
+        Ok(RpcResponse {
+            context: RpcResponseContext {
+                slot,
+                api_version: None,
+            },
+            value: RpcBlockhash {
+                blockhash,
+                last_valid_block_height: block_height + 150,
+            },
+        })
+    }
+
+    async fn is_blockhash_valid(
+        &self,
+        blockhash: String,
+        config: Option<IsBlockHashValidConfig>,
+    ) -> crate::rpc::Result<RpcResponse<bool>> {
+        RPC_IS_BLOCKHASH_VALID.inc();
+
+        let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
+        let commitment = CommitmentConfig { commitment };
+
+        let (is_valid, slot) = self
+            .data_cache
+            .block_information_store
+            .is_blockhash_valid(&blockhash, commitment)
+            .await;
+
+        Ok(RpcResponse {
+            context: RpcResponseContext {
+                slot,
+                api_version: None,
+            },
+            value: is_valid,
+        })
+    }
+
+    async fn get_epoch_info(
+        &self,
+        config: Option<RpcContextConfig>,
+    ) -> crate::rpc::Result<EpochInfo> {
+        let commitment_config = config
+            .map(|config| config.commitment.unwrap_or_default())
+            .unwrap_or_default();
+        let block_info = self
+            .data_cache
+            .block_information_store
+            .get_latest_block_info(commitment_config)
+            .await;
+
+        //TODO manage transaction_count of epoch info. Currently None.
+        let epoch_info = self
+            .data_cache
+            .get_current_epoch(commitment_config)
+            .await
+            .into_epoch_info(block_info.block_height, None);
+        Ok(epoch_info)
+    }
+
+    async fn get_leader_schedule(
+        &self,
+        _slot: Option<Slot>,
+        _config: Option<RpcEncodingConfigWrapper<RpcEpochConfig>>,
+    ) -> crate::rpc::Result<Option<RpcLeaderSchedule>> {
+        todo!()
+    }
+
+    async fn get_vote_accounts(
+        &self,
+        _config: Option<RpcGetVoteAccountsConfig>,
+    ) -> crate::rpc::Result<RpcVoteAccountStatus> {
+        todo!()
+    }
+
+    async fn get_recent_performance_samples(
+        &self,
+        _limit: Option<usize>,
+    ) -> crate::rpc::Result<Vec<RpcPerfSample>> {
+        todo!()
+    }
+
+    async fn get_signature_statuses(
+        &self,
+        sigs: Vec<String>,
+        _config: Option<RpcSignatureStatusConfig>,
+    ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
+        RPC_GET_SIGNATURE_STATUSES.inc();
+
+        let sig_statuses = sigs
+            .iter()
+            .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status))
+            .collect();
+
+        Ok(RpcResponse {
+            context: RpcResponseContext {
+                slot: self
+                    .data_cache
+                    .block_information_store
+                    .get_latest_block_info(CommitmentConfig::finalized())
+                    .await
+                    .slot,
+                api_version: None,
+            },
+            value: sig_statuses,
+        })
+    }
+
+    async fn get_recent_prioritization_fees(
+        &self,
+        _pubkey_strs: Option<Vec<String>>,
+    ) -> crate::rpc::Result<Vec<RpcPrioritizationFee>> {
+        todo!()
+    }
+
     async fn send_transaction(
         &self,
         tx: String,
@@ -141,112 +353,6 @@ impl LiteRpcServer for LiteBridge {
             }
             Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
         }
-    }
-
-    async fn get_latest_blockhash(
-        &self,
-        config: Option<RpcContextConfig>,
-    ) -> crate::rpc::Result<RpcResponse<RpcBlockhash>> {
-        RPC_GET_LATEST_BLOCKHASH.inc();
-
-        let commitment_config = config
-            .map(|config| config.commitment.unwrap_or_default())
-            .unwrap_or_default();
-
-        let BlockInformation {
-            slot,
-            block_height,
-            blockhash,
-            ..
-        } = self
-            .data_cache
-            .block_store
-            .get_latest_block(commitment_config)
-            .await;
-
-        info!("glb {blockhash} {slot} {block_height}");
-
-        Ok(RpcResponse {
-            context: RpcResponseContext {
-                slot,
-                api_version: None,
-            },
-            value: RpcBlockhash {
-                blockhash,
-                last_valid_block_height: block_height + 150,
-            },
-        })
-    }
-
-    async fn is_blockhash_valid(
-        &self,
-        blockhash: String,
-        config: Option<IsBlockHashValidConfig>,
-    ) -> crate::rpc::Result<RpcResponse<bool>> {
-        RPC_IS_BLOCKHASH_VALID.inc();
-
-        let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
-        let commitment = CommitmentConfig { commitment };
-
-        let blockhash = match Hash::from_str(&blockhash) {
-            Ok(blockhash) => blockhash,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
-
-        let is_valid = match self
-            .rpc_client
-            .is_blockhash_valid(&blockhash, commitment)
-            .await
-            .context("failed to get blockhash validity")
-        {
-            Ok(is_valid) => is_valid,
-            Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
-            }
-        };
-
-        let slot = self
-            .data_cache
-            .block_store
-            .get_latest_block_info(commitment)
-            .await
-            .slot;
-
-        Ok(RpcResponse {
-            context: RpcResponseContext {
-                slot,
-                api_version: None,
-            },
-            value: is_valid,
-        })
-    }
-
-    async fn get_signature_statuses(
-        &self,
-        sigs: Vec<String>,
-        _config: Option<RpcSignatureStatusConfig>,
-    ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
-        RPC_GET_SIGNATURE_STATUSES.inc();
-
-        let sig_statuses = sigs
-            .iter()
-            .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status))
-            .collect();
-
-        Ok(RpcResponse {
-            context: RpcResponseContext {
-                slot: self
-                    .data_cache
-                    .block_store
-                    .get_latest_block_info(CommitmentConfig::finalized())
-                    .await
-                    .slot,
-                api_version: None,
-            },
-            value: sig_statuses,
-        })
     }
 
     fn get_version(&self) -> crate::rpc::Result<RpcVersionInfo> {
@@ -293,33 +399,53 @@ impl LiteRpcServer for LiteBridge {
         {
             self.data_cache.txs.insert(
                 airdrop_sig.clone(),
-                solana_lite_rpc_core::tx_store::TxProps {
+                TxProps {
                     status: None,
                     last_valid_blockheight: block_height,
+                    sent_by_lite_rpc: true,
                 },
             );
         }
         Ok(airdrop_sig)
     }
 
-    async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
-        let commitment_config = config
-            .map(|config| config.commitment.unwrap_or_default())
-            .unwrap_or_default();
-
-        let BlockInformation { slot, .. } = self
-            .data_cache
-            .block_store
-            .get_latest_block(commitment_config)
-            .await;
-        Ok(slot)
+    async fn program_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+        _pubkey_str: String,
+        _config: Option<RpcProgramAccountsConfig>,
+    ) -> SubscriptionResult {
+        todo!()
     }
 
+    async fn slot_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
+        todo!()
+    }
+
+    async fn block_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+        _filter: RpcBlockSubscribeFilter,
+        _config: Option<RpcBlockSubscribeConfig>,
+    ) -> SubscriptionResult {
+        todo!()
+    }
+
+    async fn logs_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+        _filter: RpcTransactionLogsFilter,
+        _config: Option<RpcTransactionLogsConfig>,
+    ) -> SubscriptionResult {
+        todo!()
+    }
+
+    // WARN: enable_received_notification: bool is ignored
     async fn signature_subscribe(
         &self,
         pending: PendingSubscriptionSink,
         signature: String,
-        commitment_config: CommitmentConfig,
+        config: RpcSignatureSubscribeConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
         let sink = pending.accept().await?;
@@ -327,10 +453,21 @@ impl LiteRpcServer for LiteBridge {
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
         self.data_cache.tx_subs.signature_subscribe(
             signature,
-            commitment_config,
+            config.commitment.unwrap_or_default(),
             Arc::new(jsonrpsee_sink),
         );
 
         Ok(())
+    }
+
+    async fn slot_updates_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+    ) -> SubscriptionResult {
+        todo!()
+    }
+
+    async fn vote_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
+        todo!()
     }
 }

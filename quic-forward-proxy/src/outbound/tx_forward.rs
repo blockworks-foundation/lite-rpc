@@ -11,6 +11,7 @@ use log::{debug, info, trace, warn};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
+use solana_lite_rpc_core::quic_connection_utils::apply_gso_workaround;
 use solana_sdk::quic::QUIC_MAX_TIMEOUT;
 use solana_streamer::nonblocking::quic::ALPN_TPU_PROTOCOL_ID;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
@@ -309,7 +310,7 @@ fn create_tpu_client_endpoint(
     let timeout = IdleTimeout::try_from(QUIC_MAX_TIMEOUT).unwrap();
     transport_config.max_idle_timeout(Some(timeout));
     transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
-    transport_config.enable_segmentation_offload(false);
+    apply_gso_workaround(&mut transport_config);
 
     config.transport_config(Arc::new(transport_config));
 

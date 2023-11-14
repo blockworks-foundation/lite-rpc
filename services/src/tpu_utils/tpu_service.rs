@@ -4,10 +4,10 @@ use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
 use anyhow::Context;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use solana_lite_rpc_core::data_cache::DataCache;
-use solana_lite_rpc_core::leaders_fetcher_trait::LeaderFetcherInterface;
-use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
-use solana_lite_rpc_core::streams::SlotStream;
+use solana_lite_rpc_core::quic_connection_utils::{log_gso_workaround, QuicConnectionParameters};
+use solana_lite_rpc_core::stores::data_cache::DataCache;
+use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterface;
+use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
@@ -15,7 +15,7 @@ use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
 };
-use tokio::time::Duration;
+use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -34,18 +34,14 @@ lazy_static::lazy_static! {
 #[derive(Clone, Copy)]
 pub struct TpuServiceConfig {
     pub fanout_slots: u64,
-    pub number_of_leaders_to_cache: usize,
-    pub clusterinfo_refresh_time: Duration,
-    pub leader_schedule_update_frequency: Duration,
     pub maximum_transaction_in_queue: usize,
-    pub maximum_number_of_errors: usize,
     pub quic_connection_params: QuicConnectionParameters,
     pub tpu_connection_path: TpuConnectionPath,
 }
 
 #[derive(Clone)]
 pub struct TpuService {
-    broadcast_sender: Arc<tokio::sync::broadcast::Sender<(String, Vec<u8>)>>,
+    broadcast_sender: Arc<tokio::sync::broadcast::Sender<SentTransactionInfo>>,
     connection_manager: ConnectionManager,
     leader_schedule: Arc<dyn LeaderFetcherInterface>,
     config: TpuServiceConfig,
@@ -76,6 +72,8 @@ impl TpuService {
         )
         .expect("Failed to initialize QUIC client certificates");
 
+        log_gso_workaround();
+
         let connection_manager = match config.tpu_connection_path {
             TpuConnectionPath::QuicDirectPath => {
                 let tpu_connection_manager =
@@ -105,8 +103,8 @@ impl TpuService {
         })
     }
 
-    pub fn send_transaction(&self, signature: String, transaction: Vec<u8>) -> anyhow::Result<()> {
-        self.broadcast_sender.send((signature, transaction))?;
+    pub fn send_transaction(&self, transaction: &SentTransactionInfo) -> anyhow::Result<()> {
+        self.broadcast_sender.send(transaction.clone())?;
         Ok(())
     }
 
@@ -116,14 +114,6 @@ impl TpuService {
         current_slot: Slot,
         estimated_slot: Slot,
     ) -> anyhow::Result<()> {
-        let load_slot = if estimated_slot <= current_slot {
-            current_slot
-        } else if estimated_slot.saturating_sub(current_slot) > 8 {
-            estimated_slot - 8
-        } else {
-            current_slot
-        };
-
         let fanout = self.config.fanout_slots;
         let last_slot = estimated_slot + fanout;
 
@@ -131,7 +121,7 @@ impl TpuService {
 
         let next_leaders = self
             .leader_schedule
-            .get_slot_leaders(load_slot, last_slot)
+            .get_slot_leaders(current_slot, last_slot)
             .await?;
         // get next leader with its tpu port
         let connections_to_keep = next_leaders
@@ -162,7 +152,7 @@ impl TpuService {
                         self.broadcast_sender.clone(),
                         connections_to_keep,
                         self.data_cache.identity_stakes.get_stakes().await,
-                        self.data_cache.txs.clone(),
+                        self.data_cache.clone(),
                         self.config.quic_connection_params,
                     )
                     .await;

@@ -3,12 +3,12 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use prometheus::core::GenericGauge;
 use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter};
-use solana_lite_rpc_core::block_information_store::BlockInformation;
-use solana_lite_rpc_core::data_cache::DataCache;
-use solana_lite_rpc_core::streams::{
-    BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream,
+use solana_lite_rpc_core::stores::{
+    block_information_store::BlockInformation, data_cache::DataCache,
 };
+use solana_lite_rpc_core::types::{BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream};
 use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 
@@ -52,12 +52,10 @@ impl DataCachingService {
             let mut block_notifier = block_notifier;
             loop {
                 let block = block_notifier.recv().await.expect("Should recv blocks");
+
                 data_cache
-                    .block_store
-                    .add_block(
-                        BlockInformation::from_block(&block),
-                        block.commitment_config,
-                    )
+                    .block_information_store
+                    .add_block(BlockInformation::from_block(&block))
                     .await;
 
                 let confirmation_status = match block.commitment_config.commitment {
@@ -66,7 +64,16 @@ impl DataCachingService {
                     _ => TransactionConfirmationStatus::Processed,
                 };
 
-                for tx in block.txs {
+                for tx in block.transactions {
+                    let block_info = data_cache
+                        .block_information_store
+                        .get_block_info(&tx.recent_blockhash);
+                    let last_valid_blockheight = if let Some(block_info) = block_info {
+                        block_info.last_valid_blockheight
+                    } else {
+                        block.block_height + MAX_RECENT_BLOCKHASHES as u64
+                    };
+
                     if data_cache.txs.update_status(
                         &tx.signature,
                         TransactionStatus {
@@ -76,6 +83,7 @@ impl DataCachingService {
                             err: tx.err.clone(),
                             confirmation_status: Some(confirmation_status.clone()),
                         },
+                        last_valid_blockheight,
                     ) {
                         // transaction updated
                         match confirmation_status {

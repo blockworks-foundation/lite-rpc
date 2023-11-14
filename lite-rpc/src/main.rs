@@ -4,28 +4,36 @@ use std::time::Duration;
 
 use anyhow::bail;
 use clap::Parser;
+use dashmap::DashMap;
 use dotenv::dotenv;
-use lite_rpc::postgres::Postgres;
+use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{bridge::LiteBridge, cli::Args};
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
 
+use crate::rpc_tester::RpcTester;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
-use solana_lite_rpc_core::block_information_store::{BlockInformation, BlockInformationStore};
-use solana_lite_rpc_core::cluster_info::ClusterInfo;
-use solana_lite_rpc_core::data_cache::{DataCache, SlotCache};
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
-use solana_lite_rpc_core::notifications::NotificationSender;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
-use solana_lite_rpc_core::streams::BlockStream;
-use solana_lite_rpc_core::structures::identity_stakes::IdentityStakes;
-use solana_lite_rpc_core::structures::processed_block::ProcessedBlock;
-use solana_lite_rpc_core::subscription_handler::SubscriptionHandler;
-use solana_lite_rpc_core::tx_store::TxStore;
+use solana_lite_rpc_core::stores::{
+    block_information_store::{BlockInformation, BlockInformationStore},
+    cluster_info_store::ClusterInfo,
+    data_cache::{DataCache, SlotCache},
+    subscription_store::SubscriptionStore,
+    tx_store::TxStore,
+};
+use solana_lite_rpc_core::structures::{
+    epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
+    produced_block::ProducedBlock,
+};
+use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
+use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
+use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceConfig};
@@ -40,12 +48,10 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use crate::rpc_tester::RpcTester;
-
 async fn get_latest_block(
     mut block_stream: BlockStream,
     commitment_config: CommitmentConfig,
-) -> ProcessedBlock {
+) -> ProducedBlock {
     while let Ok(block) = block_stream.recv().await {
         if block.commitment_config == commitment_config {
             return block;
@@ -69,14 +75,14 @@ pub async fn start_postgres(
 
     let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
 
-    let postgres = Postgres::new().await?.start(postgres_recv);
+    let postgres_session_cache = PostgresSessionCache::new().await?;
+    let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
 
     Ok((Some(postgres_send), postgres))
 }
 
-pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
+pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
     let Args {
-        rpc_addr,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
@@ -88,6 +94,7 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
         quic_proxy_addr,
         use_grpc,
         grpc_addr,
+        grpc_x_token,
         ..
     } = args;
 
@@ -101,10 +108,13 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
 
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
-    // rpc client
-    let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
-        create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?
+        create_grpc_subscription(
+            rpc_client.clone(),
+            grpc_addr,
+            grpc_x_token,
+            GRPC_VERSION.to_string(),
+        )?
     } else {
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
@@ -117,14 +127,21 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
 
-    let block_store = BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
+    let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await?;
+
+    let block_information_store =
+        BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
+
     let data_cache = DataCache {
-        block_store,
+        block_information_store,
         cluster_info: ClusterInfo::default(),
         identity_stakes: IdentityStakes::new(validator_identity.pubkey()),
         slot_cache: SlotCache::new(finalized_block.slot),
-        tx_subs: SubscriptionHandler::default(),
-        txs: TxStore::default(),
+        tx_subs: SubscriptionStore::default(),
+        txs: TxStore {
+            store: Arc::new(DashMap::new()),
+        },
+        epoch_data,
     };
 
     let lata_cache_service = DataCachingService {
@@ -145,19 +162,15 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
 
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,
-        number_of_leaders_to_cache: 1024,
-        clusterinfo_refresh_time: Duration::from_secs(60 * 60),
-        leader_schedule_update_frequency: Duration::from_secs(10),
         maximum_transaction_in_queue: 20000,
-        maximum_number_of_errors: 10,
         quic_connection_params: QuicConnectionParameters {
             connection_timeout: Duration::from_secs(1),
             connection_retry_count: 10,
             finalize_timeout: Duration::from_millis(200),
-            max_number_of_connections: 10,
+            max_number_of_connections: 8,
             unistream_timeout: Duration::from_millis(500),
             write_timeout: Duration::from_secs(1),
-            number_of_transactions_per_unistream: 8,
+            number_of_transactions_per_unistream: 1,
         },
         tpu_connection_path,
     };
@@ -191,9 +204,18 @@ pub async fn start_lite_rpc(args: Args) -> anyhow::Result<()> {
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
+    let history = History {
+        block_storage: Arc::new(InmemoryBlockStore::new(1024)),
+    };
+
     let bridge_service = tokio::spawn(
-        LiteBridge::new(rpc_client.clone(), data_cache.clone(), transaction_service)
-            .start(lite_rpc_http_addr, lite_rpc_ws_addr),
+        LiteBridge::new(
+            rpc_client.clone(),
+            data_cache.clone(),
+            transaction_service,
+            history,
+        )
+        .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
     tokio::select! {
         res = tx_service_jh => {
@@ -239,14 +261,17 @@ pub async fn main() -> anyhow::Result<()> {
     let args = get_args();
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
-    let rpc_tester = RpcTester::from(&args).start();
+    let Args { rpc_addr, .. } = &args;
+    // rpc client
+    let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
+    let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
 
-    let main = start_lite_rpc(args.clone());
+    let main = start_lite_rpc(args.clone(), rpc_client);
 
     tokio::select! {
         err = rpc_tester => {
-            // This should never happen
-            unreachable!("{err:?}")
+            log::error!("{err:?}");
+            Ok(())
         }
         res = main => {
             // This should never happen
@@ -255,7 +280,6 @@ pub async fn main() -> anyhow::Result<()> {
         }
         _ = ctrl_c_signal => {
             log::info!("Received ctrl+c signal");
-
             Ok(())
         }
     }

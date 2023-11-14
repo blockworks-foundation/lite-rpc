@@ -12,11 +12,17 @@ pub struct Metric {
     pub txs_un_confirmed: u64,
     pub average_confirmation_time_ms: f64,
     pub average_time_to_send_txs: f64,
+    pub average_transaction_bytes: f64,
+    pub send_tps: f64,
 
     #[serde(skip_serializing)]
     total_sent_time: Duration,
     #[serde(skip_serializing)]
+    total_transaction_bytes: u64,
+    #[serde(skip_serializing)]
     total_confirmation_time: Duration,
+    #[serde(skip_serializing)]
+    total_gross_send_time_ms: f64,
 }
 
 impl Metric {
@@ -24,16 +30,19 @@ impl Metric {
         &mut self,
         time_to_send: Duration,
         time_to_confrim: Duration,
+        transaction_bytes: u64,
     ) {
         self.total_sent_time += time_to_send;
         self.total_confirmation_time += time_to_confrim;
+        self.total_transaction_bytes += transaction_bytes;
 
         self.txs_confirmed += 1;
         self.txs_sent += 1;
     }
 
-    pub fn add_unsuccessful_transaction(&mut self, time_to_send: Duration) {
+    pub fn add_unsuccessful_transaction(&mut self, time_to_send: Duration, transaction_bytes: u64) {
         self.total_sent_time += time_to_send;
+        self.total_transaction_bytes += transaction_bytes;
         self.txs_un_confirmed += 1;
         self.txs_sent += 1;
     }
@@ -42,12 +51,23 @@ impl Metric {
         if self.txs_sent > 0 {
             self.average_time_to_send_txs =
                 self.total_sent_time.as_millis() as f64 / self.txs_sent as f64;
+            self.average_transaction_bytes =
+                self.total_transaction_bytes as f64 / self.txs_sent as f64;
+        }
+
+        if self.total_gross_send_time_ms > 0.01 {
+            let total_gross_send_time_secs = self.total_gross_send_time_ms / 1_000.0;
+            self.send_tps = self.txs_sent as f64 / total_gross_send_time_secs;
         }
 
         if self.txs_confirmed > 0 {
             self.average_confirmation_time_ms =
                 self.total_confirmation_time.as_millis() as f64 / self.txs_confirmed as f64;
         }
+    }
+
+    pub fn set_total_gross_send_time(&mut self, total_gross_send_time_ms: f64) {
+        self.total_gross_send_time_ms = total_gross_send_time_ms;
     }
 }
 
@@ -71,6 +91,10 @@ impl AddAssign<&Self> for Metric {
 
         self.total_confirmation_time += rhs.total_confirmation_time;
         self.total_sent_time += rhs.total_sent_time;
+        self.total_transaction_bytes += rhs.total_transaction_bytes;
+        self.total_gross_send_time_ms += rhs.total_gross_send_time_ms;
+        self.send_tps += rhs.send_tps;
+
         self.finalize();
     }
 }
@@ -89,6 +113,10 @@ impl DivAssign<u64> for Metric {
             Duration::from_micros((self.total_confirmation_time.as_micros() / rhs as u128) as u64);
         self.total_sent_time =
             Duration::from_micros((self.total_sent_time.as_micros() / rhs as u128) as u64);
+        self.total_transaction_bytes = self.total_transaction_bytes / rhs;
+        self.send_tps = self.send_tps / rhs as f64;
+        self.total_gross_send_time_ms = self.total_gross_send_time_ms / rhs as f64;
+
         self.finalize();
     }
 }

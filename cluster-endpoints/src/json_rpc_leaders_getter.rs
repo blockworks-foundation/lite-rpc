@@ -2,10 +2,14 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_lite_rpc_core::leaders_fetcher_trait::{LeaderData, LeaderFetcherInterface};
+use solana_lite_rpc_core::{
+    structures::leader_data::LeaderData, traits::leaders_fetcher_interface::LeaderFetcherInterface,
+};
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
 
+// Stores leaders for slots from older to newer in leader schedule
+// regularly removed old leaders and adds new ones
 pub struct JsonRpcLeaderGetter {
     rpc_client: Arc<RpcClient>,
     leader_schedule: RwLock<VecDeque<LeaderData>>,
@@ -38,14 +42,9 @@ impl JsonRpcLeaderGetter {
         }
 
         let last_slot_needed = slot + self.leaders_to_cache_count;
-        let queue_end_slot = leader_queue.back().map_or(slot, |x| x.leader_slot);
+        let first_slot_to_fetch = leader_queue.back().map_or(slot, |x| x.leader_slot + 1);
 
-        if last_slot_needed > queue_end_slot {
-            let first_slot_to_fetch = if leader_queue.is_empty() {
-                queue_end_slot
-            } else {
-                queue_end_slot + 1
-            };
+        if last_slot_needed >= first_slot_to_fetch {
             let leaders = self
                 .rpc_client
                 .get_slot_leaders(first_slot_to_fetch, last_slot_needed - first_slot_to_fetch)
@@ -81,17 +80,17 @@ impl LeaderFetcherInterface for JsonRpcLeaderGetter {
             || schedule.front().unwrap().leader_slot > from
             || schedule.back().unwrap().leader_slot < to
         {
+            // rebuilding the leader schedule
             drop(schedule);
             self.update_leader_schedule(from).await?;
             self.leader_schedule.read().await
         } else {
             schedule
         };
-        let ls = schedule
+        Ok(schedule
             .iter()
             .filter(|x| x.leader_slot >= from && x.leader_slot <= to)
             .cloned()
-            .collect_vec();
-        Ok(ls)
+            .collect_vec())
     }
 }

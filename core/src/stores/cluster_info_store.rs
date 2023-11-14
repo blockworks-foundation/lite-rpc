@@ -3,7 +3,7 @@ use solana_rpc_client_api::response::RpcContactInfo;
 use solana_sdk::pubkey::Pubkey;
 use std::{str::FromStr, sync::Arc};
 
-use crate::streams::ClusterInfoStream;
+use crate::types::ClusterInfoStream;
 
 #[derive(Debug, Clone, Default)]
 pub struct ClusterInfo {

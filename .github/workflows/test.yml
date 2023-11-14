@@ -4,52 +4,53 @@ on:
   push:
   pull_request:
 
-env: 
+env:
   CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: true
+  RUSTC_WRAPPER: sccache
+  SCCACHE_CACHE_SIZE: "1G"
 
 jobs:
   build_and_test:
-    name: Rust project - latest
-    runs-on: ubuntu-latest
+    name: lite-rpc full build
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Install Dependencies
+      - name: Install Linux Packages
         run: |
           sudo apt-get update -y
-          sudo apt-get upgrade -y
           sudo apt-get install libssl-dev openssl -y
 
+      - uses: actions/checkout@v4
+
+      # The toolchain action should definitely be run before the cache action
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # use toolchain version from rust-toolchain.toml
+          components: rustfmt, clippy
+          cache: true
+          # avoid the default "-D warnings" which thrashes cache
+          rustflags: ""
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
+      # https://github.com/actions/cache/blob/main/examples.md#rust---cargo
+      # https://blog.arriven.wtf/posts/rust-ci-cache/
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # will be covered by sscache
+          cache-targets: false
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+
       - name: Early Build
-        run: cargo build --workspace --tests
+        run: |
+          cargo build --locked --workspace --all-targets
 
-      - name: Check Rust Code Format
-        run:  cargo fmt -- --check
-
-      - name: Run Rust Clippy
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Run fmt+clippy
+        run: |
+          cargo fmt --all --check
+          cargo clippy --locked --workspace --all-targets
 
       - name: Run Tests
         run: RUST_LOG=info cargo test
-
-      - name: Install node deps
-        run: yarn
-          
-      - name: Setup validator
-        run: |
-          sh -c "$(curl -sSfL https://release.solana.com/v1.15.2/install)"
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-          ls "$HOME/.local/share/solana/install/active_release/bin"
-          echo "Solana Cli installed"
-          solana --version
-          echo "Generating keypair..."
-          solana-keygen new -o "$HOME/.config/solana/id.json" --no-passphrase --silent
-          solana config set --url "http://0.0.0.0:8899"
-
-      - name: Run and Test
-        run: |
-          bash ./test.bash

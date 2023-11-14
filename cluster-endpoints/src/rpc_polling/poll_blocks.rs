@@ -2,22 +2,17 @@ use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
     structures::{
-        processed_block::{ProcessedBlock, TransactionInfo},
+        produced_block::ProducedBlock,
         slot_notification::{AtomicSlot, SlotNotification},
     },
     AnyhowJoinHandle,
 };
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{
-    borsh0_10::try_from_slice_unchecked,
     commitment_config::{CommitmentConfig, CommitmentLevel},
-    compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
 };
-use solana_transaction_status::{
-    option_serializer::OptionSerializer, RewardType, TransactionDetails, UiTransactionEncoding,
-    UiTransactionStatusMeta,
-};
+use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast::{Receiver, Sender};
 
@@ -25,7 +20,7 @@ pub async fn process_block(
     rpc_client: &RpcClient,
     slot: Slot,
     commitment_config: CommitmentConfig,
-) -> Option<ProcessedBlock> {
+) -> Option<ProducedBlock> {
     let block = rpc_client
         .get_block_with_config(
             slot,
@@ -38,132 +33,14 @@ pub async fn process_block(
             },
         )
         .await;
-
-    if block.is_err() {
-        return None;
-    }
-    let block = block.unwrap();
-
-    let Some(block_height) = block.block_height else {
-        return None;
-    };
-
-    let Some(txs) = block.transactions else {
-        return None;
-    };
-
-    let blockhash = block.blockhash;
-    let parent_slot = block.parent_slot;
-
-    let txs = txs
-        .into_iter()
-        .filter_map(|tx| {
-            let Some(UiTransactionStatusMeta {
-                err,
-                compute_units_consumed,
-                ..
-            }) = tx.meta
-            else {
-                log::info!("Tx with no meta");
-                return None;
-            };
-
-            let Some(tx) = tx.transaction.decode() else {
-                log::info!("Tx could not be decoded");
-                return None;
-            };
-
-            let signature = tx.signatures[0].to_string();
-            let cu_consumed = match compute_units_consumed {
-                OptionSerializer::Some(cu_consumed) => Some(cu_consumed),
-                _ => None,
-            };
-
-            let legacy_compute_budget = tx.message.instructions().iter().find_map(|i| {
-                if i.program_id(tx.message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                        units,
-                        additional_fee,
-                    }) = try_from_slice_unchecked(i.data.as_slice())
-                    {
-                        return Some((units, additional_fee));
-                    }
-                }
-                None
-            });
-
-            let mut cu_requested = tx.message.instructions().iter().find_map(|i| {
-                if i.program_id(tx.message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                        try_from_slice_unchecked(i.data.as_slice())
-                    {
-                        return Some(limit);
-                    }
-                }
-                None
-            });
-
-            let mut prioritization_fees = tx.message.instructions().iter().find_map(|i| {
-                if i.program_id(tx.message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                        try_from_slice_unchecked(i.data.as_slice())
-                    {
-                        return Some(price);
-                    }
-                }
-
-                None
-            });
-
-            if let Some((units, additional_fee)) = legacy_compute_budget {
-                cu_requested = Some(units);
-                if additional_fee > 0 {
-                    prioritization_fees = Some(((units * 1000) / additional_fee).into())
-                }
-            };
-
-            Some(TransactionInfo {
-                signature,
-                err,
-                cu_requested,
-                prioritization_fees,
-                cu_consumed,
-            })
-        })
-        .collect();
-
-    let leader_id = if let Some(rewards) = block.rewards {
-        rewards
-            .iter()
-            .find(|reward| Some(RewardType::Fee) == reward.reward_type)
-            .map(|leader_reward| leader_reward.pubkey.clone())
-    } else {
-        None
-    };
-
-    let block_time = block.block_time.unwrap_or(0) as u64;
-
-    Some(ProcessedBlock {
-        txs,
-        block_height,
-        leader_id,
-        blockhash,
-        parent_slot,
-        block_time,
-        slot,
-        commitment_config,
-    })
+    block
+        .ok()
+        .map(|block| ProducedBlock::from_ui_block(block, slot, commitment_config))
 }
 
 pub fn poll_block(
     rpc_client: Arc<RpcClient>,
-    block_notification_sender: Sender<ProcessedBlock>,
+    block_notification_sender: Sender<ProducedBlock>,
     slot_notification: Receiver<SlotNotification>,
 ) -> Vec<AnyhowJoinHandle> {
     let mut tasks: Vec<AnyhowJoinHandle> = vec![];

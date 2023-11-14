@@ -1,0 +1,62 @@
+name: Integration Test with Validator
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: true
+  RUSTC_WRAPPER: sccache
+  SCCACHE_CACHE_SIZE: "1G"
+
+jobs:
+  build_and_test:
+    name: Test lite-rpc against running Validator
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install Linux Packages
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install libssl-dev openssl -y
+
+      - uses: actions/checkout@v4
+
+      # The toolchain action should definitely be run before the cache action
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          # use toolchain version from rust-toolchain.toml
+          components: rustfmt, clippy
+          cache: true
+          # avoid the default "-D warnings" which thrashes cache
+          rustflags: ""
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
+      # https://github.com/actions/cache/blob/main/examples.md#rust---cargo
+      # https://blog.arriven.wtf/posts/rust-ci-cache/
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # will be covered by sscache
+          cache-targets: false
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install node deps
+        run: yarn
+          
+      - name: Setup Solana Validator v1.16.13
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v1.16.13/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          ls "$HOME/.local/share/solana/install/active_release/bin"
+          echo "Solana Cli installed"
+          solana --version
+          echo "Generating keypair..."
+          solana-keygen new -o "$HOME/.config/solana/id.json" --no-passphrase --silent
+          solana config set --url "http://0.0.0.0:8899"
+
+      - name: Run and Test
+        run: |
+          bash ./test.bash
