@@ -16,6 +16,8 @@ use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast::{Receiver, Sender};
 
+pub const NUM_PARALLEL_BLOCKS: usize = 16;
+
 pub async fn process_block(
     rpc_client: &RpcClient,
     slot: Slot,
@@ -50,7 +52,7 @@ pub fn poll_block(
     let (block_schedule_queue_sx, block_schedule_queue_rx) =
         async_channel::unbounded::<(Slot, CommitmentConfig)>();
 
-    for _i in 0..16 {
+    for _i in 0..NUM_PARALLEL_BLOCKS {
         let block_notification_sender = block_notification_sender.clone();
         let rpc_client = rpc_client.clone();
         let block_schedule_queue_rx = block_schedule_queue_rx.clone();

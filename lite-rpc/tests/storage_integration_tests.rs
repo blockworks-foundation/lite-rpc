@@ -117,14 +117,17 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
                     );
 
                     // check monotony
-                    if block.slot > last_highest_slot_number {
-                        last_highest_slot_number = block.slot;
-                    } else {
-                        // note: ATM this failes very often (using the RPC poller)
-                        warn!(
-                            "Monotonic check failed - block {} is out of order, last highest was {}",
-                            block.slot, last_highest_slot_number
-                        );
+                    // note: this succeeds if poll_block parallelism is 1 (see NUM_PARALLEL_BLOCKS)
+                    if block.commitment_config == CommitmentConfig::confirmed() {
+                        if block.slot > last_highest_slot_number {
+                            last_highest_slot_number = block.slot;
+                        } else {
+                            // note: ATM this failes very often (using the RPC poller)
+                            warn!(
+                                "Monotonic check failed - block {} is out of order, last highest was {}",
+                                block.slot, last_highest_slot_number
+                            );
+                        }
                     }
 
                 } // -- Ok
