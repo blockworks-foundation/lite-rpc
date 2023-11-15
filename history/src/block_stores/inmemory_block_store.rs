@@ -23,7 +23,13 @@ impl InmemoryBlockStore {
         }
     }
 
-    pub async fn store(&self, block: &ProducedBlock) {
+    pub async fn save(&self, block: ProducedBlock) -> anyhow::Result<()> {
+        trace!("Saving block {} to memory storage...", block.slot);
+        self.store(block).await;
+        Ok(())
+    }
+
+    pub async fn store(&self, block: ProducedBlock) {
         let slot = block.slot;
         let mut block_storage = self.block_storage.write().await;
         let min_slot = match block_storage.first_key_value() {
@@ -54,11 +60,6 @@ impl InmemoryBlockStore {
 
 #[async_trait]
 impl BlockStorageInterface for InmemoryBlockStore {
-    async fn save(&self, block: &ProducedBlock) -> anyhow::Result<()> {
-        trace!("Saving block {} to memory storage...", block.slot);
-        self.store(block).await;
-        Ok(())
-    }
 
     async fn get(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
         self.block_storage

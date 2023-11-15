@@ -54,7 +54,7 @@ async fn storage_test() {
 // note: the consumer lags far behind the ingress of blocks and transactions
 fn storage_listen(
     block_notifier: BlockStream,
-    block_storage: Arc<dyn BlockStorageInterface>,
+    block_storage: Arc<PostgresBlockStore>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut block_notifier = block_notifier;
@@ -105,6 +105,7 @@ fn storage_listen(
 
 fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
     tokio::spawn(async move {
+        let mut last_highest_slot_number = 0;
         let mut block_notifier = block_notifier;
         loop {
             match block_notifier.recv().await {
@@ -114,6 +115,18 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
                         block.slot,
                         block.transactions.len()
                     );
+
+                    // check monotony
+                    if block.slot > last_highest_slot_number {
+                        last_highest_slot_number = block.slot;
+                    } else {
+                        // note: ATM this failes very often (using the RPC poller)
+                        warn!(
+                            "Monotonic check failed - block {} is out of order, last highest was {}",
+                            block.slot, last_highest_slot_number
+                        );
+                    }
+
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     warn!(

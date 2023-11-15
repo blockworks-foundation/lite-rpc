@@ -29,6 +29,7 @@ pub struct PostgresData {
     // current_epoch: Epoch,
 }
 
+#[derive(Clone)]
 pub struct PostgresBlockStore {
     session_cache: PostgresSessionCache,
     epoch_cache: EpochCache,
@@ -133,24 +134,8 @@ impl PostgresBlockStore {
             .await
             .expect("should get new postgres session")
     }
-}
 
-fn build_assign_permissions_statements(epoch: EpochRef) -> String {
-    let role = LITERPC_ROLE;
-    let schema = PostgresEpoch::build_schema_name(epoch);
-
-    format!(
-        r#"
-        GRANT USAGE ON SCHEMA {schema} TO {role};
-        GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
-        ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
-    "#
-    )
-}
-
-#[async_trait]
-impl BlockStorageInterface for PostgresBlockStore {
-    async fn save(&self, block: &ProducedBlock) -> Result<()> {
+    pub async fn save(&self, block: &ProducedBlock) -> Result<()> {
         let started = Instant::now();
         trace!("Saving block {} to postgres storage...", block.slot);
 
@@ -188,6 +173,23 @@ impl BlockStorageInterface for PostgresBlockStore {
         );
         Ok(())
     }
+}
+
+fn build_assign_permissions_statements(epoch: EpochRef) -> String {
+    let role = LITERPC_ROLE;
+    let schema = PostgresEpoch::build_schema_name(epoch);
+
+    format!(
+        r#"
+        GRANT USAGE ON SCHEMA {schema} TO {role};
+        GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
+        ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
+    "#
+    )
+}
+
+#[async_trait]
+impl BlockStorageInterface for PostgresBlockStore {
 
     async fn get(&self, slot: Slot) -> Result<ProducedBlock> {
         let range = self.get_slot_range().await;

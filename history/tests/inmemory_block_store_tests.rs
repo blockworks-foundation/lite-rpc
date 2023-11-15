@@ -24,12 +24,12 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
 #[tokio::test]
 async fn inmemory_block_store_tests() {
     // will store only 10 blocks
-    let store: Arc<dyn BlockStorageInterface> = Arc::new(InmemoryBlockStore::new(10));
+    let store: Arc<InmemoryBlockStore> = Arc::new(InmemoryBlockStore::new(10));
 
     // add 10 blocks
     for i in 1..11 {
         store
-            .save(&create_test_block(i, CommitmentConfig::finalized()))
+            .save(create_test_block(i, CommitmentConfig::finalized()))
             .await
             .unwrap();
     }
@@ -40,7 +40,7 @@ async fn inmemory_block_store_tests() {
     }
     // add 11th block
     store
-        .save(&create_test_block(11, CommitmentConfig::finalized()))
+        .save(create_test_block(11, CommitmentConfig::finalized()))
         .await
         .unwrap();
 
@@ -51,7 +51,7 @@ async fn inmemory_block_store_tests() {
 
     // cannot add old blocks
     store
-        .save(&create_test_block(1, CommitmentConfig::finalized()))
+        .save(create_test_block(1, CommitmentConfig::finalized()))
         .await
         .unwrap();
     assert!(store.get(1).await.ok().is_none());

@@ -20,10 +20,11 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use crate::block_stores::postgres_block_store::PostgresBlockStore;
 
 pub struct MultipleStrategyBlockStorage {
     inmemory_for_storage: InmemoryBlockStore, // for confirmed blocks
-    persistent_block_storage: BlockStorageImpl, // for persistent block storage
+    persistent_block_storage: PostgresBlockStore, // for persistent block storage
     // note supported ATM
     faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful
     last_confirmed_slot: Arc<AtomicU64>,
@@ -31,7 +32,7 @@ pub struct MultipleStrategyBlockStorage {
 
 impl MultipleStrategyBlockStorage {
     pub fn new(
-        persistent_block_storage: BlockStorageImpl,
+        persistent_block_storage: PostgresBlockStore,
         _faithful_rpc_client: Option<Arc<RpcClient>>,
         number_of_slots_in_memory: usize,
     ) -> Self {
@@ -48,11 +49,8 @@ impl MultipleStrategyBlockStorage {
     pub async fn get_in_memory_block(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
         self.inmemory_for_storage.get(slot).await
     }
-}
 
-#[async_trait]
-impl BlockStorageInterface for MultipleStrategyBlockStorage {
-    async fn save(&self, block: &ProducedBlock) -> Result<()> {
+    pub async fn save(&self, block: ProducedBlock) -> Result<()> {
         trace!(
             "Saving block {} using multiple-strategy facade...",
             block.slot
@@ -81,7 +79,7 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
             }
             Commitment::Finalized => {
                 // always store it
-                self.persistent_block_storage.save(block).await?;
+                self.persistent_block_storage.save(&block).await?;
 
                 let block_in_mem = self.get_in_memory_block(slot).await;
                 match block_in_mem {
@@ -105,6 +103,10 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
 
         Ok(())
     }
+}
+
+#[async_trait]
+impl BlockStorageInterface for MultipleStrategyBlockStorage {
 
     async fn get(&self, slot: solana_sdk::slot_history::Slot) -> Result<ProducedBlock> {
         let last_confirmed_slot = self.last_confirmed_slot.load(Ordering::Relaxed);
