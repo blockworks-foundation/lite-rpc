@@ -80,7 +80,10 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                 self.inmemory_for_storage.save(block).await?;
             }
             Commitment::Finalized => {
-                let block_in_mem = self.get_in_memory_block(block.slot).await;
+                // always store it
+                self.persistent_block_storage.save(block).await?;
+
+                let block_in_mem = self.get_in_memory_block(slot).await;
                 match block_in_mem {
                     Ok(block_in_mem) => {
                         // check if inmemory blockhash is same as finalized, update it if they are not
@@ -91,7 +94,6 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                     }
                     Err(_not_found) => self.inmemory_for_storage.save(block).await?,
                 }
-                self.persistent_block_storage.save(block).await?;
             }
         };
 
