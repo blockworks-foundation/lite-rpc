@@ -10,6 +10,7 @@ use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockSt
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
