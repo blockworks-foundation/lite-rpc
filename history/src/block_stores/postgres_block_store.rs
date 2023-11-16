@@ -199,18 +199,19 @@ impl BlockStorageInterface for PostgresBlockStore {
 
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         let session = self.get_session().await;
+        // e.g. "rpc2a_epoch_552"
         let query = format!(
             r#"
                 SELECT replace(schema_name,'{schema_prefix}','')::bigint as epoch_number
                 FROM information_schema.schemata
-                WHERE schema_name like '{schema_prefix}%'
+                WHERE schema_name ~ '^{schema_prefix}[0-9]+$'
                 ORDER BY epoch_number
             "#,
             schema_prefix = EPOCH_SCHEMA_PREFIX
         );
         let epochs = session.query_list(&query, &[]).await.unwrap();
         for epoch in epochs {
-            println!("epoch: {:?}", epoch);
+            println!("epoch: {:?}", epoch.get::<&str, i64>("epoch_number"));
         }
 
         // let lk = self.postgres_data.read().await;
