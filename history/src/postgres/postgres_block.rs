@@ -3,6 +3,10 @@ use log::{debug, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use std::time::Instant;
+use anyhow::{anyhow, bail};
+use solana_sdk::clock::Slot;
+use solana_sdk::commitment_config::CommitmentConfig;
+use solana_transaction_status::Reward;
 use tokio_postgres::types::ToSql;
 
 use super::postgres_session::PostgresSession;
@@ -23,7 +27,7 @@ impl From<&ProducedBlock> for PostgresBlock {
         let rewards = value
             .rewards
             .as_ref()
-            .map(|x| BASE64.serialize(x).ok())
+            .map(|x| BASE64.serialize::<Vec<Reward>>(x).ok())
             .unwrap_or(None);
 
         Self {
@@ -33,7 +37,36 @@ impl From<&ProducedBlock> for PostgresBlock {
             parent_slot: value.parent_slot as i64,
             block_time: value.block_time as i64,
             previous_blockhash: value.previous_blockhash.clone(),
+            // TODO add leader_id, etc.
             rewards,
+        }
+    }
+}
+
+impl PostgresBlock {
+   pub fn into_produced_block(&self,
+                     transactions: Vec<u8>,
+                     commitment_config: CommitmentConfig) -> ProducedBlock {
+
+        // TODO
+        // let rewardszzz: Option<Vec<Reward>> = postgres
+        //     .rewards
+        //     .map(|x| BASE64.deserialize::<Vec<Reward>>(&x))
+        //     .unwrap_or(anyhow::anyhow!("failed to deserialize rewards"))
+        //     .ok();
+
+        ProducedBlock {
+            // TODO implement
+            transactions: vec![],
+            leader_id: None,
+            blockhash: self.blockhash.clone(),
+            block_height: self.block_height as u64,
+            slot: self.slot as Slot,
+            parent_slot: self.parent_slot as Slot,
+            block_time: self.block_time as u64,
+            commitment_config,
+            previous_blockhash: self.previous_blockhash.clone(),
+            rewards: None,
         }
     }
 }

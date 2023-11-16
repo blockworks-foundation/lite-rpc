@@ -1,17 +1,19 @@
 use std::ops::RangeInclusive;
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use chrono::Duration;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
 };
 use solana_sdk::slot_history::Slot;
+use solana_transaction_status::Reward;
 use tokio_postgres::error::SqlState;
 
 use crate::postgres::postgres_epoch::{PostgresEpoch, EPOCH_SCHEMA_PREFIX};
@@ -137,9 +139,66 @@ impl PostgresBlockStore {
     }
 
     pub async fn query(&self, slot: Slot) -> Result<ProducedBlock> {
-        let range = self.get_slot_range().await;
-        if range.contains(&slot) {}
-        todo!()
+
+        // FIXME
+        let slot = 234316423;
+
+        let query = format!(
+            r#"
+                SELECT * FROM rpc2a_epoch_555.blocks
+                WHERE slot = {slot}
+            "#,
+            slot = slot);
+        let block_row = self.get_session().await.query_opt(
+            // TODO choose slot
+            &query,
+            &[])
+        .await.unwrap();
+
+        if block_row.is_none() {
+            bail!("Block {} not found in postgres", slot);
+        }
+
+        {
+            let row = block_row.unwrap();
+            println!("- {:?}", row);
+            let foofoo: Option<String> = row.get("leader_id");
+            let blockhash: String = row.get("blockhash");
+            let block_height: i64 = row.get("block_height");
+            let slot: i64 = row.get("slot");
+            let parent_slot: i64 = row.get("parent_slot");
+            let block_time: i64 = row.get("block_time");
+            let previous_blockhash: String = row.get("previous_blockhash");
+            // let foofoo: Option<Vec<Reward>> = row.get("rewards");
+            // TODO rewards
+
+            let postgres_block = PostgresBlock {
+                slot,
+                blockhash,
+                block_height,
+                parent_slot,
+                block_time,
+                previous_blockhash,
+                rewards: None, // TODO
+            };
+
+            let produced_block = postgres_block.into_produced_block(
+                // TODO what to do
+                vec![],
+                CommitmentConfig::confirmed(),
+            );
+
+
+            println!("mapped: {:?}", produced_block);
+
+            return Ok(produced_block);
+        }
+
+
+
+        // let range = self.get_slot_range().await;
+        // if range.contains(&slot) {}
+
     }
 
     pub async fn save(&self, block: &ProducedBlock) -> Result<()> {
