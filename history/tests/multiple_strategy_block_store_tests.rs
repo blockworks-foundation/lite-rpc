@@ -1,13 +1,15 @@
+use std::borrow::Cow;
+use std::ops::Deref;
 use solana_lite_rpc_core::{
     structures::produced_block::ProducedBlock,
     traits::block_storage_interface::BlockStorageInterface,
 };
 use solana_lite_rpc_history::{
-    block_stores::inmemory_block_store::InmemoryBlockStore,
     block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage,
 };
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use std::sync::Arc;
+use anyhow::anyhow;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
 use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
 
@@ -30,74 +32,25 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
 async fn test_in_multiple_stategy_block_store() {
     let epoch_cache = EpochCache::new_for_tests();
     let persistent_store = PostgresBlockStore::new(epoch_cache.clone()).await;
-    let number_of_slots_in_memory = 3;
-    let block_storage = MultipleStrategyBlockStorage::new(
+    let multi_store = MultipleStrategyBlockStorage::new(
         persistent_store.clone(),
         None, // not supported
-        number_of_slots_in_memory,
     );
 
-    block_storage
-        .save(create_test_block(1235, CommitmentConfig::confirmed()))
+    persistent_store
+        .save(&create_test_block(1200, CommitmentConfig::confirmed()))
         .await
         .unwrap();
-    block_storage
-        .save(create_test_block(1236, CommitmentConfig::confirmed()))
-        .await
-        .unwrap();
-
-    assert!(block_storage.get(1235).await.ok().is_some());
-    assert!(block_storage.get(1236).await.ok().is_some());
-    assert!(persistent_store.get(1235).await.ok().is_none());
-    assert!(persistent_store.get(1236).await.ok().is_none());
-
-    block_storage
-        .save(create_test_block(1235, CommitmentConfig::finalized()))
-        .await
-        .unwrap();
-    block_storage
-        .save(create_test_block(1236, CommitmentConfig::finalized()))
-        .await
-        .unwrap();
-    block_storage
-        .save(create_test_block(1237, CommitmentConfig::finalized()))
+    // span range of slots between those two
+    persistent_store
+        .save(&create_test_block(1289, CommitmentConfig::confirmed()))
         .await
         .unwrap();
 
-    assert!(block_storage.get(1235).await.ok().is_some());
-    assert!(block_storage.get(1236).await.ok().is_some());
-    assert!(block_storage.get(1237).await.ok().is_some());
-    assert!(persistent_store.get(1235).await.ok().is_some());
-    assert!(persistent_store.get(1236).await.ok().is_some());
-    assert!(persistent_store.get(1237).await.ok().is_some());
-    assert!(block_storage.get_in_memory_block(1237).await.ok().is_some());
+    assert!(multi_store.query_block(1200).await.ok().is_some());
+    assert!(multi_store.query_block(1289).await.ok().is_some());
 
-    // blocks are replaced by finalized blocks
-    assert_eq!(
-        persistent_store.get(1235).await.unwrap().blockhash,
-        block_storage
-            .get_in_memory_block(1235)
-            .await
-            .unwrap()
-            .blockhash
-    );
-    assert_eq!(
-        persistent_store.get(1236).await.unwrap().blockhash,
-        block_storage
-            .get_in_memory_block(1236)
-            .await
-            .unwrap()
-            .blockhash
-    );
-    assert_eq!(
-        persistent_store.get(1237).await.unwrap().blockhash,
-        block_storage
-            .get_in_memory_block(1237)
-            .await
-            .unwrap()
-            .blockhash
-    );
+    assert!(multi_store.query_block(1000).await.is_err());
+    assert!(multi_store.query_block(9999).await.is_err());
 
-    // no block yet added returns none
-    assert!(block_storage.get(1238).await.ok().is_none());
 }

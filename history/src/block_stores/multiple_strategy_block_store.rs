@@ -1,17 +1,10 @@
-// A mixed block store,
-// Stores confirmed blocks in memory
-// Finalized blocks in long term storage of your choice
-// Fetches legacy blocks from faithful
-
 use crate::block_stores::faithful_block_store::FaithfulBlockStore;
-use crate::block_stores::inmemory_block_store::InmemoryBlockStore;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-use log::{debug, trace, warn};
+use log::{debug, trace};
 use solana_lite_rpc_core::{
-    commitment_utils::Commitment,
     structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageImpl, BlockStorageInterface},
+    traits::block_storage_interface::{BlockStorageInterface},
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
@@ -22,126 +15,76 @@ use std::sync::{
 };
 use crate::block_stores::postgres_block_store::PostgresBlockStore;
 
+#[derive(Debug, Clone)]
+pub enum BlockSource {
+    // serve two epochs from postgres
+    RecentEpochDatabase,
+    // serve epochs older than two from faithful service
+    FaithfulArchive,
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockStorageData {
+    // note: commitment_config is the actual commitment level
+    block: ProducedBlock,
+    // meta data
+    result_source: BlockSource,
+}
+
+// you might need to add a read-cache instead
 pub struct MultipleStrategyBlockStorage {
-    inmemory_for_storage: InmemoryBlockStore, // for confirmed blocks
     persistent_block_storage: PostgresBlockStore, // for persistent block storage
     // note supported ATM
     faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful
-    last_confirmed_slot: Arc<AtomicU64>,
+    // last_confirmed_slot: Arc<AtomicU64>,
 }
 
 impl MultipleStrategyBlockStorage {
     pub fn new(
         persistent_block_storage: PostgresBlockStore,
         _faithful_rpc_client: Option<Arc<RpcClient>>,
-        number_of_slots_in_memory: usize,
     ) -> Self {
         Self {
-            inmemory_for_storage: InmemoryBlockStore::new(number_of_slots_in_memory),
             persistent_block_storage,
             // faithful not used ATM
             faithful_block_storage: None,
             // faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
-            last_confirmed_slot: Arc::new(AtomicU64::new(0)),
         }
     }
 
-    pub async fn get_in_memory_block(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
-        self.inmemory_for_storage.get(slot).await
-    }
+    // lookup confirmed or finalized block from either our blockstore or faithful
+    // TODO find better method name
+    pub async fn query_block(&self, slot: solana_sdk::slot_history::Slot) -> Result<BlockStorageData> {
 
-    pub async fn save(&self, block: ProducedBlock) -> Result<()> {
-        trace!(
-            "Saving block {} using multiple-strategy facade...",
-            block.slot
-        );
-        let slot = block.slot;
-        let commitment = Commitment::from(block.commitment_config);
+        // TODO this check is optional and might be moved to the caller
+        // if slot > last_confirmed_slot {
+        //     bail!(format!(
+        //         "Block {} not found (last_confirmed_slot={})",
+        //         slot, last_confirmed_slot
+        //     ));
+        // }
 
-        if let Ok(prev_block) = self.inmemory_for_storage.get(slot).await {
-            if Commitment::from(prev_block.commitment_config)
-                > Commitment::from(block.commitment_config.commitment)
-            {
-                // note: this is most likely not what we want - need to discuss an heuristic how to fix that
-                // remove this check if it never happens in production
-                warn!(
-                    "The new block will revert the commitment level of {} back to {}",
-                    slot, block.commitment_config.commitment
-                );
-            }
-        }
-        match commitment {
-            Commitment::Processed => {
-                self.inmemory_for_storage.save(block).await?;
-            }
-            Commitment::Confirmed => {
-                self.inmemory_for_storage.save(block).await?;
-            }
-            Commitment::Finalized => {
-                // always store it
-                self.persistent_block_storage.save(&block).await?;
+        // TODO: use a smarter strategy to decide about the cutoff
+        // current strategy:
+        // 1. check if requested slot is in min-max range served from Postgres
+        // 2.1. if yes; fetch from Postgres
+        // 2.2. if not: try to fetch from faithful
 
-                let block_in_mem = self.get_in_memory_block(slot).await;
-                match block_in_mem {
-                    Ok(block_in_mem) => {
-                        // check if inmemory blockhash is same as finalized, update it if they are not
-                        // we can have two machines with same identity publishing two different blocks on same slot
-                        if block_in_mem.blockhash != block.blockhash {
-                            self.inmemory_for_storage.save(block).await?;
-                        }
-                    }
-                    Err(_not_found) => self.inmemory_for_storage.save(block).await?,
-                }
-            }
-        };
 
-        if commitment >= Commitment::Confirmed
-            && slot > self.last_confirmed_slot.load(Ordering::Relaxed)
-        {
-            self.last_confirmed_slot.store(slot, Ordering::Relaxed);
-        }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl BlockStorageInterface for MultipleStrategyBlockStorage {
-
-    async fn get(&self, slot: solana_sdk::slot_history::Slot) -> Result<ProducedBlock> {
-        let last_confirmed_slot = self.last_confirmed_slot.load(Ordering::Relaxed);
-
-        if slot > last_confirmed_slot {
-            bail!(format!(
-                "Block {} not found (last_confirmed_slot={})",
-                slot, last_confirmed_slot
-            ));
-        }
-
-        let range = self.inmemory_for_storage.get_slot_range().await;
-        if range.contains(&slot) {
-            let block = self.inmemory_for_storage.get(slot).await;
-            match block {
-                Ok(_) => {
-                    debug!("Lookup for block {} successful in in-memory-storage", slot);
-                    return block;
-                }
-                Err(_) => {
-                    debug!("Block {} not found in in-memory-storage - continue", slot);
-                }
-            }
-        }
-
-        // TODO: Define what data is expected that is definetly not in persistant block storage like data after epoch - 1
-        // check persistant block
         let persistent_block_range = self.persistent_block_storage.get_slot_range().await;
         match persistent_block_range.contains(&slot) {
             true => {
                 debug!(
-                    "Lookup for block {} successful in persistent block-storage",
-                    slot
+                    "Assume block {} to be available in persistent block-storage (range {:?})",
+                    slot, persistent_block_range
                 );
-                return self.persistent_block_storage.get(slot).await;
+                let lookup = self.persistent_block_storage.query(slot).await
+                    .context(format!("block not found although it was in range {:?}", persistent_block_range));
+
+                return lookup.map(|b| BlockStorageData {
+                    block: b,
+                    result_source: BlockSource::RecentEpochDatabase,
+                });
             }
             false => {
                 debug!(
@@ -158,7 +101,11 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                         "Lookup for block {} successful in faithful block-storage",
                         slot
                     );
-                    return Ok(block);
+
+                    return Ok(BlockStorageData {
+                        block,
+                        result_source: BlockSource::FaithfulArchive,
+                    });
                 }
                 Err(_) => {
                     debug!("Block {} not found in faithful storage - giving up", slot);
@@ -166,38 +113,36 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                 }
             }
         } else {
-            // no faithful available
             bail!(format!("Block {} not found - faithful not available", slot));
         }
     }
 
-    // we need to build the slots from right to left; in-memory defines the right most slots
+}
+
+#[async_trait]
+impl BlockStorageInterface for MultipleStrategyBlockStorage {
+
+    // we need to build the slots from right to left
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
-        let in_memory_slots = self.inmemory_for_storage.get_slot_range().await;
 
         // merge them
+        let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
+        trace!("Persistent storage range: {:?}", persistent_storage_range);
 
-        let mut lower: Slot = *in_memory_slots.start();
-
-        {
-            let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
-            //         x------
-            // |------x
-            let gap = lower - persistent_storage_range.end() - 1 ;
-            if !gap > 0 {
-                // move the lower bound to the left
-                lower = lower.min(*persistent_storage_range.start());
-            }
-        }
+        let mut lower = *persistent_storage_range.start();
 
         if let Some(faithful_block_storage) = &self.faithful_block_storage {
             let faithful_storage_range = faithful_block_storage.get_slot_range();
+            trace!("Faithful storage range: {:?}", faithful_storage_range);
             if lower - faithful_storage_range.end() <= 1 {
                 // move the lower bound to the left
                 lower = lower.min(*faithful_storage_range.start());
             }
         }
 
-        RangeInclusive::new(lower, *in_memory_slots.end())
+        let merged = RangeInclusive::new(lower, *persistent_storage_range.end());
+        trace!("Merged range from databse + faithful: {:?}", merged);
+
+        return merged;
     }
 }

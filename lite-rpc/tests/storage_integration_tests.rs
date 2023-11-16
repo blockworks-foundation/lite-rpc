@@ -44,7 +44,7 @@ async fn storage_test() {
     drop(blocks_notifier);
 
     info!("Run tests for some time ...");
-    sleep(Duration::from_secs(30)).await;
+    sleep(Duration::from_secs(10)).await;
 
     jh1.abort();
     jh2.abort();
@@ -82,6 +82,8 @@ fn storage_listen(
                     };
 
                     let started = Instant::now();
+                    // avoid backpressure here!
+                    // TODO check timing
                     block_storage.save(&produced_block).await.unwrap();
                     debug!(
                         "Saving block to postgres took {:.2}ms",
@@ -123,7 +125,7 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
                         if block.slot > last_highest_slot_number {
                             last_highest_slot_number = block.slot;
                         } else {
-                            // note: ATM this failes very often (using the RPC poller)
+                            // note: ATM this fails very often (using the RPC poller)
                             warn!(
                                 "Monotonic check failed - block {} is out of order, last highest was {}",
                                 block.slot, last_highest_slot_number

@@ -8,7 +8,7 @@ use std::sync::Arc;
 #[async_trait]
 pub trait BlockStorageInterface: Send + Sync {
     // will get a block
-    async fn get(&self, slot: Slot) -> Result<ProducedBlock>;
+    // async fn get(&self, slot: Slot) -> Result<&ProducedBlock>;
     // will get range of slots that are stored in the storage
     async fn get_slot_range(&self) -> RangeInclusive<Slot>;
 }

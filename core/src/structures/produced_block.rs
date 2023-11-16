@@ -23,6 +23,7 @@ pub struct TransactionInfo {
     pub message: String,
 }
 
+// TODO try to remove Clone
 #[derive(Debug, Clone)]
 pub struct ProducedBlock {
     pub transactions: Vec<TransactionInfo>,

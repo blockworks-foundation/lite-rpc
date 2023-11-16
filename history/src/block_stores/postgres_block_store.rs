@@ -3,8 +3,9 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use chrono::Duration;
 use itertools::Itertools;
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
@@ -135,6 +136,12 @@ impl PostgresBlockStore {
             .expect("should get new postgres session")
     }
 
+    pub async fn query(&self, slot: Slot) -> Result<ProducedBlock> {
+        let range = self.get_slot_range().await;
+        if range.contains(&slot) {}
+        todo!()
+    }
+
     pub async fn save(&self, block: &ProducedBlock) -> Result<()> {
         let started = Instant::now();
         trace!("Saving block {} to postgres storage...", block.slot);
@@ -191,32 +198,53 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> String {
 #[async_trait]
 impl BlockStorageInterface for PostgresBlockStore {
 
-    async fn get(&self, slot: Slot) -> Result<ProducedBlock> {
-        let range = self.get_slot_range().await;
-        if range.contains(&slot) {}
-        todo!()
-    }
-
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
+        let started = Instant::now();
         let session = self.get_session().await;
         // e.g. "rpc2a_epoch_552"
         let query = format!(
             r#"
-                SELECT replace(schema_name,'{schema_prefix}','')::bigint as epoch_number
+                SELECT
+                 schema_name
                 FROM information_schema.schemata
                 WHERE schema_name ~ '^{schema_prefix}[0-9]+$'
-                ORDER BY epoch_number
             "#,
             schema_prefix = EPOCH_SCHEMA_PREFIX
         );
-        let epochs = session.query_list(&query, &[]).await.unwrap();
-        for epoch in epochs {
-            println!("epoch: {:?}", epoch.get::<&str, i64>("epoch_number"));
+        let result = session.query_list(&query, &[]).await.unwrap();
+
+        let epoch_schemas = result
+            .iter().map(|row| row.get::<&str, &str>("schema_name"))
+            .collect_vec();
+
+        if epoch_schemas.is_empty() {
+            return RangeInclusive::new(1, 0);
         }
 
-        // let lk = self.postgres_data.read().await;
-        // lk.from_slot..lk.to_slot + 1
-        todo!()
+        let inner =
+            epoch_schemas.iter()
+            .map(|schema| format!("SELECT slot FROM {schema}.blocks", schema = schema))
+            .join(" UNION ALL ");
+
+        let query = format!(
+            r#"
+                SELECT min(slot) as slot_min, max(slot) as slot_max FROM (
+                    {inner}
+                ) AS all_slots
+            "#,
+            inner = inner
+        );
+
+
+        let row_minmax = session.query_one(&query, &[]).await.unwrap();
+        let slot_min = row_minmax.get::<&str, i64>("slot_min");
+        let slot_max = row_minmax.get::<&str, i64>("slot_max");
+
+        if started.elapsed().as_millis() > 10 {
+            warn!("Slow slot range check in postgres - took {:2}sec", started.elapsed().as_secs_f64());
+        }
+
+        RangeInclusive::new(slot_min as u64, slot_max as u64)
     }
 }
 

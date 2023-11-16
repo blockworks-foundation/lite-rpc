@@ -197,6 +197,14 @@ impl PostgresSession {
         self.client.query_opt(statement, params).await
     }
 
+    pub async fn query_one(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Row, Error> {
+        self.client.query_one(statement, params).await
+    }
+
     pub async fn query_list(
         &self,
         statement: &str,

@@ -30,7 +30,6 @@ use solana_lite_rpc_core::structures::{
 };
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
-use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
@@ -199,9 +198,8 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
-    let history = History {
-        block_storage: Arc::new(InmemoryBlockStore::new(1024)),
-    };
+    let history = History::new();
+
 
     let bridge_service = tokio::spawn(
         LiteBridge::new(
