@@ -30,6 +30,8 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
 
 #[tokio::test]
 async fn test_in_multiple_stategy_block_store() {
+    tracing_subscriber::fmt::init();
+
     let epoch_cache = EpochCache::new_for_tests();
     let persistent_store = PostgresBlockStore::new(epoch_cache.clone()).await;
     let multi_store = MultipleStrategyBlockStorage::new(

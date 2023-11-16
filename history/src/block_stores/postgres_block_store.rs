@@ -140,12 +140,9 @@ impl PostgresBlockStore {
 
     pub async fn query(&self, slot: Slot) -> Result<ProducedBlock> {
 
-        // FIXME
-        let slot = 234316423;
-
         let query = format!(
             r#"
-                SELECT * FROM rpc2a_epoch_555.blocks
+                SELECT * FROM rpc2a_epoch_1.blocks
                 WHERE slot = {slot}
             "#,
             slot = slot);
