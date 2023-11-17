@@ -20,6 +20,8 @@ pub struct PostgresBlock {
     pub block_time: i64,
     pub previous_blockhash: String,
     pub rewards: Option<String>,
+    pub leader_id: Option<String>,
+
 }
 
 impl From<&ProducedBlock> for PostgresBlock {
@@ -39,6 +41,7 @@ impl From<&ProducedBlock> for PostgresBlock {
             previous_blockhash: value.previous_blockhash.clone(),
             // TODO add leader_id, etc.
             rewards,
+            leader_id: value.leader_id.clone(),
         }
     }
 }
@@ -98,7 +101,7 @@ impl PostgresBlock {
         postgres_session: &PostgresSession,
         epoch: EpochRef,
     ) -> anyhow::Result<()> {
-        const NB_ARGUMENTS: usize = 7;
+        const NB_ARGUMENTS: usize = 8;
 
         let started = Instant::now();
         let schema = PostgresEpoch::build_schema_name(epoch);
@@ -106,7 +109,7 @@ impl PostgresBlock {
 
         let statement = format!(
             r#"
-                INSERT INTO {schema}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards)
+                INSERT INTO {schema}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards, leader_id)
                 VALUES {}
                 -- prevent updates
                 ON CONFLICT DO NOTHING
@@ -129,6 +132,7 @@ impl PostgresBlock {
         args.push(&self.block_time);
         args.push(&self.previous_blockhash);
         args.push(&self.rewards);
+        args.push(&self.leader_id);
 
         let returning = postgres_session
             .execute_and_return(&statement, &args)

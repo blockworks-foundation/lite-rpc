@@ -140,18 +140,43 @@ impl PostgresBlockStore {
     }
 
     pub async fn query(&self, slot: Slot) -> Result<ProducedBlock> {
+        let started = Instant::now();
         let slot_ranges_by_epoch = self.get_slot_range_by_epoch().await;
 
-        // slot_ranges_by_epoch.iter().filter_map(||);
+        let matching_epochs: Vec<EpochRef> =
+            slot_ranges_by_epoch.iter().filter_map(|(epoch, range)| {
+                if range.contains(&slot) {
+                    Some(epoch)
+                } else {
+                    None
+                }
+            }).cloned()
+        .collect_vec();
 
+        debug!("Postgres epoch schema matching slot {}: {:?}", slot, matching_epochs);
+
+        if matching_epochs.is_empty() {
+            bail!("No epoch schema found for slot {}", slot);
+        }
+
+        let inner =
+            matching_epochs.iter()
+            .map(|&epoch|
+                format!("SELECT *, {epoch}::bigint as epoch, '{schema}'::text as epoch_schema FROM {schema}.blocks",
+                        schema = PostgresEpoch::build_schema_name(epoch), epoch = epoch))
+            .join(" UNION ALL ");
+
+        // TODO do not use "*"
         let query = format!(
             r#"
-                SELECT * FROM rpc2a_epoch_1.blocks
+                SELECT * FROM (
+                    {inner}
+                ) AS filtered_block
                 WHERE slot = {slot}
             "#,
+            inner = inner,
             slot = slot);
         let block_row = self.get_session().await.query_opt(
-            // TODO choose slot
             &query,
             &[])
         .await.unwrap();
@@ -160,45 +185,42 @@ impl PostgresBlockStore {
             bail!("Block {} not found in postgres", slot);
         }
 
-        {
-            let row = block_row.unwrap();
-            println!("- {:?}", row);
-            let foofoo: Option<String> = row.get("leader_id");
-            let blockhash: String = row.get("blockhash");
-            let block_height: i64 = row.get("block_height");
-            let slot: i64 = row.get("slot");
-            let parent_slot: i64 = row.get("parent_slot");
-            let block_time: i64 = row.get("block_time");
-            let previous_blockhash: String = row.get("previous_blockhash");
-            // let foofoo: Option<Vec<Reward>> = row.get("rewards");
-            // TODO rewards
+        let row = block_row.unwrap();
+        // meta data
+        let epoch: i64 = row.get("epoch");
+        let epoch_schema: String = row.get("epoch_schema");
+        let blockhash: String = row.get("blockhash");
+        let block_height: i64 = row.get("block_height");
+        let slot: i64 = row.get("slot");
+        let parent_slot: i64 = row.get("parent_slot");
+        let block_time: i64 = row.get("block_time");
+        let previous_blockhash: String = row.get("previous_blockhash");
+        let leader_id: Option<String> = row.get("leader_id");
 
-            let postgres_block = PostgresBlock {
-                slot,
-                blockhash,
-                block_height,
-                parent_slot,
-                block_time,
-                previous_blockhash,
-                rewards: None, // TODO
-            };
+        let postgres_block = PostgresBlock {
+            slot,
+            blockhash,
+            block_height,
+            parent_slot,
+            block_time,
+            previous_blockhash,
+            rewards: None, // TODO
+            leader_id: leader_id,
+        };
 
-            let produced_block = postgres_block.into_produced_block(
-                // TODO what to do
-                vec![],
-                CommitmentConfig::confirmed(),
-            );
-
-
-            println!("mapped: {:?}", produced_block);
-
-            return Ok(produced_block);
-        }
+        let produced_block = postgres_block.into_produced_block(
+            // TODO what to do
+            vec![],
+            CommitmentConfig::confirmed(),
+        );
 
 
+        debug!("Querying produced block {} from postgres in epoch schema {} took {:.2}ms: {}/{}",
+            produced_block.slot, epoch_schema,
+            started.elapsed().as_secs_f64() * 1000.0,
+            produced_block.blockhash, produced_block.commitment_config.commitment);
 
-        // let range = self.get_slot_range().await;
-        // if range.contains(&slot) {}
+        return Ok(produced_block);
 
     }
 
@@ -260,18 +282,18 @@ impl BlockStorageInterface for PostgresBlockStore {
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         let map_epoch_to_slot_range = self.get_slot_range_by_epoch().await;
 
-        let rows_minmax: Vec<&RangeInclusive<i64>> = map_epoch_to_slot_range.iter().map(|(_, range)| range).collect_vec();
+        let rows_minmax: Vec<&RangeInclusive<Slot>> = map_epoch_to_slot_range.iter().map(|(_, range)| range).collect_vec();
 
         let slot_min = rows_minmax.iter().map(|range| range.start()).min().expect("non-empty result");
         let slot_max = rows_minmax.iter().map(|range| range.end()).max().expect("non-empty result");
 
-        RangeInclusive::new(*slot_min as Slot, *slot_max as Slot)
+        RangeInclusive::new(*slot_min, *slot_max)
     }
 }
 
 
 impl PostgresBlockStore {
-    pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<i64>> {
+    pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<Slot>> {
         let started = Instant::now();
         let session = self.get_session().await;
         // e.g. "rpc2a_epoch_552"
@@ -325,8 +347,8 @@ impl PostgresBlockStore {
                 .map(|row| (
                     row.get::<&str, i64>("epoch"),
                     RangeInclusive::new(
-                        row.get::<&str, i64>("slot_min"),
-                        row.get::<&str, i64>("slot_max")
+                        row.get::<&str, i64>("slot_min") as Slot,
+                        row.get::<&str, i64>("slot_max") as Slot
                     )
                 ))
                 .into_grouping_map()
@@ -335,7 +357,7 @@ impl PostgresBlockStore {
                     Some(val)
                 });
 
-        let final_range: HashMap<EpochRef, RangeInclusive<i64>> =
+        let final_range: HashMap<EpochRef, RangeInclusive<Slot>> =
             map_epoch_to_slot_range.iter_mut().map(|(epoch, range)| {
                 let epoch = EpochRef::new(*epoch as u64);
                 (epoch, range.clone().expect("range must be returned from SQL"))
