@@ -79,15 +79,14 @@ impl MultipleStrategyBlockStorage {
         // 2.2. if not: try to fetch from faithful
 
 
-        let persistent_block_range = self.persistent_block_storage.get_slot_range().await;
-        match persistent_block_range.contains(&slot) {
+        match self.persistent_block_storage.is_block_in_range(slot).await {
             true => {
                 debug!(
-                    "Assume block {} to be available in persistent block-storage (min-max slot range {:?})",
-                    slot, persistent_block_range
+                    "Assume block {} to be available in persistent block-storage",
+                    slot,
                 );
                 let lookup = self.persistent_block_storage.query(slot).await
-                    .context(format!("block not found although it was in range {:?}", persistent_block_range));
+                    .context(format!("block not found although it was in range"));
 
                 return lookup.map(|b| BlockStorageData {
                     block: b,
@@ -149,7 +148,7 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
         }
 
         let merged = RangeInclusive::new(lower, *persistent_storage_range.end());
-        trace!("Merged range from databse + faithful: {:?}", merged);
+        trace!("Merged range from database + faithful: {:?}", merged);
 
         return merged;
     }

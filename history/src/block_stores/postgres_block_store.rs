@@ -37,12 +37,12 @@ pub struct PostgresData {
 #[derive(Clone)]
 pub struct PostgresBlockStore {
     session_cache: PostgresSessionCache,
-    epoch_cache: EpochCache,
+    epoch_schedule: EpochCache,
     // postgres_data: Arc<RwLock<PostgresData>>,
 }
 
 impl PostgresBlockStore {
-    pub async fn new(epoch_cache: EpochCache) -> Self {
+    pub async fn new(epoch_schedule: EpochCache) -> Self {
         let session_cache = PostgresSessionCache::new().await.unwrap();
         // let postgres_data = Arc::new(RwLock::new(PostgresData::default()));
 
@@ -50,7 +50,7 @@ impl PostgresBlockStore {
 
         Self {
             session_cache,
-            epoch_cache,
+            epoch_schedule,
             // postgres_data,
         }
     }
@@ -140,46 +140,26 @@ impl PostgresBlockStore {
             .expect("should get new postgres session")
     }
 
+    pub async fn is_block_in_range(&self, slot: Slot) -> bool {
+        let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
+        let ranges = self.get_slot_range_by_epoch().await;
+        let matching_range: Option<&RangeInclusive<Slot>> = ranges.get(&epoch.into());
+
+        matching_range.map(|slot_range| slot_range.contains(&slot)).is_some()
+    }
+
     pub async fn query(&self, slot: Slot) -> Result<ProducedBlock> {
         let started = Instant::now();
-        let slot_ranges_by_epoch = self.get_slot_range_by_epoch().await;
+        let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
 
-        let matching_epochs: Vec<EpochRef> =
-            slot_ranges_by_epoch.iter().filter_map(|(epoch, range)| {
-                if range.contains(&slot) {
-                    Some(epoch)
-                } else {
-                    None
-                }
-            }).cloned()
-        .collect_vec();
-
-        debug!("Postgres epoch schema matching slot {}: {:?}", slot, matching_epochs);
-
-
-        let matching_epoch =
-            match Uniqueness::inspect_len(matching_epochs.len()) {
-                Uniqueness::ExactlyOne => {
-                    matching_epochs.iter().exactly_one().unwrap().clone()
-                }
-                Uniqueness::Multiple(_) => {
-                    error!("Found multiple epoch schemata serving block {}: {:?}", slot, matching_epochs);
-                    // workaround: use the latest epoch
-                    matching_epochs.iter().max().unwrap().clone()
-                }
-                Uniqueness::Empty => {
-                    bail!("No epoch schema found for slot {}", slot);
-                }
-            };
-
-        let query = PostgresBlock::build_query_statement(matching_epoch, slot);
+        let query = PostgresBlock::build_query_statement(epoch, slot);
         let block_row = self.get_session().await.query_opt(
             &query,
             &[])
         .await.unwrap();
 
         if block_row.is_none() {
-            bail!("Block {} not found in postgres", slot);
+            bail!("Block {} in epoch {} not found in postgres", slot, epoch);
         }
 
         let row = block_row.unwrap();
@@ -213,12 +193,6 @@ impl PostgresBlockStore {
             CommitmentConfig::confirmed(),
         );
 
-
-        println!("REWARDS::");
-        println!(">> {:?}", produced_block.rewards);
-        println!("REWARDS::");
-
-
         debug!("Querying produced block {} from postgres in epoch schema {} took {:.2}ms: {}/{}",
             produced_block.slot, epoch_schema,
             started.elapsed().as_secs_f64() * 1000.0,
@@ -242,7 +216,7 @@ impl PostgresBlockStore {
             .collect_vec();
         let postgres_block = PostgresBlock::from(block);
 
-        let epoch = self.epoch_cache.get_epoch_at_slot(slot);
+        let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
         self.start_new_epoch_if_necessary(epoch.into()).await?;
 
         let session = self.get_session().await;

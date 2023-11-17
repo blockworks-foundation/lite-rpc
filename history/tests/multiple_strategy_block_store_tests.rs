@@ -10,7 +10,12 @@ use solana_lite_rpc_history::{
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use std::sync::Arc;
 use anyhow::anyhow;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
+use solana_sdk::reward_type::RewardType;
+use solana_transaction_status::Reward;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
+use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::BlockStorageData;
 use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
 
 pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
@@ -24,7 +29,13 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
         commitment_config,
         leader_id: None,
         slot,
-        rewards: None,
+        rewards: Some(vec![Reward {
+            pubkey: Pubkey::new_unique().to_string(),
+            lamports: 5000,
+            post_balance: 1000000,
+            reward_type: Some(RewardType::Voting),
+            commission: None,
+        }]),
     }
 }
 
@@ -60,4 +71,10 @@ async fn test_in_multiple_stategy_block_store() {
     // not in range
     assert!(multi_store.query_block(9999).await.is_err());
 
+
+    let block_1200: BlockStorageData = multi_store.query_block(1200).await.unwrap();
+    assert_eq!(1, block_1200.rewards.as_ref().unwrap().len());
+    assert_eq!(5000, block_1200.rewards.as_ref().unwrap().get(0).unwrap().lamports);
+
 }
+
