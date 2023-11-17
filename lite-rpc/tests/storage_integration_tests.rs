@@ -238,10 +238,12 @@ fn inspect_this_block(confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDet
             blockhash: block.blockhash.clone(),
             block: block.clone(),
         });
+        // Assumption I: we never see the same confirmed block twice
         assert!(prev_block.is_none(), "Must not see a confirmed block twice");
     } else if block.commitment_config == CommitmentConfig::finalized() {
         let finalized_block = &block;
         let finalized_block_existed = finalized_blocks.insert(finalized_block.slot);
+        // Assumption II: we never see the same finalized block twice
         assert!(finalized_block_existed, "Finalized block {} must NOT have been seen before", finalized_block.slot);
         let prev_block = confirmed_blocks_by_slot.get(&block.slot);
         match prev_block {
@@ -249,12 +251,15 @@ fn inspect_this_block(confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDet
                 info!("Got finalized block {} with blockhash {} - prev confirmed was {}",
                                         finalized_block.slot, finalized_block.blockhash, prev_block.blockhash);
                 // TODO is that correct?
+                // Assumption III: confirmed and finalized block can be matched by slot and have the same blockhash
                 assert_eq!(finalized_block.blockhash, prev_block.blockhash, "Must see the same blockhash for confirmed and finalized block");
 
                 debug!("confirmed: {:?}", to_string_without_transactions(&prev_block.block));
                 debug!("finalized: {:?}", to_string_without_transactions(&finalized_block));
 
+                // Assumption IV: block details do not change between confirmed and finalized
                 assert_eq!(
+                    // normalized and compare
                     to_string_without_transactions(&prev_block.block).replace("commitment_config=confirmed", "commitment_config=IGNORE"),
                     to_string_without_transactions(&finalized_block).replace("commitment_config=finalized", "commitment_config=IGNORE"),
                     "block tostring mismatch"
@@ -262,7 +267,7 @@ fn inspect_this_block(confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDet
             }
             None => {
                 // note at startup we might see some orphan finalized blocks before we see matching pairs of confirmed-finalized blocks
-                panic!("Must see a confirmed block before it is finalized (slot {})", finalized_block.slot);
+                panic!("Must see a confirmed block before it is finalized (slot {}) - could be a warmup issue", finalized_block.slot);
             }
         }
     }
@@ -279,6 +284,7 @@ fn to_string_without_transactions(produced_block: &ProducedBlock) -> String {
             block_time={}
             commitment_config={}
             previous_blockhash={}
+            num_transactions={}
         "#,
         produced_block.leader_id,
         produced_block.blockhash,
@@ -288,6 +294,7 @@ fn to_string_without_transactions(produced_block: &ProducedBlock) -> String {
         produced_block.block_time,
         produced_block.commitment_config.commitment,
         produced_block.previous_blockhash,
+        produced_block.transactions.len(),
         // rewards
         // transactions
     )
