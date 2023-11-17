@@ -140,71 +140,11 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
             match block_notifier.recv().await {
                 Ok(block) => {
                     debug!(
-                        "Saw block: {} with {} txs",
+                        "Saw block: {} @ {} with {} txs",
                         block.slot,
+                        block.commitment_config.commitment,
                         block.transactions.len()
                     );
-
-                    /// check the commitment transition from confirmed to finalized
-                    if warmup {
-                        debug!("Warming up {} ...", block.slot);
-
-                        if block.commitment_config == CommitmentConfig::confirmed() && warmup_first_confirmed == 0 {
-                            warmup_first_confirmed = block.slot;
-                        }
-
-                        if block.commitment_config == CommitmentConfig::finalized() {
-                            if block.slot >= warmup_first_confirmed {
-                                warmup = false;
-                                debug!("Warming done (slot {})", block.slot);
-
-                            }
-                        }
-
-                    } else {
-
-                        if block.commitment_config == CommitmentConfig::confirmed() {
-                            let prev_block = confirmed_blocks_by_slot.insert(block.slot, BlockDebugDetails {
-                                blockhash: block.blockhash.clone(),
-                                block: block.clone(),
-                            });
-                            assert!(prev_block.is_none(), "Must not see a confirmed block twice");
-                        } else if block.commitment_config == CommitmentConfig::finalized() {
-                            let finalized_block = &block;
-                            let finalized_block_existed = finalized_blocks.insert(finalized_block.slot);
-                            assert!(!finalized_block_existed, "Finalized block must have been seen before");
-                            let prev_block = confirmed_blocks_by_slot.get(&block.slot);
-                            match prev_block {
-                                Some(prev_block) => {
-                                    info!("Got finalized block {} with blockhash {} - prev confirmed was {}",
-                                        finalized_block.slot, finalized_block.blockhash, prev_block.blockhash);
-                                    // TODO is that correct?
-                                    assert_eq!(finalized_block.blockhash, prev_block.blockhash, "Must see the same blockhash for confirmed and finalized block");
-
-                                    debug!("confirmed: {:?}", to_string_without_transactions(&prev_block.block));
-                                    debug!("finalized: {:?}", to_string_without_transactions(&finalized_block));
-
-                                    assert_eq!(
-                                        to_string_without_transactions(&prev_block.block).replace("commitment_config=confirmed", "commitment_config=IGNORE"),
-                                        to_string_without_transactions(&finalized_block).replace("commitment_config=finalized", "commitment_config=IGNORE"),
-                                        "block tostring mismatch"
-                                    )
-
-                                }
-                                None => {
-                                    // note at startup we might see some orphan finalized blocks before we see matching pairs of confirmed-finalized blocks
-                                    panic!("Must see a confirmed block before it is finalized");
-                                }
-                            }
-                            if prev_block.is_none() {
-                                // note at startup we might see some finalized blocks before we see the confirmed blocks
-                                warn!("Must see a confirmed block before it is finalized");
-                            } else {
-                            }
-                        }
-                    } // -- non-warmup
-
-                    /// -- done
 
                     // check monotony
                     // note: this succeeds if poll_block parallelism is 1 (see NUM_PARALLEL_BLOCKS)
@@ -245,13 +185,16 @@ fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHand
         let mut confirmed_blocks_by_slot = HashMap::<Slot, BlockDebugDetails>::new();
         let mut finalized_blocks = HashSet::<Slot>::new();
 
-        let mut warmup = true;
+        let mut warmup_cutoff: Slot = 0;
         let mut warmup_first_confirmed: Slot = 0;
 
         loop {
             match block_notifier.recv().await {
                 Ok(block) => {
-                    if !warmup {
+                    if warmup_cutoff > 0 {
+                        if block.slot < warmup_cutoff {
+                            continue;
+                        }
 
                         // check semantics and log/panic
                         inspect_this_block(&mut confirmed_blocks_by_slot, &mut finalized_blocks, &block);
@@ -264,8 +207,8 @@ fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHand
 
                         if block.commitment_config == CommitmentConfig::finalized() {
                             if block.slot >= warmup_first_confirmed {
-                                warmup = false;
-                                debug!("Warming done (slot {})", block.slot);
+                                warmup_cutoff = block.slot + 32;
+                                debug!("Warming done (slot {})", warmup_cutoff);
 
                             }
                         }
@@ -299,7 +242,7 @@ fn inspect_this_block(confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDet
     } else if block.commitment_config == CommitmentConfig::finalized() {
         let finalized_block = &block;
         let finalized_block_existed = finalized_blocks.insert(finalized_block.slot);
-        assert!(!finalized_block_existed, "Finalized block must have been seen before");
+        assert!(finalized_block_existed, "Finalized block {} must NOT have been seen before", finalized_block.slot);
         let prev_block = confirmed_blocks_by_slot.get(&block.slot);
         match prev_block {
             Some(prev_block) => {
@@ -319,7 +262,7 @@ fn inspect_this_block(confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDet
             }
             None => {
                 // note at startup we might see some orphan finalized blocks before we see matching pairs of confirmed-finalized blocks
-                panic!("Must see a confirmed block before it is finalized");
+                panic!("Must see a confirmed block before it is finalized (slot {})", finalized_block.slot);
             }
         }
     }
