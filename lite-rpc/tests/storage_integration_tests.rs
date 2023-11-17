@@ -1,5 +1,8 @@
+use std::backtrace::Backtrace;
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
+use std::panic::PanicInfo;
+use std::process;
 use jsonrpsee::tracing::warn;
 use log::{debug, error, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
@@ -12,6 +15,7 @@ use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockSt
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use serde::Serialize;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::error::RecvError;
@@ -45,6 +49,7 @@ async fn storage_test() {
 
     let jh1 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
+    let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
     info!("Run tests for some time ...");
@@ -52,6 +57,7 @@ async fn storage_test() {
 
     jh1.abort();
     jh2.abort();
+    jh3.abort();
 
     info!("Tests aborted forcefully by design.");
 }
@@ -231,6 +237,94 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
     })
 }
 
+/// inspect stream of blocks and check that the commitment transition from confirmed to finalized is correct
+fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut block_notifier = block_notifier;
+
+        let mut confirmed_blocks_by_slot = HashMap::<Slot, BlockDebugDetails>::new();
+        let mut finalized_blocks = HashSet::<Slot>::new();
+
+        let mut warmup = true;
+        let mut warmup_first_confirmed: Slot = 0;
+
+        loop {
+            match block_notifier.recv().await {
+                Ok(block) => {
+                    if !warmup {
+
+                        // check semantics and log/panic
+                        inspect_this_block(&mut confirmed_blocks_by_slot, &mut finalized_blocks, &block);
+                    } else {
+                        debug!("Warming up {} ...", block.slot);
+
+                        if warmup_first_confirmed == 0 && block.commitment_config == CommitmentConfig::confirmed() {
+                            warmup_first_confirmed = block.slot;
+                        }
+
+                        if block.commitment_config == CommitmentConfig::finalized() {
+                            if block.slot >= warmup_first_confirmed {
+                                warmup = false;
+                                debug!("Warming done (slot {})", block.slot);
+
+                            }
+                        }
+
+                    }
+
+                } // -- Ok
+                Err(RecvError::Lagged(missed_blocks)) => {
+                    warn!(
+                        "Could not keep up with producer - missed {} blocks",
+                        missed_blocks
+                    );
+                }
+                Err(other_err) => {
+                    panic!("Error receiving block: {:?}", other_err);
+                }
+            }
+
+            // ...
+        }
+    })
+}
+
+fn inspect_this_block(confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDetails>, finalized_blocks: &mut HashSet<Slot>, block: &ProducedBlock) {
+    if block.commitment_config == CommitmentConfig::confirmed() {
+        let prev_block = confirmed_blocks_by_slot.insert(block.slot, BlockDebugDetails {
+            blockhash: block.blockhash.clone(),
+            block: block.clone(),
+        });
+        assert!(prev_block.is_none(), "Must not see a confirmed block twice");
+    } else if block.commitment_config == CommitmentConfig::finalized() {
+        let finalized_block = &block;
+        let finalized_block_existed = finalized_blocks.insert(finalized_block.slot);
+        assert!(!finalized_block_existed, "Finalized block must have been seen before");
+        let prev_block = confirmed_blocks_by_slot.get(&block.slot);
+        match prev_block {
+            Some(prev_block) => {
+                info!("Got finalized block {} with blockhash {} - prev confirmed was {}",
+                                        finalized_block.slot, finalized_block.blockhash, prev_block.blockhash);
+                // TODO is that correct?
+                assert_eq!(finalized_block.blockhash, prev_block.blockhash, "Must see the same blockhash for confirmed and finalized block");
+
+                debug!("confirmed: {:?}", to_string_without_transactions(&prev_block.block));
+                debug!("finalized: {:?}", to_string_without_transactions(&finalized_block));
+
+                assert_eq!(
+                    to_string_without_transactions(&prev_block.block).replace("commitment_config=confirmed", "commitment_config=IGNORE"),
+                    to_string_without_transactions(&finalized_block).replace("commitment_config=finalized", "commitment_config=IGNORE"),
+                    "block tostring mismatch"
+                )
+            }
+            None => {
+                // note at startup we might see some orphan finalized blocks before we see matching pairs of confirmed-finalized blocks
+                panic!("Must see a confirmed block before it is finalized");
+            }
+        }
+    }
+}
+
 fn to_string_without_transactions(produced_block: &ProducedBlock) -> String {
     format!(
         r#"
@@ -260,15 +354,9 @@ fn configure_panic_hook() {
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         default_panic(panic_info);
-        if let Some(location) = panic_info.location() {
-            error!(
-                "panic occurred in file '{}' at line {}",
-                location.file(),
-                location.line(),
-            );
-        } else {
-            error!("panic occurred but can't get location information...");
-        }
-        // note: we do not exit the process to allow proper test execution
+        // e.g. panicked at 'BANG', lite-rpc/tests/storage_integration_tests.rs:260:25
+        error!("{}", panic_info);
+        eprintln!("{}", panic_info);
+        process::exit(12);
     }));
 }
