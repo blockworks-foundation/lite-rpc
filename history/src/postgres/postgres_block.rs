@@ -96,6 +96,19 @@ impl PostgresBlock {
         )
     }
 
+    pub fn build_query_statement(epoch: EpochRef, slot: Slot) -> String {
+        format!(
+            r#"
+                SELECT
+                    slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards, leader_id,
+                    {epoch}::bigint as _epoch, '{schema}'::text as _epoch_schema FROM {schema}.blocks
+                WHERE slot = {slot}
+            "#,
+            schema = PostgresEpoch::build_schema_name(epoch),
+            epoch = epoch,
+            slot = slot)
+    }
+
     pub async fn save(
         &self,
         postgres_session: &PostgresSession,

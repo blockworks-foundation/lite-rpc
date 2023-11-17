@@ -6,7 +6,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use chrono::Duration;
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_lite_rpc_core::structures::epoch::{Epoch, EpochRef};
 use solana_lite_rpc_core::{
@@ -16,6 +16,7 @@ use solana_lite_rpc_core::{
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::Reward;
 use tokio_postgres::error::SqlState;
+use solana_lite_rpc_core::iterutils::Uniqueness;
 
 use crate::postgres::postgres_epoch::{PostgresEpoch, EPOCH_SCHEMA_PREFIX};
 use crate::postgres::postgres_session::PostgresSession;
@@ -155,27 +156,23 @@ impl PostgresBlockStore {
 
         debug!("Postgres epoch schema matching slot {}: {:?}", slot, matching_epochs);
 
-        if matching_epochs.is_empty() {
-            bail!("No epoch schema found for slot {}", slot);
-        }
 
-        let inner =
-            matching_epochs.iter()
-            .map(|&epoch|
-                format!("SELECT *, {epoch}::bigint as epoch, '{schema}'::text as epoch_schema FROM {schema}.blocks",
-                        schema = PostgresEpoch::build_schema_name(epoch), epoch = epoch))
-            .join(" UNION ALL ");
+        let matching_epoch =
+            match Uniqueness::inspect_len(matching_epochs.len()) {
+                Uniqueness::ExactlyOne => {
+                    matching_epochs.iter().exactly_one().unwrap().clone()
+                }
+                Uniqueness::Multiple(_) => {
+                    error!("Found multiple epoch schemata serving block {}: {:?}", slot, matching_epochs);
+                    // workaround: use the latest epoch
+                    matching_epochs.iter().max().unwrap().clone()
+                }
+                Uniqueness::Empty => {
+                    bail!("No epoch schema found for slot {}", slot);
+                }
+            };
 
-        // TODO do not use "*"
-        let query = format!(
-            r#"
-                SELECT * FROM (
-                    {inner}
-                ) AS filtered_block
-                WHERE slot = {slot}
-            "#,
-            inner = inner,
-            slot = slot);
+        let query = PostgresBlock::build_query_statement(matching_epoch, slot);
         let block_row = self.get_session().await.query_opt(
             &query,
             &[])
@@ -187,8 +184,9 @@ impl PostgresBlockStore {
 
         let row = block_row.unwrap();
         // meta data
-        let epoch: i64 = row.get("epoch");
-        let epoch_schema: String = row.get("epoch_schema");
+        let _epoch: i64 = row.get("_epoch");
+        let epoch_schema: String = row.get("_epoch_schema");
+
         let blockhash: String = row.get("blockhash");
         let block_height: i64 = row.get("block_height");
         let slot: i64 = row.get("slot");

@@ -8,5 +8,6 @@ pub mod stores;
 pub mod structures;
 pub mod traits;
 pub mod types;
+pub mod iterutils;
 
 pub type AnyhowJoinHandle = tokio::task::JoinHandle<anyhow::Result<()>>;
