@@ -15,7 +15,7 @@ pub struct Epoch {
     pub absolute_slot: Slot,
 }
 
-#[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord)]
+#[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
 pub struct EpochRef(u64);
 
 impl Epoch {

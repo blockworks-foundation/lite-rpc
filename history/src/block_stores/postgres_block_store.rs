@@ -8,7 +8,7 @@ use chrono::Duration;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
-use solana_lite_rpc_core::structures::epoch::EpochRef;
+use solana_lite_rpc_core::structures::epoch::{Epoch, EpochRef};
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
@@ -140,6 +140,9 @@ impl PostgresBlockStore {
     }
 
     pub async fn query(&self, slot: Slot) -> Result<ProducedBlock> {
+        let slot_ranges_by_epoch = self.get_slot_range_by_epoch().await;
+
+        // slot_ranges_by_epoch.iter().filter_map(||);
 
         let query = format!(
             r#"
@@ -268,7 +271,7 @@ impl BlockStorageInterface for PostgresBlockStore {
 
 
 impl PostgresBlockStore {
-    pub async fn get_slot_range_by_epoch(&self) -> HashMap<i64, RangeInclusive<i64>> {
+    pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<i64>> {
         let started = Instant::now();
         let session = self.get_session().await;
         // e.g. "rpc2a_epoch_552"
@@ -332,9 +335,9 @@ impl PostgresBlockStore {
                     Some(val)
                 });
 
-        let final_range: HashMap<i64, RangeInclusive<i64>> =
+        let final_range: HashMap<EpochRef, RangeInclusive<i64>> =
             map_epoch_to_slot_range.iter_mut().map(|(epoch, range)| {
-                let epoch = *epoch;
+                let epoch = EpochRef::new(*epoch as u64);
                 (epoch, range.clone().expect("range must be returned from SQL"))
             }).collect();
 
