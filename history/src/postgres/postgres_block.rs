@@ -51,12 +51,11 @@ impl PostgresBlock {
                      transactions: Vec<u8>,
                      commitment_config: CommitmentConfig) -> ProducedBlock {
 
-        // TODO
-        // let rewardszzz: Option<Vec<Reward>> = postgres
-        //     .rewards
-        //     .map(|x| BASE64.deserialize::<Vec<Reward>>(&x))
-        //     .unwrap_or(anyhow::anyhow!("failed to deserialize rewards"))
-        //     .ok();
+       let rewards_vec: Option<Vec<Reward>> =
+           self.rewards
+           .as_ref()
+           .map(|x| BASE64.deserialize::<Vec<Reward>>(x).ok())
+           .unwrap_or(None);
 
         ProducedBlock {
             // TODO implement
@@ -69,7 +68,7 @@ impl PostgresBlock {
             block_time: self.block_time as u64,
             commitment_config,
             previous_blockhash: self.previous_blockhash.clone(),
-            rewards: None,
+            rewards: rewards_vec,
         }
     }
 }

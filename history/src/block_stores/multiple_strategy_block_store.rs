@@ -8,7 +8,7 @@ use solana_lite_rpc_core::{
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
-use std::ops::RangeInclusive;
+use std::ops::{Deref, RangeInclusive};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
@@ -26,9 +26,17 @@ pub enum BlockSource {
 #[derive(Debug, Clone)]
 pub struct BlockStorageData {
     // note: commitment_config is the actual commitment level
-    block: ProducedBlock,
+    pub block: ProducedBlock,
     // meta data
-    result_source: BlockSource,
+    pub result_source: BlockSource,
+}
+
+impl Deref for BlockStorageData {
+    type Target = ProducedBlock;
+
+    fn deref(&self) -> &Self::Target {
+        &self.block
+    }
 }
 
 // you might need to add a read-cache instead

@@ -193,6 +193,7 @@ impl PostgresBlockStore {
         let parent_slot: i64 = row.get("parent_slot");
         let block_time: i64 = row.get("block_time");
         let previous_blockhash: String = row.get("previous_blockhash");
+        let rewards: Option<String> = row.get("rewards");
         let leader_id: Option<String> = row.get("leader_id");
 
         let postgres_block = PostgresBlock {
@@ -202,7 +203,7 @@ impl PostgresBlockStore {
             parent_slot,
             block_time,
             previous_blockhash,
-            rewards: None, // TODO
+            rewards: rewards,
             leader_id: leader_id,
         };
 
@@ -211,6 +212,11 @@ impl PostgresBlockStore {
             vec![],
             CommitmentConfig::confirmed(),
         );
+
+
+        println!("REWARDS::");
+        println!(">> {:?}", produced_block.rewards);
+        println!("REWARDS::");
 
 
         debug!("Querying produced block {} from postgres in epoch schema {} took {:.2}ms: {}/{}",
