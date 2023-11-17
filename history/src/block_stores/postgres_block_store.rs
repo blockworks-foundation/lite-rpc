@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::time::Instant;
 
@@ -253,8 +254,21 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> String {
 
 #[async_trait]
 impl BlockStorageInterface for PostgresBlockStore {
-
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
+        let map_epoch_to_slot_range = self.get_slot_range_by_epoch().await;
+
+        let rows_minmax: Vec<&RangeInclusive<i64>> = map_epoch_to_slot_range.iter().map(|(_, range)| range).collect_vec();
+
+        let slot_min = rows_minmax.iter().map(|range| range.start()).min().expect("non-empty result");
+        let slot_max = rows_minmax.iter().map(|range| range.end()).max().expect("non-empty result");
+
+        RangeInclusive::new(*slot_min as Slot, *slot_max as Slot)
+    }
+}
+
+
+impl PostgresBlockStore {
+    pub async fn get_slot_range_by_epoch(&self) -> HashMap<i64, RangeInclusive<i64>> {
         let started = Instant::now();
         let session = self.get_session().await;
         // e.g. "rpc2a_epoch_552"
@@ -276,13 +290,13 @@ impl BlockStorageInterface for PostgresBlockStore {
             .collect_vec();
 
         if epoch_schemas.is_empty() {
-            return RangeInclusive::new(1, 0);
+            return HashMap::new();
         }
 
         let inner =
             epoch_schemas.iter()
             .map(|(schema, epoch)|
-                format!("SELECT slot,{epoch} as epoch FROM {schema}.blocks",
+                format!("SELECT slot,{epoch}::bigint as epoch FROM {schema}.blocks",
                                   schema = schema, epoch = epoch))
             .join(" UNION ALL ");
 
@@ -300,19 +314,36 @@ impl BlockStorageInterface for PostgresBlockStore {
         let rows_minmax = session.query_list(&query, &[]).await.unwrap();
 
         if rows_minmax.is_empty() {
-            return RangeInclusive::new(1, 0);
+            return HashMap::new();
         }
 
-        let slot_min = rows_minmax.iter().map(|row| row.get::<&str, i64>("slot_min")).min().expect("non-empty result");
-        let slot_max = rows_minmax.iter().map(|row| row.get::<&str, i64>("slot_max")).max().expect("non-empty result");
+        let mut map_epoch_to_slot_range =
+            rows_minmax.iter()
+                .map(|row| (
+                    row.get::<&str, i64>("epoch"),
+                    RangeInclusive::new(
+                        row.get::<&str, i64>("slot_min"),
+                        row.get::<&str, i64>("slot_max")
+                    )
+                ))
+                .into_grouping_map()
+                .fold(None, |acc, _key, val| {
+                    assert!(acc.is_none(), "epoch must be unique");
+                    Some(val)
+                });
 
-        let range = RangeInclusive::new(slot_min as u64, slot_max as u64);
+        let final_range: HashMap<i64, RangeInclusive<i64>> =
+            map_epoch_to_slot_range.iter_mut().map(|(epoch, range)| {
+                let epoch = *epoch;
+                (epoch, range.clone().expect("range must be returned from SQL"))
+            }).collect();
+
 
         debug!("Slot range check in postgres found {} ranges, took {:2}sec: {:?}",
             rows_minmax.len(),
-            started.elapsed().as_secs_f64(), range);
+            started.elapsed().as_secs_f64(), final_range);
 
-        range
+        final_range
     }
 }
 

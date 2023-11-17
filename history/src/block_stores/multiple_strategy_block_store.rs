@@ -75,7 +75,7 @@ impl MultipleStrategyBlockStorage {
         match persistent_block_range.contains(&slot) {
             true => {
                 debug!(
-                    "Assume block {} to be available in persistent block-storage (range {:?})",
+                    "Assume block {} to be available in persistent block-storage (min-max slot range {:?})",
                     slot, persistent_block_range
                 );
                 let lookup = self.persistent_block_storage.query(slot).await
