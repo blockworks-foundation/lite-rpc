@@ -270,7 +270,9 @@ impl BlockStorageInterface for PostgresBlockStore {
         let result = session.query_list(&query, &[]).await.unwrap();
 
         let epoch_schemas = result
-            .iter().map(|row| row.get::<&str, &str>("schema_name"))
+            .iter()
+            .map(|row| row.get::<&str, &str>("schema_name"))
+            .map(|schema_name| (schema_name, PostgresEpoch::parse_epoch_from_schema_name(schema_name)))
             .collect_vec();
 
         if epoch_schemas.is_empty() {
@@ -279,28 +281,38 @@ impl BlockStorageInterface for PostgresBlockStore {
 
         let inner =
             epoch_schemas.iter()
-            .map(|schema| format!("SELECT slot FROM {schema}.blocks", schema = schema))
+            .map(|(schema, epoch)|
+                format!("SELECT slot,{epoch} as epoch FROM {schema}.blocks",
+                                  schema = schema, epoch = epoch))
             .join(" UNION ALL ");
 
         let query = format!(
             r#"
-                SELECT min(slot) as slot_min, max(slot) as slot_max FROM (
+                SELECT epoch, min(slot) as slot_min, max(slot) as slot_max FROM (
                     {inner}
                 ) AS all_slots
+                GROUP BY epoch
             "#,
             inner = inner
         );
 
 
-        let row_minmax = session.query_one(&query, &[]).await.unwrap();
-        let slot_min = row_minmax.get::<&str, i64>("slot_min");
-        let slot_max = row_minmax.get::<&str, i64>("slot_max");
+        let rows_minmax = session.query_list(&query, &[]).await.unwrap();
 
-        if started.elapsed().as_millis() > 10 {
-            warn!("Slow slot range check in postgres - took {:2}sec", started.elapsed().as_secs_f64());
+        if rows_minmax.is_empty() {
+            return RangeInclusive::new(1, 0);
         }
 
-        RangeInclusive::new(slot_min as u64, slot_max as u64)
+        let slot_min = rows_minmax.iter().map(|row| row.get::<&str, i64>("slot_min")).min().expect("non-empty result");
+        let slot_max = rows_minmax.iter().map(|row| row.get::<&str, i64>("slot_max")).max().expect("non-empty result");
+
+        let range = RangeInclusive::new(slot_min as u64, slot_max as u64);
+
+        debug!("Slot range check in postgres found {} ranges, took {:2}sec: {:?}",
+            rows_minmax.len(),
+            started.elapsed().as_secs_f64(), range);
+
+        range
     }
 }
 

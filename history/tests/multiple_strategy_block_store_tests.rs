@@ -50,9 +50,14 @@ async fn test_in_multiple_stategy_block_store() {
         .unwrap();
 
     assert!(multi_store.query_block(1200).await.ok().is_some());
+
     assert!(multi_store.query_block(1289).await.ok().is_some());
 
+    // not in range
     assert!(multi_store.query_block(1000).await.is_err());
+    // the range check should give "true", yet no block is returned
+    assert!(multi_store.query_block(1250).await.is_err());
+    // not in range
     assert!(multi_store.query_block(9999).await.is_err());
 
 }
