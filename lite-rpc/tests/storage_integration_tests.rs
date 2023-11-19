@@ -130,12 +130,6 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
         let mut last_highest_slot_number = 0;
         let mut block_notifier = block_notifier;
 
-        let mut confirmed_blocks_by_slot = HashMap::<Slot, BlockDebugDetails>::new();
-        let mut finalized_blocks = HashSet::<Slot>::new();
-
-        let mut warmup = true;
-        let mut warmup_first_confirmed: Slot = 0;
-
         loop {
             match block_notifier.recv().await {
                 Ok(block) => {
