@@ -122,7 +122,7 @@ impl ProducedBlock {
                 if let Some((units, additional_fee)) = legacy_compute_budget {
                     cu_requested = Some(units);
                     if additional_fee > 0 {
-                        prioritization_fees = Some(((units * 1000) / additional_fee).into())
+                        prioritization_fees = Some(calc_prioritization_fees(units, additional_fee))
                     }
                 };
 
@@ -165,4 +165,20 @@ impl ProducedBlock {
             rewards,
         }
     }
+
+
+}
+
+fn calc_prioritization_fees(units: u32, additional_fee: u32) -> u64 {
+    (units as u64 * 1000) /  additional_fee as u64
+}
+
+#[test]
+fn overflow_u32() {
+    // value high enough to overflow u32 if multiplied by 1000
+    let units: u32 = 4_000_000_000;
+    let additional_fee: u32 = 100;
+    let prioritization_fees: u64 = calc_prioritization_fees(units, additional_fee);
+
+    assert_eq!(40_000_000_000, prioritization_fees);
 }
