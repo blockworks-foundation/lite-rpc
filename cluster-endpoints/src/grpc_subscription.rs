@@ -195,6 +195,7 @@ fn process_block(
                 cu_consumed: compute_units_consumed,
                 recent_blockhash: message.recent_blockhash().to_string(),
                 message: BASE64.encode(message.serialize()),
+                static_account_keys: message.static_account_keys().to_vec(),
             })
         })
         .collect();

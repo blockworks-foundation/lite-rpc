@@ -3,6 +3,7 @@ use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::panic::PanicInfo;
 use std::process;
+use std::str::FromStr;
 use jsonrpsee::tracing::warn;
 use log::{debug, error, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
@@ -15,9 +16,12 @@ use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockSt
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use solana_sdk::blake3::{hash, Hash, HASH_BYTES};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::message::VersionedMessage;
+use solana_sdk::pubkey::Pubkey;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -47,17 +51,19 @@ async fn storage_test() {
 
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_data).await);
 
-    let jh1 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
-    let jh2 = block_debug_listen(blocks_notifier.resubscribe());
-    let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
+    // let jh1 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
+    // let jh2 = block_debug_listen(blocks_notifier.resubscribe());
+    // let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
+    let jh4 = compress_account_ids(blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
     info!("Run tests for some time ...");
     sleep(Duration::from_secs(20)).await;
 
-    jh1.abort();
-    jh2.abort();
-    jh3.abort();
+    // jh1.abort();
+    // jh2.abort();
+    // jh3.abort();
+    jh4.abort();
 
     info!("Tests aborted forcefully by design.");
 }
@@ -123,6 +129,109 @@ fn storage_listen(
 struct BlockDebugDetails {
     pub blockhash: String,
     pub block: ProducedBlock,
+}
+
+
+fn compress_account_ids(block_notifier: BlockStream) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut block_notifier = block_notifier;
+
+        let mut collisions = [0u8; u16::MAX as usize / 8];
+        let mut collisions2 = [0u8; u16::MAX as usize / 8];
+
+        let mut seen = HashMap::<u16, Pubkey>::new();
+
+        loop {
+            match block_notifier.recv().await {
+                Ok(block) => {
+                    debug!(
+                        "Saw block: {} @ {} with {} txs",
+                        block.slot,
+                        block.commitment_config.commitment,
+                        block.transactions.len()
+                    );
+
+
+                    for tx in block.transactions {
+                        // info!("tx {}", tx.signature);
+
+                        for acc in tx.static_account_keys {
+                            // info!("- {}", acc);
+                            let hash: u16 = hash16(acc);
+                            let hash2: u16 = hash16_check(acc);
+
+
+                            let ptr = &mut collisions[hash as usize / 8];
+
+                            if *ptr & (1 << (hash % 8)) != 0 {
+                                if collisions2[hash2 as usize / 8] & (1 << (hash2 % 8)) == 0 {
+                                    info!("optimistic collision check for {}", acc);
+                                    // panic!("collision for {}", acc);
+                                }
+                            }
+
+                            let inserted = seen.insert(hash, acc);
+                            if let Some(dupe) = inserted {
+                                if dupe != acc {
+                                    panic!("collision hash key {}: {} -> {}", hash, acc, dupe);
+                                }
+                            }
+
+                            collisions2[hash2 as usize / 8] |= 1 << (hash2 % 8);
+                            *ptr |= 1 << (hash % 8);
+
+
+                            // failes with 436/524
+                            info!("ones: {}", count_ones(&collisions));
+                            info!("ones2: {}", count_ones(&collisions2));
+
+                        }
+                    }
+
+
+                } // -- Ok
+                Err(RecvError::Lagged(missed_blocks)) => {
+                    warn!(
+                        "Could not keep up with producer - missed {} blocks",
+                        missed_blocks
+                    );
+                }
+                Err(other_err) => {
+                    panic!("Error receiving block: {:?}", other_err);
+                }
+            }
+
+            // ...
+        }
+    })
+}
+
+fn hash16(p0: Pubkey) -> u16 {
+    let hash1: Hash = hash(p0.as_ref());
+    hash1.to_bytes()[0] as u16 + (hash1.to_bytes()[1] as u16) * 256
+}
+
+fn hash16_check(p0: Pubkey) -> u16 {
+    let hash1: Hash = hash(p0.as_ref());
+    hash1.to_bytes()[HASH_BYTES - 1] as u16 + (hash1.to_bytes()[HASH_BYTES - 2] as u16) * 256
+}
+
+fn count_ones(data: &[u8]) -> u32 {
+    let mut count = 0;
+    for byte in data {
+        count += byte.count_ones();
+    }
+    count
+}
+
+
+#[test]
+pub fn hash_to_16bit() {
+    let account_key = Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ").unwrap();
+
+    assert_eq!(28038u16, hash16(account_key));
+
+
 }
 
 fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
