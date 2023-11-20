@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
@@ -15,6 +16,8 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::Reward;
+use tokio::sync::Mutex;
+use tokio_postgres::Error;
 use tokio_postgres::error::SqlState;
 use solana_lite_rpc_core::iterutils::Uniqueness;
 
@@ -37,19 +40,54 @@ pub struct PostgresData {
 #[derive(Clone)]
 pub struct PostgresBlockStore {
     session_cache: PostgresSessionCache,
+    write_session: PostgresWriteSession,
     epoch_schedule: EpochCache,
     // postgres_data: Arc<RwLock<PostgresData>>,
 }
 
+#[derive(Clone)]
+struct PostgresWriteSession {
+    session: Arc<RwLock<PostgresSession>>,
+}
+
+impl PostgresWriteSession {
+    pub async fn new_from_env() -> Result<Self> {
+        let session = PostgresSession::new_from_env().await?;
+        Ok(Self {
+            session: Arc::new(RwLock::new(session))
+        })
+    }
+
+    pub async fn get_write_session(&self) -> PostgresSession {
+        let session = self.session.read().unwrap();
+
+        if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
+            drop(session);
+            info!("Reconnecting to postgres after detecting closed/broken connection!")
+            let session = PostgresSession::new_from_env().await
+                .expect("should have created new postgres session");
+            let mut lock = self.session.write().unwrap();
+            *lock = session.clone();
+            session
+        } else {
+            session.clone()
+        }
+
+    }
+
+}
+
+
 impl PostgresBlockStore {
     pub async fn new(epoch_schedule: EpochCache) -> Self {
         let session_cache = PostgresSessionCache::new().await.unwrap();
-        // let postgres_data = Arc::new(RwLock::new(PostgresData::default()));
+        let write_session = PostgresWriteSession::new_from_env().await.unwrap();
 
         Self::check_role(&session_cache).await;
 
         Self {
             session_cache,
+            write_session,
             epoch_schedule,
             // postgres_data,
         }
@@ -140,6 +178,7 @@ impl PostgresBlockStore {
             .await
             .expect("should get new postgres session")
     }
+
 
     pub async fn is_block_in_range(&self, slot: Slot) -> bool {
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
@@ -233,6 +272,7 @@ impl PostgresBlockStore {
 
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
 
+        // TODO use write_session
         let session = self.get_session().await;
 
         let started_block = Instant::now();
@@ -393,6 +433,18 @@ mod tests {
     use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::signature::Signature;
     use std::str::FromStr;
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_write_session() {
+        let write_session = PostgresWriteSession::new_from_env().await.unwrap();
+
+        let row_role = write_session.get_write_session().await.query_one("SELECT current_role", &[]).await.unwrap();
+
+        info!("row: {:?}", row_role);
+
+
+    }
 
     #[tokio::test]
     #[ignore]

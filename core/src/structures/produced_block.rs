@@ -23,7 +23,6 @@ pub struct TransactionInfo {
     pub cu_consumed: Option<u64>,
     pub recent_blockhash: String,
     pub message: String,
-    pub static_account_keys: Vec<Pubkey>,
 }
 
 // TODO try to remove Clone
@@ -141,7 +140,6 @@ impl ProducedBlock {
                     cu_consumed,
                     recent_blockhash: blockhash,
                     message,
-                    static_account_keys: tx.message.static_account_keys().to_vec(),
                 })
             })
             .collect();
