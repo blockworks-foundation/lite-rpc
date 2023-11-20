@@ -134,7 +134,6 @@ fn storage_listen(
                     let started = Instant::now();
                     // avoid backpressure here!
                     // TODO check timing
-                    block_storage.prepare_epoch_schema(produced_block.slot).await.unwrap();
                     block_storage.save(&produced_block).await.unwrap();
                     // we should be faster than 150ms here
                     debug!(
