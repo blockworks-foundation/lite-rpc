@@ -317,10 +317,10 @@ pub fn create_grpc_subscription(
     grpc_addr: String,
     expected_grpc_version: String,
 ) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
-    let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(10);
-    let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(10);
-    let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(10);
-    let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
+    let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(16);
+    let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(16);
+    let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(16);
+    let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(16);
 
     let mut slots = HashMap::new();
     slots.insert("client".to_string(), SubscribeRequestFilterSlots {});

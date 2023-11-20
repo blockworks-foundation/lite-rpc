@@ -13,10 +13,10 @@ use std::sync::Arc;
 pub fn create_json_rpc_polling_subscription(
     rpc_client: Arc<RpcClient>,
 ) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
-    let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(10);
-    let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(10);
-    let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(10);
-    let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
+    let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(16);
+    let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(16);
+    let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(16);
+    let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(16);
 
     let mut endpoint_tasks =
         poll_slots(rpc_client.clone(), CommitmentConfig::processed(), slot_sx)?;
