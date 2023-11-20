@@ -52,7 +52,6 @@ impl PostgresTransaction {
                     message TEXT NOT NULL,
                     CONSTRAINT pk_transaction_sig PRIMARY KEY(signature)
                   ) WITH (FILLFACTOR=90);
-                  CREATE EXTENSION IF NOT EXISTS btree_gin;
                   CREATE INDEX idx_slot ON {schema}.transactions USING btree (slot) WITH (FILLFACTOR=90);
                   CLUSTER {schema}.transactions USING idx_slot;
             "#,
