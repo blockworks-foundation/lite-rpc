@@ -217,7 +217,6 @@ impl PostgresBlockStore {
     }
 
     pub async fn write_block(&self, block: &ProducedBlock) -> Result<()> {
-        let started = Instant::now();
 
         self.progress_block_commitment_level(block).await?;
 
@@ -236,27 +235,33 @@ impl PostgresBlockStore {
 
         let session = self.get_session().await;
 
+        let started_block = Instant::now();
         let inserted = postgres_block.save(&session, epoch.into()).await?;
 
         if !inserted {
             debug!("Block {} already exists - skip update", slot);
             return Ok(());
         }
+        let elapsed_block_insert = started_block.elapsed();
 
         // NOTE: this controls the number of rows in VALUES clause of INSERT statement
         const NUM_TX_PER_CHUNK: usize = 20;
 
         // save transaction
         let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
+        let started_txs = Instant::now();
         for chunk in chunks {
             PostgresTransaction::save_transaction_batch(&session, epoch.into(), slot, chunk)
                 .await?;
         }
+        let elapsed_txs_insert = started_txs.elapsed();
+
         debug!(
-            "Saving block {} with {} txs to postgres took {:.2}ms",
+            "Saving block {} with {} txs to postgres took {:.2}ms for block and {:.2}ms for transactions",
             slot,
             transactions.len(),
-            started.elapsed().as_secs_f64() * 1000.0
+            elapsed_block_insert.as_secs_f64() * 1000.0,
+            elapsed_txs_insert.as_secs_f64() * 1000.0,
         );
         Ok(())
     }

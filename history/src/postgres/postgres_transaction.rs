@@ -1,5 +1,5 @@
 use crate::postgres::postgres_epoch::PostgresEpoch;
-use log::{debug, warn};
+use log::{debug, trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
