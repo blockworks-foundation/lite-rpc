@@ -240,6 +240,55 @@ impl PostgresSessionCache {
     }
 }
 
+
+
+#[derive(Clone)]
+pub struct PostgresWriteSession {
+    session: Arc<RwLock<PostgresSession>>,
+}
+
+impl PostgresWriteSession {
+    pub async fn new_from_env() -> anyhow::Result<Self> {
+        let session = PostgresSession::new_from_env().await?;
+
+        let statement =
+            format!(
+                r#"
+                    SET SESSION application_name='postgres-blockstore-write-session';
+                    -- default: 64MB
+                    SET SESSION maintenance_work_mem = '256MB';
+                    -- default: 4MB
+                    SET SESSION temp_buffers = '64MB';
+                    -- default: 4MB
+                    SET SESSION work_mem = '32MB';
+                "#
+            );
+
+        session.execute_simple(&statement).await.unwrap();
+
+        Ok(Self {
+            session: Arc::new(RwLock::new(session))
+        })
+    }
+
+    pub async fn get_write_session(&self) -> PostgresSession {
+        let session = self.session.read().await;
+
+        if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
+            let session = PostgresSession::new_from_env().await
+                .expect("should have created new postgres session");
+            let mut lock = self.session.write().await;
+            *lock = session.clone();
+            session
+        } else {
+            session.clone()
+        }
+
+    }
+
+}
+
+
 #[test]
 fn multiline_query_test() {
     let mut query = String::new();

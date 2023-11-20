@@ -22,7 +22,7 @@ use tokio_postgres::error::SqlState;
 use solana_lite_rpc_core::iterutils::Uniqueness;
 
 use crate::postgres::postgres_epoch::{PostgresEpoch, EPOCH_SCHEMA_PREFIX};
-use crate::postgres::postgres_session::PostgresSession;
+use crate::postgres::postgres_session::{PostgresSession, PostgresWriteSession};
 use crate::postgres::{
     postgres_block::PostgresBlock, postgres_session::PostgresSessionCache,
     postgres_transaction::PostgresTransaction,
@@ -45,53 +45,6 @@ pub struct PostgresBlockStore {
     epoch_schedule: EpochCache,
     // postgres_data: Arc<RwLock<PostgresData>>,
 }
-
-#[derive(Clone)]
-struct PostgresWriteSession {
-    session: Arc<RwLock<PostgresSession>>,
-}
-
-impl PostgresWriteSession {
-    pub async fn new_from_env() -> Result<Self> {
-        let session = PostgresSession::new_from_env().await?;
-
-        let statement =
-            format!(
-                r#"
-                    SET SESSION application_name='postgres-blockstore-write-session';
-                    -- default: 64MB
-                    SET SESSION maintenance_work_mem = '256MB';
-                    -- default: 4MB
-                    SET SESSION temp_buffers = '64MB';
-                    -- default: 4MB
-                    SET SESSION work_mem = '32MB';
-                "#
-            );
-
-        session.execute_simple(&statement).await.unwrap();
-
-        Ok(Self {
-            session: Arc::new(RwLock::new(session))
-        })
-    }
-
-    pub async fn get_write_session(&self) -> PostgresSession {
-        let session = self.session.read().await;
-
-        if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
-            let session = PostgresSession::new_from_env().await
-                .expect("should have created new postgres session");
-            let mut lock = self.session.write().await;
-            *lock = session.clone();
-            session
-        } else {
-            session.clone()
-        }
-
-    }
-
-}
-
 
 impl PostgresBlockStore {
     pub async fn new(epoch_schedule: EpochCache) -> Self {
