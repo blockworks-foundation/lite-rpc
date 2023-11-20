@@ -75,8 +75,6 @@ fn storage_prepare_epoch_schema(
     slot_notifier: SlotStream,
     postgres_storage: Arc<PostgresBlockStore>,
 ) -> JoinHandle<()> {
-    let mut slot_notifier = slot_notifier;
-
     let mut debounce_slot = 0;
 
     tokio::spawn(async move {
