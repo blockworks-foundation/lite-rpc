@@ -76,7 +76,8 @@ impl PostgresBlockStore {
         }
     }
 
-    async fn start_new_epoch_if_necessary(&self, epoch: EpochRef) -> Result<()> {
+    // return true if schema was actually created
+    async fn start_new_epoch_if_necessary(&self, epoch: EpochRef) -> Result<bool> {
         // create schema for new epoch
         let schema_name = PostgresEpoch::build_schema_name(epoch);
         let session = self.get_session().await;
@@ -95,7 +96,7 @@ impl PostgresBlockStore {
                     "Schema {} for epoch {} already exists - data will be appended",
                     schema_name, epoch
                 );
-                return Ok(());
+                return Ok(false);
             } else {
                 return Err(err).context("create schema for new epoch");
             }
@@ -130,7 +131,7 @@ impl PostgresBlockStore {
             .context("create foreign key constraint between transactions and blocks")?;
 
         info!("Start new epoch in postgres schema {}", schema_name);
-        Ok(())
+        Ok(true)
     }
 
     async fn get_session(&self) -> PostgresSession {
@@ -217,7 +218,6 @@ impl PostgresBlockStore {
         let postgres_block = PostgresBlock::from(block);
 
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
-        self.start_new_epoch_if_necessary(epoch.into()).await?;
 
         let session = self.get_session().await;
 
@@ -239,6 +239,17 @@ impl PostgresBlockStore {
             started.elapsed().as_secs_f64() * 1000.0
         );
         Ok(())
+    }
+
+    // create current + next epoch
+    // true if anything was created; false if a NOOP
+    pub async fn prepare_epoch_schema(&self, slot: Slot) -> anyhow::Result<bool> {
+        let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
+        let current_epoch = epoch.into();
+        let created_current = self.start_new_epoch_if_necessary(current_epoch).await?;
+        let next_epoch = current_epoch.get_next_epoch();
+        let created_next = self.start_new_epoch_if_necessary(next_epoch).await?;
+        Ok(created_current || created_next)
     }
 }
 

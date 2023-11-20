@@ -11,7 +11,7 @@ use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_po
 use solana_lite_rpc_core::structures::epoch::EpochCache;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::traits::block_storage_interface::BlockStorageInterface;
-use solana_lite_rpc_core::types::BlockStream;
+use solana_lite_rpc_core::types::{BlockStream, SlotStream};
 use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
@@ -22,11 +22,13 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
+use tokio::join;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format;
+use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 
 #[tokio::test]
 async fn storage_test() {
@@ -44,28 +46,60 @@ async fn storage_test() {
         create_json_rpc_polling_subscription(rpc_client.clone()).unwrap();
 
     let EndpointStreaming {
-        blocks_notifier, ..
+        blocks_notifier, slot_notifier, ..
     } = subscriptions;
 
     let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_data).await);
 
-    // let jh1 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
-    // let jh2 = block_debug_listen(blocks_notifier.resubscribe());
-    // let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
-    let jh4 = compress_account_ids(blocks_notifier.resubscribe());
+    let jh1_1 = storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());
+    let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
+    let jh2 = block_debug_listen(blocks_notifier.resubscribe());
+    let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
     info!("Run tests for some time ...");
     sleep(Duration::from_secs(20)).await;
 
-    // jh1.abort();
-    // jh2.abort();
-    // jh3.abort();
-    jh4.abort();
+    jh1_1.abort();
+    jh1_2.abort();
+    jh2.abort();
+    jh3.abort();
 
     info!("Tests aborted forcefully by design.");
+}
+
+// TODO this is a race condition as the .save might get called before the schema was prepared
+fn storage_prepare_epoch_schema(
+    slot_notifier: SlotStream,
+    postgres_storage: Arc<PostgresBlockStore>,
+) -> JoinHandle<()> {
+    let mut slot_notifier = slot_notifier;
+
+    let mut debounce_slot = 0;
+
+    tokio::spawn(async move {
+        let mut slot_notifier = slot_notifier;
+        loop {
+            match slot_notifier.recv().await {
+                Ok(SlotNotification { processed_slot, .. }) => {
+                    if processed_slot >= debounce_slot {
+                        let created = postgres_storage.prepare_epoch_schema(processed_slot).await.unwrap();
+                        debounce_slot = processed_slot + 64; // wait a bit before hammering the DB again
+                        if created {
+                            debug!("Async job prepared schema at slot {}", processed_slot);
+                        } else {
+                            debug!("Async job for preparing schema at slot {} was a noop", processed_slot);
+                        }
+                    }
+                }
+                _ => {
+                    warn!("Error receiving slot - continue");
+                }
+            }
+        }
+    })
 }
 
 // note: the consumer lags far behind the ingress of blocks and transactions
@@ -102,6 +136,7 @@ fn storage_listen(
                     let started = Instant::now();
                     // avoid backpressure here!
                     // TODO check timing
+                    block_storage.prepare_epoch_schema(produced_block.slot).await.unwrap();
                     block_storage.save(&produced_block).await.unwrap();
                     // we should be faster than 150ms here
                     debug!(
@@ -129,109 +164,6 @@ fn storage_listen(
 struct BlockDebugDetails {
     pub blockhash: String,
     pub block: ProducedBlock,
-}
-
-
-fn compress_account_ids(block_notifier: BlockStream) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut block_notifier = block_notifier;
-
-        let mut collisions = [0u8; u16::MAX as usize / 8];
-        let mut collisions2 = [0u8; u16::MAX as usize / 8];
-
-        let mut seen = HashMap::<u16, Pubkey>::new();
-
-        loop {
-            match block_notifier.recv().await {
-                Ok(block) => {
-                    debug!(
-                        "Saw block: {} @ {} with {} txs",
-                        block.slot,
-                        block.commitment_config.commitment,
-                        block.transactions.len()
-                    );
-
-
-                    for tx in block.transactions {
-                        // info!("tx {}", tx.signature);
-
-                        for acc in tx.static_account_keys {
-                            // info!("- {}", acc);
-                            let hash: u16 = hash16(acc);
-                            let hash2: u16 = hash16_check(acc);
-
-
-                            let ptr = &mut collisions[hash as usize / 8];
-
-                            if *ptr & (1 << (hash % 8)) != 0 {
-                                if collisions2[hash2 as usize / 8] & (1 << (hash2 % 8)) == 0 {
-                                    info!("optimistic collision check for {}", acc);
-                                    // panic!("collision for {}", acc);
-                                }
-                            }
-
-                            let inserted = seen.insert(hash, acc);
-                            if let Some(dupe) = inserted {
-                                if dupe != acc {
-                                    panic!("collision hash key {}: {} -> {}", hash, acc, dupe);
-                                }
-                            }
-
-                            collisions2[hash2 as usize / 8] |= 1 << (hash2 % 8);
-                            *ptr |= 1 << (hash % 8);
-
-
-                            // failes with 436/524
-                            info!("ones: {}", count_ones(&collisions));
-                            info!("ones2: {}", count_ones(&collisions2));
-
-                        }
-                    }
-
-
-                } // -- Ok
-                Err(RecvError::Lagged(missed_blocks)) => {
-                    warn!(
-                        "Could not keep up with producer - missed {} blocks",
-                        missed_blocks
-                    );
-                }
-                Err(other_err) => {
-                    panic!("Error receiving block: {:?}", other_err);
-                }
-            }
-
-            // ...
-        }
-    })
-}
-
-fn hash16(p0: Pubkey) -> u16 {
-    let hash1: Hash = hash(p0.as_ref());
-    hash1.to_bytes()[0] as u16 + (hash1.to_bytes()[1] as u16) * 256
-}
-
-fn hash16_check(p0: Pubkey) -> u16 {
-    let hash1: Hash = hash(p0.as_ref());
-    hash1.to_bytes()[HASH_BYTES - 1] as u16 + (hash1.to_bytes()[HASH_BYTES - 2] as u16) * 256
-}
-
-fn count_ones(data: &[u8]) -> u32 {
-    let mut count = 0;
-    for byte in data {
-        count += byte.count_ones();
-    }
-    count
-}
-
-
-#[test]
-pub fn hash_to_16bit() {
-    let account_key = Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ").unwrap();
-
-    assert_eq!(28038u16, hash16(account_key));
-
-
 }
 
 fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {

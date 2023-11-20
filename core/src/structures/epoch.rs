@@ -51,6 +51,10 @@ impl EpochRef {
     pub fn get_epoch(&self) -> u64 {
         self.0
     }
+
+    pub fn get_next_epoch(&self) -> Self {
+        Self(self.0 + 1)
+    }
 }
 
 #[derive(Clone)]

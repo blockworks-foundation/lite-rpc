@@ -50,6 +50,8 @@ async fn test_in_multiple_stategy_block_store() {
         None, // not supported
     );
 
+    persistent_store.prepare_epoch_schema(1200).await.unwrap();
+
     persistent_store
         .save(&create_test_block(1200, CommitmentConfig::confirmed()))
         .await
