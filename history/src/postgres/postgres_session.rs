@@ -1,13 +1,18 @@
+use std::fmt::Write;
+use std::pin::pin;
 use std::sync::Arc;
 
 use anyhow::Context;
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
+use tokio::io::AsyncWriteExt;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
-use tokio_postgres::{
-    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, Error, NoTls, Row, Socket,
-};
+use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, Error, NoTls, Row, Socket, CopyInSink};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use futures_util::{pin_mut, SinkExt};
+use tokio_postgres::binary_copy::BinaryCopyInWriter;
+use tokio_postgres::types::Type;
 
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 
@@ -79,9 +84,9 @@ impl PostgresSession {
         pg_config: tokio_postgres::Config,
         connector: T,
     ) -> anyhow::Result<Client>
-    where
-        T: MakeTlsConnect<Socket> + Send + 'static,
-        <T as MakeTlsConnect<Socket>>::Stream: Send,
+        where
+            T: MakeTlsConnect<Socket> + Send + 'static,
+            <T as MakeTlsConnect<Socket>>::Stream: Send,
     {
         let (client, connection) = pg_config
             .connect(connector)
@@ -212,6 +217,40 @@ impl PostgresSession {
     ) -> Result<Vec<Row>, Error> {
         self.client.query(statement, params).await
     }
+
+    pub async fn copy_in(&self) -> Result<(), Error> {
+        // TODO write to memory buffer, check for s
+        let statement = format!(
+            r#"
+                COPY public.example_copyin FROM STDIN WITH DELIMITER ';'
+            "#
+        );
+
+
+        let mut buf = BytesMut::with_capacity(1024);
+        buf.write_str("foo;1212").unwrap();
+
+
+        // BinaryCopyInWriter
+        // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
+        let mut sink: CopyInSink<Bytes> = self.client.copy_in(&statement).await.unwrap();
+        pin_mut!(sink);
+        sink.send(buf.freeze()).await.unwrap();
+        sink.finish().await.unwrap();
+
+        // let writer = BinaryCopyInWriter::new(sink, &[Type::TEXT, Type::INT4]);
+        // pin_mut!(writer);
+        // writer.as_mut().write(&[&"foobar", &1i32]).await.unwrap();
+        // writer
+        //     .as_mut()
+        //     .write(&[&None::<&str>, &2i32])
+        //     .await
+        //     .unwrap();
+        // writer.finish().await.unwrap();
+
+        Ok(())
+    }
+
 }
 
 #[derive(Clone)]
