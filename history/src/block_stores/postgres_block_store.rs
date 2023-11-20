@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc};
 use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
@@ -16,7 +16,7 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::Reward;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tokio_postgres::Error;
 use tokio_postgres::error::SqlState;
 use solana_lite_rpc_core::iterutils::Uniqueness;
@@ -58,8 +58,13 @@ impl PostgresWriteSession {
         let statement =
             format!(
                 r#"
+                    SET SESSION application_name='postgres-blockstore-write-session';
                     -- default: 64MB
-                    SET SESSION maintenance_work_mem = '512MB';
+                    SET SESSION maintenance_work_mem = '256MB';
+                    -- default: 4MB
+                    SET SESSION temp_buffers = '64MB';
+                    -- default: 4MB
+                    SET SESSION work_mem = '32MB';
                 "#
             );
 
@@ -71,15 +76,12 @@ impl PostgresWriteSession {
     }
 
     pub async fn get_write_session(&self) -> PostgresSession {
-        let session = self.session.read().unwrap();
+        let session = self.session.read().await;
 
-        // let check = session.client.execute(";", &[]).await;
-        if session.client.is_closed() {
-            drop(session);
-            info!("Reconnecting to postgres after detecting closed/broken connection!");
+        if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
             let session = PostgresSession::new_from_env().await
                 .expect("should have created new postgres session");
-            let mut lock = self.session.write().unwrap();
+            let mut lock = self.session.write().await;
             *lock = session.clone();
             session
         } else {
@@ -285,10 +287,11 @@ impl PostgresBlockStore {
 
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
 
-        // let write_session = self.write_session.get_write_session().await;
-        let session = self.get_session().await;
+        let write_session = self.write_session.get_write_session().await;
+
         let started_block = Instant::now();
-        let inserted = postgres_block.save(&session, epoch.into()).await?;
+        let inserted = postgres_block.save(&write_session, epoch.into()).await?;
+
 
         if !inserted {
             debug!("Block {} already exists - skip update", slot);
@@ -303,7 +306,7 @@ impl PostgresBlockStore {
         let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
         let started_txs = Instant::now();
         for chunk in chunks {
-            PostgresTransaction::save_transaction_batch(&session, epoch.into(), slot, chunk)
+            PostgresTransaction::save_transaction_batch(&write_session, epoch.into(), slot, chunk)
                 .await?;
         }
         let elapsed_txs_insert = started_txs.elapsed();

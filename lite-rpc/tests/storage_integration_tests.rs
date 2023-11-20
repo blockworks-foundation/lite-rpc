@@ -33,6 +33,8 @@ use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 // force ordered stream of blocks
 const NUM_PARALLEL_TASKS: usize = 1;
 
+const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
+
 #[tokio::test]
 async fn storage_test() {
     // RUST_LOG=info,storage_integration_tests=debug,solana_lite_rpc_history=trace
@@ -120,6 +122,10 @@ fn storage_listen(
                         block.slot,
                         block.transactions.len()
                     );
+
+                    if block_notifier.len() > CHANNEL_SIZE_WARNING_THRESHOLD {
+                        warn!("(soft_realtime) Block queue is growing - {} elements", block_notifier.len());
+                    }
 
                     // TODO we should intercept finalized blocks and try to update only the status optimistically
 
