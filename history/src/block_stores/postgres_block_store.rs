@@ -40,6 +40,7 @@ pub struct PostgresData {
 #[derive(Clone)]
 pub struct PostgresBlockStore {
     session_cache: PostgresSessionCache,
+    // use this session only for the write path!
     write_session: PostgresWriteSession,
     epoch_schedule: EpochCache,
     // postgres_data: Arc<RwLock<PostgresData>>,
@@ -53,6 +54,17 @@ struct PostgresWriteSession {
 impl PostgresWriteSession {
     pub async fn new_from_env() -> Result<Self> {
         let session = PostgresSession::new_from_env().await?;
+
+        let statement =
+            format!(
+                r#"
+                    -- default: 64MB
+                    SET SESSION maintenance_work_mem = '512MB';
+                "#
+            );
+
+        session.execute_simple(&statement).await.unwrap();
+
         Ok(Self {
             session: Arc::new(RwLock::new(session))
         })
@@ -61,9 +73,10 @@ impl PostgresWriteSession {
     pub async fn get_write_session(&self) -> PostgresSession {
         let session = self.session.read().unwrap();
 
-        if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
+        // let check = session.client.execute(";", &[]).await;
+        if session.client.is_closed() {
             drop(session);
-            info!("Reconnecting to postgres after detecting closed/broken connection!")
+            info!("Reconnecting to postgres after detecting closed/broken connection!");
             let session = PostgresSession::new_from_env().await
                 .expect("should have created new postgres session");
             let mut lock = self.session.write().unwrap();
@@ -272,9 +285,8 @@ impl PostgresBlockStore {
 
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
 
-        // TODO use write_session
+        // let write_session = self.write_session.get_write_session().await;
         let session = self.get_session().await;
-
         let started_block = Instant::now();
         let inserted = postgres_block.save(&session, epoch.into()).await?;
 
@@ -440,9 +452,7 @@ mod tests {
         let write_session = PostgresWriteSession::new_from_env().await.unwrap();
 
         let row_role = write_session.get_write_session().await.query_one("SELECT current_role", &[]).await.unwrap();
-
         info!("row: {:?}", row_role);
-
 
     }
 
