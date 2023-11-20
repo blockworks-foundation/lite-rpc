@@ -5,7 +5,7 @@ use std::panic::PanicInfo;
 use std::process;
 use std::str::FromStr;
 use jsonrpsee::tracing::warn;
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
@@ -30,6 +30,9 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 
+// force ordered stream of blocks
+const NUM_PARALLEL_TASKS: usize = 1;
+
 #[tokio::test]
 async fn storage_test() {
     // RUST_LOG=info,storage_integration_tests=debug,solana_lite_rpc_history=trace
@@ -43,7 +46,7 @@ async fn storage_test() {
     let rpc_client = Arc::new(RpcClient::new(rpc_url));
 
     let (subscriptions, _cluster_endpoint_tasks) =
-        create_json_rpc_polling_subscription(rpc_client.clone()).unwrap();
+        create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS).unwrap();
 
     let EndpointStreaming {
         blocks_notifier, slot_notifier, ..
@@ -107,9 +110,11 @@ fn storage_listen(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut block_notifier = block_notifier;
+        // this is the critical write loop
         loop {
             match block_notifier.recv().await {
                 Ok(block) => {
+                    let started = Instant::now();
                     debug!(
                         "Received block: {} with {} txs",
                         block.slot,
@@ -118,28 +123,19 @@ fn storage_listen(
 
                     // TODO we should intercept finalized blocks and try to update only the status optimistically
 
-                    let produced_block = ProducedBlock {
-                        transactions: block.transactions,
-                        leader_id: block.leader_id,
-                        blockhash: block.blockhash,
-                        block_height: block.block_height,
-                        slot: block.slot,
-                        parent_slot: block.parent_slot,
-                        block_time: block.block_time,
-                        commitment_config: block.commitment_config,
-                        previous_blockhash: block.previous_blockhash,
-                        rewards: block.rewards,
-                    };
-
-                    let started = Instant::now();
                     // avoid backpressure here!
-                    // TODO check timing
-                    block_storage.save(&produced_block).await.unwrap();
+
+                    block_storage.write_block(&block).await.unwrap();
+
                     // we should be faster than 150ms here
+                    let elapsed = started.elapsed();
                     debug!(
-                        "Saving block to postgres took {:.2}ms",
-                        started.elapsed().as_secs_f64() * 1000.0
+                        "Successfully stored block to postgres which took {:.2}ms - remaining {} queue elements",
+                        elapsed.as_secs_f64() * 1000.0, block_notifier.len()
                     );
+                    if elapsed > Duration::from_millis(150) {
+                        warn!("(soft_realtime) Write operation was slow!");
+                    }
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     warn!(
@@ -231,7 +227,7 @@ fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHand
                         // check semantics and log/panic
                         inspect_this_block(&mut confirmed_blocks_by_slot, &mut finalized_blocks, &block);
                     } else {
-                        debug!("Warming up {} ...", block.slot);
+                        trace!("Warming up {} ...", block.slot);
 
                         if warmup_first_confirmed == 0 && block.commitment_config == CommitmentConfig::confirmed() {
                             warmup_first_confirmed = block.slot;

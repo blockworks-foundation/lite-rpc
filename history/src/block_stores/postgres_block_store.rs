@@ -203,12 +203,27 @@ impl PostgresBlockStore {
 
     }
 
-    pub async fn save(&self, block: &ProducedBlock) -> Result<()> {
+    // optimistically try to progress commitment level for a block that is already stored
+    pub async fn progress_block_commitment_level(&self, block: &ProducedBlock) -> Result<()> {
+        // ATM we only support updating confirmed block to finalized
+        if block.commitment_config.commitment == CommitmentLevel::Finalized {
+            debug!("Checking block {} if we can progress it to finalized ...", block.slot);
+
+            // TODO model commitment levels in new table
+
+        }
+
+        Ok(())
+    }
+
+    pub async fn write_block(&self, block: &ProducedBlock) -> Result<()> {
         let started = Instant::now();
-        trace!("Saving block {} to postgres storage...", block.slot);
+
+        self.progress_block_commitment_level(block).await?;
 
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
+        trace!("Saving block {} to postgres storage...", block.slot);
         let slot = block.slot;
         let transactions = block
             .transactions
@@ -221,7 +236,12 @@ impl PostgresBlockStore {
 
         let session = self.get_session().await;
 
-        postgres_block.save(&session, epoch.into()).await?;
+        let inserted = postgres_block.save(&session, epoch.into()).await?;
+
+        if !inserted {
+            debug!("Block {} already exists - skip update", slot);
+            return Ok(());
+        }
 
         // NOTE: this controls the number of rows in VALUES clause of INSERT statement
         const NUM_TX_PER_CHUNK: usize = 20;
@@ -381,7 +401,7 @@ mod tests {
         let postgres_block_store = PostgresBlockStore::new(epoch_cache.clone()).await;
 
         postgres_block_store
-            .save(&create_test_block())
+            .write_block(&create_test_block())
             .await
             .unwrap();
     }

@@ -88,7 +88,7 @@ impl PostgresBlock {
                 previous_blockhash TEXT NOT NULL,
                 rewards TEXT,
                 CONSTRAINT pk_block_slot PRIMARY KEY(slot)
-            );
+            ) WITH (FILLFACTOR=90);
             CLUSTER {schema}.blocks USING pk_block_slot;
         "#,
             schema = schema
@@ -108,11 +108,12 @@ impl PostgresBlock {
             slot = slot)
     }
 
+    // true is actually inserted; false if operation was noop
     pub async fn save(
         &self,
         postgres_session: &PostgresSession,
         epoch: EpochRef,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<bool> {
         const NB_ARGUMENTS: usize = 8;
 
         let started = Instant::now();
@@ -175,6 +176,7 @@ impl PostgresBlock {
             None => {
                 // database detected conflict
                 warn!("Block {} already exists - not updated", self.slot);
+                return Ok(false);
             }
         }
 
@@ -184,6 +186,6 @@ impl PostgresBlock {
             started.elapsed().as_secs_f64() * 1000.0
         );
 
-        Ok(())
+        Ok(true)
     }
 }

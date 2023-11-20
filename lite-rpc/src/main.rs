@@ -45,6 +45,7 @@ use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
 
 use crate::rpc_tester::RpcTester;
 
@@ -110,7 +111,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         create_grpc_subscription(rpc_client.clone(), grpc_addr, GRPC_VERSION.to_string())?
     } else {
-        create_json_rpc_polling_subscription(rpc_client.clone())?
+        create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?
     };
     let EndpointStreaming {
         blocks_notifier,
