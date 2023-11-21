@@ -1,34 +1,34 @@
+use jsonrpsee::tracing::warn;
+use log::{debug, error, info, trace};
+use serde::{Deserialize, Serialize};
+use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
+use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
+use solana_lite_rpc_core::structures::epoch::EpochCache;
+use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
+use solana_lite_rpc_core::traits::block_storage_interface::BlockStorageInterface;
+use solana_lite_rpc_core::types::{BlockStream, SlotStream};
+use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::blake3::{hash, Hash, HASH_BYTES};
+use solana_sdk::clock::Slot;
+use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::message::VersionedMessage;
+use solana_sdk::pubkey::Pubkey;
 use std::backtrace::Backtrace;
 use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 use std::panic::PanicInfo;
 use std::process;
 use std::str::FromStr;
-use jsonrpsee::tracing::warn;
-use log::{debug, error, info, trace};
-use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
-use solana_lite_rpc_core::structures::epoch::EpochCache;
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_lite_rpc_core::traits::block_storage_interface::BlockStorageInterface;
-use solana_lite_rpc_core::types::{BlockStream, SlotStream};
-use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
-use solana_sdk::blake3::{hash, Hash, HASH_BYTES};
-use solana_sdk::clock::Slot;
-use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::message::VersionedMessage;
-use solana_sdk::pubkey::Pubkey;
 use tokio::join;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
-use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format;
-use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
+use tracing_subscriber::EnvFilter;
 
 // force ordered stream of blocks
 const NUM_PARALLEL_TASKS: usize = 1;
@@ -51,7 +51,9 @@ async fn storage_test() {
         create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS).unwrap();
 
     let EndpointStreaming {
-        blocks_notifier, slot_notifier, ..
+        blocks_notifier,
+        slot_notifier,
+        ..
     } = subscriptions;
 
     let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
@@ -88,12 +90,18 @@ fn storage_prepare_epoch_schema(
             match slot_notifier.recv().await {
                 Ok(SlotNotification { processed_slot, .. }) => {
                     if processed_slot >= debounce_slot {
-                        let created = postgres_storage.prepare_epoch_schema(processed_slot).await.unwrap();
+                        let created = postgres_storage
+                            .prepare_epoch_schema(processed_slot)
+                            .await
+                            .unwrap();
                         debounce_slot = processed_slot + 64; // wait a bit before hammering the DB again
                         if created {
                             debug!("Async job prepared schema at slot {}", processed_slot);
                         } else {
-                            debug!("Async job for preparing schema at slot {} was a noop", processed_slot);
+                            debug!(
+                                "Async job for preparing schema at slot {} was a noop",
+                                processed_slot
+                            );
                         }
                     }
                 }
@@ -124,7 +132,10 @@ fn storage_listen(
                     );
 
                     if block_notifier.len() > CHANNEL_SIZE_WARNING_THRESHOLD {
-                        warn!("(soft_realtime) Block queue is growing - {} elements", block_notifier.len());
+                        warn!(
+                            "(soft_realtime) Block queue is growing - {} elements",
+                            block_notifier.len()
+                        );
                     }
 
                     // TODO we should intercept finalized blocks and try to update only the status optimistically
@@ -193,7 +204,6 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
                             );
                         }
                     }
-
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     warn!(
@@ -231,11 +241,17 @@ fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHand
                         }
 
                         // check semantics and log/panic
-                        inspect_this_block(&mut confirmed_blocks_by_slot, &mut finalized_blocks, &block);
+                        inspect_this_block(
+                            &mut confirmed_blocks_by_slot,
+                            &mut finalized_blocks,
+                            &block,
+                        );
                     } else {
                         trace!("Warming up {} ...", block.slot);
 
-                        if warmup_first_confirmed == 0 && block.commitment_config == CommitmentConfig::confirmed() {
+                        if warmup_first_confirmed == 0
+                            && block.commitment_config == CommitmentConfig::confirmed()
+                        {
                             warmup_first_confirmed = block.slot;
                         }
 
@@ -243,12 +259,9 @@ fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHand
                             if block.slot >= warmup_first_confirmed {
                                 warmup_cutoff = block.slot + 32;
                                 debug!("Warming done (slot {})", warmup_cutoff);
-
                             }
                         }
-
                     }
-
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     warn!(
@@ -266,36 +279,60 @@ fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHand
     })
 }
 
-fn inspect_this_block(confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDetails>, finalized_blocks: &mut HashSet<Slot>, block: &ProducedBlock) {
+fn inspect_this_block(
+    confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDetails>,
+    finalized_blocks: &mut HashSet<Slot>,
+    block: &ProducedBlock,
+) {
     if block.commitment_config == CommitmentConfig::confirmed() {
-        let prev_block = confirmed_blocks_by_slot.insert(block.slot, BlockDebugDetails {
-            blockhash: block.blockhash.clone(),
-            block: block.clone(),
-        });
+        let prev_block = confirmed_blocks_by_slot.insert(
+            block.slot,
+            BlockDebugDetails {
+                blockhash: block.blockhash.clone(),
+                block: block.clone(),
+            },
+        );
         // Assumption I: we never see the same confirmed block twice
         assert!(prev_block.is_none(), "Must not see a confirmed block twice");
     } else if block.commitment_config == CommitmentConfig::finalized() {
         let finalized_block = &block;
         let finalized_block_existed = finalized_blocks.insert(finalized_block.slot);
         // Assumption II: we never see the same finalized block twice
-        assert!(finalized_block_existed, "Finalized block {} must NOT have been seen before", finalized_block.slot);
+        assert!(
+            finalized_block_existed,
+            "Finalized block {} must NOT have been seen before",
+            finalized_block.slot
+        );
         let prev_block = confirmed_blocks_by_slot.get(&block.slot);
         match prev_block {
             Some(prev_block) => {
-                info!("Got finalized block {} with blockhash {} - prev confirmed was {}",
-                                        finalized_block.slot, finalized_block.blockhash, prev_block.blockhash);
+                info!(
+                    "Got finalized block {} with blockhash {} - prev confirmed was {}",
+                    finalized_block.slot, finalized_block.blockhash, prev_block.blockhash
+                );
                 // TODO is that correct?
                 // Assumption III: confirmed and finalized block can be matched by slot and have the same blockhash
-                assert_eq!(finalized_block.blockhash, prev_block.blockhash, "Must see the same blockhash for confirmed and finalized block");
+                assert_eq!(
+                    finalized_block.blockhash, prev_block.blockhash,
+                    "Must see the same blockhash for confirmed and finalized block"
+                );
 
-                debug!("confirmed: {:?}", to_string_without_transactions(&prev_block.block));
-                debug!("finalized: {:?}", to_string_without_transactions(&finalized_block));
+                debug!(
+                    "confirmed: {:?}",
+                    to_string_without_transactions(&prev_block.block)
+                );
+                debug!(
+                    "finalized: {:?}",
+                    to_string_without_transactions(&finalized_block)
+                );
 
                 // Assumption IV: block details do not change between confirmed and finalized
                 assert_eq!(
                     // normalized and compare
-                    to_string_without_transactions(&prev_block.block).replace("commitment_config=confirmed", "commitment_config=IGNORE"),
-                    to_string_without_transactions(&finalized_block).replace("commitment_config=finalized", "commitment_config=IGNORE"),
+                    to_string_without_transactions(&prev_block.block)
+                        .replace("commitment_config=confirmed", "commitment_config=IGNORE"),
+                    to_string_without_transactions(&finalized_block)
+                        .replace("commitment_config=finalized", "commitment_config=IGNORE"),
                     "block tostring mismatch"
                 )
             }
