@@ -23,6 +23,8 @@ use crate::postgres::{
 };
 
 const LITERPC_ROLE: &str = "r_literpc";
+const PARALLEL_WRITE_SESSIONS: usize = 4;
+const MIN_WRITE_CHUNK_SIZE: usize = 500;
 
 #[derive(Default, Clone, Copy)]
 pub struct PostgresData {
@@ -35,7 +37,7 @@ pub struct PostgresData {
 pub struct PostgresBlockStore {
     session_cache: PostgresSessionCache,
     // use this session only for the write path!
-    write_session: PostgresWriteSession,
+    write_sessions: Vec<PostgresWriteSession>,
     epoch_schedule: EpochCache,
     // postgres_data: Arc<RwLock<PostgresData>>,
 }
@@ -43,13 +45,17 @@ pub struct PostgresBlockStore {
 impl PostgresBlockStore {
     pub async fn new(epoch_schedule: EpochCache) -> Self {
         let session_cache = PostgresSessionCache::new().await.unwrap();
-        let write_session = PostgresWriteSession::new_from_env().await.unwrap();
+        let mut write_sessions = Vec::new();
+        for i in 0..PARALLEL_WRITE_SESSIONS {
+            write_sessions.push(PostgresWriteSession::new_from_env(i).await.unwrap());
+        }
+        assert!(write_sessions.len() > 0, "must have at least one write session");
 
         Self::check_role(&session_cache).await;
 
         Self {
             session_cache,
-            write_session,
+            write_sessions,
             epoch_schedule,
             // postgres_data,
         }
@@ -221,7 +227,6 @@ impl PostgresBlockStore {
 
             // TODO model commitment levels in new table
         }
-
         Ok(())
     }
 
@@ -241,10 +246,10 @@ impl PostgresBlockStore {
 
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
 
-        let write_session = self.write_session.get_write_session().await;
+        let write_session_single = self.write_sessions[0].get_write_session().await;
 
         let started_block = Instant::now();
-        let inserted = postgres_block.save(&write_session, epoch.into()).await?;
+        let inserted = postgres_block.save(&write_session_single, epoch.into()).await?;
 
         if !inserted {
             debug!("Block {} already exists - skip update", slot);
@@ -252,26 +257,32 @@ impl PostgresBlockStore {
         }
         let elapsed_block_insert = started_block.elapsed();
 
-        // NOTE: this controls the number of rows in VALUES clause of INSERT statement
-        // const NUM_TX_PER_CHUNK: usize = 20;
-        //
-        // // save transaction
-        // let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
         let started_txs = Instant::now();
-        PostgresTransaction::save_transaction_copyin(&write_session, epoch.into(), &transactions)
-            .await?;
-        // for chunk in chunks {
-        //     PostgresTransaction::save_transaction_batch(&write_session, epoch.into(), slot, chunk)
-        //         .await?;
-        // }
+
+        let mut queries_fut = Vec::new();
+        let chunk_size = div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
+        let chunks = transactions.chunks(chunk_size).collect_vec();
+        assert!(chunks.len() <= self.write_sessions.len(), "cannot have more chunks than session");
+        for (i, chunk) in chunks.iter().enumerate() {
+            let session = self.write_sessions[i].get_write_session().await.clone();
+            let future = PostgresTransaction::save_transaction_copyin(session, epoch.into(), &chunk);
+            queries_fut.push(future);
+        }
+        let all_results: Vec<Result<bool>> = futures_util::future::join_all(queries_fut).await;
+        for result in all_results {
+            result.unwrap();
+        }
+
         let elapsed_txs_insert = started_txs.elapsed();
 
         debug!(
-            "Saving block {} with {} txs to postgres took {:.2}ms for block and {:.2}ms for transactions",
+            "Saving block {} to postgres took {:.2}ms for block and {:.2}ms for {} transactions ({}x{} chunks)",
             slot,
-            transactions.len(),
             elapsed_block_insert.as_secs_f64() * 1000.0,
             elapsed_txs_insert.as_secs_f64() * 1000.0,
+            transactions.len(),
+            chunks.len(),
+            chunk_size,
         );
         Ok(())
     }
@@ -299,6 +310,10 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> String {
         ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
     "#
     )
+}
+
+fn div_ceil(a: usize, b: usize) -> usize {
+    (a + b - 1) / b
 }
 
 #[async_trait]
@@ -434,7 +449,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_write_session() {
-        let write_session = PostgresWriteSession::new_from_env().await.unwrap();
+        let write_session = PostgresWriteSession::new_from_env(0).await.unwrap();
 
         let row_role = write_session
             .get_write_session()

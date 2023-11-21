@@ -78,7 +78,7 @@ impl PostgresTransaction {
 
     // this version uses INSERT statements
     pub async fn save_transaction_insert(
-        postgres_session: &PostgresSession,
+        postgres_session: PostgresSession,
         epoch: EpochRef,
         slot: Slot,
         transactions: &[Self],
@@ -141,7 +141,7 @@ impl PostgresTransaction {
 
     // this version uses "COPY IN"
     pub async fn save_transaction_copyin(
-        postgres_session: &PostgresSession,
+        postgres_session: PostgresSession,
         epoch: EpochRef,
         transactions: &[Self],
     ) -> anyhow::Result<bool> {

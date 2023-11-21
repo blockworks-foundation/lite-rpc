@@ -254,19 +254,16 @@ pub struct PostgresWriteSession {
 }
 
 impl PostgresWriteSession {
-    pub async fn new_from_env() -> anyhow::Result<Self> {
+    pub async fn new_from_env(session_index: usize) -> anyhow::Result<Self> {
         let session = PostgresSession::new_from_env().await?;
 
         let statement = format!(
             r#"
-                    SET SESSION application_name='postgres-blockstore-write-session';
-                    -- default: 64MB
-                    SET SESSION maintenance_work_mem = '256MB';
-                    -- default: 4MB
-                    SET SESSION temp_buffers = '64MB';
-                    -- default: 4MB
-                    SET SESSION work_mem = '32MB';
-                "#
+                SET SESSION application_name='postgres-blockstore-write-session-{session_index}';
+                -- default: 64MB
+                SET SESSION maintenance_work_mem = '256MB';
+            "#,
+            session_index = session_index
         );
 
         session.execute_simple(&statement).await.unwrap();
