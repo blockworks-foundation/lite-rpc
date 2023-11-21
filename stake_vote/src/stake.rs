@@ -48,7 +48,7 @@ impl StakeStore {
         if account.lamports == 0 {
             self.stakes.add_value(
                 UpdateAction::Remove(account.pubkey, account.slot),
-                account.slot <= current_end_epoch_slot,
+                account.slot > current_end_epoch_slot,
             );
         } else {
             let Ok(delegated_stake_opt) = account.read_stake() else {
@@ -67,7 +67,7 @@ impl StakeStore {
                 let action_update_slot = stake.last_update_slot;
                 self.stakes.add_value(
                     UpdateAction::Notify(action_update_slot, stake),
-                    action_update_slot <= current_end_epoch_slot,
+                    action_update_slot > current_end_epoch_slot,
                 );
             }
         }
