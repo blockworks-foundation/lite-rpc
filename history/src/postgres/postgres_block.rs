@@ -196,7 +196,7 @@ impl PostgresBlock {
         }
 
         debug!(
-            "Inserting block {} row to schema {} postgres took {:.2}ms",
+            "Inserting block {} to schema {} postgres took {:.2}ms",
             self.slot,
             schema,
             started.elapsed().as_secs_f64() * 1000.0
