@@ -1,6 +1,11 @@
 use std::env;
+use std::sync::Arc;
+use std::thread::{sleep, Thread};
+use std::time::Duration;
 use bytes::Bytes;
-use futures_util::pin_mut;
+use futures_util::future::join_all;
+use futures_util::{pin_mut, stream};
+use itertools::Itertools;
 use log::info;
 use solana_sdk::blake3::Hash;
 use solana_sdk::signature::Signature;
@@ -10,7 +15,7 @@ use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSession;
 
-pub async fn copy_in(client: &tokio_postgres::Client) -> anyhow::Result<()> {
+pub async fn copy_in(client: Arc<tokio_postgres::Client>) -> anyhow::Result<()> {
 
     let statement = format!(
         r#"
@@ -69,20 +74,32 @@ pub async fn main() {
     env::set_var("PG_CONFIG", "host=localhost port=5433 dbname=stefan user=postgres sslmode=disable");
 
     let write_session_single = PostgresSession::new_from_env().await.unwrap();
-    let write_session1 = PostgresSession::new_from_env().await.unwrap();
-    let write_session2 = PostgresSession::new_from_env().await.unwrap();
-    let write_session3 = PostgresSession::new_from_env().await.unwrap();
-    let write_session4 = PostgresSession::new_from_env().await.unwrap();
-    let write_session5 = PostgresSession::new_from_env().await.unwrap();
+    // let write_session1 = PostgresSession::new_from_env().await.unwrap();
+    // let write_session2 = PostgresSession::new_from_env().await.unwrap();
+    // let write_session3 = PostgresSession::new_from_env().await.unwrap();
+    // let write_session4 = PostgresSession::new_from_env().await.unwrap();
+    // let write_session5 = PostgresSession::new_from_env().await.unwrap();
+
+    let mut write_sessions = Vec::new();
+    for _i in 0..5 {
+        write_sessions.push(PostgresSession::new_from_env().await.unwrap());
+    }
 
     let started = Instant::now();
-    let (ret1, ret2, ret3, ret4, ret5) = futures_util::join!(
-        copy_in(&write_session1.client),
-        copy_in(&write_session2.client),
-        copy_in(&write_session3.client),
-        copy_in(&write_session4.client),
-        copy_in(&write_session5.client),
-    );
+    // let (ret1, ret2, ret3, ret4, ret5) = futures_util::join!(
+    //     copy_in(&write_session1.client),
+    //     copy_in(&write_session2.client),
+    //     copy_in(&write_session3.client),
+    //     copy_in(&write_session4.client),
+    //     copy_in(&write_session5.client),
+    // );
+    let queries = write_sessions.iter().map(|x| copy_in(x.client.clone())).collect_vec();
+    let all_results: Vec<anyhow::Result<()>> = join_all(queries).await;
+
+    // for result in all_results {
+    //     result.unwrap();
+    // }
+
     info!("parallel write rows in {:02}ms", started.elapsed().as_secs_f64() * 1000.0);
 
     let dummy_session = PostgresSession::new_from_env().await.unwrap();
