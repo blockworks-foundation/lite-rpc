@@ -1,4 +1,3 @@
-use log::info;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
@@ -6,7 +5,6 @@ use solana_sdk::{
     slot_history::Slot,
     transaction::TransactionError,
 };
-use solana_sdk::pubkey::Pubkey;
 use solana_transaction_status::{
     option_serializer::OptionSerializer, Reward, RewardType, UiConfirmedBlock,
     UiTransactionStatusMeta,

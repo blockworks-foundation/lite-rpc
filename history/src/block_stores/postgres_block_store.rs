@@ -1,25 +1,19 @@
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::sync::{Arc};
 use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
-use chrono::Duration;
 use itertools::Itertools;
-use log::{debug, error, info, trace, warn};
-use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
-use solana_lite_rpc_core::structures::epoch::{Epoch, EpochRef};
+use log::{debug, info, trace, warn};
+use solana_lite_rpc_core::structures::epoch::{EpochRef};
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
 };
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::slot_history::Slot;
-use solana_transaction_status::Reward;
-use tokio::sync::{Mutex, RwLock};
-use tokio_postgres::Error;
 use tokio_postgres::error::SqlState;
-use solana_lite_rpc_core::iterutils::Uniqueness;
 
 use crate::postgres::postgres_epoch::{PostgresEpoch, EPOCH_SCHEMA_PREFIX};
 use crate::postgres::postgres_session::{PostgresSession, PostgresWriteSession};
@@ -147,13 +141,14 @@ impl PostgresBlockStore {
             .expect("should get new postgres session")
     }
 
-
     pub async fn is_block_in_range(&self, slot: Slot) -> bool {
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
         let ranges = self.get_slot_range_by_epoch().await;
         let matching_range: Option<&RangeInclusive<Slot>> = ranges.get(&epoch.into());
 
-        matching_range.map(|slot_range| slot_range.contains(&slot)).is_some()
+        matching_range
+            .map(|slot_range| slot_range.contains(&slot))
+            .is_some()
     }
 
     pub async fn query(&self, slot: Slot) -> Result<ProducedBlock> {
@@ -161,10 +156,12 @@ impl PostgresBlockStore {
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
 
         let query = PostgresBlock::build_query_statement(epoch, slot);
-        let block_row = self.get_session().await.query_opt(
-            &query,
-            &[])
-        .await.unwrap();
+        let block_row = self
+            .get_session()
+            .await
+            .query_opt(&query, &[])
+            .await
+            .unwrap();
 
         if block_row.is_none() {
             bail!("Block {} in epoch {} not found in postgres", slot, epoch);
@@ -201,30 +198,34 @@ impl PostgresBlockStore {
             CommitmentConfig::confirmed(),
         );
 
-        debug!("Querying produced block {} from postgres in epoch schema {} took {:.2}ms: {}/{}",
-            produced_block.slot, epoch_schema,
+        debug!(
+            "Querying produced block {} from postgres in epoch schema {} took {:.2}ms: {}/{}",
+            produced_block.slot,
+            epoch_schema,
             started.elapsed().as_secs_f64() * 1000.0,
-            produced_block.blockhash, produced_block.commitment_config.commitment);
+            produced_block.blockhash,
+            produced_block.commitment_config.commitment
+        );
 
         return Ok(produced_block);
-
     }
 
     // optimistically try to progress commitment level for a block that is already stored
     pub async fn progress_block_commitment_level(&self, block: &ProducedBlock) -> Result<()> {
         // ATM we only support updating confirmed block to finalized
         if block.commitment_config.commitment == CommitmentLevel::Finalized {
-            debug!("Checking block {} if we can progress it to finalized ...", block.slot);
+            debug!(
+                "Checking block {} if we can progress it to finalized ...",
+                block.slot
+            );
 
             // TODO model commitment levels in new table
-
         }
 
         Ok(())
     }
 
     pub async fn write_block(&self, block: &ProducedBlock) -> Result<()> {
-
         self.progress_block_commitment_level(block).await?;
 
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
@@ -245,7 +246,6 @@ impl PostgresBlockStore {
         let started_block = Instant::now();
         let inserted = postgres_block.save(&write_session, epoch.into()).await?;
 
-
         if !inserted {
             debug!("Block {} already exists - skip update", slot);
             return Ok(());
@@ -258,7 +258,8 @@ impl PostgresBlockStore {
         // // save transaction
         // let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
         let started_txs = Instant::now();
-        PostgresTransaction::save_transaction_copyin(&write_session, epoch.into(), &transactions).await?;
+        PostgresTransaction::save_transaction_copyin(&write_session, epoch.into(), &transactions)
+            .await?;
         // for chunk in chunks {
         //     PostgresTransaction::save_transaction_batch(&write_session, epoch.into(), slot, chunk)
         //         .await?;
@@ -305,15 +306,25 @@ impl BlockStorageInterface for PostgresBlockStore {
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         let map_epoch_to_slot_range = self.get_slot_range_by_epoch().await;
 
-        let rows_minmax: Vec<&RangeInclusive<Slot>> = map_epoch_to_slot_range.iter().map(|(_, range)| range).collect_vec();
+        let rows_minmax: Vec<&RangeInclusive<Slot>> = map_epoch_to_slot_range
+            .iter()
+            .map(|(_, range)| range)
+            .collect_vec();
 
-        let slot_min = rows_minmax.iter().map(|range| range.start()).min().expect("non-empty result");
-        let slot_max = rows_minmax.iter().map(|range| range.end()).max().expect("non-empty result");
+        let slot_min = rows_minmax
+            .iter()
+            .map(|range| range.start())
+            .min()
+            .expect("non-empty result");
+        let slot_max = rows_minmax
+            .iter()
+            .map(|range| range.end())
+            .max()
+            .expect("non-empty result");
 
         RangeInclusive::new(*slot_min, *slot_max)
     }
 }
-
 
 impl PostgresBlockStore {
     pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<Slot>> {
@@ -334,18 +345,27 @@ impl PostgresBlockStore {
         let epoch_schemas = result
             .iter()
             .map(|row| row.get::<&str, &str>("schema_name"))
-            .map(|schema_name| (schema_name, PostgresEpoch::parse_epoch_from_schema_name(schema_name)))
+            .map(|schema_name| {
+                (
+                    schema_name,
+                    PostgresEpoch::parse_epoch_from_schema_name(schema_name),
+                )
+            })
             .collect_vec();
 
         if epoch_schemas.is_empty() {
             return HashMap::new();
         }
 
-        let inner =
-            epoch_schemas.iter()
-            .map(|(schema, epoch)|
-                format!("SELECT slot,{epoch}::bigint as epoch FROM {schema}.blocks",
-                                  schema = schema, epoch = epoch))
+        let inner = epoch_schemas
+            .iter()
+            .map(|(schema, epoch)| {
+                format!(
+                    "SELECT slot,{epoch}::bigint as epoch FROM {schema}.blocks",
+                    schema = schema,
+                    epoch = epoch
+                )
+            })
             .join(" UNION ALL ");
 
         let query = format!(
@@ -358,38 +378,46 @@ impl PostgresBlockStore {
             inner = inner
         );
 
-
         let rows_minmax = session.query_list(&query, &[]).await.unwrap();
 
         if rows_minmax.is_empty() {
             return HashMap::new();
         }
 
-        let mut map_epoch_to_slot_range =
-            rows_minmax.iter()
-                .map(|row| (
+        let mut map_epoch_to_slot_range = rows_minmax
+            .iter()
+            .map(|row| {
+                (
                     row.get::<&str, i64>("epoch"),
                     RangeInclusive::new(
                         row.get::<&str, i64>("slot_min") as Slot,
-                        row.get::<&str, i64>("slot_max") as Slot
-                    )
-                ))
-                .into_grouping_map()
-                .fold(None, |acc, _key, val| {
-                    assert!(acc.is_none(), "epoch must be unique");
-                    Some(val)
-                });
+                        row.get::<&str, i64>("slot_max") as Slot,
+                    ),
+                )
+            })
+            .into_grouping_map()
+            .fold(None, |acc, _key, val| {
+                assert!(acc.is_none(), "epoch must be unique");
+                Some(val)
+            });
 
-        let final_range: HashMap<EpochRef, RangeInclusive<Slot>> =
-            map_epoch_to_slot_range.iter_mut().map(|(epoch, range)| {
+        let final_range: HashMap<EpochRef, RangeInclusive<Slot>> = map_epoch_to_slot_range
+            .iter_mut()
+            .map(|(epoch, range)| {
                 let epoch = EpochRef::new(*epoch as u64);
-                (epoch, range.clone().expect("range must be returned from SQL"))
-            }).collect();
+                (
+                    epoch,
+                    range.clone().expect("range must be returned from SQL"),
+                )
+            })
+            .collect();
 
-
-        debug!("Slot range check in postgres found {} ranges, took {:2}sec: {:?}",
+        debug!(
+            "Slot range check in postgres found {} ranges, took {:2}sec: {:?}",
             rows_minmax.len(),
-            started.elapsed().as_secs_f64(), final_range);
+            started.elapsed().as_secs_f64(),
+            final_range
+        );
 
         final_range
     }
@@ -408,9 +436,13 @@ mod tests {
     async fn postgres_write_session() {
         let write_session = PostgresWriteSession::new_from_env().await.unwrap();
 
-        let row_role = write_session.get_write_session().await.query_one("SELECT current_role", &[]).await.unwrap();
+        let row_role = write_session
+            .get_write_session()
+            .await
+            .query_one("SELECT current_role", &[])
+            .await
+            .unwrap();
         info!("row: {:?}", row_role);
-
     }
 
     #[tokio::test]

@@ -1,18 +1,15 @@
-use std::fmt::Write;
-use std::pin::pin;
 use std::sync::Arc;
 
 use anyhow::Context;
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
-use tokio::io::AsyncWriteExt;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
-use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, Error, NoTls, Row, Socket, CopyInSink};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use futures_util::{pin_mut, SinkExt};
-use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::types::Type;
+use tokio_postgres::{
+    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, CopyInSink, Error, NoTls, Row,
+    Socket,
+};
 
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 
@@ -84,9 +81,9 @@ impl PostgresSession {
         pg_config: tokio_postgres::Config,
         connector: T,
     ) -> anyhow::Result<Client>
-        where
-            T: MakeTlsConnect<Socket> + Send + 'static,
-            <T as MakeTlsConnect<Socket>>::Stream: Send,
+    where
+        T: MakeTlsConnect<Socket> + Send + 'static,
+        <T as MakeTlsConnect<Socket>>::Stream: Send,
     {
         let (client, connection) = pg_config
             .connect(connector)
@@ -223,7 +220,6 @@ impl PostgresSession {
         // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
         return self.client.copy_in(statement).await;
     }
-
 }
 
 #[derive(Clone)]
@@ -252,8 +248,6 @@ impl PostgresSessionCache {
     }
 }
 
-
-
 #[derive(Clone)]
 pub struct PostgresWriteSession {
     session: Arc<RwLock<PostgresSession>>,
@@ -263,9 +257,8 @@ impl PostgresWriteSession {
     pub async fn new_from_env() -> anyhow::Result<Self> {
         let session = PostgresSession::new_from_env().await?;
 
-        let statement =
-            format!(
-                r#"
+        let statement = format!(
+            r#"
                     SET SESSION application_name='postgres-blockstore-write-session';
                     -- default: 64MB
                     SET SESSION maintenance_work_mem = '256MB';
@@ -274,12 +267,12 @@ impl PostgresWriteSession {
                     -- default: 4MB
                     SET SESSION work_mem = '32MB';
                 "#
-            );
+        );
 
         session.execute_simple(&statement).await.unwrap();
 
         Ok(Self {
-            session: Arc::new(RwLock::new(session))
+            session: Arc::new(RwLock::new(session)),
         })
     }
 
@@ -287,7 +280,8 @@ impl PostgresWriteSession {
         let session = self.session.read().await;
 
         if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
-            let session = PostgresSession::new_from_env().await
+            let session = PostgresSession::new_from_env()
+                .await
                 .expect("should have created new postgres session");
             let mut lock = self.session.write().await;
             *lock = session.clone();
@@ -295,11 +289,8 @@ impl PostgresWriteSession {
         } else {
             session.clone()
         }
-
     }
-
 }
-
 
 #[test]
 fn multiline_query_test() {

@@ -109,7 +109,6 @@ const fn get_max_safe_updates<T: SchemaSize>() -> usize {
 }
 
 async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> anyhow::Result<()> {
-
     if txs.is_empty() {
         return Ok(());
     }

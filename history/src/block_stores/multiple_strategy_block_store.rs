@@ -1,10 +1,11 @@
 use crate::block_stores::faithful_block_store::FaithfulBlockStore;
+use crate::block_stores::postgres_block_store::PostgresBlockStore;
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use log::{debug, trace};
 use solana_lite_rpc_core::{
     structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageInterface},
+    traits::block_storage_interface::BlockStorageInterface,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
@@ -13,7 +14,6 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
-use crate::block_stores::postgres_block_store::PostgresBlockStore;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {
@@ -44,7 +44,7 @@ pub struct MultipleStrategyBlockStorage {
     persistent_block_storage: PostgresBlockStore, // for persistent block storage
     // note supported ATM
     faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful
-    // last_confirmed_slot: Arc<AtomicU64>,
+                                                        // last_confirmed_slot: Arc<AtomicU64>,
 }
 
 impl MultipleStrategyBlockStorage {
@@ -62,8 +62,10 @@ impl MultipleStrategyBlockStorage {
 
     // lookup confirmed or finalized block from either our blockstore or faithful
     // TODO find better method name
-    pub async fn query_block(&self, slot: solana_sdk::slot_history::Slot) -> Result<BlockStorageData> {
-
+    pub async fn query_block(
+        &self,
+        slot: solana_sdk::slot_history::Slot,
+    ) -> Result<BlockStorageData> {
         // TODO this check is optional and might be moved to the caller
         // if slot > last_confirmed_slot {
         //     bail!(format!(
@@ -78,14 +80,16 @@ impl MultipleStrategyBlockStorage {
         // 2.1. if yes; fetch from Postgres
         // 2.2. if not: try to fetch from faithful
 
-
         match self.persistent_block_storage.is_block_in_range(slot).await {
             true => {
                 debug!(
                     "Assume block {} to be available in persistent block-storage",
                     slot,
                 );
-                let lookup = self.persistent_block_storage.query(slot).await
+                let lookup = self
+                    .persistent_block_storage
+                    .query(slot)
+                    .await
                     .context(format!("block not found although it was in range"));
 
                 return lookup.map(|b| BlockStorageData {
@@ -123,15 +127,12 @@ impl MultipleStrategyBlockStorage {
             bail!(format!("Block {} not found - faithful not available", slot));
         }
     }
-
 }
 
 #[async_trait]
 impl BlockStorageInterface for MultipleStrategyBlockStorage {
-
     // we need to build the slots from right to left
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
-
         // merge them
         let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
         trace!("Persistent storage range: {:?}", persistent_storage_range);

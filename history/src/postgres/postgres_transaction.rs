@@ -1,16 +1,14 @@
-use std::time::Instant;
+use crate::postgres::postgres_epoch::PostgresEpoch;
 use bytes::Bytes;
 use futures_util::pin_mut;
-use crate::postgres::postgres_epoch::PostgresEpoch;
-use log::{debug, info, trace, warn};
-use solana_sdk::blake3::Hash;
-use solana_sdk::signature::Signature;
+use log::{trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
+use std::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::CopyInSink;
 use tokio_postgres::types::{ToSql, Type};
+use tokio_postgres::CopyInSink;
 
 use super::postgres_session::PostgresSession;
 
@@ -66,6 +64,7 @@ impl PostgresTransaction {
         )
     }
 
+    // removed the foreign key as it slows down inserts
     pub fn build_foreign_key_statement(epoch: EpochRef) -> String {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
@@ -132,7 +131,9 @@ impl PostgresTransaction {
 
         trace!(
             "Inserted {} transactions chunk into epoch schema {} for block {}",
-            inserted, schema, slot
+            inserted,
+            schema,
+            slot
         );
 
         Ok(())
@@ -144,7 +145,6 @@ impl PostgresTransaction {
         epoch: EpochRef,
         transactions: &[Self],
     ) -> anyhow::Result<bool> {
-
         let schema = PostgresEpoch::build_schema_name(epoch);
         let statement = format!(
             r#"
@@ -160,7 +160,19 @@ impl PostgresTransaction {
         let sink: CopyInSink<Bytes> = postgres_session.copy_in(&statement).await.unwrap();
 
         let started = Instant::now();
-        let writer = BinaryCopyInWriter::new(sink, &[Type::TEXT, Type::INT8, Type::TEXT, Type::INT8, Type::INT8, Type::INT8, Type::TEXT, Type::TEXT]);
+        let writer = BinaryCopyInWriter::new(
+            sink,
+            &[
+                Type::TEXT,
+                Type::INT8,
+                Type::TEXT,
+                Type::INT8,
+                Type::INT8,
+                Type::INT8,
+                Type::TEXT,
+                Type::TEXT,
+            ],
+        );
         pin_mut!(writer);
 
         for tx in transactions {
@@ -175,15 +187,26 @@ impl PostgresTransaction {
                 message,
             } = tx;
 
-            writer.as_mut().write(&[&signature, &slot, &err, &cu_requested, &prioritization_fees, &cu_consumed, &recent_blockhash, &message]).await.unwrap();
+            writer
+                .as_mut()
+                .write(&[
+                    &signature,
+                    &slot,
+                    &err,
+                    &cu_requested,
+                    &prioritization_fees,
+                    &cu_consumed,
+                    &recent_blockhash,
+                    &message,
+                ])
+                .await
+                .unwrap();
         }
 
         writer.finish().await.unwrap();
 
         Ok(true)
     }
-
-
 
     pub async fn get(
         postgres_session: PostgresSession,

@@ -1,18 +1,14 @@
 use crate::postgres::postgres_epoch::PostgresEpoch;
-use log::{debug, info, warn};
-use solana_lite_rpc_core::structures::epoch::EpochRef;
-use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
-use std::time::Instant;
 use anyhow::{anyhow, bail};
 use bytes::Bytes;
 use futures_util::pin_mut;
-use solana_sdk::blake3::Hash;
+use log::{debug, info, warn};
+use solana_lite_rpc_core::structures::epoch::EpochRef;
+use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::signature::Signature;
 use solana_transaction_status::Reward;
-use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::CopyInSink;
+use std::time::Instant;
 use tokio_postgres::types::{ToSql, Type};
 
 use super::postgres_session::PostgresSession;
@@ -27,7 +23,6 @@ pub struct PostgresBlock {
     pub previous_blockhash: String,
     pub rewards: Option<String>,
     pub leader_id: Option<String>,
-
 }
 
 impl From<&ProducedBlock> for PostgresBlock {
@@ -53,15 +48,16 @@ impl From<&ProducedBlock> for PostgresBlock {
 }
 
 impl PostgresBlock {
-   pub fn into_produced_block(&self,
-                     transactions: Vec<u8>,
-                     commitment_config: CommitmentConfig) -> ProducedBlock {
-
-       let rewards_vec: Option<Vec<Reward>> =
-           self.rewards
-           .as_ref()
-           .map(|x| BASE64.deserialize::<Vec<Reward>>(x).ok())
-           .unwrap_or(None);
+    pub fn into_produced_block(
+        &self,
+        transactions: Vec<u8>,
+        commitment_config: CommitmentConfig,
+    ) -> ProducedBlock {
+        let rewards_vec: Option<Vec<Reward>> = self
+            .rewards
+            .as_ref()
+            .map(|x| BASE64.deserialize::<Vec<Reward>>(x).ok())
+            .unwrap_or(None);
 
         ProducedBlock {
             // TODO implement
@@ -111,7 +107,8 @@ impl PostgresBlock {
             "#,
             schema = PostgresEpoch::build_schema_name(epoch),
             epoch = epoch,
-            slot = slot)
+            slot = slot
+        )
     }
 
     // true is actually inserted; false if operation was noop
@@ -188,7 +185,8 @@ impl PostgresBlock {
 
         debug!(
             "Inserting block {} row to schema {} postgres took {:.2}ms",
-            self.slot, schema,
+            self.slot,
+            schema,
             started.elapsed().as_secs_f64() * 1000.0
         );
 

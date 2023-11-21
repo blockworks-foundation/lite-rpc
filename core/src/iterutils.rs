@@ -1,8 +1,7 @@
-
 pub enum Uniqueness {
     ExactlyOne,
     Multiple(usize),
-    Empty
+    Empty,
 }
 
 impl Uniqueness {
@@ -16,4 +15,3 @@ impl Uniqueness {
         }
     }
 }
-
