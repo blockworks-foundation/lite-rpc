@@ -1,9 +1,16 @@
+use std::time::Instant;
+use bytes::Bytes;
+use futures_util::pin_mut;
 use crate::postgres::postgres_epoch::PostgresEpoch;
-use log::{debug, trace, warn};
+use log::{debug, info, trace, warn};
+use solana_sdk::blake3::Hash;
+use solana_sdk::signature::Signature;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
-use tokio_postgres::types::ToSql;
+use tokio_postgres::binary_copy::BinaryCopyInWriter;
+use tokio_postgres::CopyInSink;
+use tokio_postgres::types::{ToSql, Type};
 
 use super::postgres_session::PostgresSession;
 
@@ -70,7 +77,8 @@ impl PostgresTransaction {
         )
     }
 
-    pub async fn save_transaction_batch(
+    // this version uses INSERT statements
+    pub async fn save_transaction_insert(
         postgres_session: &PostgresSession,
         epoch: EpochRef,
         slot: Slot,
@@ -129,6 +137,53 @@ impl PostgresTransaction {
 
         Ok(())
     }
+
+    // this version uses "COPY IN"
+    pub async fn save_transaction_copyin(
+        postgres_session: &PostgresSession,
+        epoch: EpochRef,
+        transactions: &[Self],
+    ) -> anyhow::Result<bool> {
+
+        let schema = PostgresEpoch::build_schema_name(epoch);
+        let statement = format!(
+            r#"
+                COPY {schema}.transactions(
+                    signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                ) FROM STDIN BINARY
+            "#,
+            schema = schema,
+        );
+
+        // BinaryCopyInWriter
+        // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
+        let sink: CopyInSink<Bytes> = postgres_session.copy_in(&statement).await.unwrap();
+
+        let started = Instant::now();
+        let writer = BinaryCopyInWriter::new(sink, &[Type::TEXT, Type::INT8, Type::TEXT, Type::INT8, Type::INT8, Type::INT8, Type::TEXT, Type::TEXT]);
+        pin_mut!(writer);
+
+        for tx in transactions {
+            let PostgresTransaction {
+                signature,
+                slot,
+                err,
+                cu_requested,
+                prioritization_fees,
+                cu_consumed,
+                recent_blockhash,
+                message,
+            } = tx;
+
+            writer.as_mut().write(&[&signature, &slot, &err, &cu_requested, &prioritization_fees, &cu_consumed, &recent_blockhash, &message]).await.unwrap();
+        }
+
+        writer.finish().await.unwrap();
+
+        Ok(true)
+    }
+
+
 
     pub async fn get(
         postgres_session: PostgresSession,
