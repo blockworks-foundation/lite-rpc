@@ -1,13 +1,19 @@
 use crate::postgres::postgres_epoch::PostgresEpoch;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use std::time::Instant;
 use anyhow::{anyhow, bail};
+use bytes::Bytes;
+use futures_util::pin_mut;
+use solana_sdk::blake3::Hash;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::signature::Signature;
 use solana_transaction_status::Reward;
-use tokio_postgres::types::ToSql;
+use tokio_postgres::binary_copy::BinaryCopyInWriter;
+use tokio_postgres::CopyInSink;
+use tokio_postgres::types::{ToSql, Type};
 
 use super::postgres_session::PostgresSession;
 

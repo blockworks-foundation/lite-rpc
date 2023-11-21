@@ -253,15 +253,16 @@ impl PostgresBlockStore {
         let elapsed_block_insert = started_block.elapsed();
 
         // NOTE: this controls the number of rows in VALUES clause of INSERT statement
-        const NUM_TX_PER_CHUNK: usize = 20;
-
-        // save transaction
-        let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
+        // const NUM_TX_PER_CHUNK: usize = 20;
+        //
+        // // save transaction
+        // let chunks = transactions.chunks(NUM_TX_PER_CHUNK);
         let started_txs = Instant::now();
-        for chunk in chunks {
-            PostgresTransaction::save_transaction_batch(&write_session, epoch.into(), slot, chunk)
-                .await?;
-        }
+        PostgresTransaction::save_transaction_copyin(&write_session, epoch.into(), &transactions).await?;
+        // for chunk in chunks {
+        //     PostgresTransaction::save_transaction_batch(&write_session, epoch.into(), slot, chunk)
+        //         .await?;
+        // }
         let elapsed_txs_insert = started_txs.elapsed();
 
         debug!(
