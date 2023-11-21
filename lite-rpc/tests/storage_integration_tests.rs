@@ -23,10 +23,12 @@ use std::process;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use futures::channel::oneshot::Cancellation;
 use tokio::join;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing_subscriber::fmt::format;
 use tracing_subscriber::EnvFilter;
 
@@ -60,8 +62,13 @@ async fn storage_test() {
 
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_data).await);
 
-    let jh1_1 = storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());
-    let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
+    let building_epoch_schema = CancellationToken::new();
+    let jh1_1 = storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone(), building_epoch_schema.clone());
+
+    let jh1_2 = async {
+        building_epoch_schema.cancelled().await;
+        storage_listen(blocks_notifier.resubscribe(), block_storage.clone())
+    }.await;
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
     let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
     drop(blocks_notifier);
@@ -81,6 +88,7 @@ async fn storage_test() {
 fn storage_prepare_epoch_schema(
     slot_notifier: SlotStream,
     postgres_storage: Arc<PostgresBlockStore>,
+    building_epoch_schema: CancellationToken,
 ) -> JoinHandle<()> {
     let mut debounce_slot = 0;
 
@@ -94,6 +102,7 @@ fn storage_prepare_epoch_schema(
                             .prepare_epoch_schema(processed_slot)
                             .await
                             .unwrap();
+                        building_epoch_schema.cancel();
                         debounce_slot = processed_slot + 64; // wait a bit before hammering the DB again
                         if created {
                             debug!("Async job prepared schema at slot {}", processed_slot);

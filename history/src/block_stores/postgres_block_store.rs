@@ -305,10 +305,10 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> String {
 
     format!(
         r#"
-        GRANT USAGE ON SCHEMA {schema} TO {role};
-        GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
-        ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
-    "#
+            GRANT USAGE ON SCHEMA {schema} TO {role};
+            GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
+            ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
+        "#
     )
 }
 
