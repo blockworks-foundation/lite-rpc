@@ -100,7 +100,7 @@ impl PostgresSession {
                 log::error!("Connection to Postgres broke {err:?}");
                 return;
             }
-            unreachable!("Postgres thread returned")
+            log::debug!("Postgres thread shutting down");
         });
 
         Ok(client)
@@ -220,33 +220,36 @@ impl PostgresSession {
 
     pub async fn copy_in(&self) -> Result<(), Error> {
         // TODO write to memory buffer, check for s
+
+        // signature text NOT NULL,
+        // slot bigint NOT NULL,
+        // err text ,
+        // cu_requested bigint,
+        // prioritization_fees bigint,
+        // cu_consumed bigint,
+        // recent_blockhash text NOT NULL,
+        // message text NOT NULL
         let statement = format!(
             r#"
-                COPY public.example_copyin FROM STDIN WITH DELIMITER ';'
+                COPY public.transactions_copyin(
+                    signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                ) FROM STDIN BINARY
             "#
         );
 
-
-        let mut buf = BytesMut::with_capacity(1024);
-        buf.write_str("foo;1212").unwrap();
-
-
         // BinaryCopyInWriter
         // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
-        let mut sink: CopyInSink<Bytes> = self.client.copy_in(&statement).await.unwrap();
-        pin_mut!(sink);
-        sink.send(buf.freeze()).await.unwrap();
-        sink.finish().await.unwrap();
+        let sink: CopyInSink<Bytes> = self.client.copy_in(&statement).await.unwrap();
 
-        // let writer = BinaryCopyInWriter::new(sink, &[Type::TEXT, Type::INT4]);
-        // pin_mut!(writer);
-        // writer.as_mut().write(&[&"foobar", &1i32]).await.unwrap();
+        let writer = BinaryCopyInWriter::new(sink, &[Type::TEXT, Type::INT8, Type::TEXT, Type::INT8, Type::INT8, Type::INT8, Type::TEXT, Type::TEXT]);
+        pin_mut!(writer);
+        writer.as_mut().write(&[&"foobar", &99i32]).await.unwrap();
         // writer
         //     .as_mut()
         //     .write(&[&None::<&str>, &2i32])
         //     .await
         //     .unwrap();
-        // writer.finish().await.unwrap();
+        writer.finish().await.unwrap();
 
         Ok(())
     }
