@@ -62,13 +62,11 @@ async fn storage_test() {
 
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_data).await);
 
-    let building_epoch_schema = CancellationToken::new();
-    let jh1_1 = storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone(), building_epoch_schema.clone());
+    let (jh1_1, first_init) = storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());
+    // coordinate initial epoch schema creation
+    first_init.cancelled().await;
 
-    let jh1_2 = async {
-        building_epoch_schema.cancelled().await;
-        storage_listen(blocks_notifier.resubscribe(), block_storage.clone())
-    }.await;
+    let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
     let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
     drop(blocks_notifier);
@@ -88,11 +86,11 @@ async fn storage_test() {
 fn storage_prepare_epoch_schema(
     slot_notifier: SlotStream,
     postgres_storage: Arc<PostgresBlockStore>,
-    building_epoch_schema: CancellationToken,
-) -> JoinHandle<()> {
+) -> (JoinHandle<()>, CancellationToken) {
     let mut debounce_slot = 0;
-
-    tokio::spawn(async move {
+    let building_epoch_schema = CancellationToken::new();
+    let first_run_signal = building_epoch_schema.clone();
+    let join_handle = tokio::spawn(async move {
         let mut slot_notifier = slot_notifier;
         loop {
             match slot_notifier.recv().await {
@@ -102,7 +100,7 @@ fn storage_prepare_epoch_schema(
                             .prepare_epoch_schema(processed_slot)
                             .await
                             .unwrap();
-                        building_epoch_schema.cancel();
+                        first_run_signal.cancel();
                         debounce_slot = processed_slot + 64; // wait a bit before hammering the DB again
                         if created {
                             debug!("Async job prepared schema at slot {}", processed_slot);
@@ -119,7 +117,8 @@ fn storage_prepare_epoch_schema(
                 }
             }
         }
-    })
+    });
+    (join_handle, building_epoch_schema)
 }
 
 // note: the consumer lags far behind the ingress of blocks and transactions
