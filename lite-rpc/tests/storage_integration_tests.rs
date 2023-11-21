@@ -346,7 +346,7 @@ fn inspect_this_block(
             }
             None => {
                 // note at startup we might see some orphan finalized blocks before we see matching pairs of confirmed-finalized blocks
-                panic!("Must see a confirmed block before it is finalized (slot {}) - could be a warmup issue", finalized_block.slot);
+                warn!("Must see a confirmed block before it is finalized (slot {}) - could be a warmup issue", finalized_block.slot);
             }
         }
     }
