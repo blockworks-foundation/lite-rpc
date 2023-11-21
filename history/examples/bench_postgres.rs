@@ -1,19 +1,16 @@
 use bytes::Bytes;
 use futures_util::future::join_all;
-use futures_util::{pin_mut, stream};
+use futures_util::{pin_mut};
 use itertools::Itertools;
 use log::info;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSession;
 use solana_sdk::blake3::Hash;
 use solana_sdk::signature::Signature;
-use std::env;
 use std::sync::Arc;
-use std::thread::{sleep, Thread};
-use std::time::Duration;
 use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::types::{ToSql, Type};
-use tokio_postgres::{Client, CopyInSink, GenericClient};
+use tokio_postgres::types::{Type};
+use tokio_postgres::{CopyInSink, GenericClient};
 
 /// ```
 /// CREATE TABLE IF NOT EXISTS public.transactions_copyin
