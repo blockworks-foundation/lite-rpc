@@ -108,7 +108,7 @@ impl VoteStore {
             //self.remove_from_store(&new_account.pubkey, new_account.slot);
             self.votes.add_value(
                 UpdateAction::Remove(new_account.pubkey, new_account.slot),
-                new_account.slot <= current_end_epoch_slot,
+                new_account.slot > current_end_epoch_slot,
             );
         } else {
             let Ok(mut vote_data) = new_account.read_vote() else {
@@ -140,7 +140,7 @@ impl VoteStore {
             let action_update_slot = new_voteacc.last_update_slot;
             self.votes.add_value(
                 UpdateAction::Notify(action_update_slot, new_voteacc),
-                action_update_slot <= current_end_epoch_slot,
+                action_update_slot > current_end_epoch_slot,
             );
         }
 

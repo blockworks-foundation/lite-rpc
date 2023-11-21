@@ -218,6 +218,7 @@ impl<T: Default, C: TakableContent<T> + Default> TakableMap<T, C> {
         //during extract push the new update or
         //don't insert now account change that has been done in next epoch.
         //put in update pool to be merged next epoch change.
+        //log::info!("tm u:{} c:{} f:{}", self.updates.len(), self.content.is_none(), force_in_update);
         match self.content.is_none() || force_in_update {
             true => self.updates.push(val),
             false => {
