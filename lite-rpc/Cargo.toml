@@ -42,7 +42,6 @@ tokio = { version = "1.28.2", features = ["full", "fs"]}
 tokio-util = "0.7"
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 chrono = { workspace = true }
-csv = "1.3.0"
 
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-services = { workspace = true }
