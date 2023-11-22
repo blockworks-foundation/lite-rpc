@@ -23,7 +23,9 @@ use std::process;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use csv::WriterBuilder;
 use futures::channel::oneshot::Cancellation;
+use serde::__private::ser::CannotSerializeVariant;
 use tokio::join;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
@@ -126,11 +128,21 @@ const OPTIMIZE_EVERY_N_SLOTS: u64 = 10;
 /// wait at least n slots before running the optimizer again
 const OPTIMIZE_DEBOUNCE_SLOTS: u64 = 4;
 
+#[derive(serde::Serialize)]
+struct CsvRow {
+    slot: Slot,
+    tx_count: u32,
+    write_time_ms: u32,
+}
+
 // note: the consumer lags far behind the ingress of blocks and transactions
 fn storage_listen(
     block_notifier: BlockStream,
     block_storage: Arc<PostgresBlockStore>,
 ) -> JoinHandle<()> {
+
+    let mut csv_writer = WriterBuilder::new().from_path(format!("block_tx_ingress-postgres.csv")).unwrap();
+
     tokio::spawn(async move {
         let mut last_optimizer_run = 0;
         let mut block_notifier = block_notifier;
@@ -167,6 +179,13 @@ fn storage_listen(
                     if elapsed > Duration::from_millis(150) {
                         warn!("(soft_realtime) Write operation was slow!");
                     }
+
+                    csv_writer.serialize(CsvRow {
+                        slot: block.slot,
+                        tx_count: block.transactions.len() as u32,
+                        write_time_ms: elapsed.as_millis() as u32,
+                    }).unwrap();
+                    csv_writer.flush().unwrap();
 
                     // debounce for 4 slots but run at least every 10 slots
                     if block.slot > last_optimizer_run + OPTIMIZE_EVERY_N_SLOTS ||
