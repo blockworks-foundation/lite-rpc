@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
@@ -284,6 +284,31 @@ impl PostgresBlockStore {
             chunks.len(),
             chunk_size,
         );
+
+        Ok(())
+    }
+
+    // ATM we focus on blocks as this table gets INSERTS and does deduplication checks (i.e. heavy reads on index pk_block_slot)
+    pub async fn optimize_blocks_table(&self, slot: Slot) -> Result<()> {
+        let started = Instant::now();
+        let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
+        let random_session = slot as usize % self.write_sessions.len() as usize;
+        let write_session_single = self.write_sessions[random_session].get_write_session().await;
+        let statement = format!(
+            r#"
+                ANALYZE (SKIP_LOCKED) {schema}.blocks;
+            "#,
+            schema = PostgresEpoch::build_schema_name(epoch),
+        );
+
+        tokio::spawn(async move {
+            write_session_single.execute_simple(&statement).await.unwrap();
+            let elapsed = started.elapsed();
+            debug!("Postgres analyze of blocks table took {:.2}ms", elapsed.as_secs_f64() * 1000.0);
+            if elapsed > Duration::from_millis(500) {
+                warn!("Very slow postgres ANALYZE on slot {} - took {:.2}ms", slot, elapsed.as_secs_f64() * 1000.0);
+            }
+        });
         Ok(())
     }
 
@@ -298,6 +323,7 @@ impl PostgresBlockStore {
         Ok(created_current || created_next)
     }
 }
+
 
 fn build_assign_permissions_statements(epoch: EpochRef) -> String {
     let role = LITERPC_ROLE;

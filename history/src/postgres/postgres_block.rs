@@ -111,18 +111,6 @@ impl PostgresBlock {
         )
     }
 
-    // CAUTION: ANALYZE is very expensive (> 400 ms)
-    pub async fn _optimize(&self, postgres_session: &PostgresSession, epoch: EpochRef) {
-        let statement = format!(
-            r#"
-                ANALYZE (SKIP_LOCKED) {schema}.blocks;
-                ANALYZE (SKIP_LOCKED) {schema}.transactions;
-            "#,
-            schema = PostgresEpoch::build_schema_name(epoch),
-        );
-        postgres_session.execute_simple(&statement).await.unwrap();
-    }
-
     // true is actually inserted; false if operation was noop
     pub async fn save(
         &self,

@@ -121,12 +121,18 @@ fn storage_prepare_epoch_schema(
     (join_handle, building_epoch_schema)
 }
 
+/// run the optimizer at least every n slots
+const OPTIMIZE_EVERY_N_SLOTS: u64 = 10;
+/// wait at least n slots before running the optimizer again
+const OPTIMIZE_DEBOUNCE_SLOTS: u64 = 4;
+
 // note: the consumer lags far behind the ingress of blocks and transactions
 fn storage_listen(
     block_notifier: BlockStream,
     block_storage: Arc<PostgresBlockStore>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        let mut last_optimizer_run = 0;
         let mut block_notifier = block_notifier;
         // this is the critical write loop
         loop {
@@ -161,6 +167,16 @@ fn storage_listen(
                     if elapsed > Duration::from_millis(150) {
                         warn!("(soft_realtime) Write operation was slow!");
                     }
+
+                    // debounce for 4 slots but run at least every 10 slots
+                    if block.slot > last_optimizer_run + OPTIMIZE_EVERY_N_SLOTS ||
+                        block.slot > last_optimizer_run + OPTIMIZE_DEBOUNCE_SLOTS &&
+                        started.elapsed() < Duration::from_millis(200) && block_notifier.is_empty() {
+                        debug!("Use extra time to do some optimization (slot {})", block.slot);
+                        block_storage.optimize_blocks_table(block.slot).await.unwrap();
+                        last_optimizer_run = block.slot;
+                    }
+
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     warn!(
