@@ -23,7 +23,9 @@ use std::process;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use csv::WriterBuilder;
 use futures::channel::oneshot::Cancellation;
+use serde::__private::ser::CannotSerializeVariant;
 use tokio::join;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
@@ -121,11 +123,22 @@ fn storage_prepare_epoch_schema(
     (join_handle, building_epoch_schema)
 }
 
+#[derive(serde::Serialize)]
+struct CsvRow {
+    slot: Slot,
+    tx_count: u32,
+    write_time_ms: u32,
+}
+
 // note: the consumer lags far behind the ingress of blocks and transactions
 fn storage_listen(
     block_notifier: BlockStream,
     block_storage: Arc<PostgresBlockStore>,
 ) -> JoinHandle<()> {
+
+    let mut csv_writer = WriterBuilder::new().from_path(format!("block_tx_ingress-postgres.csv")).unwrap();
+
+
     tokio::spawn(async move {
         let mut block_notifier = block_notifier;
         // this is the critical write loop
@@ -161,6 +174,11 @@ fn storage_listen(
                     if elapsed > Duration::from_millis(150) {
                         warn!("(soft_realtime) Write operation was slow!");
                     }
+                    csv_writer.serialize(CsvRow {
+                        slot: block.slot,
+                        tx_count: block.transactions.len() as u32,
+                        write_time_ms: elapsed.as_millis() as u32,
+                    }).unwrap();
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     warn!(
