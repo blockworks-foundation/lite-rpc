@@ -169,7 +169,7 @@ fn storage_listen(
                     );
                 }
                 Err(other_err) => {
-                    panic!("Error receiving block: {:?}", other_err);
+                    warn!("Error receiving block: {:?}", other_err);
                 }
             }
 
