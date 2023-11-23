@@ -3,12 +3,11 @@ pub mod rpc_tester;
 use std::time::Duration;
 
 use anyhow::bail;
-use clap::Parser;
 use dashmap::DashMap;
-use dotenv::dotenv;
+use lite_rpc::bridge::LiteBridge;
+use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
-use lite_rpc::{bridge::LiteBridge, cli::Args};
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
 
 use crate::rpc_tester::RpcTester;
@@ -43,7 +42,6 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
-use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -81,8 +79,8 @@ pub async fn start_postgres(
     Ok((Some(postgres_send), postgres))
 }
 
-pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
-    let Args {
+pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
+    let Config {
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
@@ -99,8 +97,8 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     } = args;
 
     let validator_identity = Arc::new(
-        load_identity_keypair(&identity_keypair)
-            .await
+        load_identity_keypair(identity_keypair)
+            .await?
             .unwrap_or_else(Keypair::new),
     );
 
@@ -239,34 +237,19 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     }
 }
 
-fn get_args() -> Args {
-    let mut args = Args::parse();
-
-    dotenv().ok();
-
-    args.enable_postgres = args.enable_postgres
-        || if let Ok(enable_postgres_env_var) = env::var("PG_ENABLED") {
-            enable_postgres_env_var != "false"
-        } else {
-            false
-        };
-
-    args
-}
-
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let args = get_args();
+    let config = Config::load().await?;
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
-    let Args { rpc_addr, .. } = &args;
+    let Config { rpc_addr, .. } = &config;
     // rpc client
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
 
-    let main = start_lite_rpc(args.clone(), rpc_client);
+    let main = start_lite_rpc(config, rpc_client);
 
     tokio::select! {
         err = rpc_tester => {
