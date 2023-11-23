@@ -3,7 +3,6 @@ pub mod rpc_tester;
 use std::time::Duration;
 
 use anyhow::bail;
-use clap::Parser;
 use dashmap::DashMap;
 use dotenv::dotenv;
 use lite_rpc::postgres_logger::PostgresLogger;
@@ -239,8 +238,8 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     }
 }
 
-fn get_args() -> Args {
-    let mut args = Args::parse();
+async fn get_args() -> anyhow::Result<Args> {
+    let mut args = Args::parse().await?;
 
     dotenv().ok();
 
@@ -251,14 +250,14 @@ fn get_args() -> Args {
             false
         };
 
-    args
+    Ok(args)
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let args = get_args();
+    let args = get_args().await?;
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
     let Args { rpc_addr, .. } = &args;

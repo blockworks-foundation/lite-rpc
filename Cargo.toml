@@ -7,7 +7,8 @@ members = [
     "quic-forward-proxy-integration-test",
     "cluster-endpoints",
     "history",
-    "bench"
+    "bench",
+    "./config_parser",
 ]
 
 [workspace.package]
@@ -39,7 +40,7 @@ futures = "0.3.28"
 bytes = "1.4.0"
 anyhow = "1.0.70"
 log = "0.4.17"
-clap = { version = "4.2.4", features = ["derive", "env"] }
+clap = { version = "4.2.4", features = ["env", "cargo"] }
 dashmap = "5.4.0"
 const_env = "0.1.2"
 jsonrpsee = { version = "0.17.0", features = ["macros", "full"] }
