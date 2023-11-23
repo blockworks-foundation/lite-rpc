@@ -15,9 +15,6 @@ pub struct Args {
     /// config.json
     #[arg(short, long)]
     pub config: Option<String>,
-    /// identity keypair
-    #[arg(short = 'k', long)]
-    pub identity_keypair: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -83,11 +80,48 @@ impl Config {
         let mut config: Config =
             serde_json::from_str(&config).context("Error parsing config file")?;
 
-        if args.identity_keypair.is_some() {
-            config.identity_keypair = args.identity_keypair;
-        }
+        config.rpc_addr = env::var("RPC_ADDR").unwrap_or(config.rpc_addr);
 
-        config.enable_postgres = env::var("PG_ENABLED").is_ok();
+        config.ws_addr = env::var("WS_ADDR").unwrap_or(config.ws_addr);
+
+        config.lite_rpc_http_addr =
+            env::var("LITE_RPC_HTTP_ADDR").unwrap_or(config.lite_rpc_http_addr);
+
+        config.lite_rpc_ws_addr = env::var("LITE_RPC_WS_ADDR").unwrap_or(config.lite_rpc_ws_addr);
+
+        config.fanout_size = env::var("FANOUT_SIZE")
+            .map(|size| size.parse().unwrap())
+            .unwrap_or(config.fanout_size);
+
+        config.enable_postgres = env::var("PG_ENABLED")
+            .map(|_| true)
+            .unwrap_or(config.enable_postgres);
+
+        config.identity_keypair = env::var("IDENTITY")
+            .map(Some)
+            .unwrap_or(config.identity_keypair);
+
+        config.prometheus_addr = env::var("PROMETHEUS_ADDR").unwrap_or(config.prometheus_addr);
+
+        config.maximum_retries_per_tx = env::var("MAX_RETRIES")
+            .map(|max| max.parse().unwrap())
+            .unwrap_or(config.maximum_retries_per_tx);
+
+        config.transaction_retry_after_secs = env::var("RETRY_TIMEOUT")
+            .map(|secs| secs.parse().unwrap())
+            .unwrap_or_else(|_| config.transaction_retry_after_secs);
+
+        config.quic_proxy_addr = env::var("QUIC_PROXY_ADDR").ok();
+
+        config.use_grpc = env::var("USE_GRPC")
+            .map(|_| true)
+            .unwrap_or(config.use_grpc);
+
+        config.grpc_addr = env::var("GRPC_ADDR").unwrap_or(config.grpc_addr);
+
+        config.grpc_x_token = env::var("GRPC_X_TOKEN")
+            .map(Some)
+            .unwrap_or(config.grpc_x_token);
 
         Ok(config)
     }
