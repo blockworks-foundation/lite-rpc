@@ -166,16 +166,17 @@ pub fn config_parser(input: TokenStream) -> TokenStream {
 
             async fn read_config<P: AsRef<std::path::Path>>(path: P) -> anyhow::Result<serde_json::Value> {
                 use tokio::io::AsyncReadExt;
+                use anyhow::Context;
 
                 // Open the file
-                let mut file = tokio::fs::File::open(path).await?;
+                let mut file = tokio::fs::File::open(path).await.context("Error opening config file")?;
 
                 // Read the contents
                 let mut contents = String::new();
-                file.read_to_string(&mut contents).await?;
+                file.read_to_string(&mut contents).await.context("Error reading config file")?;
 
                 // Parse the contents
-                Ok(serde_json::from_str(&contents)?)
+                serde_json::from_str(&contents).context("Error parsing config file")
             }
 
             pub async fn parse() -> anyhow::Result<Self> {
