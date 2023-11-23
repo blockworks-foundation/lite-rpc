@@ -54,9 +54,9 @@ pub struct Config {
 
 impl Config {
     pub async fn load() -> anyhow::Result<Self> {
-        let args = Args::parse();
-
         dotenv().ok();
+
+        let args = Args::parse();
 
         let config_path = if let Some(config) = &args.config {
             config
