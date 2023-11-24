@@ -9,6 +9,7 @@ use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 use crate::rpc_tester::RpcTester;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
@@ -59,9 +60,9 @@ async fn get_latest_block(
 }
 
 pub async fn start_postgres(
-    enable: bool,
+    config: Option<PostgresSessionConfig>,
 ) -> anyhow::Result<(Option<NotificationSender>, AnyhowJoinHandle)> {
-    if !enable {
+    let Some(config) = config else {
         return Ok((
             None,
             tokio::spawn(async {
@@ -69,11 +70,11 @@ pub async fn start_postgres(
                 unreachable!()
             }),
         ));
-    }
+    };
 
     let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
 
-    let postgres_session_cache = PostgresSessionCache::new().await?;
+    let postgres_session_cache = PostgresSessionCache::new(config).await?;
     let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
 
     Ok((Some(postgres_send), postgres))
@@ -84,7 +85,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
-        enable_postgres,
+        postgres,
         prometheus_addr,
         identity_keypair,
         maximum_retries_per_tx,
@@ -156,7 +157,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     );
     drop(blocks_notifier);
 
-    let (notification_channel, postgres) = start_postgres(enable_postgres).await?;
+    let (notification_channel, postgres) = start_postgres(postgres).await?;
 
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,

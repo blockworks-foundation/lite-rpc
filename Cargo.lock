@@ -4325,6 +4325,7 @@ dependencies = [
  "log",
  "native-tls",
  "postgres-native-tls",
+ "serde",
  "solana-lite-rpc-core",
  "solana-rpc-client",
  "solana-rpc-client-api",

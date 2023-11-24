@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
-use tokio::io::AsyncReadExt;
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -30,8 +30,6 @@ pub struct Config {
     #[serde(default = "Config::default_fanout_size")]
     pub fanout_size: u64,
     #[serde(default)]
-    pub enable_postgres: bool,
-    #[serde(default)]
     pub identity_keypair: Option<String>,
     #[serde(default = "Config::default_prometheus_addr")]
     pub prometheus_addr: String,
@@ -47,6 +45,9 @@ pub struct Config {
     pub grpc_addr: String,
     #[serde(default)]
     pub grpc_x_token: Option<String>,
+    /// postgres config
+    #[serde(default)]
+    pub postgres: Option<PostgresSessionConfig>,
 }
 
 impl Config {
@@ -55,27 +56,26 @@ impl Config {
 
         let args = Args::parse();
 
-        let config_path = if let Some(config) = &args.config {
-            config
+        let config_path = if args.config.is_some() {
+            args.config
         } else {
             let default_config_path = "config.json";
 
             // check if config.json exists in current directory
             if tokio::fs::metadata(default_config_path).await.is_err() {
-                return Ok(serde_json::from_str("{}").unwrap());
+                None
+            } else {
+                Some(default_config_path.to_string())
             }
-
-            default_config_path
         };
 
-        let mut config = String::new();
-
-        tokio::fs::File::open(config_path)
-            .await
-            .context("Error opening config file")?
-            .read_to_string(&mut config)
-            .await
-            .context("Error reading config file")?;
+        let config = if let Some(config_path) = config_path {
+            tokio::fs::read_to_string(config_path)
+                .await
+                .context("Error reading config file")?
+        } else {
+            "{}".to_string()
+        };
 
         let mut config: Config =
             serde_json::from_str(&config).context("Error parsing config file")?;
@@ -93,10 +93,6 @@ impl Config {
             .map(|size| size.parse().unwrap())
             .unwrap_or(config.fanout_size);
 
-        config.enable_postgres = env::var("PG_ENABLED")
-            .map(|_| true)
-            .unwrap_or(config.enable_postgres);
-
         config.identity_keypair = env::var("IDENTITY")
             .map(Some)
             .unwrap_or(config.identity_keypair);
@@ -109,7 +105,7 @@ impl Config {
 
         config.transaction_retry_after_secs = env::var("RETRY_TIMEOUT")
             .map(|secs| secs.parse().unwrap())
-            .unwrap_or_else(|_| config.transaction_retry_after_secs);
+            .unwrap_or(config.transaction_retry_after_secs);
 
         config.quic_proxy_addr = env::var("QUIC_PROXY_ADDR").ok();
 
@@ -122,6 +118,8 @@ impl Config {
         config.grpc_x_token = env::var("GRPC_X_TOKEN")
             .map(Some)
             .unwrap_or(config.grpc_x_token);
+
+        config.postgres = PostgresSessionConfig::new_from_env()?.or(config.postgres);
 
         Ok(config)
     }
