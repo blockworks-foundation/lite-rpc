@@ -4,9 +4,9 @@ use std::env;
 
 // note this is duplicated from lite-rpc module
 pub async fn load_identity_keypair(
-    identity_from_cli: Option<String>,
+    identity_path: Option<String>,
 ) -> anyhow::Result<Option<Keypair>> {
-    let identity_str = if let Some(identity_from_cli) = identity_from_cli {
+    let identity_str = if let Some(identity_from_cli) = identity_path {
         tokio::fs::read_to_string(identity_from_cli)
             .await
             .context("Cannot find the identity file provided")?
