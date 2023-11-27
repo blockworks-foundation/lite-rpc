@@ -304,6 +304,7 @@ pub fn calculate_leader_schedule(
     let mut seed = [0u8; 32];
     seed[0..8].copy_from_slice(&epoch.to_le_bytes());
     sort_stakes(&mut stakes);
+    log::info!("calculate_leader_schedule stakes:{stakes:?} epoch:{epoch}");
     LeaderSchedule::new(&stakes, seed, slots_in_epoch, NUM_CONSECUTIVE_LEADER_SLOTS)
 }
 

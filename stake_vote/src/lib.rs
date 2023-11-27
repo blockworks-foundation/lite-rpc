@@ -75,6 +75,10 @@ pub async fn start_stakes_and_votes_loop(
 
         let mut bootstrap_done = false;
 
+        //for test to  count the  number of account notified at epoch  change.
+        let mut account_update_notification = None;
+        let mut epoch_wait_account_notification_task = FuturesUnordered::new();
+
         loop {
             tokio::select! {
                 //manage confirm new slot notification to detect epoch change.
@@ -90,8 +94,21 @@ pub async fn start_stakes_and_votes_loop(
                                 &mut stakestore,
                                 &mut votestore,
                             );
+
+                            //for test to  count the  number of account notified at epoch  change.
+                            account_update_notification =  Some(0);
+                            let jh = tokio::spawn(async move {
+                                //sleep 3 minutes and count the number  of account notification.
+                                tokio::time::sleep(tokio::time::Duration::from_secs(180)).await;
+                            });
+                            epoch_wait_account_notification_task.push(jh);
+
                         }
                     }
+                }
+                Some(Ok(())) = epoch_wait_account_notification_task.next() => {
+                    log::info!("Epoch change account count:{} during 3mn", account_update_notification.as_ref().unwrap_or(&0));
+                    account_update_notification = None;
                 }
                 Some((config, return_channel)) = vote_account_rpc_request.recv() => {
                     let commitment = config.commitment.unwrap_or(CommitmentConfig::confirmed());
@@ -176,6 +193,9 @@ pub async fn start_stakes_and_votes_loop(
                                                 match account.owner {
                                                     solana_sdk::stake::program::ID => {
                                                         log::trace!("Geyser notif stake account:{}", account);
+                                                        if let Some(ref mut counter) = account_update_notification {
+                                                            *counter +=1;
+                                                        }
                                                         if let Err(err) = stakestore.notify_stake_change(
                                                             account,
                                                             current_schedule_epoch.last_slot_in_epoch,
