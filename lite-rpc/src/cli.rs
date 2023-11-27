@@ -29,6 +29,7 @@ pub struct Config {
     pub lite_rpc_ws_addr: String,
     #[serde(default = "Config::default_fanout_size")]
     pub fanout_size: u64,
+    // Identity keypair path
     #[serde(default)]
     pub identity_keypair: Option<String>,
     #[serde(default = "Config::default_prometheus_addr")]
@@ -93,9 +94,11 @@ impl Config {
             .map(|size| size.parse().unwrap())
             .unwrap_or(config.fanout_size);
 
-        config.identity_keypair = env::var("IDENTITY")
-            .map(Some)
-            .unwrap_or(config.identity_keypair);
+        // IDENTITY env sets value of identity_keypair
+
+        // config.identity_keypair = env::var("IDENTITY")
+        //     .map(Some)
+        //     .unwrap_or(config.identity_keypair);
 
         config.prometheus_addr = env::var("PROMETHEUS_ADDR").unwrap_or(config.prometheus_addr);
 
