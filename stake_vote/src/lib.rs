@@ -45,7 +45,7 @@ pub async fn start_stakes_and_votes_loop(
     rpc_client: Arc<RpcClient>,
     grpc_url: String,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
-    log::info!("Start Stake and Vote loop.");
+    log::info!("Start Stake and Vote loop on :{grpc_url}.");
     let mut stake_vote_geyzer_stream = subscribe_geyzer_stake_vote_owner(grpc_url.clone()).await?;
     let mut stake_history_geyzer_stream = subscribe_geyzer_stake_history(grpc_url).await?;
     log::info!("Stake and Vote geyzer subscription done.");
