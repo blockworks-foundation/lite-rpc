@@ -317,6 +317,7 @@ async fn subscribe_geyzer_stake_vote_owner(
             Default::default(), //block meta
             Some(CommitmentLevel::Confirmed),
             vec![],
+            None,
         )
         .await?;
 
@@ -350,6 +351,7 @@ async fn subscribe_geyzer_stake_history(
             Default::default(), //block meta
             Some(CommitmentLevel::Confirmed),
             vec![],
+            None,
         )
         .await?;
 
