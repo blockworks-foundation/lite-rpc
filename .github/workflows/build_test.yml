@@ -47,5 +47,10 @@ jobs:
         run: |
           cargo build --locked --workspace --all-targets
 
+      - name: Run fmt+clippy
+        run: |
+          cargo fmt --all --check
+          cargo clippy --locked --workspace --all-targets -D warnings
+          
       - name: Run Tests
         run: RUST_LOG=info cargo test
