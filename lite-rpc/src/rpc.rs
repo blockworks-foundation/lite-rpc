@@ -1,18 +1,16 @@
 use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
 use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::proc_macros::rpc;
-use solana_rpc_client_api::config::RpcGetVoteAccountsConfig;
 use solana_rpc_client_api::config::{
     RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
-    RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
-    RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig,
-    RpcSignatureStatusConfig, RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig,
-    RpcTransactionLogsConfig, RpcTransactionLogsFilter,
+    RpcContextConfig, RpcEncodingConfigWrapper, RpcGetVoteAccountsConfig, RpcLeaderScheduleConfig,
+    RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
+    RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsConfig,
+    RpcTransactionLogsFilter,
 };
 use solana_rpc_client_api::response::{
     Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
-    RpcContactInfo, RpcLeaderSchedule, RpcPerfSample, RpcPrioritizationFee, RpcVersionInfo,
-    RpcVoteAccountStatus,
+    RpcContactInfo, RpcPerfSample, RpcPrioritizationFee, RpcVersionInfo, RpcVoteAccountStatus,
 };
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::epoch_info::EpochInfo;
@@ -111,22 +109,6 @@ pub trait LiteRpc {
     //     &self,
     //     block: u64,
     // ) -> Result<RpcBlockCommitment<BlockCommitmentArray>>;
-
-    #[method(name = "getEpochInfo")]
-    async fn get_epoch_info(&self, config: Option<RpcContextConfig>) -> Result<EpochInfo>;
-
-    #[method(name = "getLeaderSchedule")]
-    async fn get_leader_schedule(
-        &self,
-        slot: Option<Slot>,
-        config: Option<RpcEncodingConfigWrapper<RpcEpochConfig>>,
-    ) -> Result<Option<RpcLeaderSchedule>>;
-
-    #[method(name = "getVoteAccounts")]
-    async fn get_vote_accounts(
-        &self,
-        config: Option<RpcGetVoteAccountsConfig>,
-    ) -> Result<RpcVoteAccountStatus>;
 
     #[method(name = "getRecentPerformanceSamples")]
     async fn get_recent_performance_samples(
