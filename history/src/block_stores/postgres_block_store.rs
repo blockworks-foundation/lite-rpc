@@ -3,13 +3,11 @@ use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
-    traits::block_storage_interface::BlockStorageInterface,
 };
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::slot_history::Slot;
@@ -362,9 +360,9 @@ fn div_ceil(a: usize, b: usize) -> usize {
     (a + b - 1) / b
 }
 
-#[async_trait]
-impl BlockStorageInterface for PostgresBlockStore {
-    async fn get_slot_range(&self) -> RangeInclusive<Slot> {
+impl PostgresBlockStore {
+
+    pub async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         let map_epoch_to_slot_range = self.get_slot_range_by_epoch().await;
 
         let rows_minmax: Vec<&RangeInclusive<Slot>> =
@@ -383,9 +381,7 @@ impl BlockStorageInterface for PostgresBlockStore {
 
         RangeInclusive::new(*slot_min, *slot_max)
     }
-}
 
-impl PostgresBlockStore {
     pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<Slot>> {
         let started = Instant::now();
         let session = self.get_session().await;

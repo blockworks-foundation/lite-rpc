@@ -1,11 +1,9 @@
 use crate::block_stores::faithful_block_store::FaithfulBlockStore;
 use crate::block_stores::postgres_block_store::PostgresBlockStore;
 use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
 use log::{debug, trace};
 use solana_lite_rpc_core::{
     structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::BlockStorageInterface,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
@@ -55,6 +53,29 @@ impl MultipleStrategyBlockStorage {
             faithful_block_storage: None,
             // faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
         }
+    }
+
+    // we need to build the slots from right to left
+    async fn get_slot_range(&self) -> RangeInclusive<Slot> {
+        // merge them
+        let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
+        trace!("Persistent storage range: {:?}", persistent_storage_range);
+
+        let mut lower = *persistent_storage_range.start();
+
+        if let Some(faithful_block_storage) = &self.faithful_block_storage {
+            let faithful_storage_range = faithful_block_storage.get_slot_range();
+            trace!("Faithful storage range: {:?}", faithful_storage_range);
+            if lower - faithful_storage_range.end() <= 1 {
+                // move the lower bound to the left
+                lower = lower.min(*faithful_storage_range.start());
+            }
+        }
+
+        let merged = RangeInclusive::new(lower, *persistent_storage_range.end());
+        trace!("Merged range from database + faithful: {:?}", merged);
+
+        return merged;
     }
 
     // lookup confirmed or finalized block from either our blockstore or faithful
@@ -126,28 +147,3 @@ impl MultipleStrategyBlockStorage {
     }
 }
 
-#[async_trait]
-impl BlockStorageInterface for MultipleStrategyBlockStorage {
-    // we need to build the slots from right to left
-    async fn get_slot_range(&self) -> RangeInclusive<Slot> {
-        // merge them
-        let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
-        trace!("Persistent storage range: {:?}", persistent_storage_range);
-
-        let mut lower = *persistent_storage_range.start();
-
-        if let Some(faithful_block_storage) = &self.faithful_block_storage {
-            let faithful_storage_range = faithful_block_storage.get_slot_range();
-            trace!("Faithful storage range: {:?}", faithful_storage_range);
-            if lower - faithful_storage_range.end() <= 1 {
-                // move the lower bound to the left
-                lower = lower.min(*faithful_storage_range.start());
-            }
-        }
-
-        let merged = RangeInclusive::new(lower, *persistent_storage_range.end());
-        trace!("Merged range from database + faithful: {:?}", merged);
-
-        return merged;
-    }
-}

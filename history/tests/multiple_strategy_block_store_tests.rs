@@ -2,19 +2,14 @@ use anyhow::anyhow;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
 use solana_lite_rpc_core::{
     structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::BlockStorageInterface,
 };
 use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::BlockStorageData;
 use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
 use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use solana_transaction_status::Reward;
-use std::borrow::Cow;
-use std::ops::Deref;
-use std::sync::Arc;
 
 pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
     ProducedBlock {
