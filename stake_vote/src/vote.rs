@@ -181,22 +181,22 @@ impl VoteStore {
                     //     vote_data.vote_data.node_pubkey,
                     //     vote_data.vote_data.root_slot,
                     // );
-                    if vote_data.vote_data.root_slot.is_none() {
-                        log::info!("Update vote account:{vote_account_pk} with None root slot.");
-                    }
+                    // if vote_data.vote_data.root_slot.is_none() {
+                    //     log::info!("Update vote account:{vote_account_pk} with None root slot.");
+                    // }
 
-                    if voteacc.vote_data.root_slot.is_none() {
-                        log::info!(
-                            "Update vote account:{vote_account_pk} that were having None root slot."
-                        );
-                    }
+                    // if voteacc.vote_data.root_slot.is_none() {
+                    //     log::info!(
+                    //         "Update vote account:{vote_account_pk} that were having None root slot."
+                    //     );
+                    // }
 
                     *voteacc = Arc::new(vote_data);
                 }
             }
             // If value doesn't exist yet, then insert a new value of 1
             std::collections::hash_map::Entry::Vacant(vacant) => {
-                log::info!(
+                log::trace!(
                     "New Vote added for: {vote_account_pk} node_id:{}, root slot:{:?}",
                     vote_data.vote_data.node_pubkey,
                     vote_data.vote_data.root_slot,
