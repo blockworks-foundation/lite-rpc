@@ -19,6 +19,7 @@ use crate::postgres::{
     postgres_block::PostgresBlock, postgres_session::PostgresSessionCache,
     postgres_transaction::PostgresTransaction,
 };
+use crate::postgres::postgres_config::PostgresSessionConfig;
 
 const LITERPC_ROLE: &str = "r_literpc";
 const PARALLEL_WRITE_SESSIONS: usize = 4;
@@ -41,11 +42,14 @@ pub struct PostgresBlockStore {
 }
 
 impl PostgresBlockStore {
-    pub async fn new(epoch_schedule: EpochCache) -> Self {
-        let session_cache = PostgresSessionCache::new().await.unwrap();
+    pub async fn new(
+            epoch_schedule: EpochCache,
+            pg_session_config: PostgresSessionConfig,
+    ) -> Self {
+        let session_cache = PostgresSessionCache::new(pg_session_config.clone()).await.unwrap();
         let mut write_sessions = Vec::new();
         for i in 0..PARALLEL_WRITE_SESSIONS {
-            write_sessions.push(PostgresWriteSession::new_from_env(i).await.unwrap());
+            write_sessions.push(PostgresWriteSession::new(i, pg_session_config.clone()).await.unwrap());
         }
         assert!(
             !write_sessions.is_empty(),
@@ -505,11 +509,15 @@ mod tests {
     async fn test_save_block() {
         tracing_subscriber::fmt::init();
 
-        std::env::set_var("PG_CONFIG", "host=localhost dbname=literpc3 user=literpc_app password=litelitesecret sslmode=disable");
-        let _postgres_session_cache = PostgresSessionCache::new().await.unwrap();
+        let pg_session_config = PostgresSessionConfig {
+            pg_config: "host=localhost dbname=literpc3 user=literpc_app password=litelitesecret".to_string(),
+            ssl: None,
+        };
+
+        let _postgres_session_cache = PostgresSessionCache::new(pg_session_config.clone()).await.unwrap();
         let epoch_cache = EpochCache::new_for_tests();
 
-        let postgres_block_store = PostgresBlockStore::new(epoch_cache.clone()).await;
+        let postgres_block_store = PostgresBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await;
 
         postgres_block_store
             .write_block(&create_test_block())

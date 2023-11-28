@@ -10,6 +10,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use solana_transaction_status::Reward;
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
     ProducedBlock {
@@ -36,8 +37,9 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
 async fn test_in_multiple_stategy_block_store() {
     tracing_subscriber::fmt::init();
 
+    let pg_session_config = PostgresSessionConfig::new_from_env().unwrap().unwrap();
     let epoch_cache = EpochCache::new_for_tests();
-    let persistent_store = PostgresBlockStore::new(epoch_cache.clone()).await;
+    let persistent_store = PostgresBlockStore::new(epoch_cache.clone(), pg_session_config).await;
     let multi_store = MultipleStrategyBlockStorage::new(
         persistent_store.clone(),
         None, // not supported

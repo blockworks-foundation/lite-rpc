@@ -10,6 +10,8 @@ use tokio_postgres::{
     Socket,
 };
 
+use super::postgres_config::{PostgresSessionConfig, PostgresSessionSslConfig};
+
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 
 pub trait SchemaSize {
@@ -39,18 +41,27 @@ pub struct PostgresSession {
 }
 
 impl PostgresSession {
+
     pub async fn new_from_env() -> anyhow::Result<Self> {
-        let pg_config = std::env::var("PG_CONFIG").context("env PG_CONFIG not found")?;
+        let pg_session_config = PostgresSessionConfig::new_from_env()
+            .expect("failed to start Postgres Client")
+            .expect("Postgres not enabled (use PG_ENABLED)");
+        PostgresSession::new(pg_session_config).await
+    }
+
+    pub async fn new(
+        PostgresSessionConfig { pg_config, ssl }: PostgresSessionConfig,
+    ) -> anyhow::Result<Self> {
         let pg_config = pg_config.parse::<tokio_postgres::Config>()?;
 
         let client = if let SslMode::Disable = pg_config.get_ssl_mode() {
             Self::spawn_connection(pg_config, NoTls).await?
         } else {
-            let ca_pem_b64 = std::env::var("CA_PEM_B64").context("env CA_PEM_B64 not found")?;
-            let client_pks_b64 =
-                std::env::var("CLIENT_PKS_B64").context("env CLIENT_PKS_B64 not found")?;
-            let client_pks_password =
-                std::env::var("CLIENT_PKS_PASS").context("env CLIENT_PKS_PASS not found")?;
+            let PostgresSessionSslConfig {
+                ca_pem_b64,
+                client_pks_b64,
+                client_pks_pass,
+            } = ssl.as_ref().unwrap();
 
             let ca_pem = BinaryEncoding::Base64
                 .decode(ca_pem_b64)
@@ -61,9 +72,7 @@ impl PostgresSession {
 
             let connector = TlsConnector::builder()
                 .add_root_certificate(Certificate::from_pem(&ca_pem)?)
-                .identity(
-                    Identity::from_pkcs12(&client_pks, &client_pks_password).context("Identity")?,
-                )
+                .identity(Identity::from_pkcs12(&client_pks, client_pks_pass).context("Identity")?)
                 .danger_accept_invalid_hostnames(true)
                 .danger_accept_invalid_certs(true)
                 .build()?;
@@ -224,13 +233,15 @@ impl PostgresSession {
 #[derive(Clone)]
 pub struct PostgresSessionCache {
     session: Arc<RwLock<PostgresSession>>,
+    config: PostgresSessionConfig,
 }
 
 impl PostgresSessionCache {
-    pub async fn new() -> anyhow::Result<Self> {
-        let session = PostgresSession::new_from_env().await?;
+    pub async fn new(config: PostgresSessionConfig) -> anyhow::Result<Self> {
+        let session = PostgresSession::new(config.clone()).await?;
         Ok(Self {
             session: Arc::new(RwLock::new(session)),
+            config,
         })
     }
 
@@ -238,7 +249,7 @@ impl PostgresSessionCache {
         let session = self.session.read().await;
         if session.client.is_closed() {
             drop(session);
-            let session = PostgresSession::new_from_env().await?;
+            let session = PostgresSession::new(self.config.clone()).await?;
             *self.session.write().await = session.clone();
             Ok(session)
         } else {
@@ -250,11 +261,21 @@ impl PostgresSessionCache {
 #[derive(Clone)]
 pub struct PostgresWriteSession {
     session: Arc<RwLock<PostgresSession>>,
+    pub pg_session_config: PostgresSessionConfig,
 }
 
 impl PostgresWriteSession {
+
     pub async fn new_from_env(session_index: usize) -> anyhow::Result<Self> {
-        let session = PostgresSession::new_from_env().await?;
+        let pg_session_config = PostgresSessionConfig::new_from_env()
+            .expect("failed to start Postgres Client")
+            .expect("Postgres not enabled (use PG_ENABLED)");
+        Self::new(session_index, pg_session_config).await
+    }
+
+    pub async fn new(session_index: usize, pg_session_config: PostgresSessionConfig) -> anyhow::Result<Self> {
+
+        let session = PostgresSession::new(pg_session_config.clone()).await?;
 
         let statement = format!(
             r#"
@@ -269,6 +290,7 @@ impl PostgresWriteSession {
 
         Ok(Self {
             session: Arc::new(RwLock::new(session)),
+            pg_session_config
         })
     }
 
@@ -276,7 +298,7 @@ impl PostgresWriteSession {
         let session = self.session.read().await;
 
         if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
-            let session = PostgresSession::new_from_env()
+            let session = PostgresSession::new(self.pg_session_config.clone())
                 .await
                 .expect("should have created new postgres session");
             let mut lock = self.session.write().await;

@@ -62,5 +62,5 @@ solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.3"
 solana-lite-rpc-history = {path = "history", version="0.2.3"}
 
 async-trait = "0.1.68"
-yellowstone-grpc-client = "1.9.0"
-yellowstone-grpc-proto = "1.9.0"
+yellowstone-grpc-client = "1.11.0"
+yellowstone-grpc-proto = "1.11.0"

@@ -18,6 +18,7 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 // force ordered stream of blocks
 const NUM_PARALLEL_TASKS: usize = 1;
@@ -31,6 +32,8 @@ async fn storage_test() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
     configure_panic_hook();
+
+    let pg_session_config = PostgresSessionConfig::new_from_env().unwrap().unwrap();
 
     let rpc_url = std::env::var("RPC_URL").expect("env var RPC_URL is mandatory");
 
@@ -47,7 +50,7 @@ async fn storage_test() {
 
     let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
-    let block_storage = Arc::new(PostgresBlockStore::new(epoch_data).await);
+    let block_storage = Arc::new(PostgresBlockStore::new(epoch_data, pg_session_config).await);
 
     let (jh1_1, first_init) =
         storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());

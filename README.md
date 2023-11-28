@@ -58,17 +58,24 @@ Find a new file named `metrics.csv` in the project root.
 
 ### Environment Variables
 
-| env               | purpose                                        | required?           |
-|-------------------|------------------------------------------------|---------------------|
-| `RPC_URL`         | HTTP URL for a full RPC node                   | yes, for docker     |
-| `WS_URL`          | WS URL for a full RPC node                     | yes, for docker     |
-| `IDENTITY`        | Staked validator identity keypair              | no                  |
-| `PG_ENABLED`      | Set to anything but 'false' to enable Postgres | no                  |
-| `PG_CONFIG`       | Postgres Connection Config                     | if postgres enabled |
-| `CA_PEM_B64`      | Base64 encoded `ca.pem`                        | if postgres enabled |
-| `CLIENT_PKS_B64`  | Base64 encoded `client.pks`                    | if postgres enabled |
-| `CLIENT_PKS_PASS` | Password to `client.pks`                       | if postgres enabled |
-| `DISABLE_GSO`     | Disable GSO completely                         | no                  |
+Thank you for providing the default values. Here's the updated table with the default values for the environment variables based on the additional information:
+
+| Environment Variable     | Purpose                                                          | Required?           | Default Value                                  |
+|--------------------------|------------------------------------------------------------------|---------------------|------------------------------------------------|
+| `RPC_ADDR`               | Address for the RPC node                                         | Replaces default if set | `http://0.0.0.0:8899` (from `DEFAULT_RPC_ADDR`) |
+| `WS_ADDR`                | WebSocket address for the RPC node                               | Replaces default if set | `ws://0.0.0.0:8900` (from `DEFAULT_WS_ADDR`)   |
+| `LITE_RPC_HTTP_ADDR`     | HTTP address for the lite RPC node                               | Replaces default if set | `http://0.0.0.0:8890` (from `DEFAULT_LITE_RPC_ADDR`) |
+| `LITE_RPC_WS_ADDR`       | WebSocket address for the lite RPC node                          | Replaces default if set | `[::]:8891` (from `Config::default_lite_rpc_ws_addr`) |
+| `FANOUT_SIZE`            | Configuration for the fanout size                                | Replaces default if set | `18` (from `DEFAULT_FANOUT_SIZE`)             |
+| `IDENTITY`               | Identity keypair                                                 | Optional, replaces default if set | None |
+| `PROMETHEUS_ADDR`        | Address for Prometheus monitoring                                | Replaces default if set | None specified in provided defaults |
+| `MAX_RETRIES`            | Maximum number of retries per transaction                        | Replaces default if set | `40` (from `MAX_RETRIES`)                     |
+| `RETRY_TIMEOUT`          | Timeout for transaction retries in seconds                       | Replaces default if set | `3` (from `DEFAULT_RETRY_TIMEOUT`)            |
+| `QUIC_PROXY_ADDR`        | Address for QUIC proxy                                           | Optional | None |
+| `USE_GRPC`               | Flag to enable or disable gRPC                                   | Enables gRPC if set | `false` |
+| `GRPC_ADDR`              | gRPC address                                                     | Replaces default if set | `http://127.0.0.0:10000` (from `DEFAULT_GRPC_ADDR`) |
+| `GRPC_X_TOKEN`           | Token for gRPC authentication                                    | Optional | None |
+| `PG_*`                   | Various environment variables for Postgres configuration         | Depends on Postgres usage | Based on `PostgresSessionConfig::new_from_env()` |
 
 ### Postgres
 lite-rpc implements an optional postgres service that can write to postgres
