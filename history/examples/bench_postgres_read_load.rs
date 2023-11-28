@@ -25,13 +25,13 @@ pub async fn main() -> anyhow::Result<()> {
 
     let sessions = vec![
         PostgresSession::new_from_env().await.unwrap(),
-        PostgresSession::new_from_env().await.unwrap(),
-        PostgresSession::new_from_env().await.unwrap(),
-        PostgresSession::new_from_env().await.unwrap(),
-        PostgresSession::new_from_env().await.unwrap(),
-        PostgresSession::new_from_env().await.unwrap(),
-        PostgresSession::new_from_env().await.unwrap(),
-        PostgresSession::new_from_env().await.unwrap(),
+        // PostgresSession::new_from_env().await.unwrap(),
+        // PostgresSession::new_from_env().await.unwrap(),
+        // PostgresSession::new_from_env().await.unwrap(),
+        // PostgresSession::new_from_env().await.unwrap(),
+        // PostgresSession::new_from_env().await.unwrap(),
+        // PostgresSession::new_from_env().await.unwrap(),
+        // PostgresSession::new_from_env().await.unwrap(),
     ];
 
     let rpc_url = std::env::var("RPC_URL").expect("env var RPC_URL is mandatory");
@@ -57,7 +57,8 @@ pub async fn main() -> anyhow::Result<()> {
 
         // ATM we are 4000 slots behind ...
         // TODO reduce 4000 to 0
-        let slot = 231541684;
+        let slot = 234332620; // literpc3 - local
+        // let slot = 231541684;
         let delta = 50 + rand::random::<u64>() % 100;
         let query_slot = slot - delta;
         info!("query slot (-{}): {}", delta, query_slot);
@@ -69,6 +70,7 @@ pub async fn main() -> anyhow::Result<()> {
                 let si = rand::random::<usize>() % sessions.len();
                 let session = sessions[si].clone();
                 query_database(session, epoch, query_slot + i)
+                // query_database_simple(session)
             })
             .collect_vec();
 
@@ -82,6 +84,23 @@ pub async fn main() -> anyhow::Result<()> {
     }
 
     unreachable!()
+}
+
+
+async fn query_database_simple(postgres_session: PostgresSession) {
+    let statement = format!(
+        r#"
+                SELECT 1
+            "#,
+    );
+
+    let started = tokio::time::Instant::now();
+    let result = postgres_session.query_list(&statement, &[]).await.unwrap();
+    info!(
+        "result= {} (took {:.3}ms)",
+        result.len(),
+        started.elapsed().as_secs_f64() * 1000.0
+    );
 }
 
 async fn query_database(postgres_session: PostgresSession, epoch: EpochRef, slot: Slot) {
