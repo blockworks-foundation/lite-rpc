@@ -1,3 +1,4 @@
+use std::env;
 use itertools::Itertools;
 ///
 /// test program to query postgres the simples possible way
@@ -11,18 +12,7 @@ use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    // see localdev_integrationtest.sql how to setup the database
-    let pg_session_config = PostgresSessionConfig {
-        pg_config:
-        r#"
-            host=localhost
-            dbname=literpc_integrationtest_localdev
-            user=literpc_integrationtest
-            password=youknowme
-            sslmode=disable
-            "#.to_string(),
-        ssl: None,
-    };
+    let pg_session_config = PostgresSessionConfig::new_for_tests();
 
     let single_session = PostgresSession::new(pg_session_config.clone()).await.unwrap();
     // run one query
@@ -59,11 +49,7 @@ async fn parallel_queries(pg_session_config: PostgresSessionConfig) {
 }
 
 async fn query_database_simple(postgres_session: PostgresSession) {
-    let statement = format!(
-        r#"
-            SELECT 1
-        "#,
-    );
+    let statement = "SELECT 1";
 
     let started = tokio::time::Instant::now();
     let result = postgres_session.query_list(&statement, &[]).await.unwrap();

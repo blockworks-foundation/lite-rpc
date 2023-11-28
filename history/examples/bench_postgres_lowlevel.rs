@@ -3,7 +3,7 @@ use futures_util::future::join_all;
 use futures_util::pin_mut;
 use itertools::Itertools;
 use log::info;
-use solana_lite_rpc_history::postgres::postgres_session::PostgresSession;
+use solana_lite_rpc_history::postgres::postgres_session::{PostgresSession, PostgresWriteSession};
 use solana_sdk::blake3::Hash;
 use solana_sdk::signature::Signature;
 use std::sync::Arc;
@@ -11,24 +11,12 @@ use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::Type;
 use tokio_postgres::{CopyInSink, GenericClient};
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
-/// ```
-/// CREATE TABLE IF NOT EXISTS public.transactions_copyin
-/// (
-///     signature text NOT NULL,
-///     slot bigint NOT NULL,
-///     err text ,
-///     cu_requested bigint,
-///     prioritization_fees bigint,
-///     cu_consumed bigint,
-///     recent_blockhash text NOT NULL,
-///     message text NOT NULL
-/// )
-/// ```
 pub async fn copy_in(client: &tokio_postgres::Client) -> anyhow::Result<()> {
     let statement = format!(
         r#"
-                COPY public.transactions_copyin(
+                COPY transactions_copyin(
                     signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
                 ) FROM STDIN BINARY
             "#
@@ -85,7 +73,7 @@ pub async fn copy_in(client: &tokio_postgres::Client) -> anyhow::Result<()> {
     writer.finish().await.unwrap();
 
     info!(
-        "wrote {} rows in {:02}ms",
+        "wrote {} rows in {:.2}ms",
         COUNT,
         started.elapsed().as_secs_f64() * 1000.0
     );
@@ -97,40 +85,45 @@ pub async fn copy_in(client: &tokio_postgres::Client) -> anyhow::Result<()> {
 pub async fn main() {
     tracing_subscriber::fmt::init();
 
-    let dummy_session = PostgresSession::new_from_env().await.unwrap();
+    let pg_session_config = PostgresSessionConfig::new_for_tests();
+    let session = PostgresWriteSession::new(pg_session_config).await.unwrap().get_write_session().await;
 
-    let row_count_before = count_rows(dummy_session.client.clone()).await;
+    let ddl_statement =
+        r#"
+        CREATE TEMP TABLE transactions_copyin
+        (
+            signature text NOT NULL,
+            slot bigint NOT NULL,
+            err text ,
+            cu_requested bigint,
+            prioritization_fees bigint,
+            cu_consumed bigint,
+            recent_blockhash text NOT NULL,
+            message text NOT NULL
+         )
+        "#;
+
+    session.execute(ddl_statement, &[]).await.unwrap();
+
+    let row_count_before = count_rows(session.client.clone()).await;
 
     let started = Instant::now();
 
-    let mut write_sessions = Vec::new();
-    for _i in 0..5 {
-        write_sessions.push(PostgresSession::new_from_env().await.unwrap());
-    }
-
-    let queries = write_sessions
-        .iter()
-        .map(|x| copy_in(&x.client))
-        .collect_vec();
-    let all_results: Vec<anyhow::Result<()>> = join_all(queries).await;
-
-    for result in all_results {
-        result.unwrap();
-    }
+    copy_in(session.client.as_ref()).await.unwrap();
 
     info!(
-        "parallel write rows in {:02}ms",
+        "copyin write rows in {:.2}ms",
         started.elapsed().as_secs_f64() * 1000.0
     );
 
-    let row_count_after = count_rows(dummy_session.client.clone()).await;
+    let row_count_after = count_rows(session.client.clone()).await;
     info!("total: {}", row_count_after);
     info!("inserted: {}", row_count_after - row_count_before);
 }
 
 async fn count_rows(client: Arc<tokio_postgres::Client>) -> i64 {
     let row = client
-        .query_one("SELECT count(*) FROM public.transactions_copyin", &[])
+        .query_one("SELECT count(*) FROM transactions_copyin", &[])
         .await
         .unwrap();
 

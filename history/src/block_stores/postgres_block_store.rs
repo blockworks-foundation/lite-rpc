@@ -48,8 +48,8 @@ impl PostgresBlockStore {
     ) -> Self {
         let session_cache = PostgresSessionCache::new(pg_session_config.clone()).await.unwrap();
         let mut write_sessions = Vec::new();
-        for i in 0..PARALLEL_WRITE_SESSIONS {
-            write_sessions.push(PostgresWriteSession::new(i, pg_session_config.clone()).await.unwrap());
+        for _i in 0..PARALLEL_WRITE_SESSIONS {
+            write_sessions.push(PostgresWriteSession::new(pg_session_config.clone()).await.unwrap());
         }
         assert!(
             !write_sessions.is_empty(),
@@ -493,7 +493,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_write_session() {
-        let write_session = PostgresWriteSession::new_from_env(0).await.unwrap();
+        let write_session = PostgresWriteSession::new_from_env().await.unwrap();
 
         let row_role = write_session
             .get_write_session()

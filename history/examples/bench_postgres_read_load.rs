@@ -88,16 +88,12 @@ pub async fn main() -> anyhow::Result<()> {
 
 
 async fn query_database_simple(postgres_session: PostgresSession) {
-    let statement = format!(
-        r#"
-                SELECT 1
-            "#,
-    );
+    let statement = "SELECT 1";
 
     let started = tokio::time::Instant::now();
     let result = postgres_session.query_list(&statement, &[]).await.unwrap();
     info!(
-        "result= {} (took {:.3}ms)",
+        "num_rows: {} (took {:.2}ms)",
         result.len(),
         started.elapsed().as_secs_f64() * 1000.0
     );
@@ -115,7 +111,7 @@ async fn query_database(postgres_session: PostgresSession, epoch: EpochRef, slot
     let started = tokio::time::Instant::now();
     let result = postgres_session.query_list(&statement, &[]).await.unwrap();
     info!(
-        "result= {} (took {:.3}ms)",
+        "num_rows: {} (took {:.2}ms)",
         result.len(),
         started.elapsed().as_secs_f64() * 1000.0
     );

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use log::info;
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
@@ -266,24 +267,23 @@ pub struct PostgresWriteSession {
 
 impl PostgresWriteSession {
 
-    pub async fn new_from_env(session_index: usize) -> anyhow::Result<Self> {
+    pub async fn new_from_env() -> anyhow::Result<Self> {
         let pg_session_config = PostgresSessionConfig::new_from_env()
             .expect("failed to start Postgres Client")
             .expect("Postgres not enabled (use PG_ENABLED)");
-        Self::new(session_index, pg_session_config).await
+        Self::new(pg_session_config).await
     }
 
-    pub async fn new(session_index: usize, pg_session_config: PostgresSessionConfig) -> anyhow::Result<Self> {
+    pub async fn new(pg_session_config: PostgresSessionConfig) -> anyhow::Result<Self> {
 
         let session = PostgresSession::new(pg_session_config.clone()).await?;
 
         let statement = format!(
             r#"
-                SET SESSION application_name='postgres-blockstore-write-session-{session_index}';
+                SET SESSION application_name='postgres-blockstore-write-session';
                 -- default: 64MB
                 SET SESSION maintenance_work_mem = '256MB';
             "#,
-            session_index = session_index
         );
 
         session.execute_simple(&statement).await.unwrap();
