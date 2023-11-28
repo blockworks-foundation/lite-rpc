@@ -1,22 +1,22 @@
+///
+/// test program to query postgres (get blocks) behind the tip of the slots
+///
+
 use anyhow::bail;
 use itertools::Itertools;
-use log::{error, info};
+use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::structures::epoch::{Epoch, EpochCache, EpochRef};
-use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_history::postgres::postgres_epoch::PostgresEpoch;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSession;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::clock::Slot;
 use std::sync::Arc;
-use std::time::Instant;
-use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::watch;
 use tokio::sync::watch::Sender;
 use tokio::task::JoinHandle;
-use tokio_postgres::Client;
 
 const NUM_PARALLEL_TASKS: usize = 1;
 
@@ -45,7 +45,7 @@ pub async fn main() -> anyhow::Result<()> {
 
     let (tx, mut rx) = watch::channel(0);
 
-    let jh2 = slot_listener(slot_notifier.resubscribe(), tx);
+    let _jh2 = slot_listener(slot_notifier.resubscribe(), tx);
 
     let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(1));
     loop {
@@ -88,7 +88,7 @@ pub async fn main() -> anyhow::Result<()> {
 async fn query_database(postgres_session: PostgresSession, epoch: EpochRef, slot: Slot) {
     let statement = format!(
         r#"
-                SELECT 1 FROM {schema}.transactions WHERE slot = {slot}
+                SELECT min(slot),max(slot) FROM {schema}.transactions WHERE slot = {slot}
             "#,
         schema = PostgresEpoch::build_schema_name(epoch),
         slot = slot,
