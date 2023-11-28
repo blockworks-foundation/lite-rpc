@@ -4,8 +4,12 @@ pub struct History {
 
 impl History {
     pub fn new() -> Self {
-        History {
+        History {}
+    }
+}
 
-        }
+impl Default for History {
+    fn default() -> Self {
+        Self::new()
     }
 }

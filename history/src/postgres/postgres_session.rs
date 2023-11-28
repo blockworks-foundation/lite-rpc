@@ -4,7 +4,6 @@ use anyhow::Context;
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tokio_postgres::{
     config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, CopyInSink, Error, NoTls, Row,
@@ -218,7 +217,7 @@ impl PostgresSession {
     pub async fn copy_in(&self, statement: &str) -> Result<CopyInSink<bytes::Bytes>, Error> {
         // BinaryCopyInWriter
         // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
-        return self.client.copy_in(statement).await;
+        self.client.copy_in(statement).await
     }
 }
 

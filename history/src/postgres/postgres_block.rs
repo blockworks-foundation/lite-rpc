@@ -1,15 +1,13 @@
 use crate::postgres::postgres_epoch::PostgresEpoch;
-use anyhow::{anyhow, bail};
-use bytes::Bytes;
-use futures_util::pin_mut;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
+use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::Reward;
 use std::time::Instant;
-use tokio_postgres::types::{ToSql, Type};
+use tokio_postgres::types::ToSql;
 
 use super::postgres_session::PostgresSession;
 
@@ -50,7 +48,7 @@ impl From<&ProducedBlock> for PostgresBlock {
 impl PostgresBlock {
     pub fn into_produced_block(
         &self,
-        transactions: Vec<u8>,
+        transaction_infos: Vec<TransactionInfo>,
         commitment_config: CommitmentConfig,
     ) -> ProducedBlock {
         let rewards_vec: Option<Vec<Reward>> = self
@@ -61,7 +59,7 @@ impl PostgresBlock {
 
         ProducedBlock {
             // TODO implement
-            transactions: vec![],
+            transactions: transaction_infos,
             leader_id: None,
             blockhash: self.blockhash.clone(),
             block_height: self.block_height as u64,
@@ -191,5 +189,45 @@ impl PostgresBlock {
         );
 
         Ok(true)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use solana_sdk::commitment_config::CommitmentConfig;
+
+    #[test]
+    fn map_postgresblock_to_produced_block() {
+        let block = PostgresBlock {
+            slot: 5050505,
+            blockhash: "blockhash".to_string(),
+            block_height: 4040404,
+            parent_slot: 5050500,
+            block_time: 12121212,
+            previous_blockhash: "previous_blockhash".to_string(),
+            rewards: None,
+            leader_id: None,
+        };
+
+        let transaction_infos = vec![create_tx_info(), create_tx_info()];
+
+        let produced_block =
+            block.into_produced_block(transaction_infos, CommitmentConfig::confirmed());
+
+        assert_eq!(produced_block.slot, 5050505);
+        assert_eq!(produced_block.transactions.len(), 2);
+    }
+
+    fn create_tx_info() -> TransactionInfo {
+        TransactionInfo {
+            signature: "signature".to_string(),
+            err: None,
+            cu_requested: None,
+            prioritization_fees: None,
+            cu_consumed: None,
+            recent_blockhash: "recent_blockhash".to_string(),
+            message: "message".to_string(),
+        }
     }
 }

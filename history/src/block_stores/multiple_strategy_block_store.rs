@@ -10,10 +10,7 @@ use solana_lite_rpc_core::{
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
 use std::ops::{Deref, RangeInclusive};
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {
@@ -90,7 +87,7 @@ impl MultipleStrategyBlockStorage {
                     .persistent_block_storage
                     .query(slot)
                     .await
-                    .context(format!("block not found although it was in range"));
+                    .context(format!("block {} not found although it was in range", slot));
 
                 return lookup.map(|b| BlockStorageData {
                     block: b,
@@ -113,10 +110,10 @@ impl MultipleStrategyBlockStorage {
                         slot
                     );
 
-                    return Ok(BlockStorageData {
+                    Ok(BlockStorageData {
                         block,
                         result_source: BlockSource::FaithfulArchive,
-                    });
+                    })
                 }
                 Err(_) => {
                     debug!("Block {} not found in faithful storage - giving up", slot);

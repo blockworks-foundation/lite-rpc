@@ -5,7 +5,6 @@ use log::{trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
-use std::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
@@ -159,7 +158,6 @@ impl PostgresTransaction {
         // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
         let sink: CopyInSink<Bytes> = postgres_session.copy_in(&statement).await.unwrap();
 
-        let started = Instant::now();
         let writer = BinaryCopyInWriter::new(
             sink,
             &[

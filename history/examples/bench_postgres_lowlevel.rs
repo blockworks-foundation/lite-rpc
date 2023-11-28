@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures_util::future::join_all;
-use futures_util::{pin_mut};
+use futures_util::pin_mut;
 use itertools::Itertools;
 use log::info;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSession;
@@ -9,7 +9,7 @@ use solana_sdk::signature::Signature;
 use std::sync::Arc;
 use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::types::{Type};
+use tokio_postgres::types::Type;
 use tokio_postgres::{CopyInSink, GenericClient};
 
 /// ```

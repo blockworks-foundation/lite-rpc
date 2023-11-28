@@ -1,7 +1,6 @@
 ///
 /// test program to query postgres (get blocks) behind the tip of the slots
 ///
-
 use anyhow::bail;
 use itertools::Itertools;
 use log::info;

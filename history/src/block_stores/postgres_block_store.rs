@@ -6,7 +6,7 @@ use anyhow::{bail, Context, Result};
 use async_trait::async_trait;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
-use solana_lite_rpc_core::structures::epoch::{EpochRef};
+use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{
     structures::{epoch::EpochCache, produced_block::ProducedBlock},
     traits::block_storage_interface::BlockStorageInterface,
@@ -49,7 +49,10 @@ impl PostgresBlockStore {
         for i in 0..PARALLEL_WRITE_SESSIONS {
             write_sessions.push(PostgresWriteSession::new_from_env(i).await.unwrap());
         }
-        assert!(write_sessions.len() > 0, "must have at least one write session");
+        assert!(
+            !write_sessions.is_empty(),
+            "must have at least one write session"
+        );
 
         Self::check_role(&session_cache).await;
 
@@ -194,8 +197,8 @@ impl PostgresBlockStore {
             parent_slot,
             block_time,
             previous_blockhash,
-            rewards: rewards,
-            leader_id: leader_id,
+            rewards,
+            leader_id,
         };
 
         let produced_block = postgres_block.into_produced_block(
@@ -213,7 +216,7 @@ impl PostgresBlockStore {
             produced_block.commitment_config.commitment
         );
 
-        return Ok(produced_block);
+        Ok(produced_block)
     }
 
     // optimistically try to progress commitment level for a block that is already stored
@@ -249,7 +252,9 @@ impl PostgresBlockStore {
         let write_session_single = self.write_sessions[0].get_write_session().await;
 
         let started_block = Instant::now();
-        let inserted = postgres_block.save(&write_session_single, epoch.into()).await?;
+        let inserted = postgres_block
+            .save(&write_session_single, epoch.into())
+            .await?;
 
         if !inserted {
             debug!("Block {} already exists - skip update", slot);
@@ -260,12 +265,16 @@ impl PostgresBlockStore {
         let started_txs = Instant::now();
 
         let mut queries_fut = Vec::new();
-        let chunk_size = div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
+        let chunk_size =
+            div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
         let chunks = transactions.chunks(chunk_size).collect_vec();
-        assert!(chunks.len() <= self.write_sessions.len(), "cannot have more chunks than session");
+        assert!(
+            chunks.len() <= self.write_sessions.len(),
+            "cannot have more chunks than session"
+        );
         for (i, chunk) in chunks.iter().enumerate() {
             let session = self.write_sessions[i].get_write_session().await.clone();
-            let future = PostgresTransaction::save_transaction_copyin(session, epoch.into(), &chunk);
+            let future = PostgresTransaction::save_transaction_copyin(session, epoch.into(), chunk);
             queries_fut.push(future);
         }
         let all_results: Vec<Result<bool>> = futures_util::future::join_all(queries_fut).await;
@@ -292,8 +301,10 @@ impl PostgresBlockStore {
     pub async fn optimize_blocks_table(&self, slot: Slot) -> Result<()> {
         let started = Instant::now();
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
-        let random_session = slot as usize % self.write_sessions.len() as usize;
-        let write_session_single = self.write_sessions[random_session].get_write_session().await;
+        let random_session = slot as usize % self.write_sessions.len();
+        let write_session_single = self.write_sessions[random_session]
+            .get_write_session()
+            .await;
         let statement = format!(
             r#"
                 ANALYZE (SKIP_LOCKED) {schema}.blocks;
@@ -302,11 +313,21 @@ impl PostgresBlockStore {
         );
 
         tokio::spawn(async move {
-            write_session_single.execute_simple(&statement).await.unwrap();
+            write_session_single
+                .execute_simple(&statement)
+                .await
+                .unwrap();
             let elapsed = started.elapsed();
-            debug!("Postgres analyze of blocks table took {:.2}ms", elapsed.as_secs_f64() * 1000.0);
+            debug!(
+                "Postgres analyze of blocks table took {:.2}ms",
+                elapsed.as_secs_f64() * 1000.0
+            );
             if elapsed > Duration::from_millis(500) {
-                warn!("Very slow postgres ANALYZE on slot {} - took {:.2}ms", slot, elapsed.as_secs_f64() * 1000.0);
+                warn!(
+                    "Very slow postgres ANALYZE on slot {} - took {:.2}ms",
+                    slot,
+                    elapsed.as_secs_f64() * 1000.0
+                );
             }
         });
         Ok(())
@@ -323,7 +344,6 @@ impl PostgresBlockStore {
         Ok(created_current || created_next)
     }
 }
-
 
 fn build_assign_permissions_statements(epoch: EpochRef) -> String {
     let role = LITERPC_ROLE;
@@ -347,10 +367,8 @@ impl BlockStorageInterface for PostgresBlockStore {
     async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         let map_epoch_to_slot_range = self.get_slot_range_by_epoch().await;
 
-        let rows_minmax: Vec<&RangeInclusive<Slot>> = map_epoch_to_slot_range
-            .iter()
-            .map(|(_, range)| range)
-            .collect_vec();
+        let rows_minmax: Vec<&RangeInclusive<Slot>> =
+            map_epoch_to_slot_range.values().collect_vec();
 
         let slot_min = rows_minmax
             .iter()
