@@ -1,6 +1,5 @@
-use jsonrpsee::tracing::warn;
-use log::{debug, error, info, trace};
-use serde::{Deserialize, Serialize};
+use chrono::serde;
+use log::{debug, error, info, trace, warn};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
@@ -10,28 +9,16 @@ use solana_lite_rpc_core::traits::block_storage_interface::BlockStorageInterface
 use solana_lite_rpc_core::types::{BlockStream, SlotStream};
 use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::blake3::{hash, Hash, HASH_BYTES};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::message::VersionedMessage;
-use solana_sdk::pubkey::Pubkey;
-use std::backtrace::Backtrace;
-use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
-use std::panic::PanicInfo;
 use std::process;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use csv::WriterBuilder;
-use futures::channel::oneshot::Cancellation;
-use serde::__private::ser::CannotSerializeVariant;
-use tokio::join;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing_subscriber::fmt::format;
 use tracing_subscriber::EnvFilter;
 
 // force ordered stream of blocks
@@ -64,7 +51,8 @@ async fn storage_test() {
 
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_data).await);
 
-    let (jh1_1, first_init) = storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());
+    let (jh1_1, first_init) =
+        storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());
     // coordinate initial epoch schema creation
     first_init.cancelled().await;
 
@@ -128,21 +116,11 @@ const OPTIMIZE_EVERY_N_SLOTS: u64 = 10;
 /// wait at least n slots before running the optimizer again
 const OPTIMIZE_DEBOUNCE_SLOTS: u64 = 4;
 
-#[derive(serde::Serialize)]
-struct CsvRow {
-    slot: Slot,
-    tx_count: u32,
-    write_time_ms: u32,
-}
-
 // note: the consumer lags far behind the ingress of blocks and transactions
 fn storage_listen(
     block_notifier: BlockStream,
     block_storage: Arc<PostgresBlockStore>,
 ) -> JoinHandle<()> {
-
-    let mut csv_writer = WriterBuilder::new().from_path(format!("block_tx_ingress-postgres.csv")).unwrap();
-
     tokio::spawn(async move {
         let mut last_optimizer_run = 0;
         let mut block_notifier = block_notifier;
@@ -180,22 +158,22 @@ fn storage_listen(
                         warn!("(soft_realtime) Write operation was slow!");
                     }
 
-                    csv_writer.serialize(CsvRow {
-                        slot: block.slot,
-                        tx_count: block.transactions.len() as u32,
-                        write_time_ms: elapsed.as_millis() as u32,
-                    }).unwrap();
-                    csv_writer.flush().unwrap();
-
                     // debounce for 4 slots but run at least every 10 slots
-                    if block.slot > last_optimizer_run + OPTIMIZE_EVERY_N_SLOTS ||
-                        block.slot > last_optimizer_run + OPTIMIZE_DEBOUNCE_SLOTS &&
-                        started.elapsed() < Duration::from_millis(200) && block_notifier.is_empty() {
-                        debug!("Use extra time to do some optimization (slot {})", block.slot);
-                        block_storage.optimize_blocks_table(block.slot).await.unwrap();
+                    if block.slot > last_optimizer_run + OPTIMIZE_EVERY_N_SLOTS
+                        || block.slot > last_optimizer_run + OPTIMIZE_DEBOUNCE_SLOTS
+                            && started.elapsed() < Duration::from_millis(200)
+                            && block_notifier.is_empty()
+                    {
+                        debug!(
+                            "Use extra time to do some optimization (slot {})",
+                            block.slot
+                        );
+                        block_storage
+                            .optimize_blocks_table(block.slot)
+                            .await
+                            .unwrap();
                         last_optimizer_run = block.slot;
                     }
-
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     warn!(
@@ -366,7 +344,7 @@ fn inspect_this_block(
                 );
                 debug!(
                     "finalized: {:?}",
-                    to_string_without_transactions(&finalized_block)
+                    to_string_without_transactions(finalized_block)
                 );
 
                 // Assumption IV: block details do not change between confirmed and finalized
@@ -374,7 +352,7 @@ fn inspect_this_block(
                     // normalized and compare
                     to_string_without_transactions(&prev_block.block)
                         .replace("commitment_config=confirmed", "commitment_config=IGNORE"),
-                    to_string_without_transactions(&finalized_block)
+                    to_string_without_transactions(finalized_block)
                         .replace("commitment_config=finalized", "commitment_config=IGNORE"),
                     "block tostring mismatch"
                 )
@@ -418,7 +396,7 @@ fn configure_panic_hook() {
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         default_panic(panic_info);
-        // e.g. panicked at 'BANG', lite-rpc/tests/storage_integration_tests.rs:260:25
+        // e.g. panicked at 'BANG', lite-rpc/tests/blockstore_integration_tests:260:25
         error!("{}", panic_info);
         eprintln!("{}", panic_info);
         process::exit(12);
