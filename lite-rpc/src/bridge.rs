@@ -56,6 +56,7 @@ lazy_static::lazy_static! {
 }
 
 /// A bridge between clients and tpu
+#[allow(dead_code)]
 pub struct LiteBridge {
     data_cache: DataCache,
     // should be removed
@@ -124,7 +125,7 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-    async fn get_block(&self, slot: u64) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
+    async fn get_block(&self, _slot: u64) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
         // let block = self.history.block_storage.query_block(slot).await;
         // if block.is_ok() {
         //     // TO DO Convert to UIConfirmed Block
