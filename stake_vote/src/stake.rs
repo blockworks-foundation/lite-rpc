@@ -92,13 +92,13 @@ impl StakeStore {
                                                     //doesn't erase new state with an old one. Can arrive during bootstrapping.
                                                     //several instructions can be done in the same slot.
                 if strstake.last_update_slot <= stake.last_update_slot {
-                    log::info!("stake_map_notify_stake Stake store updated stake: {} old_stake:{strstake:?} stake:{stake:?}", stake.pubkey);
+                    log::trace!("stake_map_notify_stake Stake store updated stake: {} old_stake:{strstake:?} stake:{stake:?}", stake.pubkey);
                     *strstake = stake;
                 }
             }
             // If value doesn't exist yet, then insert a new value of 1
             std::collections::hash_map::Entry::Vacant(vacant) => {
-                log::info!(
+                log::trace!(
                     "stake_map_notify_stake Stake store insert stake: {} stake:{stake:?}",
                     stake.pubkey
                 );
