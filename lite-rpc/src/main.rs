@@ -1,7 +1,7 @@
 pub mod rpc_tester;
 
 use crate::rpc_tester::RpcTester;
-use anyhow::bail;
+use anyhow::{bail, Context};
 use dashmap::DashMap;
 use lite_rpc::bridge::LiteBridge;
 use lite_rpc::cli::Config;
@@ -158,7 +158,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     );
     drop(blocks_notifier);
 
-    let (notification_channel, postgres) = start_postgres(postgres).await?;
+    let (notification_channel, postgres) = start_postgres(postgres).await
+        .context("connecting to postgres")?;
 
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,
