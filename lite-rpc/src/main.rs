@@ -268,6 +268,8 @@ pub async fn main() -> anyhow::Result<()> {
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
 
+    info!("Use RPC address: {}", obfuscate_rpcurl(rpc_addr));
+
     let main = start_lite_rpc(config, rpc_client);
 
     tokio::select! {
@@ -312,4 +314,12 @@ fn parse_host_port(host_port: &str) -> Result<SocketAddr, String> {
     } else {
         Ok(addrs[0])
     }
+}
+
+// http://mango.rpcpool.com/c232ab232ba2323
+fn obfuscate_rpcurl(rpc_addr: &str) -> String {
+    if rpc_addr.contains("rpcpool.com") {
+        return rpc_addr.replacen(char::is_numeric, "X", 99)
+    }
+    rpc_addr.to_string()
 }
