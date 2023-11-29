@@ -30,17 +30,21 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
+use log::{debug, info};
 use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
     SubscribeRequestFilterSlots, SubscribeUpdateBlock,
 };
+use yellowstone_grpc_proto::prost::Message;
 
 fn process_block(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
+    debug!("Receiving block {} size from geyser of size {}", block.slot, block.encoded_len());
+
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
