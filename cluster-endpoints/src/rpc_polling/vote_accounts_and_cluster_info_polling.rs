@@ -22,7 +22,7 @@ pub fn poll_vote_accounts_and_cluster_info(
                     .send(vote_accounts)
                     .context("Should be able to send vote accounts")?;
             }
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            tokio::time::sleep(Duration::from_secs(600)).await;
         }
     })
 }
