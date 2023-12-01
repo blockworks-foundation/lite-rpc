@@ -110,7 +110,7 @@ need to explicitly disable GSO (Generic Segmenatin Offload) see
 fly apps create my-lite-rpc
 fly secrets set -a my-lite-rpc RPC_URL=... WS_URL=...   # See above table for env options
 fly scale vm dedicated-cpu-2x --memory 4096 -a my-lite-rpc
-fly deploy -a my-lite-rpc --remote-only # To just launch lite-rpc
+fly deploy -c cd/lite-rpc.toml -a my-lite-rpc --remote-only # To just launch lite-rpc
 fly deploy -c cd/lite-rpc.toml -a my-lite-rpc --remote-only # To launch lite-rpc with proxy mode
 ```
 
