@@ -2,7 +2,7 @@ name: Deploy to Fly
 
 on:
   push:
-      branches: [production]
+      branches: [main]
 
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -18,7 +18,7 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
       
       - name: Deploy lite-rpc
-        run: flyctl deploy -c cd/lite-rpc.toml --remote-only
+        run: flyctl deploy -c cd/lite-rpc-staging.toml --remote-only
 
 #      - name: Deploy quic-forward-proxy
 #        run: flyctl deploy -c cd/quic-forward-proxy.toml --remote-only
