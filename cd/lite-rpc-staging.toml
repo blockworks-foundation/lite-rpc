@@ -10,9 +10,6 @@ primary_region = "nrt"
 [build]
   dockerfile = "../Dockerfile"
 
-[experimental]
-  cmd = ["sh", "-c", "lite-rpc --rpc-addr $RPC_URL --ws-addr $WS_URL"]
-
 [env]
   PORT_HTTP = "8890"
   PORT_WS = "8891"
