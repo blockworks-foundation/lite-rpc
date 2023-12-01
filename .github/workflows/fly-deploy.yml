@@ -1,4 +1,4 @@
-name: Deploy to Fly
+name: Deploy to Fly Production
 
 on:
   push:

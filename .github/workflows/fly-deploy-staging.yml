@@ -1,4 +1,4 @@
-name: Deploy to Fly
+name: Deploy to Fly Staging
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
       - name: Setup Fly
         uses: superfly/flyctl-actions/setup-flyctl@master
       
-      - name: Deploy lite-rpc
+      - name: Deploy lite-rpc-staging
         run: flyctl deploy -c cd/lite-rpc-staging.toml --remote-only
 
 #      - name: Deploy quic-forward-proxy
