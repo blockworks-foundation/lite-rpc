@@ -2,6 +2,8 @@ name: Cargo Nightly Clippy
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 env:
