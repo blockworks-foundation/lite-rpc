@@ -370,8 +370,8 @@ pub fn create_grpc_subscription(
                     let message = message?;
 
                     let Some(update) = message.update_oneof else {
-                continue;
-            };
+                        continue;
+                    };
 
                     match update {
                         UpdateOneof::Slot(slot) => {
