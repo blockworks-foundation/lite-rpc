@@ -90,7 +90,7 @@ impl BlockStorageInterface for PostgresBlockStore {
 
     async fn get(&self, slot: Slot, _config: RpcBlockConfig) -> Result<ProducedBlock> {
         let range = self.get_slot_range().await;
-        if range.contains(&slot) {}
+        //if range.contains(&slot) {}
         todo!()
     }
 
