@@ -324,7 +324,7 @@ pub fn create_grpc_subscription(
     let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(10);
     let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
 
-    let slot_task: AnyhowJoinHandle = create_slot_task(
+    let slot_task: AnyhowJoinHandle = create_processed_slot_task(
         grpc_addr.clone(),
         grpc_x_token.clone(),
         slot_sx,
@@ -364,7 +364,7 @@ pub fn create_grpc_subscription(
 
 
 // note: cannot add confirmation level as parameter because the data produced is declared as "processed"
-pub fn create_slot_task(
+pub fn create_processed_slot_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
     slot_sx: Sender<SlotNotification>,
