@@ -40,3 +40,6 @@ yellowstone-grpc-proto = { workspace = true }
 itertools = {workspace = true}
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
