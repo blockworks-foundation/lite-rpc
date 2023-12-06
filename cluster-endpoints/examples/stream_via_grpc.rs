@@ -65,19 +65,48 @@ pub async fn main() {
     let (tx_tip, mut rx_tip) = tokio::sync::watch::channel::<Slot>(0);
 
 
-    start_progressor("green".to_string(), blocks_notifier_green, rx_tip.clone());
+    let (offer_block_sender, mut offer_block_notifier) = tokio::sync::mpsc::channel::<OfferBlockMsg>(100);
+
+    start_progressor("green".to_string(), blocks_notifier_green, rx_tip.clone(), offer_block_sender.clone());
+    start_progressor("blue".to_string(), blocks_notifier_blue, rx_tip.clone(), offer_block_sender.clone());
+
+    // test
+    tokio::spawn(async move {
+        // need to wait until channels reached slot beyond tip
+        // tokio::time::sleep(Duration::from_secs(14)).await;
+
+        let mut current_tip = 0;
+        loop {
+            let slot_offered = offer_block_notifier.recv().await.unwrap();
+            info!("Offered slot: {:?}", slot_offered);
+
+            // do a dump move and send it back as tip
+            let OfferBlockMsg::NextSlot(_label, slot_offered) = slot_offered;
+            let new_tip = slot_offered;
+            tx_tip.send(new_tip).unwrap();
+            info!("progressing tip to {}", new_tip);
+        }
+
+
+    });
 
     sleep(Duration::from_secs(1000));
 
 }
 
-fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut rx_tip: tokio::sync::watch::Receiver<Slot>) {
+#[derive(Debug)]
+enum OfferBlockMsg {
+    NextSlot(String, Slot),
+}
+
+fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut rx_tip: tokio::sync::watch::Receiver<Slot>,
+                    offer_block_sender: tokio::sync::mpsc::Sender<OfferBlockMsg>) {
     tokio::spawn(async move {
         let mut blocks_notifier = blocks_notifier.resubscribe();
         // for test only
-        let start_slot = blocks_notifier.recv().await.unwrap().slot;
+        // let start_slot = blocks_notifier.recv().await.unwrap().slot;
 
-        let mut tip = start_slot + 20;
+        let mut tip = 0;
         info!("starting at tip {}", tip);
 
         // block after tip offered by this stream
@@ -95,6 +124,7 @@ fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut
                             if block.slot > tip {
                                 info!("{}: beyond tip ({} > {})", label, block.slot, tip);
                                 block_after_tip = block.slot;
+                                offer_block_sender.send(OfferBlockMsg::NextSlot(label.clone(), block_after_tip)).await.unwrap();
                                 continue 'main_loop;
                             }
                         }
