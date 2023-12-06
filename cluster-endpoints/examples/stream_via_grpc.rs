@@ -1,18 +1,23 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 
-use log::info;
+use log::{error, info};
 use serde::Serializer;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::clock::Slot;
 use tokio::select;
+use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast::error::TryRecvError;
+use tokio::sync::RwLock;
 use yellowstone_grpc_proto::geyser::CommitmentLevel;
 
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_block_processing_task;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+use crate::CmdNext::DeleteSourceAtIndex;
 
 pub const GRPC_VERSION: &str = "1.16.1";
 
@@ -22,24 +27,26 @@ pub async fn main() {
     tracing_subscriber::fmt::init();
 
 
-    let rpc_client = Arc::new(RpcClient::new("http://127.0.0.0:8899".to_string()));
+    // let rpc_client = Arc::new(RpcClient::new("http://127.0.0.0:8899".to_string()));
+    let rpc_client = Arc::new(RpcClient::new("http://api.mainnet-beta.solana.com/".to_string()));
     // mango validator (mainnet)
-    let grpc_addr_mainnet_triton = "http://202.8.9.108:10000".to_string();
+    let _grpc_addr_mainnet_triton = "http://202.8.9.108:10000".to_string();
     // ams81 (mainnet)
     let grpc_addr_mainnet_ams81 = "http://202.8.8.12:10000".to_string();
     // testnet - NOTE: this connection has terrible lags (almost 5 minutes)
     // let grpc_addr = "http://147.28.169.13:10000".to_string();
 
-    let (block_sx_green, blocks_notifier_green) = tokio::sync::broadcast::channel(10);
-    let (block_sx_blue, blocks_notifier_blue) = tokio::sync::broadcast::channel(10);
+    let (block_sx_green, blocks_notifier_green) = tokio::sync::broadcast::channel(1000);
+    let (block_sx_blue, blocks_notifier_blue) = tokio::sync::broadcast::channel(1000);
 
     let grpc_x_token = None;
-    let block_confirmed_task_green: AnyhowJoinHandle = create_block_processing_task(
-        grpc_addr_mainnet_triton.clone(),
+    let block_confirmed_task_green_in: AnyhowJoinHandle = create_block_processing_task(
+        grpc_addr_mainnet_ams81.clone(),
         grpc_x_token.clone(),
         block_sx_green.clone(),
         CommitmentLevel::Confirmed,
     );
+
 
     let block_confirmed_task_blue: AnyhowJoinHandle = create_block_processing_task(
         grpc_addr_mainnet_ams81.clone(),
@@ -55,72 +62,43 @@ pub async fn main() {
     // );
 
 
+    let (tx_tip, mut rx_tip) = tokio::sync::watch::channel::<Slot>(0);
+
 
     tokio::spawn(async move {
         let mut blocks_notifier_green = blocks_notifier_green.resubscribe();
-        let mut blocks_notifier_blue = blocks_notifier_blue.resubscribe();
+        // for test only
+        let start_slot = blocks_notifier_green.recv().await.unwrap().slot;
 
-        let buffer = Vec::<ProducedBlock>::with_capacity(100);
+        let mut tip = start_slot + 20;
+        info!("starting at tip {}", tip);
 
-        let mut command = Command::RecvAny;
-
-        let mut state = State {
-            highest_green: 0,
-            highest_blue: 0,
-            tip: 0,
-        };
-
-        loop {
-
-            info!("command: {:?}", command);
-            let next_command = match command {
-                Command::RecvAny => {
-                    select! {
-                        next = blocks_notifier_green.recv() => {
-                            let block = next.expect("block");
-                            info!("green first: {}", format_block(&block));
-                            let cmd = state.consume_green(block.slot);
-                            cmd
+        // block after tip offered by this stream
+        let mut block_after_tip: Slot = 0;
+        'main_loop: loop {
+            select! {
+                _ = rx_tip.changed() => {
+                    tip = rx_tip.borrow().clone();
+                    info!("tip changed to {}", tip);
+                }
+                recv_result = blocks_notifier_green.recv(), if !(block_after_tip > tip) => {
+                    match recv_result {
+                        Ok(block) => {
+                            info!("green: {}", format_block(&block));
+                            if block.slot > tip {
+                                info!("green: beyond tip ({} > {})", block.slot, tip);
+                                block_after_tip = block.slot;
+                                continue 'main_loop;
+                            }
                         }
-                        next = blocks_notifier_blue.recv() => {
-                            let block = next.expect("block");
-                            info!("blue first: {}", format_block(&block));
-                            let cmd = state.consume_blue(block.slot);
-                            cmd
+                        Err(e) => {
+                            // TODO what to do?
+                            error!("Error receiving block: {}", e);
+                            continue 'main_loop;
                         }
                     }
                 }
-                Command::RecvGreen => {
-                    select! {
-                        next = blocks_notifier_green.recv() => {
-                            let block = next.expect("block");
-                            info!("only green: {}", format_block(&block));
-                             let cmd = state.consume_green(block.slot);
-                            cmd
-                        }
-                    }
-                }
-                Command::RecvBlue => {
-                    select! {
-                        next = blocks_notifier_blue.recv() => {
-                            let block = next.expect("block");
-                            info!("only blue: {}", format_block(&block));
-                            let cmd = state.consume_blue(block.slot);
-                            cmd
-                        }
-                    }
-                }
-            }; // -- match
-
-            command = next_command;
-
-
-            // while let Ok(block) = block_stream.recv().await {
-            //     info!("block: {:?}@{} (-> {})", block.slot, block.commitment_config.commitment, block.parent_slot);
-            //     println!("CSV {},{}", block.slot, block.parent_slot);
-            //
-            //
-            // }
+            }
         }
     });
 
@@ -130,6 +108,11 @@ pub async fn main() {
 
 fn format_block(block: &ProducedBlock) -> String {
     format!("{:?}@{} (-> {})", block.slot, block.commitment_config.commitment, block.parent_slot)
+}
+
+#[derive(Debug)]
+enum CmdNext {
+    DeleteSourceAtIndex(usize)
 }
 
 #[derive(Debug)]
@@ -193,7 +176,8 @@ impl State {
                     Command::RecvBlue
                 }
                 (false, false) => {
-                    panic!("both streams passed beyond tip - no hope!");
+                    error!("both streams passed beyond tip - no hope!");
+                    Command::RecvAny
                 }
             };
         next_cmd
@@ -245,6 +229,41 @@ impl State {
 
 struct BlockStreamDiskPersistence {
     out_basedir: PathBuf,
+
+}
+
+
+fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender<T>, Receiver<T>) {
+    let (block_sx_green, monkey_upstream) = tokio::sync::broadcast::channel::<T>(1024);
+    let (monkey_downstream, blocks_notifier_green) = tokio::sync::broadcast::channel::<T>(capacity);
+
+    tokio::spawn(async move {
+        let mut monkey_upstream = monkey_upstream;
+        'recv_loop: for counter in 0.. {
+            let value = monkey_upstream.recv().await.unwrap();
+            // info!("forwarding: {}", value);
+            // failes if there are no receivers
+
+            if counter % 3 == 0 {
+                info!("Delay value");
+                tokio::time::sleep(Duration::from_millis(700)).await;
+            }
+            if counter % 5 == 0 {
+                info!("Drop value");
+                continue 'recv_loop;
+            }
+
+            let send_result = monkey_downstream.send(value);
+            match send_result {
+                Ok(_) => {
+                    info!("forwarded");
+                }
+                Err(_) => panic!("Should never happen")
+            }
+        }
+    });
+
+    (block_sx_green, blocks_notifier_green)
 
 }
 
