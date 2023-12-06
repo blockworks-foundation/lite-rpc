@@ -65,10 +65,17 @@ pub async fn main() {
     let (tx_tip, mut rx_tip) = tokio::sync::watch::channel::<Slot>(0);
 
 
+    start_progressor("green".to_string(), blocks_notifier_green, rx_tip.clone());
+
+    sleep(Duration::from_secs(1000));
+
+}
+
+fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut rx_tip: tokio::sync::watch::Receiver<Slot>) {
     tokio::spawn(async move {
-        let mut blocks_notifier_green = blocks_notifier_green.resubscribe();
+        let mut blocks_notifier = blocks_notifier.resubscribe();
         // for test only
-        let start_slot = blocks_notifier_green.recv().await.unwrap().slot;
+        let start_slot = blocks_notifier.recv().await.unwrap().slot;
 
         let mut tip = start_slot + 20;
         info!("starting at tip {}", tip);
@@ -81,12 +88,12 @@ pub async fn main() {
                     tip = rx_tip.borrow().clone();
                     info!("tip changed to {}", tip);
                 }
-                recv_result = blocks_notifier_green.recv(), if !(block_after_tip > tip) => {
+                recv_result = blocks_notifier.recv(), if !(block_after_tip > tip) => {
                     match recv_result {
                         Ok(block) => {
-                            info!("green: {}", format_block(&block));
+                            info!("{}: {}",label, format_block(&block));
                             if block.slot > tip {
-                                info!("green: beyond tip ({} > {})", block.slot, tip);
+                                info!("{}: beyond tip ({} > {})", label, block.slot, tip);
                                 block_after_tip = block.slot;
                                 continue 'main_loop;
                             }
@@ -101,9 +108,6 @@ pub async fn main() {
             }
         }
     });
-
-    sleep(Duration::from_secs(1000));
-
 }
 
 fn format_block(block: &ProducedBlock) -> String {
