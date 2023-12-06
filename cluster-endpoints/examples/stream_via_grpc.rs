@@ -1,10 +1,12 @@
+use std::fmt::{Display, Formatter};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 
-use log::{error, info};
+use log::{debug, error, info};
 use serde::Serializer;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::clock::Slot;
@@ -17,7 +19,6 @@ use yellowstone_grpc_proto::geyser::CommitmentLevel;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_block_processing_task;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use crate::CmdNext::DeleteSourceAtIndex;
 
 pub const GRPC_VERSION: &str = "1.16.1";
 
@@ -36,12 +37,13 @@ pub async fn main() {
     // testnet - NOTE: this connection has terrible lags (almost 5 minutes)
     // let grpc_addr = "http://147.28.169.13:10000".to_string();
 
-    let (block_sx_green, blocks_notifier_green) = tokio::sync::broadcast::channel(1000);
+    // let (block_sx_green, blocks_notifier_green) = tokio::sync::broadcast::channel(1000);
+    let (block_sx_green, blocks_notifier_green) = start_monkey_broadcast::<ProducedBlock>(1000);
     let (block_sx_blue, blocks_notifier_blue) = tokio::sync::broadcast::channel(1000);
 
     let grpc_x_token = None;
-    let block_confirmed_task_green_in: AnyhowJoinHandle = create_block_processing_task(
-        grpc_addr_mainnet_ams81.clone(),
+    let block_confirmed_task_green: AnyhowJoinHandle = create_block_processing_task(
+        _grpc_addr_mainnet_triton.clone(),
         grpc_x_token.clone(),
         block_sx_green.clone(),
         CommitmentLevel::Confirmed,
@@ -78,13 +80,13 @@ pub async fn main() {
         let mut current_tip = 0;
         loop {
             let slot_offered = offer_block_notifier.recv().await.unwrap();
-            info!("Offered slot: {:?}", slot_offered);
+            info!("<< offered slot: {:?}", slot_offered);
 
             // do a dump move and send it back as tip
             let OfferBlockMsg::NextSlot(_label, slot_offered) = slot_offered;
             let new_tip = slot_offered;
             tx_tip.send(new_tip).unwrap();
-            info!("progressing tip to {}", new_tip);
+            info!("--> progressing tip to {}", new_tip);
         }
 
 
@@ -115,16 +117,17 @@ fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut
             select! {
                 _ = rx_tip.changed() => {
                     tip = rx_tip.borrow().clone();
-                    info!("tip changed to {}", tip);
+                    info!("++> {} tip changed to {}", label, tip);
                 }
                 recv_result = blocks_notifier.recv(), if !(block_after_tip > tip) => {
                     match recv_result {
                         Ok(block) => {
-                            info!("{}: {}",label, format_block(&block));
+                            info!("=> recv on {}: {}",label, format_block(&block));
                             if block.slot > tip {
-                                info!("{}: beyond tip ({} > {})", label, block.slot, tip);
+                                info!("==> {}: beyond tip ({} > {})", label, block.slot, tip);
                                 block_after_tip = block.slot;
                                 offer_block_sender.send(OfferBlockMsg::NextSlot(label.clone(), block_after_tip)).await.unwrap();
+                                // this thread will sleep and not issue any recvs until we get tip.changed signal
                                 continue 'main_loop;
                             }
                         }
@@ -144,132 +147,10 @@ fn format_block(block: &ProducedBlock) -> String {
     format!("{:?}@{} (-> {})", block.slot, block.commitment_config.commitment, block.parent_slot)
 }
 
-#[derive(Debug)]
-enum CmdNext {
-    DeleteSourceAtIndex(usize)
-}
-
-#[derive(Debug)]
-enum Command {
-    RecvAny,
-    RecvGreen,
-    RecvBlue,
-}
-
-// Slot=0 == None
-#[derive(Debug)]
-struct State {
-    highest_green: Slot,
-    highest_blue: Slot,
-    tip: Slot,
-}
-
-impl State {
-
-    pub fn consume_green(&mut self, green: Slot) -> Command {
-        assert!(green > self.highest_green);
-        self.highest_green = green;
-
-        if green == self.tip + 1 {
-            info!("Thank you, green! progressing tip");
-            self.tip = green;
-        }
-
-        let next_cmd = self.calc_cmd();
-
-        return next_cmd;
-    }
-
-    pub fn consume_blue(&mut self, blue: Slot) -> Command {
-        assert!(blue > self.highest_blue);
-        self.highest_blue = blue;
-
-        if blue == self.tip + 1 {
-            info!("Thank you, blue! progressing tip");
-            self.tip = blue;
-        }
-
-        let next_cmd = self.calc_cmd();
-
-        return next_cmd;
-    }
-
-    fn calc_cmd(&self) -> Command {
-        let want_next_green = self.highest_green <= self.tip;
-        let want_next_blue = self.highest_blue <= self.tip;
-
-        let next_cmd =
-            match (want_next_green, want_next_blue) {
-                (true, true) => {
-                    Command::RecvAny
-                }
-                (true, false) => {
-                    Command::RecvGreen
-                }
-                (false, true) => {
-                    Command::RecvBlue
-                }
-                (false, false) => {
-                    error!("both streams passed beyond tip - no hope!");
-                    Command::RecvAny
-                }
-            };
-        next_cmd
-    }
-
-
-
-    pub fn consume(self, green: Option<Slot>, blue: Option<Slot>) -> (State, Command) {
-        let has_green = green.is_some();
-        let has_blue = blue.is_some();
-        match (has_green, has_blue) {
-            (true, false) => {
-                let highest_green = self.highest_green;
-                let highest_blue = self.highest_blue;
-                let tip = self.tip;
-                todo!()
-            }
-            (false, true) => {
-                let highest_green = self.highest_green;
-                let highest_blue = self.highest_blue;
-                let tip = self.tip;
-                todo!()
-            }
-            (true, true) => {
-                if self.highest_green < self.tip && self.highest_blue < self.tip {
-                    if self.highest_green < self.highest_blue {
-
-                    } else {
-
-                    }
-                }
-                let highest_green = self.highest_green;
-                let highest_blue = self.highest_blue;
-                let tip = self.tip;
-                todo!()
-            }
-            (false, false) => {
-                // noop
-                let highest_green = self.highest_green;
-                let highest_blue = self.highest_blue;
-                let tip = self.tip;
-                todo!()
-            }
-        }
-    }
-}
-
-
-
-struct BlockStreamDiskPersistence {
-    out_basedir: PathBuf,
-
-}
-
 
 fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender<T>, Receiver<T>) {
-    let (block_sx_green, monkey_upstream) = tokio::sync::broadcast::channel::<T>(1024);
-    let (monkey_downstream, blocks_notifier_green) = tokio::sync::broadcast::channel::<T>(capacity);
+    let (tx, monkey_upstream) = tokio::sync::broadcast::channel::<T>(1024);
+    let (monkey_downstream, rx) = tokio::sync::broadcast::channel::<T>(capacity);
 
     tokio::spawn(async move {
         let mut monkey_upstream = monkey_upstream;
@@ -279,45 +160,23 @@ fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender
             // failes if there are no receivers
 
             if counter % 3 == 0 {
-                info!("Delay value");
+                info!("% delay value");
                 tokio::time::sleep(Duration::from_millis(700)).await;
             }
             if counter % 5 == 0 {
-                info!("Drop value");
+                info!("% drop value");
                 continue 'recv_loop;
             }
 
             let send_result = monkey_downstream.send(value);
             match send_result {
                 Ok(_) => {
-                    info!("forwarded");
+                    debug!("% forwarded");
                 }
                 Err(_) => panic!("Should never happen")
             }
         }
     });
 
-    (block_sx_green, blocks_notifier_green)
-
+    (tx, rx)
 }
-
-
-// impl BlockStreamDiskPersistence {
-//     pub fn new() -> Self {
-//         let out_basedir = PathBuf::from("blocks-dump");
-//         Self {
-//             out_basedir
-//         }
-//     }
-//
-//     pub fn dump_block(&self, block: &ProducedBlock) {
-//         let out_block = self.out_basedir.join(block.slot.to_string());
-//         let out_file = std::fs::File::create(out_block).unwrap();
-//         // bincode::serialize(block).unwrap();
-//         info!("dumping to file: {:?}", out_file);
-//         serde_json::to_writer_pretty(out_file, &Wrapper(block.clone())).unwrap();
-//
-//     }
-//
-// }
-
