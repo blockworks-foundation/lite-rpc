@@ -30,7 +30,7 @@ pub const GRPC_VERSION: &str = "1.16.1";
 #[tokio::main]
 // #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() {
-    // info,solana_lite_rpc_cluster_endpoints=debug,stream_via_grpc=trace
+    // RUST_LOG=info,stream_via_grpc=debug,drain_to_tip_pattern=debug
     tracing_subscriber::fmt::init();
 
 
@@ -45,7 +45,7 @@ pub async fn main() {
 
     // let (block_sx_green, blocks_notifier_green) = tokio::sync::broadcast::channel(1000);
     let (block_sx_green, blocks_notifier_green) = start_monkey_broadcast::<SimpleBlockMeta>(1000);
-    let (block_sx_blue, blocks_notifier_blue) = tokio::sync::broadcast::channel::<SimpleBlockMeta>(1000);
+    let (block_sx_blue, blocks_notifier_blue) =  tokio::sync::broadcast::channel(1000);
 
     // TODO ship ProducedBlock
     let (sx_multi, mut rx_multi) = tokio::sync::broadcast::channel::<Slot>(1000);
@@ -77,10 +77,11 @@ pub async fn main() {
 
     let (offer_block_sender, mut offer_block_notifier) = tokio::sync::mpsc::channel::<OfferBlockMsg>(100);
 
+    // producers
     start_progressor("green".to_string(), blocks_notifier_green, tx_tip.subscribe(), offer_block_sender.clone()).await;
     start_progressor("blue".to_string(), blocks_notifier_blue, tx_tip.subscribe(), offer_block_sender.clone()).await;
 
-
+    // merge task
     // collect the offered slots from the two channels
     tokio::spawn(async move {
         // need to wait until channels reached slot beyond tip
@@ -89,8 +90,9 @@ pub async fn main() {
         // see also start procedure!
         let mut current_tip = 0;
         let mut blocks_offered = Vec::<BlockRef>::new();
-        loop {
+        'main_loop: loop {
 
+            // note: we abuse the timeout mechanism to collect some blocks
             let timeout_secs = if current_tip == 0 { 3 } else { 10 };
 
             let msg_or_timeout = timeout(Duration::from_secs(timeout_secs), offer_block_notifier.recv()).await;
@@ -106,15 +108,18 @@ pub async fn main() {
                         if block_offered.parent_slot == current_tip {
                             current_tip = block_offered.slot;
                             info!("<< take block from {} as new tip {}", label, current_tip);
-                            assert_ne!(current_tip, 0, "must not see empty tip");
+                            assert_ne!(current_tip, 0, "must not see uninitialized tip");
 
                             emit_block_on_multiplex_output_channel(&sx_multi, current_tip);
                             tx_tip.send(current_tip).unwrap();
                             blocks_offered.clear();
-                            continue;
+                            continue 'main_loop;
+                        } else {
+                            // keep the block for later
+                            blocks_offered.push(block_offered);
+                            continue 'main_loop;
                         }
 
-                        blocks_offered.push(block_offered);
 
                     }
                     // TODO handle else
@@ -129,22 +134,23 @@ pub async fn main() {
                     // timeout
                     info!("--> timeout: got these slots: {:?}", blocks_offered);
 
+                    // we abuse timeout feature to wait for some blocks to arrive to select the "best" one
                     if current_tip == 0 {
                         let start_slot = blocks_offered.iter().max_by(|lhs,rhs| lhs.slot.cmp(&rhs.slot)).expect("need at least one slot to start");
                         current_tip = start_slot.slot;
-                        assert_ne!(current_tip, 0, "must not see empty tip");
+                        assert_ne!(current_tip, 0, "must not see uninitialized tip");
 
                         emit_block_on_multiplex_output_channel(&sx_multi, current_tip);
                         tx_tip.send(current_tip).unwrap();
                         info!("--> initializing with tip {}", current_tip);
                         blocks_offered.clear();
-                        continue;
+                        continue 'main_loop;
                     }
 
                     match blocks_offered.iter().filter(|b| b.parent_slot == current_tip).exactly_one() {
                         Ok(found_next) => {
                             current_tip = found_next.slot;
-                            assert_ne!(current_tip, 0, "must not see empty tip");
+                            assert_ne!(current_tip, 0, "must not see uninitialized tip");
                             tx_tip.send(current_tip).unwrap();
                             info!("--> progressing tip to {}", current_tip);
                             blocks_offered.clear();
@@ -159,6 +165,7 @@ pub async fn main() {
             }
         } // -- recv loop
 
+        info!("Shutting down merge task.");
     });
 
 
@@ -272,7 +279,7 @@ fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender
 
     tokio::spawn(async move {
         let mut monkey_upstream = monkey_upstream;
-        'recv_loop: for counter in 0.. {
+        'recv_loop: for counter in 1.. {
             let value = monkey_upstream.recv().await.unwrap();
             // info!("forwarding: {}", value);
             // failes if there are no receivers
@@ -284,6 +291,10 @@ fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender
             if counter % 5 == 0 {
                 debug!("% drop value");
                 continue 'recv_loop;
+            }
+            if counter % 23 == 0 {
+                debug!("% system outage + reboot");
+                tokio::time::sleep(Duration::from_secs(5)).await;
             }
 
             let send_result = monkey_downstream.send(value);

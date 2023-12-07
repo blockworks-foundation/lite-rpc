@@ -23,7 +23,7 @@ impl Message {
 
 #[tokio::main]
 async fn main() {
-    // RUST_LOG=info,drain_to_tip_pattern=debug
+    // RUST_LOG=info,stream_via_grpc=debug,drain_to_tip_pattern=debug
     tracing_subscriber::fmt::init();
 
     let (tx, rx) = tokio::sync::broadcast::channel::<Message>(1000);
@@ -75,6 +75,8 @@ async fn start_progressor(mut blocks_notifier: Receiver<Message>, mut rx_tip: to
                     // slow down in case of loop
                     // sleep(Duration::from_millis(100)).await;
                 }
+
+                // here goes the strategy: either we get a new block OR a timeout
                 recv_result = blocks_notifier.recv(), if !(highest_block.slot > local_tip.slot) => {
                     debug!("!! block_after_tip.slot > local_tip.slot: {} > {}", highest_block.slot, local_tip.slot);
                     match recv_result {
