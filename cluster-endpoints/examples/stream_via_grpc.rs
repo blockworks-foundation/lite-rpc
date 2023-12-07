@@ -81,7 +81,7 @@ pub async fn main() {
     start_progressor("blue".to_string(), blocks_notifier_blue, tx_tip.subscribe(), offer_block_sender.clone()).await;
 
 
-    // test
+    // collect the offered slots from the two channels
     tokio::spawn(async move {
         // need to wait until channels reached slot beyond tip
         // tokio::time::sleep(Duration::from_secs(14)).await;
@@ -162,13 +162,25 @@ pub async fn main() {
     });
 
 
+    tokio::spawn(async move {
+        let mut rx_multi = rx_multi;
+        let mut last_slot = 0;
+        loop {
+            let slot = rx_multi.recv().await.unwrap();
+            assert_ne!(slot, 0, "must not see empty slot");
+            info!("==> multiplexed slot: {}", slot);
+            if slot - last_slot > 1 && last_slot != 0 {
+                warn!("==> gap: {} -> {}", last_slot, slot);
+            }
+            last_slot = slot;
+        }
+    });
+
+
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
 
-    info!("Shutting down...");
-    info!("...tip variable");
-    // TODO close?
-    // drop(tx_tip);
+    // TODO proper shutdown
     info!("Shutdown completed.");
 
 }
