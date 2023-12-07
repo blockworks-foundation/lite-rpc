@@ -4,7 +4,6 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
 use futures::StreamExt;
 use itertools::{ExactlyOneError, Itertools};
 
@@ -16,7 +15,7 @@ use tokio::select;
 use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::RwLock;
-use tokio::time::{sleep, timeout};
+use tokio::time::{sleep, Duration, timeout};
 use yellowstone_grpc_proto::geyser::CommitmentLevel;
 
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_block_processing_task;
@@ -25,7 +24,8 @@ use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 
 pub const GRPC_VERSION: &str = "1.16.1";
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 16)]
+#[tokio::main]
+// #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() {
     // info,solana_lite_rpc_cluster_endpoints=debug,stream_via_grpc=trace
     tracing_subscriber::fmt::init();
@@ -40,8 +40,8 @@ pub async fn main() {
     // testnet - NOTE: this connection has terrible lags (almost 5 minutes)
     // let grpc_addr = "http://147.28.169.13:10000".to_string();
 
-    let (block_sx_green, blocks_notifier_green) = tokio::sync::broadcast::channel(1000);
-    // let (block_sx_green, blocks_notifier_green) = start_monkey_broadcast::<ProducedBlock>(1000);
+    // let (block_sx_green, blocks_notifier_green) = tokio::sync::broadcast::channel(1000);
+    let (block_sx_green, blocks_notifier_green) = start_monkey_broadcast::<ProducedBlock>(1000);
     let (block_sx_blue, blocks_notifier_blue) = tokio::sync::broadcast::channel(1000);
 
     let grpc_x_token = None;
@@ -71,8 +71,8 @@ pub async fn main() {
 
     let (offer_block_sender, mut offer_block_notifier) = tokio::sync::mpsc::channel::<OfferBlockMsg>(100);
 
-    start_progressor("green".to_string(), blocks_notifier_green, rx_tip.clone(), offer_block_sender.clone());
-    start_progressor("blue".to_string(), blocks_notifier_blue, rx_tip.clone(), offer_block_sender.clone());
+    start_progressor("green".to_string(), blocks_notifier_green, rx_tip.clone(), offer_block_sender.clone()).await;
+    start_progressor("blue".to_string(), blocks_notifier_blue, rx_tip.clone(), offer_block_sender.clone()).await;
 
 
     // test
@@ -167,7 +167,13 @@ pub async fn main() {
     });
 
     // "infinite" sleep
-    sleep(Duration::from_secs(1800)).await
+    sleep(Duration::from_secs(1800)).await;
+
+    info!("Shutting down...");
+    info!("...tip variable");
+    drop(tx_tip);
+    info!("Shutdown completed.");
+
 }
 
 #[derive(Clone, Debug)]
@@ -190,9 +196,10 @@ enum OfferBlockMsg {
     NextSlot(String, BlockRef),
 }
 
-fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut rx_tip: tokio::sync::watch::Receiver<Slot>,
+async fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut rx_tip: tokio::sync::watch::Receiver<Slot>,
                     offer_block_sender: tokio::sync::mpsc::Sender<OfferBlockMsg>) {
     tokio::spawn(async move {
+        // TODO is .resubscribe what we want?
         let mut blocks_notifier = blocks_notifier.resubscribe();
         // for test only
         // let start_slot = blocks_notifier.recv().await.unwrap().slot;
@@ -201,25 +208,30 @@ fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut
         let mut local_tip = 0;
 
         // block after tip offered by this stream
-        let mut block_after_tip: BlockRef = BlockRef {
+        // TODO: block_after_tip is only valid/useful if greater than tip
+        let mut highest_block: BlockRef = BlockRef {
             slot: 0,
             parent_slot: 0,
         };
         'main_loop: loop {
             select! {
-                _ = rx_tip.changed() => {
+                result = rx_tip.changed() => {
+                    if result.is_err() {
+                        debug!("Tip variable closed for {}", label);
+                        break 'main_loop;
+                    }
                     local_tip = rx_tip.borrow_and_update().clone();
                     info!("++> {} tip changed to {}", label, local_tip);
                     // TODO update local tip
                 }
-                recv_result = blocks_notifier.recv(), if !(block_after_tip.slot > local_tip) => {
+                recv_result = blocks_notifier.recv(), if !(highest_block.slot > local_tip) => {
                     match recv_result {
                         Ok(block) => {
                             info!("=> recv on {}: {}",label, format_block(&block));
                             if block.slot > local_tip {
                                 info!("==> {}: beyond tip ({} > {})", label, block.slot, local_tip);
-                                block_after_tip = BlockRef::from(block);
-                                offer_block_sender.send(OfferBlockMsg::NextSlot(label.clone(), block_after_tip.clone())).await.unwrap();
+                                highest_block = BlockRef::from(block);
+                                offer_block_sender.send(OfferBlockMsg::NextSlot(label.clone(), highest_block.clone())).await.unwrap();
                                 // this thread will sleep and not issue any recvs until we get tip.changed signal
                                 continue 'main_loop;
                             }
@@ -227,7 +239,7 @@ fn start_progressor(label: String, blocks_notifier: Receiver<ProducedBlock>, mut
                         Err(e) => {
                             // TODO what to do?
                             error!("Error receiving block: {}", e);
-                            continue 'main_loop;
+                            break 'main_loop;
                         }
                     }
                 }
