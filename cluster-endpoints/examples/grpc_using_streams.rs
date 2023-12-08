@@ -249,7 +249,7 @@ async fn create_geyser_stream2(label: String, grpc_addr: String, x_token: Option
                     }
                     Err(tonic_status) => {
                         // TODO identify non-recoverable errors and cancel stream
-                        warn!("Receive error on label - retrying: {:?}", label, tonic_status);
+                        warn!("Receive error on {} - retrying: {:?}", label, tonic_status);
                         continue 'main_loop;
                     }
                 }
