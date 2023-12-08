@@ -80,6 +80,8 @@ async fn create_multiplex(
         let mut blue = create_geyser_stream2("blue".to_string(), grpc_addr_mainnet_ams81.clone(), None).await;
         pin_mut!(green);
         pin_mut!(blue);
+        let mut green = pin!(green.next());
+        let mut blue = pin!(blue.next());
 
         let mut current_slot = 0 as Slot;
 
@@ -87,7 +89,7 @@ async fn create_multiplex(
 
             let block_cmd =
                 select!(
-                    message = green.next() => {
+                    message = &mut green => {
                         match message {
                             Some(message) => {
                                 map_filter_block_message(current_slot, message, commitment_config)
@@ -98,7 +100,7 @@ async fn create_multiplex(
                         }
 
                     },
-                    message = blue.next() => {
+                    message = &mut blue => {
                        match message {
                             Some(message) => {
                                 map_filter_block_message(current_slot, message, commitment_config)
