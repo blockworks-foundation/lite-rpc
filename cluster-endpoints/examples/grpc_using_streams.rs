@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
-use std::ops::Deref;
+use std::ops::{Add, Deref};
 use std::path::PathBuf;
 use std::pin::pin;
 use std::sync::Arc;
@@ -21,7 +21,7 @@ use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
-use tokio::time::{sleep, Duration, timeout};
+use tokio::time::{sleep, Duration, timeout, Instant, sleep_until};
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta, SubscribeUpdate, SubscribeUpdateBlock, SubscribeUpdateBlockMeta};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -189,55 +189,63 @@ async fn create_geyser_stream(grpc_addr: String, x_token: Option<String>) -> imp
 }
 
 async fn create_geyser_stream2(label: String, grpc_addr: String, x_token: Option<String>) -> impl Stream<Item = SubscribeUpdate> {
-
-    // throws e.g. InvalidUri(InvalidUri(InvalidAuthority))
-    let mut client = GeyserGrpcClient::connect(grpc_addr, x_token, None).unwrap();
-
-    let mut blocks_subs = HashMap::new();
-    blocks_subs.insert(
-        "client".to_string(),
-        SubscribeRequestFilterBlocks {
-            account_include: Default::default(),
-            include_transactions: Some(true),
-            include_accounts: Some(false),
-            include_entries: Some(false),
-        },
-    );
-
-    let stream = client
-        .subscribe_once(
-            HashMap::new(),
-            Default::default(),
-            HashMap::new(),
-            Default::default(),
-            blocks_subs,
-            Default::default(),
-            Some(CommitmentLevel::Confirmed),
-            Default::default(),
-            None,
-        ).await.unwrap();
-
     stream! {
+        let mut throttle_barrier;
+        'main_loop: loop {
+            throttle_barrier = Instant::now().add(Duration::from_millis(500));
 
-       for await update_message in stream {
+            // throws e.g. InvalidUri(InvalidUri(InvalidAuthority))
+            // GeyserGrpcClientError
+            let client_result = GeyserGrpcClient::connect(grpc_addr.clone(), x_token.clone(), None);
 
-            match update_message {
-                Ok(update_message) => {
-                    info!(">message on {}", label);
-                    yield update_message;
-                }
-                Err(status) => {
-                    error!(">error while receiving from stream {}: {:?}", label, status);
-                    // note: the for loop will terminate after this
-                }
+            if let Err(client_connect_error) = client_result {
+                // TODO identify non-recoverable errors and cancel stream
+                warn!("Connect failed and will be retried: {:?}", client_connect_error);
+                sleep_until(throttle_barrier).await;
+                continue 'main_loop;
             }
 
-        }
+            let mut client = client_result.unwrap();
 
-        warn!("stream consumer loop terminated for {}", label);
+            let mut blocks_subs = HashMap::new();
+            blocks_subs.insert(
+                "client".to_string(),
+                SubscribeRequestFilterBlocks {
+                    account_include: Default::default(),
+                    include_transactions: Some(true),
+                    include_accounts: Some(false),
+                    include_entries: Some(false),
+                },
+            );
 
-    }
+            let stream = client
+                .subscribe_once(
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    blocks_subs,
+                    Default::default(),
+                    Some(CommitmentLevel::Confirmed),
+                    Default::default(),
+                    None,
+                ).await.unwrap();
 
+            for await update_message in stream {
+                match update_message {
+                    Ok(update_message) => {
+                        info ! (">message on {}", label);
+                        yield update_message;
+                    }
+                    Err(status) => {
+                        error ! (">error while receiving from stream {}: {:?}", label, status);
+                        // note: the for loop will terminate after this
+                    }
+                }
+            } // -- production loop
 
+            warn!("stream consumer loop terminated for {}", label);
+        } // -- main loop
+    } // -- stream!
 
 }
