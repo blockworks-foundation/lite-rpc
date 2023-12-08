@@ -190,8 +190,9 @@ async fn create_geyser_stream(grpc_addr: String, x_token: Option<String>) -> imp
 
 async fn create_geyser_stream2(label: String, grpc_addr: String, x_token: Option<String>) -> impl Stream<Item = SubscribeUpdate> {
     stream! {
-        let mut throttle_barrier;
+        let mut throttle_barrier = Instant::now();
         'main_loop: loop {
+            sleep_until(throttle_barrier).await;
             throttle_barrier = Instant::now().add(Duration::from_millis(1000));
 
             // throws e.g. InvalidUri(InvalidUri(InvalidAuthority))
@@ -202,8 +203,7 @@ async fn create_geyser_stream2(label: String, grpc_addr: String, x_token: Option
 
             if let Err(client_connect_error) = connect_result {
                 // TODO identify non-recoverable errors and cancel stream
-                warn!("Connect failed - retrying: {:?}", client_connect_error);
-                sleep_until(throttle_barrier).await;
+                warn!("Connect failed on {} - retrying: {:?}", label, client_connect_error);
                 continue 'main_loop;
             }
 
@@ -220,7 +220,7 @@ async fn create_geyser_stream2(label: String, grpc_addr: String, x_token: Option
                 },
             );
 
-            let stream = client
+            let subscribe_result = client
                 .subscribe_once(
                     HashMap::new(),
                     Default::default(),
@@ -231,17 +231,26 @@ async fn create_geyser_stream2(label: String, grpc_addr: String, x_token: Option
                     Some(CommitmentLevel::Confirmed),
                     Default::default(),
                     None,
-                ).await.unwrap();
+                ).await;
+
+            if let Err(subscribe_error) = subscribe_result {
+                // TODO identify non-recoverable errors and cancel stream
+                warn!("Subscribe failed on {} - retrying: {:?}", label, subscribe_error);
+                continue 'main_loop;
+            }
+
+            let stream = subscribe_result.unwrap();
 
             for await update_message in stream {
                 match update_message {
                     Ok(update_message) => {
-                        info ! (">message on {}", label);
+                        info!(">message on {}", label);
                         yield update_message;
                     }
-                    Err(status) => {
-                        error ! (">error while receiving from stream {}: {:?}", label, status);
-                        // note: the for loop will terminate after this
+                    Err(tonic_status) => {
+                        // TODO identify non-recoverable errors and cancel stream
+                        warn!("Receive error on label - retrying: {:?}", label, tonic_status);
+                        continue 'main_loop;
                     }
                 }
             } // -- production loop
