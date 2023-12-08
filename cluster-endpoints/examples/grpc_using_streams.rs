@@ -2,18 +2,21 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::pin::pin;
 use std::sync::Arc;
 use std::thread;
 use anyhow::{bail, Context};
-use futures::{Stream, StreamExt};
+use async_stream::stream;
+use futures::{pin_mut, Stream, StreamExt};
 use itertools::{ExactlyOneError, Itertools};
 
 use log::{debug, error, info, warn};
 use serde::Serializer;
+use serde_json::de::Read;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
-use tokio::select;
+use tokio::{select};
 use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::RwLock;
@@ -71,8 +74,10 @@ async fn create_multiplex(
 
     let jh = tokio::spawn(async move {
 
-        let mut green = create_geyser_stream(grpc_addr_mainnet_triton.clone(), None).await;
-        let mut blue = create_geyser_stream(grpc_addr_mainnet_ams81.clone(), None).await;
+        let mut green = create_geyser_stream2(grpc_addr_mainnet_triton.clone(), None).await;
+        let mut blue = create_geyser_stream2(grpc_addr_mainnet_ams81.clone(), None).await;
+        pin_mut!(green);
+        pin_mut!(blue);
 
         let mut current_slot = 0 as Slot;
 
@@ -83,8 +88,6 @@ async fn create_multiplex(
                     message = green.next() => {
                         match message {
                             Some(message) => {
-                                // TODO tonic errors - pull up into create_geyser_stream
-                                let message = message.expect("TODO what to do with tonic errors?");
                                 map_filter_block_message(current_slot, message, commitment_config)
                             }
                             None => {
@@ -96,8 +99,6 @@ async fn create_multiplex(
                     message = blue.next() => {
                        match message {
                             Some(message) => {
-                                // TODO tonic errors
-                                let message = message.expect("TODO what to do with tonic errors?");
                                 map_filter_block_message(current_slot, message, commitment_config)
                             }
                             None => {
@@ -128,6 +129,7 @@ async fn create_multiplex(
     return jh;
 }
 
+#[derive(Debug)]
 enum BlockCmd {
     ForwardBlock(ProducedBlock),
     DiscardBlockBehindTip(Slot),
@@ -166,7 +168,7 @@ async fn create_geyser_stream(grpc_addr: String, x_token: Option<String>) -> imp
         },
     );
 
-    let mut stream = client
+    let stream = client
         .subscribe_once(
             HashMap::new(),
             Default::default(),
@@ -182,4 +184,54 @@ async fn create_geyser_stream(grpc_addr: String, x_token: Option<String>) -> imp
 
     // TODO pull tonic error handling inside this method
     return stream;
+}
+
+async fn create_geyser_stream2(grpc_addr: String, x_token: Option<String>) -> impl Stream<Item = SubscribeUpdate> {
+
+
+    let mut client = GeyserGrpcClient::connect(grpc_addr, x_token, None).unwrap();
+
+    let mut blocks_subs = HashMap::new();
+    blocks_subs.insert(
+        "client".to_string(),
+        SubscribeRequestFilterBlocks {
+            account_include: Default::default(),
+            include_transactions: Some(true),
+            include_accounts: Some(false),
+            include_entries: Some(false),
+        },
+    );
+
+    let stream = client
+        .subscribe_once(
+            HashMap::new(),
+            Default::default(),
+            HashMap::new(),
+            Default::default(),
+            blocks_subs,
+            Default::default(),
+            Some(CommitmentLevel::Confirmed),
+            Default::default(),
+            None,
+        ).await.unwrap();
+
+    stream! {
+
+       for await update_message in stream {
+
+            match update_message {
+                Ok(update_message) => {
+                    yield update_message;
+                }
+                Err(status) => {
+                    error!(">stream: {:?}", status);
+                }
+            }
+
+        }
+
+    }
+
+
+
 }
