@@ -3,7 +3,7 @@ use crate::{
     rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
 };
 use anyhow::{bail, Context};
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
@@ -37,7 +37,7 @@ use yellowstone_grpc_proto::prelude::{
     SubscribeRequestFilterSlots, SubscribeUpdateBlock,
 };
 
-fn process_block(
+pub fn map_produced_block(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
@@ -296,7 +296,7 @@ pub fn create_block_processing_task(
 
             match update {
                 UpdateOneof::Block(block) => {
-                    let block = process_block(block, commitment_config);
+                    let block = map_produced_block(block, commitment_config);
                     block_sx
                         .send(block)
                         .context("Grpc failed to send a block")?;
