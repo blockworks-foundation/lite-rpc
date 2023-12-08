@@ -43,19 +43,22 @@ pub async fn main() {
     // mango validator (mainnet)
     let grpc_addr_mainnet_triton = "http://202.8.9.108:10000".to_string();
     // via toxiproxy
-    // let grpc_addr_mainnet_triton = "http://127.0.0.1:10001".to_string();
+    let grpc_addr_mainnet_triton_toxi = "http://127.0.0.1:10001".to_string();
     // ams81 (mainnet)
     let grpc_addr_mainnet_ams81 = "http://202.8.8.12:10000".to_string();
     // testnet - NOTE: this connection has terrible lags (almost 5 minutes)
     // let grpc_addr = "http://147.28.169.13:10000".to_string();
 
-
     let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(1000);
 
-    let green_config = GrpcSourceConfig::new("green-toxiproxy".to_string(), grpc_addr_mainnet_triton, None);
+    let green_config = GrpcSourceConfig::new("green".to_string(), grpc_addr_mainnet_triton, None);
     let blue_config = GrpcSourceConfig::new("blue".to_string(), grpc_addr_mainnet_ams81, None);
+    let toxiproxy_config = GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_mainnet_triton_toxi, None);
 
-    create_multiplex(vec![green_config, blue_config], CommitmentConfig::confirmed(), block_sx);
+    create_multiplex(
+        vec![green_config, blue_config, toxiproxy_config],
+        CommitmentConfig::confirmed(),
+        block_sx);
 
     start_example_consumer(blocks_notifier);
 
@@ -90,30 +93,14 @@ fn create_multiplex(
             grpc_sources.iter().map(|source| source.label.clone()).join(", "));
 
         let mut futures = futures::stream::SelectAll::new();
-        // pin_mut!(futures);
         for grpc_source in grpc_sources {
-
             let stream = create_geyser_reconnecting_stream(grpc_source.clone()).await;
-            // futures.push(stream);
             futures.push(Box::pin(stream));
         }
-
-
-
-        // pin_mut!(futures);
-
-
-        // for stream in streams {
-        //     // pin!(stream);
-        //     futures.push(stream);
-        // }
-
 
         let mut current_slot: Slot = 0;
 
         'main_loop: loop {
-
-            // select streams
 
             let block_cmd = select! {
                 message = futures.next() => {
