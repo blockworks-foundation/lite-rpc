@@ -192,20 +192,22 @@ async fn create_geyser_stream2(label: String, grpc_addr: String, x_token: Option
     stream! {
         let mut throttle_barrier;
         'main_loop: loop {
-            throttle_barrier = Instant::now().add(Duration::from_millis(500));
+            throttle_barrier = Instant::now().add(Duration::from_millis(1000));
 
             // throws e.g. InvalidUri(InvalidUri(InvalidAuthority))
             // GeyserGrpcClientError
-            let client_result = GeyserGrpcClient::connect(grpc_addr.clone(), x_token.clone(), None);
+            let connect_result = GeyserGrpcClient::connect_with_timeout(
+                grpc_addr.clone(), x_token.clone(), None,
+                Some(Duration::from_secs(2)), Some(Duration::from_secs(2)), false).await;
 
-            if let Err(client_connect_error) = client_result {
+            if let Err(client_connect_error) = connect_result {
                 // TODO identify non-recoverable errors and cancel stream
-                warn!("Connect failed and will be retried: {:?}", client_connect_error);
+                warn!("Connect failed - retrying: {:?}", client_connect_error);
                 sleep_until(throttle_barrier).await;
                 continue 'main_loop;
             }
 
-            let mut client = client_result.unwrap();
+            let mut client = connect_result.unwrap();
 
             let mut blocks_subs = HashMap::new();
             blocks_subs.insert(
