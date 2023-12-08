@@ -39,7 +39,9 @@ pub async fn main() {
 
 
     // mango validator (mainnet)
-    let grpc_addr_mainnet_triton = "http://202.8.9.108:10000".to_string();
+    // let grpc_addr_mainnet_triton = "http://202.8.9.108:10000".to_string();
+    // via toxiproxy
+    let grpc_addr_mainnet_triton = "http://127.0.0.1:10001".to_string();
     // ams81 (mainnet)
     let grpc_addr_mainnet_ams81 = "http://202.8.8.12:10000".to_string();
     // testnet - NOTE: this connection has terrible lags (almost 5 minutes)
@@ -74,8 +76,8 @@ async fn create_multiplex(
 
     let jh = tokio::spawn(async move {
 
-        let mut green = create_geyser_stream2(grpc_addr_mainnet_triton.clone(), None).await;
-        let mut blue = create_geyser_stream2(grpc_addr_mainnet_ams81.clone(), None).await;
+        let mut green = create_geyser_stream2("green-toxiproxy".to_string(), grpc_addr_mainnet_triton.clone(), None).await;
+        let mut blue = create_geyser_stream2("blue".to_string(), grpc_addr_mainnet_ams81.clone(), None).await;
         pin_mut!(green);
         pin_mut!(blue);
 
@@ -186,9 +188,9 @@ async fn create_geyser_stream(grpc_addr: String, x_token: Option<String>) -> imp
     return stream;
 }
 
-async fn create_geyser_stream2(grpc_addr: String, x_token: Option<String>) -> impl Stream<Item = SubscribeUpdate> {
+async fn create_geyser_stream2(label: String, grpc_addr: String, x_token: Option<String>) -> impl Stream<Item = SubscribeUpdate> {
 
-
+    // throws e.g. InvalidUri(InvalidUri(InvalidAuthority))
     let mut client = GeyserGrpcClient::connect(grpc_addr, x_token, None).unwrap();
 
     let mut blocks_subs = HashMap::new();
@@ -221,14 +223,18 @@ async fn create_geyser_stream2(grpc_addr: String, x_token: Option<String>) -> im
 
             match update_message {
                 Ok(update_message) => {
+                    info!(">message on {}", label);
                     yield update_message;
                 }
                 Err(status) => {
-                    error!(">stream: {:?}", status);
+                    error!(">error while receiving from stream {}: {:?}", label, status);
+                    // note: the for loop will terminate after this
                 }
             }
 
         }
+
+        warn!("stream consumer loop terminated for {}", label);
 
     }
 
