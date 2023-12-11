@@ -46,7 +46,7 @@ pub async fn main() {
 
     create_multiplex(
         vec![green_config, blue_config, toxiproxy_config],
-        CommitmentConfig::confirmed(),
+        CommitmentLevel::Confirmed,
         block_sx);
 
     start_example_consumer(blocks_notifier);
@@ -68,13 +68,24 @@ fn start_example_consumer(blocks_notifier: Receiver<ProducedBlock>) {
 
 fn create_multiplex(
     grpc_sources: Vec<GrpcSourceConfig>,
-    commitment_config: CommitmentConfig,
+    commitment_level: CommitmentLevel,
     block_sx: Sender<ProducedBlock>,
 ) -> AnyhowJoinHandle {
+    assert!(
+        commitment_level == CommitmentLevel::Confirmed
+            || commitment_level == CommitmentLevel::Finalized,
+        "Only CONFIRMED and FINALIZED is supported");
+    // note: PROCESSED blocks are not sequential in presense of forks; this will break the logic
 
     if grpc_sources.len() < 1 {
         panic!("Must have at least one source");
     }
+
+    let commitment_config = match commitment_level {
+        CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
+        CommitmentLevel::Finalized => CommitmentConfig::finalized(),
+        CommitmentLevel::Processed => CommitmentConfig::processed(),
+    };
 
     let jh = tokio::spawn(async move {
         info!("Starting multiplexer with {} sources: {}",
@@ -84,12 +95,13 @@ fn create_multiplex(
         let mut futures = futures::stream::SelectAll::new();
         for grpc_source in grpc_sources {
             // note: stream never terminates
-            let stream = create_geyser_reconnecting_stream(grpc_source.clone()).await;
+            let stream = create_geyser_reconnecting_stream(grpc_source.clone(), commitment_level).await;
             futures.push(Box::pin(stream));
         }
 
         let mut current_slot: Slot = 0;
 
+        let mut start_stream33 = false;
         'main_loop: loop {
 
             let block_cmd = select! {
@@ -173,11 +185,13 @@ impl GrpcSourceConfig {
 
 // TODO use GrpcSource
 // note: stream never terminates
-async fn create_geyser_reconnecting_stream(grpc_source: GrpcSourceConfig) -> impl Stream<Item = SubscribeUpdate> {
+async fn create_geyser_reconnecting_stream(
+    grpc_source: GrpcSourceConfig,
+    commitment_level: CommitmentLevel) -> impl Stream<Item = SubscribeUpdate> {
     let label = grpc_source.label.clone();
     stream! {
         let mut throttle_barrier = Instant::now();
-        'main_loop: loop {
+        'reconnect_loop: loop {
             sleep_until(throttle_barrier).await;
             throttle_barrier = Instant::now().add(Duration::from_millis(1000));
 
@@ -190,7 +204,7 @@ async fn create_geyser_reconnecting_stream(grpc_source: GrpcSourceConfig) -> imp
                 Err(geyser_grpc_client_error) => {
                     // TODO identify non-recoverable errors and cancel stream
                     warn!("Connect failed on {} - retrying: {:?}", label, geyser_grpc_client_error);
-                    continue 'main_loop;
+                    continue 'reconnect_loop;
                 }
             };
 
@@ -213,7 +227,7 @@ async fn create_geyser_reconnecting_stream(grpc_source: GrpcSourceConfig) -> imp
                     Default::default(),
                     blocks_subs,
                     Default::default(),
-                    Some(CommitmentLevel::Confirmed),
+                    Some(commitment_level),
                     Default::default(),
                     None,
                 ).await;
@@ -223,7 +237,7 @@ async fn create_geyser_reconnecting_stream(grpc_source: GrpcSourceConfig) -> imp
                 Err(geyser_grpc_client_error) => {
                     // TODO identify non-recoverable errors and cancel stream
                     warn!("Subscribe failed on {} - retrying: {:?}", label, geyser_grpc_client_error);
-                    continue 'main_loop;
+                    continue 'reconnect_loop;
                 }
             };
 
@@ -236,7 +250,7 @@ async fn create_geyser_reconnecting_stream(grpc_source: GrpcSourceConfig) -> imp
                     Err(tonic_status) => {
                         // TODO identify non-recoverable errors and cancel stream
                         warn!("Receive error on {} - retrying: {:?}", label, tonic_status);
-                        continue 'main_loop;
+                        continue 'reconnect_loop;
                     }
                 }
             } // -- production loop
