@@ -84,6 +84,7 @@ fn create_multiplex(
     let commitment_config = match commitment_level {
         CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
         CommitmentLevel::Finalized => CommitmentConfig::finalized(),
+        // not used, not supported!
         CommitmentLevel::Processed => CommitmentConfig::processed(),
     };
 
@@ -129,8 +130,6 @@ fn create_multiplex(
                     debug!(". skipping this message by type");
                 }
             }
-
-            sleep(Duration::from_millis(500)).await;
 
         }
     });
