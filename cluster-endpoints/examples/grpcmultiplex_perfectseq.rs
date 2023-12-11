@@ -15,7 +15,7 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::select;
 use tokio::sync::broadcast::{Receiver, Sender};
-use tokio::sync::broadcast::error::TryRecvError;
+use tokio::sync::broadcast::error::{RecvError, TryRecvError};
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration, timeout};
 use yellowstone_grpc_client::GeyserGrpcClient;
@@ -57,7 +57,6 @@ pub async fn main() {
         block_sx_green.clone(),
         CommitmentLevel::Confirmed,
     );
-
 
     let block_confirmed_task_blue: AnyhowJoinHandle = create_blockmeta_processing_task(
         grpc_addr_mainnet_ams81.clone(),
@@ -280,7 +279,22 @@ fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender
     tokio::spawn(async move {
         let mut monkey_upstream = monkey_upstream;
         'recv_loop: for counter in 1.. {
-            let value = monkey_upstream.recv().await.unwrap();
+            let value = match monkey_upstream.recv().await {
+                Ok(msg) => {
+                    msg
+                }
+                Err(RecvError::Closed) => {
+                    return;
+                }
+                Err(RecvError::Lagged(_)) => {
+                    continue;
+                }
+            }
+            if let Ok(val) = monkey_upstream.recv().await {
+                val
+            } else {
+                return;
+            }
             // info!("forwarding: {}", value);
             // failes if there are no receivers
 
