@@ -284,17 +284,17 @@ fn start_monkey_broadcast<T: Clone + Send + 'static>(capacity: usize) -> (Sender
                     msg
                 }
                 Err(RecvError::Closed) => {
-                    return;
+                    return ();
                 }
                 Err(RecvError::Lagged(_)) => {
                     continue;
                 }
-            }
+            };
             if let Ok(val) = monkey_upstream.recv().await {
                 val
             } else {
-                return;
-            }
+                return ();
+            };
             // info!("forwarding: {}", value);
             // failes if there are no receivers
 
