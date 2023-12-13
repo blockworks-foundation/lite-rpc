@@ -1,33 +1,22 @@
-use anyhow::{bail, Context};
 use async_stream::stream;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Formatter};
-use std::ops::{Add, Deref, Sub};
-use std::pin::{pin, Pin};
-
-use log::{debug, error, info, warn};
+use log::{info, warn};
+use solana_lite_rpc_cluster_endpoints::grpc_subscription::map_produced_block;
+use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
-use tokio::select;
-use tokio::sync::broadcast::{Receiver, Sender};
-use tokio::task::{JoinHandle, JoinSet};
-use tokio::time::{sleep, sleep_until, timeout, Duration, Instant};
+use std::collections::HashMap;
+use std::pin::pin;
+use tokio::task::JoinHandle;
+use tokio::time::{sleep, Duration};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
-    CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterBlocksMeta,
-    SubscribeUpdate, SubscribeUpdateBlock, SubscribeUpdateBlockMeta,
+    CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeUpdate,
 };
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::Status;
-
-use solana_lite_rpc_cluster_endpoints::grpc_subscription::{
-    create_block_processing_task, map_produced_block,
-};
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_lite_rpc_core::AnyhowJoinHandle;
 
 #[tokio::main]
 pub async fn main() {
@@ -44,32 +33,22 @@ pub async fn main() {
     // testnet - NOTE: this connection has terrible lags (almost 5 minutes)
     // let grpc_addr = "http://147.28.169.13:10000".to_string();
 
-    let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(1000);
-
     let green_config = GrpcSourceConfig::new("triton".to_string(), grpc_addr_mainnet_triton, None);
     let blue_config =
         GrpcSourceConfig::new("mangoams81".to_string(), grpc_addr_mainnet_ams81, None);
     let toxiproxy_config =
         GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_mainnet_triton_toxi, None);
 
-    create_multiplex(
+    let block_stream = create_multiplex(
         // vec![green_config, blue_config, toxiproxy_config],
         vec![blue_config],
         CommitmentLevel::Confirmed,
-        block_sx,
     );
 
-    start_example_consumer(blocks_notifier);
-
-    // "infinite" sleep
-    sleep(Duration::from_secs(1800)).await;
-}
-
-fn start_example_consumer(blocks_notifier: Receiver<ProducedBlock>) {
     tokio::spawn(async move {
-        let mut blocks_notifier = blocks_notifier;
-        loop {
-            let block = blocks_notifier.recv().await.unwrap();
+        let mut block_stream = pin!(block_stream);
+
+        while let Some(Some(block)) = block_stream.next().await {
             info!(
                 "received block #{} with {} txs",
                 block.slot,
@@ -77,13 +56,15 @@ fn start_example_consumer(blocks_notifier: Receiver<ProducedBlock>) {
             );
         }
     });
+
+    // "infinite" sleep
+    sleep(Duration::from_secs(1800)).await;
 }
 
 fn create_multiplex(
     grpc_sources: Vec<GrpcSourceConfig>,
     commitment_level: CommitmentLevel,
-    block_sx: Sender<ProducedBlock>,
-) -> AnyhowJoinHandle {
+) -> impl Stream<Item = Option<ProducedBlock>> {
     assert!(
         commitment_level == CommitmentLevel::Confirmed
             || commitment_level == CommitmentLevel::Finalized,
@@ -101,81 +82,48 @@ fn create_multiplex(
         // not used, not supported!
         CommitmentLevel::Processed => CommitmentConfig::processed(),
     };
+    info!(
+        "Starting multiplexer with {} sources: {}",
+        grpc_sources.len(),
+        grpc_sources
+            .iter()
+            .map(|source| source.label.clone())
+            .join(", ")
+    );
 
-    let jh = tokio::spawn(async move {
-        info!(
-            "Starting multiplexer with {} sources: {}",
-            grpc_sources.len(),
-            grpc_sources
-                .iter()
-                .map(|source| source.label.clone())
-                .join(", ")
-        );
+    let mut current_slot: Slot = 0;
 
-        let mut futures = futures::stream::SelectAll::new();
-        for grpc_source in grpc_sources {
-            // note: stream never terminates
-            let stream =
-                create_geyser_reconnecting_stream(grpc_source.clone(), commitment_level).await;
-            futures.push(Box::pin(stream));
-        }
+    let build_block_process_stream = move |grpc_source: GrpcSourceConfig| {
+        //connect to Geyzer stream
+        create_geyser_reconnecting_stream(grpc_source.clone(), commitment_level)
+            //filter with block with most recent slot
+            .filter_map(move |block| async move {
+                block.map(|update_message| match update_message.update_oneof {
+                    Some(UpdateOneof::Block(update_block_message))
+                        if update_block_message.slot > current_slot =>
+                    {
+                        Some(map_produced_block(update_block_message, commitment_config))
+                    }
+                    _ => None,
+                })
+            })
+    };
 
-        let mut current_slot: Slot = 0;
-
-        let mut start_stream33 = false;
-        'main_loop: loop {
-            let message = futures.next().await;
-            let block_cmd = match message {
-                Some(message) => map_filter_block_message(current_slot, message, commitment_config),
-                None => {
-                    panic!("source stream is not supposed to terminate");
-                }
-            };
-
-            match block_cmd {
-                BlockCmd::ForwardBlock(block) => {
-                    current_slot = block.slot;
-                    block_sx.send(block).context("send block to downstream")?;
-                }
-                BlockCmd::DiscardBlockBehindTip(slot) => {
-                    debug!(". discarding redundant block #{}", slot);
-                }
-                BlockCmd::SkipMessage => {
-                    debug!(". skipping this message by type");
-                }
-            }
-        }
-    });
-
-    return jh;
-}
-
-#[derive(Debug)]
-enum BlockCmd {
-    ForwardBlock(ProducedBlock),
-    DiscardBlockBehindTip(Slot),
-    // skip geyser messages which are not block related updates
-    SkipMessage,
-}
-
-fn map_filter_block_message(
-    current_slot: Slot,
-    update_message: SubscribeUpdate,
-    commitment_config: CommitmentConfig,
-) -> BlockCmd {
-    if let Some(UpdateOneof::Block(update_block_message)) = update_message.update_oneof {
-        if update_block_message.slot <= current_slot && current_slot != 0 {
-            // no progress - skip this
-            return BlockCmd::DiscardBlockBehindTip(update_block_message.slot);
-        }
-
-        // expensive
-        let produced_block = map_produced_block(update_block_message, commitment_config);
-
-        BlockCmd::ForwardBlock(produced_block)
-    } else {
-        return BlockCmd::SkipMessage;
+    let mut futures = futures::stream::SelectAll::new();
+    for grpc_source in grpc_sources {
+        // note: stream never terminates
+        // let stream = create_geyser_reconnecting_stream(grpc_source.clone(), commitment_level)
+        //     .then(|block| process_geyze_block_stream(commitment_config, current_slot, block));
+        futures.push(Box::pin(build_block_process_stream(grpc_source)));
     }
+
+    //update the current slot with the most recent block that get from the stream.
+    futures.then(move |block| async move {
+        if let Some(ref block) = block {
+            *(&mut current_slot) = block.slot;
+        }
+        block
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -207,7 +155,7 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
 
 // TODO use GrpcSource
 // note: stream never terminates
-async fn create_geyser_reconnecting_stream(
+fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
     commitment_level: CommitmentLevel,
 ) -> impl Stream<Item = Option<SubscribeUpdate>> {
@@ -279,7 +227,7 @@ async fn create_geyser_reconnecting_stream(
                             (ConnectionState::WaitReconnect, None)
                         },
                         Err(geyser_grpc_task_error) => {
-                            panic!("Task aborted - should not happen");
+                            panic!("Task aborted - should not happen :{geyser_grpc_task_error}");
                         }
                     }
 
