@@ -41,14 +41,14 @@ pub async fn main() {
 
     let block_stream = create_multiplex(
         // vec![green_config, blue_config, toxiproxy_config],
-        vec![blue_config],
+        vec![blue_config, green_config, toxiproxy_config],
         CommitmentLevel::Confirmed,
     );
 
     tokio::spawn(async move {
         let mut block_stream = pin!(block_stream);
 
-        while let Some(Some(block)) = block_stream.next().await {
+        while let Some(block) = block_stream.next().await {
             info!(
                 "received block #{} with {} txs",
                 block.slot,
@@ -64,7 +64,7 @@ pub async fn main() {
 fn create_multiplex(
     grpc_sources: Vec<GrpcSourceConfig>,
     commitment_level: CommitmentLevel,
-) -> impl Stream<Item = Option<ProducedBlock>> {
+) -> impl Stream<Item = ProducedBlock> {
     assert!(
         commitment_level == CommitmentLevel::Confirmed
             || commitment_level == CommitmentLevel::Finalized,
@@ -91,36 +91,38 @@ fn create_multiplex(
             .join(", ")
     );
 
-    let mut current_slot: Slot = 0;
-
-    let build_block_process_stream = move |grpc_source: GrpcSourceConfig| {
-        //connect to Geyzer stream
-        create_geyser_reconnecting_stream(grpc_source.clone(), commitment_level)
-            //filter with block with most recent slot
-            .filter_map(move |block| async move {
-                block.map(|update_message| match update_message.update_oneof {
-                    Some(UpdateOneof::Block(update_block_message))
-                        if update_block_message.slot > current_slot =>
-                    {
-                        Some(map_produced_block(update_block_message, commitment_config))
-                    }
-                    _ => None,
-                })
-            })
-    };
-
     let mut futures = futures::stream::SelectAll::new();
     for grpc_source in grpc_sources {
-        futures.push(Box::pin(build_block_process_stream(grpc_source)));
+        futures.push(Box::pin(create_geyser_reconnecting_stream(
+            grpc_source.clone(),
+            commitment_level,
+        )));
     }
 
-    //update the current slot with the most recent block that get from the stream.
-    futures.then(move |block| async move {
-        if let Some(ref block) = block {
-            *(&mut current_slot) = block.slot;
+    filter_blocks(futures, commitment_config)
+}
+
+fn filter_blocks<S>(
+    geyser_stream: S,
+    commitment_config: CommitmentConfig,
+) -> impl Stream<Item = ProducedBlock>
+where
+    S: Stream<Item = Option<SubscribeUpdate>>,
+{
+    let mut current_slot: Slot = 0;
+    stream! {
+        for await block in geyser_stream {
+            if let Some(block) = block {
+                if let Some(UpdateOneof::Block(update_block_message)) = block.update_oneof{
+                    if update_block_message.slot > current_slot {
+                        current_slot = update_block_message.slot;
+                        let block = map_produced_block(update_block_message, commitment_config);
+                        yield block;
+                    }
+                }
+            }
         }
-        block
-    })
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -174,11 +176,9 @@ fn create_geyser_reconnecting_stream(
                         let token = grpc_source.grpc_x_token.clone();
                         let config = grpc_source.tls_config.clone();
                         async move {
-                              let connect_result = GeyserGrpcClient::connect_with_timeout(
+                            let connect_result = GeyserGrpcClient::connect_with_timeout(
                                 addr, token, config,
                                 Some(Duration::from_secs(2)), Some(Duration::from_secs(2)), false).await;
-
-
                             let mut client = connect_result?;
 
                             // Connected;
