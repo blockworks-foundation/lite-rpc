@@ -111,9 +111,6 @@ fn create_multiplex(
 
     let mut futures = futures::stream::SelectAll::new();
     for grpc_source in grpc_sources {
-        // note: stream never terminates
-        // let stream = create_geyser_reconnecting_stream(grpc_source.clone(), commitment_level)
-        //     .then(|block| process_geyze_block_stream(commitment_config, current_slot, block));
         futures.push(Box::pin(build_block_process_stream(grpc_source)));
     }
 
