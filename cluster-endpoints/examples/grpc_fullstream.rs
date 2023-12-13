@@ -12,11 +12,83 @@ use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
 use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
+use yellowstone_grpc_proto::geyser::SubscribeUpdateBlockMeta;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeUpdate,
 };
+use yellowstone_grpc_proto::prelude::SubscribeRequestFilterBlocksMeta;
 use yellowstone_grpc_proto::tonic::transport::ClientTlsConfig;
 use yellowstone_grpc_proto::tonic::Status;
+
+pub trait ExtractBlockFromStream {
+    type Block;
+    fn extract(&self, update: SubscribeUpdate, current_slot: Slot) -> Option<(Slot, Self::Block)>;
+    fn get_block_subscription_filter(&self) -> HashMap<String, SubscribeRequestFilterBlocks>;
+    fn get_blockmeta_subscription_filter(
+        &self,
+    ) -> HashMap<String, SubscribeRequestFilterBlocksMeta>;
+}
+
+struct ExtractBlock(CommitmentConfig);
+impl ExtractBlockFromStream for ExtractBlock {
+    type Block = ProducedBlock;
+    fn extract(&self, update: SubscribeUpdate, current_slot: Slot) -> Option<(Slot, Self::Block)> {
+        match update.update_oneof {
+            Some(UpdateOneof::Block(update_block_message))
+                if update_block_message.slot > current_slot =>
+            {
+                let block = map_produced_block(update_block_message, self.0);
+                Some((block.slot, block))
+            }
+            _ => None,
+        }
+    }
+
+    fn get_block_subscription_filter(&self) -> HashMap<String, SubscribeRequestFilterBlocks> {
+        let mut blocks_subs = HashMap::new();
+        blocks_subs.insert(
+            "client".to_string(),
+            SubscribeRequestFilterBlocks {
+                account_include: Default::default(),
+                include_transactions: Some(true),
+                include_accounts: Some(false),
+                include_entries: Some(false),
+            },
+        );
+        blocks_subs
+    }
+    fn get_blockmeta_subscription_filter(
+        &self,
+    ) -> HashMap<String, SubscribeRequestFilterBlocksMeta> {
+        HashMap::new()
+    }
+}
+
+struct ExtractBlockMeta(CommitmentConfig);
+impl ExtractBlockFromStream for ExtractBlockMeta {
+    type Block = SubscribeUpdateBlockMeta;
+    fn extract(&self, update: SubscribeUpdate, current_slot: Slot) -> Option<(Slot, Self::Block)> {
+        match update.update_oneof {
+            Some(UpdateOneof::BlockMeta(update_block_message))
+                if update_block_message.slot > current_slot =>
+            {
+                Some((update_block_message.slot, update_block_message))
+            }
+            _ => None,
+        }
+    }
+
+    fn get_block_subscription_filter(&self) -> HashMap<String, SubscribeRequestFilterBlocks> {
+        HashMap::new()
+    }
+    fn get_blockmeta_subscription_filter(
+        &self,
+    ) -> HashMap<String, SubscribeRequestFilterBlocksMeta> {
+        let mut blocks_subs = HashMap::new();
+        blocks_subs.insert("client".to_string(), SubscribeRequestFilterBlocksMeta {});
+        blocks_subs
+    }
+}
 
 #[tokio::main]
 pub async fn main() {
@@ -39,10 +111,16 @@ pub async fn main() {
     let toxiproxy_config =
         GrpcSourceConfig::new("toxiproxy".to_string(), grpc_addr_mainnet_triton_toxi, None);
 
+    //Block stream
     let block_stream = create_multiplex(
         // vec![green_config, blue_config, toxiproxy_config],
-        vec![blue_config, green_config, toxiproxy_config],
+        vec![
+            blue_config.clone(),
+            green_config.clone(),
+            toxiproxy_config.clone(),
+        ],
         CommitmentLevel::Confirmed,
+        ExtractBlock(CommitmentConfig::confirmed()),
     );
 
     tokio::spawn(async move {
@@ -57,14 +135,38 @@ pub async fn main() {
         }
     });
 
+    //BlockMeta stream
+    let blockmeta_stream = create_multiplex(
+        // vec![green_config, blue_config, toxiproxy_config],
+        vec![
+            blue_config.clone(),
+            green_config.clone(),
+            toxiproxy_config.clone(),
+        ],
+        CommitmentLevel::Confirmed,
+        ExtractBlockMeta(CommitmentConfig::confirmed()),
+    );
+
+    tokio::spawn(async move {
+        let mut blockmeta_stream = pin!(blockmeta_stream);
+
+        while let Some(block) = blockmeta_stream.next().await {
+            info!("received blockmeta #{}", block.slot,);
+        }
+    });
+
     // "infinite" sleep
     sleep(Duration::from_secs(1800)).await;
 }
 
-fn create_multiplex(
+fn create_multiplex<E>(
     grpc_sources: Vec<GrpcSourceConfig>,
     commitment_level: CommitmentLevel,
-) -> impl Stream<Item = ProducedBlock> {
+    extractor: E,
+) -> impl Stream<Item = E::Block>
+where
+    E: ExtractBlockFromStream,
+{
     assert!(
         commitment_level == CommitmentLevel::Confirmed
             || commitment_level == CommitmentLevel::Finalized,
@@ -76,12 +178,6 @@ fn create_multiplex(
         panic!("Must have at least one source");
     }
 
-    let commitment_config = match commitment_level {
-        CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
-        CommitmentLevel::Finalized => CommitmentConfig::finalized(),
-        // not used, not supported!
-        CommitmentLevel::Processed => CommitmentConfig::processed(),
-    };
     info!(
         "Starting multiplexer with {} sources: {}",
         grpc_sources.len(),
@@ -92,33 +188,33 @@ fn create_multiplex(
     );
 
     let mut futures = futures::stream::SelectAll::new();
+
     for grpc_source in grpc_sources {
         futures.push(Box::pin(create_geyser_reconnecting_stream(
             grpc_source.clone(),
+            (
+                extractor.get_block_subscription_filter(),
+                extractor.get_blockmeta_subscription_filter(),
+            ),
             commitment_level,
         )));
     }
 
-    filter_blocks(futures, commitment_config)
+    filter_blocks(futures, extractor)
 }
 
-fn filter_blocks<S>(
-    geyser_stream: S,
-    commitment_config: CommitmentConfig,
-) -> impl Stream<Item = ProducedBlock>
+fn filter_blocks<S, E>(geyser_stream: S, extractor: E) -> impl Stream<Item = E::Block>
 where
     S: Stream<Item = Option<SubscribeUpdate>>,
+    E: ExtractBlockFromStream,
 {
     let mut current_slot: Slot = 0;
     stream! {
-        for await block in geyser_stream {
-            if let Some(block) = block {
-                if let Some(UpdateOneof::Block(update_block_message)) = block.update_oneof{
-                    if update_block_message.slot > current_slot {
-                        current_slot = update_block_message.slot;
-                        let block = map_produced_block(update_block_message, commitment_config);
-                        yield block;
-                    }
+        for await update in geyser_stream {
+            if let Some(update) = update {
+                if let Some((new_slot, block)) = extractor.extract(update, current_slot) {
+                    current_slot = new_slot;
+                    yield block;
                 }
             }
         }
@@ -156,6 +252,10 @@ enum ConnectionState<S: Stream<Item = Result<SubscribeUpdate, Status>>> {
 // note: stream never terminates
 fn create_geyser_reconnecting_stream(
     grpc_source: GrpcSourceConfig,
+    blocks_filters: (
+        HashMap<String, SubscribeRequestFilterBlocks>,
+        HashMap<String, SubscribeRequestFilterBlocksMeta>,
+    ),
     commitment_level: CommitmentLevel,
 ) -> impl Stream<Item = Option<SubscribeUpdate>> {
     let label = grpc_source.label.clone();
@@ -175,33 +275,23 @@ fn create_geyser_reconnecting_stream(
                         let addr = grpc_source.grpc_addr.clone();
                         let token = grpc_source.grpc_x_token.clone();
                         let config = grpc_source.tls_config.clone();
+                        let (block_filter, blockmeta_filter) = blocks_filters.clone();
                         async move {
+
                             let connect_result = GeyserGrpcClient::connect_with_timeout(
                                 addr, token, config,
                                 Some(Duration::from_secs(2)), Some(Duration::from_secs(2)), false).await;
                             let mut client = connect_result?;
 
                             // Connected;
-
-                            let mut blocks_subs = HashMap::new();
-                            blocks_subs.insert(
-                                "client".to_string(),
-                                SubscribeRequestFilterBlocks {
-                                    account_include: Default::default(),
-                                    include_transactions: Some(true),
-                                    include_accounts: Some(false),
-                                    include_entries: Some(false),
-                                },
-                            );
-
                             let subscribe_result = client
                                 .subscribe_once(
                                     HashMap::new(),
                                     Default::default(),
                                     HashMap::new(),
                                     Default::default(),
-                                    blocks_subs,
-                                    Default::default(),
+                                    block_filter,
+                                    blockmeta_filter,
                                     Some(commitment_level),
                                     Default::default(),
                                     None,
