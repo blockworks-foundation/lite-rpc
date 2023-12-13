@@ -1,7 +1,7 @@
 {
   "rpc_addr": "http://0.0.0.0:8899",
   "ws_addr": "ws://0.0.0.0:8900",
-  "lite_rpc_http_addr": "http://0.0.0.0:8890",
+  "lite_rpc_http_addr": "[::]:8890",
   "lite_rpc_ws_addr": "[::]:8891",
   "fanout_size": 18,
   "identity_keypair": null,
