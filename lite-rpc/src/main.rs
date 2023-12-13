@@ -1,5 +1,4 @@
 pub mod rpc_tester;
-mod grpc_inspect;
 
 use std::time::Duration;
 
@@ -48,6 +47,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use log::info;
 use tokio::sync::mpsc;
+use solana_lite_rpc_cluster_endpoints::grpc_mutliplex::create_grpc_multiplex_subscription;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -111,6 +111,13 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         info!("Creating geyser subscription...");
+
+        let (block_stream, jh) = create_grpc_multiplex_subscription(
+            grpc_addr.clone(),
+            grpc_x_token.clone(),
+            GRPC_VERSION.to_string(),
+        )?;
+
         create_grpc_subscription(
             rpc_client.clone(),
             grpc_addr,
@@ -130,7 +137,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     } = subscriptions;
 
-    grpc_inspect::block_debug_listen(blocks_notifier.resubscribe()).await;
+    // grpc_inspect::block_debug_listen(blocks_notifier.resubscribe()).await;
 
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
