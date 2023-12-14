@@ -13,7 +13,7 @@ use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 use crate::rpc_tester::RpcTester;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
+use solana_lite_rpc_cluster_endpoints::grpc_subscription::{create_grpc_subscription, map_block_update};
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
@@ -45,9 +45,12 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
-use log::info;
+use log::{debug, info};
+use tokio::spawn;
+use tokio::sync::broadcast::error::SendError;
 use tokio::sync::mpsc;
-use solana_lite_rpc_cluster_endpoints::grpc_mutliplex::create_grpc_multiplex_subscription;
+use solana_lite_rpc_cluster_endpoints::grpc_inspect;
+use solana_lite_rpc_cluster_endpoints::grpc_mutliplex::create_grpc_multiplex_subscription_finalized;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -109,14 +112,41 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
+    let (mut block_multiplex_stream, jh) = create_grpc_multiplex_subscription_finalized(
+        grpc_addr.clone(),
+        grpc_x_token.clone(),
+        GRPC_VERSION.to_string(),
+    ).await?;
+
+    let commitment_finalized = CommitmentConfig::finalized();
+    let (tx, multiplexed_finalized_blocks) = tokio::sync::broadcast::channel::<ProducedBlock>(1000);
+    let rx1 = multiplexed_finalized_blocks.resubscribe();
+    let _rx2 = multiplexed_finalized_blocks.resubscribe();
+
+    spawn(async move {
+       'main_loop: while let Ok(block) = block_multiplex_stream.recv().await {
+           info!("multiplex -> block #{} with {} txs", block.slot, block.transactions.len());
+
+           let produced_block = map_block_update(*block, commitment_finalized);
+           match tx.send(produced_block) {
+               Ok(receivers) => {
+                   debug!("sent block to {} receivers", receivers);
+               }
+               Err(send_error) => {
+                   match send_error {
+                       SendError(_) => {
+                           info!("Stop sending blocks on stream - shutting down");
+                           break 'main_loop;
+                       }
+                   }
+               }
+           };
+       }
+        panic!("forward task failed");
+    });
+
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         info!("Creating geyser subscription...");
-
-        let (block_stream, jh) = create_grpc_multiplex_subscription(
-            grpc_addr.clone(),
-            grpc_x_token.clone(),
-            GRPC_VERSION.to_string(),
-        )?;
 
         create_grpc_subscription(
             rpc_client.clone(),
@@ -129,7 +159,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
 
-
     let EndpointStreaming {
         blocks_notifier,
         cluster_info_notifier,
@@ -137,10 +166,13 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     } = subscriptions;
 
-    // grpc_inspect::block_debug_listen(blocks_notifier.resubscribe()).await;
+    let blocks_notifier = multiplexed_finalized_blocks;
+
+    grpc_inspect::block_debug_listen(rx1);
 
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
+    info!("Got finalized block: {:?}", finalized_block.slot);
 
     let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await?;
 

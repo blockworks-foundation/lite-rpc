@@ -37,7 +37,7 @@ use yellowstone_grpc_proto::prelude::{
     SubscribeRequestFilterSlots, SubscribeUpdateBlock,
 };
 
-fn process_block(
+pub fn map_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
@@ -298,7 +298,7 @@ pub fn create_block_processing_task(
 
                 match update {
                     UpdateOneof::Block(block) => {
-                        let block = process_block(block, commitment_config);
+                        let block = map_block_update(block, commitment_config);
                         block_sx
                             .send(block)
                             .context("Grpc failed to send a block")?;
