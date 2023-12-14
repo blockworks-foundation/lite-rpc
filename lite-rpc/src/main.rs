@@ -113,37 +113,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
     let (mut block_multiplex_stream, jh) = create_grpc_multiplex_subscription_finalized(
-        grpc_addr.clone(),
-        grpc_x_token.clone(),
-        GRPC_VERSION.to_string(),
+        CommitmentConfig::finalized(),
+        // grpc_addr.clone(),
+        // grpc_x_token.clone(),
+        // GRPC_VERSION.to_string(),
     ).await?;
-
-    let commitment_finalized = CommitmentConfig::finalized();
-    let (tx, multiplexed_finalized_blocks) = tokio::sync::broadcast::channel::<ProducedBlock>(1000);
-    let rx1 = multiplexed_finalized_blocks.resubscribe();
-    let _rx2 = multiplexed_finalized_blocks.resubscribe();
-
-    spawn(async move {
-       'main_loop: while let Ok(block) = block_multiplex_stream.recv().await {
-           info!("multiplex -> block #{} with {} txs", block.slot, block.transactions.len());
-
-           let produced_block = map_block_update(*block, commitment_finalized);
-           match tx.send(produced_block) {
-               Ok(receivers) => {
-                   debug!("sent block to {} receivers", receivers);
-               }
-               Err(send_error) => {
-                   match send_error {
-                       SendError(_) => {
-                           info!("Stop sending blocks on stream - shutting down");
-                           break 'main_loop;
-                       }
-                   }
-               }
-           };
-       }
-        panic!("forward task failed");
-    });
 
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         info!("Creating geyser subscription...");
@@ -166,9 +140,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     } = subscriptions;
 
-    let blocks_notifier = multiplexed_finalized_blocks;
+    let blocks_notifier = block_multiplex_stream.resubscribe();
 
-    grpc_inspect::block_debug_listen(rx1);
+    grpc_inspect::block_debug_listen(block_multiplex_stream.resubscribe());
 
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;

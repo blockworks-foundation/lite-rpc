@@ -13,10 +13,9 @@ struct BlockDebugDetails {
     pub block: ProducedBlock,
 }
 
-pub fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
+pub fn block_debug_listen(mut block_notifier: BlockStream) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut last_highest_slot_number = 0;
-        let mut block_notifier = block_notifier;
 
         loop {
             match block_notifier.recv().await {
