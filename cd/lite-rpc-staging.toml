@@ -13,7 +13,8 @@ primary_region = "nrt"
 [env]
   PORT_HTTP = "8890"
   PORT_WS = "8891"
-  RUST_LOG = "info"
+  # remove after grpc multipex got merged
+  RUST_LOG = "info,solana_lite_rpc_cluster_endpoints=debug,geyser_grpc_connector=debug"
 
  [metrics]
    path = "/metrics"
