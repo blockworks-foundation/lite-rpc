@@ -2,7 +2,8 @@ name: Deploy to Fly Staging
 
 on:
   push:
-      branches: [main]
+      # TODO remove feature/grpc-multiplexing-integrate when it's merged
+      branches: [main, feature/grpc-multiplexing-integrate]
 
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
