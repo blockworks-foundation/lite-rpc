@@ -50,7 +50,7 @@ use tokio::spawn;
 use tokio::sync::broadcast::error::SendError;
 use tokio::sync::mpsc;
 use solana_lite_rpc_cluster_endpoints::grpc_inspect;
-use solana_lite_rpc_cluster_endpoints::grpc_mutliplex::create_grpc_multiplex_subscription_finalized;
+use solana_lite_rpc_cluster_endpoints::grpc_mutliplex::create_grpc_multiplex_subscription;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -112,7 +112,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
-    let (mut block_multiplex_stream, jh) = create_grpc_multiplex_subscription_finalized(
+    let (mut block_multiplex_stream, jh) = create_grpc_multiplex_subscription(
         CommitmentConfig::finalized(),
         // grpc_addr.clone(),
         // grpc_x_token.clone(),
