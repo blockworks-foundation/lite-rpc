@@ -19,3 +19,4 @@ primary_region = "nrt"
  [metrics]
    path = "/metrics"
    port = 9091
+
