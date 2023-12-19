@@ -5,6 +5,7 @@ use std::thread::sleep;
 use std::time::Duration;
 use futures::{Stream, StreamExt};
 use geyser_grpc_connector::experimental::mock_literpc_core::map_produced_block;
+use geyser_grpc_connector::grpc_stream_utils::channelize_stream;
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplexed_stream, FromYellowstoneExtractor};
 use log::{debug, info, trace};
@@ -14,6 +15,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::spawn;
 use tokio::sync::broadcast::error::SendError;
 use tokio::sync::broadcast::Receiver;
+use tokio::task::JoinHandle;
 use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeUpdate};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
@@ -41,7 +43,7 @@ impl FromYellowstoneExtractor for BlockExtractor {
 }
 
 
-pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<ProducedBlock>, AnyhowJoinHandle)> {
+pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<ProducedBlock>, JoinHandle<()>)> {
 
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
@@ -129,31 +131,9 @@ pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<Pr
 
     let merged_stream_confirmed_finaliized = (multiplex_stream_confirmed, multiplex_stream_finalized).merge();
 
-    let (tx, multiplexed_finalized_blocks) = tokio::sync::broadcast::channel::<ProducedBlock>(1000);
+    // let (tx, multiplexed_finalized_blocks) = tokio::sync::broadcast::channel::<ProducedBlock>(1000);
 
-    // TODO move to lib
-    let jh_channelizer = spawn(async move {
-        let mut block_stream = pin!(merged_stream_confirmed_finaliized);
-        'main_loop: while let Some(block) = block_stream.next().await {
-            let slot = block.slot;
-            debug!("multiplex -> block #{} with {} txs", slot, block.transactions.len());
-
-            match tx.send(block) {
-                Ok(receivers) => {
-                    trace!("sent block #{} to {} receivers", slot, receivers);
-                }
-                Err(send_error) => {
-                    match send_error {
-                        SendError(_) => {
-                            info!("No active blockreceivers - shutting down");
-                            break 'main_loop;
-                        }
-                    }
-                }
-            };
-        }
-        panic!("forward task failed");
-    });
+    let (multiplexed_finalized_blocks, jh_channelizer) = channelize_stream(merged_stream_confirmed_finaliized).await;
 
     Ok((multiplexed_finalized_blocks, jh_channelizer))
 }
