@@ -9,7 +9,7 @@ license = "AGPL"
 
 [dependencies]
 #geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "experimental/draft-1709", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+geyser-grpc-connector = { tag = "experimental/draft-dez19-01", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
@@ -27,6 +27,7 @@ bs58 = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
+merge-streams = "0.1.2"
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }

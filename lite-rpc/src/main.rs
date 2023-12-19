@@ -113,7 +113,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
     let (mut block_multiplex_stream, jh) = create_grpc_multiplex_subscription(
-        CommitmentConfig::confirmed(),
         // grpc_addr.clone(),
         // grpc_x_token.clone(),
         // GRPC_VERSION.to_string(),
