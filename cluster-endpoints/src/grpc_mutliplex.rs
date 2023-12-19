@@ -6,7 +6,7 @@ use std::time::Duration;
 use futures::{Stream, StreamExt};
 use geyser_grpc_connector::experimental::mock_literpc_core::map_produced_block;
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplex, FromYellowstoneMapper};
+use geyser_grpc_connector::grpcmultiplex_fastestwins::{create_multiplexed_stream, FromYellowstoneExtractor};
 use log::{debug, info, trace};
 use merge_streams::MergeStreams;
 use solana_sdk::clock::Slot;
@@ -27,7 +27,7 @@ use crate::grpc_subscription::{create_grpc_subscription, map_block_update};
 
 struct BlockExtractor(CommitmentConfig);
 
-impl FromYellowstoneMapper for BlockExtractor {
+impl FromYellowstoneExtractor for BlockExtractor {
     type Target = ProducedBlock;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
@@ -69,9 +69,8 @@ pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<Pr
         let grpc_x_token_blue = grpc_x_token_blue.clone();
         let commitment_config = CommitmentConfig::confirmed();
         let green_stream = create_geyser_reconnecting_stream(
-            GrpcSourceConfig::new_with_timeout(
-                "green".to_string(),
-                grpc_addr_green.clone(), grpc_x_token_green.clone(),
+            GrpcSourceConfig::new(
+                grpc_addr_green.clone(), grpc_x_token_green.clone(), None,
                 timeouts.clone()),
             GeyserFilter::blocks_and_txs(),
             commitment_config);
@@ -80,16 +79,15 @@ pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<Pr
 
         if let Some(grpc_addr_blue) = grpc_addr_blue {
             let blue_stream = create_geyser_reconnecting_stream(
-                GrpcSourceConfig::new_with_timeout(
-                    "blue".to_string(),
-                    grpc_addr_blue, grpc_x_token_blue,
+                GrpcSourceConfig::new(
+                    grpc_addr_blue, grpc_x_token_blue, None,
                     timeouts.clone()),
                 GeyserFilter::blocks_and_txs(),
                 commitment_config);
             streams.push(blue_stream);
         }
 
-        let multiplex_stream = create_multiplex(
+        let multiplex_stream = create_multiplexed_stream(
             streams,
             BlockExtractor(commitment_config),
         );
@@ -103,9 +101,8 @@ pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<Pr
         let grpc_x_token_blue = grpc_x_token_blue.clone();
         let commitment_config = CommitmentConfig::finalized();
         let green_stream = create_geyser_reconnecting_stream(
-            GrpcSourceConfig::new_with_timeout(
-                "green".to_string(),
-                grpc_addr_green, grpc_x_token_green,
+            GrpcSourceConfig::new(
+                grpc_addr_green, grpc_x_token_green, None,
                 timeouts.clone()),
             GeyserFilter::blocks_and_txs(),
             commitment_config);
@@ -114,16 +111,15 @@ pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<Pr
 
         if let Some(grpc_addr_blue) = grpc_addr_blue {
             let blue_stream = create_geyser_reconnecting_stream(
-                GrpcSourceConfig::new_with_timeout(
-                    "blue".to_string(),
-                    grpc_addr_blue, grpc_x_token_blue,
+                GrpcSourceConfig::new(
+                    grpc_addr_blue, grpc_x_token_blue, None,
                     timeouts.clone()),
                 GeyserFilter::blocks_and_txs(),
                 commitment_config);
             streams.push(blue_stream);
         }
 
-        let multiplex_stream = create_multiplex(
+        let multiplex_stream = create_multiplexed_stream(
             streams,
             BlockExtractor(commitment_config),
         );
