@@ -1,17 +1,10 @@
-use std::collections::{HashMap, HashSet};
 use log::{debug, info, warn};
-use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::types::BlockStream;
 
-#[derive(Debug, Clone)]
-struct BlockDebugDetails {
-    pub blockhash: String,
-    pub block: ProducedBlock,
-}
 
 pub fn block_debug_listen(mut block_notifier: BlockStream) -> JoinHandle<()> {
     tokio::spawn(async move {

@@ -43,20 +43,17 @@ impl FromYellowstoneExtractor for BlockExtractor {
 }
 
 
-pub fn create_grpc_multiplex_subscription() -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
-
-    let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
-    let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
-
-    let grpc_addr_blue = env::var("GRPC_ADDR2").ok();
-    let grpc_x_token_blue = env::var("GRPC_X_TOKEN2").ok();
+pub fn create_grpc_multiplex_subscription(
+    grpc_addr: String, grpc_x_token: Option<String>,
+    grpc_addr2: Option<String>, grpc_x_token2: Option<String>)
+    -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
 
     info!("Setup grpc multiplexed connection...");
-    info!("- using green on {} ({})", grpc_addr_green, grpc_x_token_green.is_some());
-    if let Some(ref grpc_addr_blue) = grpc_addr_blue {
-        info!("- using blue on {} ({})", grpc_addr_blue, grpc_x_token_blue.is_some());
+    info!("- configure first connection to {} ({})", grpc_addr, grpc_x_token.is_some());
+    if let Some(ref grpc_addr2) = grpc_addr2 {
+        info!("- configure second connection to {} ({})", grpc_addr2, grpc_x_token2.is_some());
     } else {
-        info!("- no blue grpc connection configured");
+        info!("- no second grpc connection configured");
     }
 
     let timeouts = GrpcConnectionTimeouts {
@@ -66,27 +63,27 @@ pub fn create_grpc_multiplex_subscription() -> (Receiver<ProducedBlock>, AnyhowJ
     };
 
     let multiplex_stream_confirmed = {
-        let grpc_addr_green = grpc_addr_green.clone();
-        let grpc_addr_blue = grpc_addr_blue.clone();
-        let grpc_x_token_blue = grpc_x_token_blue.clone();
+        let grpc_addr = grpc_addr.clone();
+        let grpc_addr2 = grpc_addr2.clone();
+        let grpc_x_token2 = grpc_x_token2.clone();
         let commitment_config = CommitmentConfig::confirmed();
-        let green_stream = create_geyser_reconnecting_stream(
+        let first_stream = create_geyser_reconnecting_stream(
             GrpcSourceConfig::new(
-                grpc_addr_green.clone(), grpc_x_token_green.clone(), None,
+                grpc_addr.clone(), grpc_x_token.clone(), None,
                 timeouts.clone()),
             GeyserFilter::blocks_and_txs(),
             commitment_config);
 
-        let mut streams = vec![green_stream];
+        let mut streams = vec![first_stream];
 
-        if let Some(grpc_addr_blue) = grpc_addr_blue {
-            let blue_stream = create_geyser_reconnecting_stream(
+        if let Some(grpc_addr2) = grpc_addr2 {
+            let second_stream = create_geyser_reconnecting_stream(
                 GrpcSourceConfig::new(
-                    grpc_addr_blue, grpc_x_token_blue, None,
+                    grpc_addr2, grpc_x_token2, None,
                     timeouts.clone()),
                 GeyserFilter::blocks_and_txs(),
                 commitment_config);
-            streams.push(blue_stream);
+            streams.push(second_stream);
         }
 
         let multiplex_stream = create_multiplexed_stream(
@@ -98,27 +95,27 @@ pub fn create_grpc_multiplex_subscription() -> (Receiver<ProducedBlock>, AnyhowJ
     };
 
     let multiplex_stream_finalized = {
-        let grpc_addr_green = grpc_addr_green.clone();
-        let grpc_addr_blue = grpc_addr_blue.clone();
-        let grpc_x_token_blue = grpc_x_token_blue.clone();
+        let grpc_addr = grpc_addr.clone();
+        let grpc_addr2 = grpc_addr2.clone();
+        let grpc_x_token2 = grpc_x_token2.clone();
         let commitment_config = CommitmentConfig::finalized();
-        let green_stream = create_geyser_reconnecting_stream(
+        let first_stream = create_geyser_reconnecting_stream(
             GrpcSourceConfig::new(
-                grpc_addr_green, grpc_x_token_green, None,
+                grpc_addr, grpc_x_token, None,
                 timeouts.clone()),
             GeyserFilter::blocks_and_txs(),
             commitment_config);
 
-        let mut streams = vec![green_stream];
+        let mut streams = vec![first_stream];
 
-        if let Some(grpc_addr_blue) = grpc_addr_blue {
-            let blue_stream = create_geyser_reconnecting_stream(
+        if let Some(grpc_addr2) = grpc_addr2 {
+            let second_stream = create_geyser_reconnecting_stream(
                 GrpcSourceConfig::new(
-                    grpc_addr_blue, grpc_x_token_blue, None,
+                    grpc_addr2, grpc_x_token2, None,
                     timeouts.clone()),
                 GeyserFilter::blocks_and_txs(),
                 commitment_config);
-            streams.push(blue_stream);
+            streams.push(second_stream);
         }
 
         let multiplex_stream = create_multiplexed_stream(

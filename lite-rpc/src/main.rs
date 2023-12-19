@@ -45,12 +45,9 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
-use log::{debug, info};
-use tokio::spawn;
-use tokio::sync::broadcast::error::SendError;
+use log::{info};
 use tokio::sync::mpsc;
 use solana_lite_rpc_cluster_endpoints::grpc_inspect;
-use solana_lite_rpc_cluster_endpoints::grpc_mutliplex::create_grpc_multiplex_subscription;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -121,6 +118,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             rpc_client.clone(),
             grpc_addr,
             grpc_x_token,
+            grpc_addr2,
+            grpc_x_token2,
             GRPC_VERSION.to_string(),
         )?
     } else {
@@ -134,8 +133,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         slot_notifier,
         vote_account_notifier,
     } = subscriptions;
-
-    grpc_inspect::block_debug_listen(blocks_notifier.resubscribe());
 
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;

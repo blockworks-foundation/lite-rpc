@@ -120,12 +120,14 @@ impl Config {
             .map(|_| true)
             .unwrap_or(config.use_grpc);
 
+        // first connection
         config.grpc_addr = env::var("GRPC_ADDR").unwrap_or(config.grpc_addr);
 
         config.grpc_x_token = env::var("GRPC_X_TOKEN")
             .map(Some)
             .unwrap_or(config.grpc_x_token);
 
+        // second connection
         config.grpc_addr2 = env::var("GRPC_ADDR2")
             .map(Some)
             .unwrap_or(config.grpc_addr2);

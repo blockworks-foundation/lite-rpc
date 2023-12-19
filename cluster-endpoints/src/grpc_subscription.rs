@@ -1,7 +1,4 @@
-use crate::{
-    endpoint_stremers::EndpointStreaming,
-    rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
-};
+use crate::{endpoint_stremers::EndpointStreaming, grpc_inspect, rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info};
 use anyhow::{bail, Context};
 use futures::StreamExt;
 use itertools::Itertools;
@@ -322,6 +319,8 @@ pub fn create_grpc_subscription(
     rpc_client: Arc<RpcClient>,
     grpc_addr: String,
     grpc_x_token: Option<String>,
+    grpc_addr2: Option<String>,
+    grpc_x_token2: Option<String>,
     expected_grpc_version: String,
 ) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
     let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(10);
@@ -396,20 +395,14 @@ pub fn create_grpc_subscription(
         })
     };
 
-    let (mut block_multiplex_stream, jh_multiplex_blockstream) = create_grpc_multiplex_subscription(); // FIXME arguments
+    let (block_multiplex_stream, jh_multiplex_blockstream) = create_grpc_multiplex_subscription(
+        grpc_addr,
+        grpc_x_token,
+        grpc_addr2,
+        grpc_x_token2
+    );
+    grpc_inspect::block_debug_listen(block_multiplex_stream.resubscribe());
 
-    // let block_confirmed_task: AnyhowJoinHandle = create_block_processing_task(
-    //     grpc_addr.clone(),
-    //     grpc_x_token.clone(),
-    //     block_sx.clone(),
-    //     CommitmentLevel::Confirmed,
-    // );
-    // let block_finalized_task: AnyhowJoinHandle = create_block_processing_task(
-    //     grpc_addr,
-    //     grpc_x_token,
-    //     block_sx,
-    //     CommitmentLevel::Finalized,
-    // );
 
     let cluster_info_polling =
         poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
