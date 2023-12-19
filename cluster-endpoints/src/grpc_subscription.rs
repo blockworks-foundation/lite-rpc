@@ -401,7 +401,8 @@ pub fn create_grpc_subscription(
         grpc_addr2,
         grpc_x_token2
     );
-    grpc_inspect::block_debug_listen(block_multiplex_stream.resubscribe());
+    grpc_inspect::block_debug_listen(block_multiplex_stream.resubscribe(), CommitmentConfig::confirmed());
+    grpc_inspect::block_debug_listen(block_multiplex_stream.resubscribe(), CommitmentConfig::finalized());
 
 
     let cluster_info_polling =
