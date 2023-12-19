@@ -36,6 +36,7 @@ use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
     SubscribeRequestFilterSlots, SubscribeUpdateBlock,
 };
+use crate::grpc_mutliplex::create_grpc_multiplex_subscription;
 
 pub fn map_block_update(
     block: SubscribeUpdateBlock,
@@ -324,7 +325,6 @@ pub fn create_grpc_subscription(
     expected_grpc_version: String,
 ) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
     let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(10);
-    let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(10);
     let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(10);
     let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
 
@@ -396,24 +396,26 @@ pub fn create_grpc_subscription(
         })
     };
 
-    let block_confirmed_task: AnyhowJoinHandle = create_block_processing_task(
-        grpc_addr.clone(),
-        grpc_x_token.clone(),
-        block_sx.clone(),
-        CommitmentLevel::Confirmed,
-    );
-    let block_finalized_task: AnyhowJoinHandle = create_block_processing_task(
-        grpc_addr,
-        grpc_x_token,
-        block_sx,
-        CommitmentLevel::Finalized,
-    );
+    let (mut block_multiplex_stream, jh_multiplex_blockstream) = create_grpc_multiplex_subscription(); // FIXME arguments
+
+    // let block_confirmed_task: AnyhowJoinHandle = create_block_processing_task(
+    //     grpc_addr.clone(),
+    //     grpc_x_token.clone(),
+    //     block_sx.clone(),
+    //     CommitmentLevel::Confirmed,
+    // );
+    // let block_finalized_task: AnyhowJoinHandle = create_block_processing_task(
+    //     grpc_addr,
+    //     grpc_x_token,
+    //     block_sx,
+    //     CommitmentLevel::Finalized,
+    // );
 
     let cluster_info_polling =
         poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
 
     let streamers = EndpointStreaming {
-        blocks_notifier,
+        blocks_notifier: block_multiplex_stream,
         slot_notifier,
         cluster_info_notifier,
         vote_account_notifier,
@@ -421,8 +423,7 @@ pub fn create_grpc_subscription(
 
     let endpoint_tasks = vec![
         slot_task,
-        block_confirmed_task,
-        block_finalized_task,
+        jh_multiplex_blockstream,
         cluster_info_polling,
     ];
     Ok((streamers, endpoint_tasks))

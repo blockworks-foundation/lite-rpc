@@ -46,6 +46,10 @@ pub struct Config {
     pub grpc_addr: String,
     #[serde(default)]
     pub grpc_x_token: Option<String>,
+    #[serde(default)]
+    pub grpc_addr2: Option<String>,
+    #[serde(default)]
+    pub grpc_x_token2: Option<String>,
     /// postgres config
     #[serde(default)]
     pub postgres: Option<PostgresSessionConfig>,
@@ -121,6 +125,14 @@ impl Config {
         config.grpc_x_token = env::var("GRPC_X_TOKEN")
             .map(Some)
             .unwrap_or(config.grpc_x_token);
+
+        config.grpc_addr2 = env::var("GRPC_ADDR2")
+            .map(Some)
+            .unwrap_or(config.grpc_addr2);
+
+        config.grpc_x_token2 = env::var("GRPC_X_TOKEN2")
+            .map(Some)
+            .unwrap_or(config.grpc_x_token2);
 
         config.postgres = PostgresSessionConfig::new_from_env()?.or(config.postgres);
 

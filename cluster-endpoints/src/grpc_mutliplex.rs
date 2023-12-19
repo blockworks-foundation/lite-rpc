@@ -43,7 +43,7 @@ impl FromYellowstoneExtractor for BlockExtractor {
 }
 
 
-pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<ProducedBlock>, JoinHandle<()>)> {
+pub fn create_grpc_multiplex_subscription() -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
 
     let grpc_addr_green = env::var("GRPC_ADDR").expect("need grpc url for green");
     let grpc_x_token_green = env::var("GRPC_X_TOKEN").ok();
@@ -129,11 +129,11 @@ pub async fn create_grpc_multiplex_subscription() -> anyhow::Result<(Receiver<Pr
         multiplex_stream
     };
 
-    let merged_stream_confirmed_finaliized = (multiplex_stream_confirmed, multiplex_stream_finalized).merge();
+    let merged_stream_confirmed_finalize = (multiplex_stream_confirmed, multiplex_stream_finalized).merge();
 
     // let (tx, multiplexed_finalized_blocks) = tokio::sync::broadcast::channel::<ProducedBlock>(1000);
 
-    let (multiplexed_finalized_blocks, jh_channelizer) = channelize_stream(merged_stream_confirmed_finaliized).await;
+    let (multiplexed_finalized_blocks, jh_channelizer) = channelize_stream(merged_stream_confirmed_finalize);
 
-    Ok((multiplexed_finalized_blocks, jh_channelizer))
+    (multiplexed_finalized_blocks, jh_channelizer)
 }
