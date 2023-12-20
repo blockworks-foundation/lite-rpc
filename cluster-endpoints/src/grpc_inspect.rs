@@ -1,12 +1,13 @@
-use log::{debug, info, warn};
+use log::{debug, warn};
+use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_lite_rpc_core::types::BlockStream;
 
-
-pub fn block_debug_listen(mut block_notifier: BlockStream, commitment_config: CommitmentConfig) -> JoinHandle<()> {
+pub fn block_debug_listen(
+    mut block_notifier: BlockStream,
+    commitment_config: CommitmentConfig,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut last_highest_slot_number = 0;
 
@@ -25,13 +26,17 @@ pub fn block_debug_listen(mut block_notifier: BlockStream, commitment_config: Co
                     );
 
                     if last_highest_slot_number != 0 {
-
                         if block.parent_slot == last_highest_slot_number {
-                            debug!("parent slot is correct ({} -> {})", block.slot, block.parent_slot);
+                            debug!(
+                                "parent slot is correct ({} -> {})",
+                                block.slot, block.parent_slot
+                            );
                         } else {
-                            warn!("parent slot not correct ({} -> {})", block.slot, block.parent_slot);
+                            warn!(
+                                "parent slot not correct ({} -> {})",
+                                block.slot, block.parent_slot
+                            );
                         }
-
                     }
 
                     if block.slot > last_highest_slot_number {
@@ -59,4 +64,3 @@ pub fn block_debug_listen(mut block_notifier: BlockStream, commitment_config: Co
         }
     })
 }
-

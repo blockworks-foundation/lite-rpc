@@ -12,8 +12,9 @@ use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
 use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 use crate::rpc_tester::RpcTester;
+use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription::{create_grpc_subscription, map_block_update};
+use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
@@ -45,9 +46,7 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
-use log::{info};
 use tokio::sync::mpsc;
-use solana_lite_rpc_cluster_endpoints::grpc_inspect;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -313,7 +312,7 @@ fn parse_host_port(host_port: &str) -> Result<SocketAddr, String> {
 // http://mango.rpcpool.com/c232ab232ba2323
 fn obfuscate_rpcurl(rpc_addr: &str) -> String {
     if rpc_addr.contains("rpcpool.com") {
-        return rpc_addr.replacen(char::is_numeric, "X", 99)
+        return rpc_addr.replacen(char::is_numeric, "X", 99);
     }
     rpc_addr.to_string()
 }

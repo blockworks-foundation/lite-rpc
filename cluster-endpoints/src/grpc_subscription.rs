@@ -1,4 +1,8 @@
-use crate::{endpoint_stremers::EndpointStreaming, grpc_inspect, rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info};
+use crate::grpc_multiplex::create_grpc_multiplex_subscription;
+use crate::{
+    endpoint_stremers::EndpointStreaming, grpc_inspect,
+    rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
+};
 use anyhow::{bail, Context};
 use futures::StreamExt;
 use itertools::Itertools;
@@ -33,7 +37,6 @@ use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
     SubscribeRequestFilterSlots, SubscribeUpdateBlock,
 };
-use crate::grpc_mutliplex::create_grpc_multiplex_subscription;
 
 pub fn map_block_update(
     block: SubscribeUpdateBlock,
@@ -395,15 +398,16 @@ pub fn create_grpc_subscription(
         })
     };
 
-    let (block_multiplex_stream, jh_multiplex_blockstream) = create_grpc_multiplex_subscription(
-        grpc_addr,
-        grpc_x_token,
-        grpc_addr2,
-        grpc_x_token2
+    let (block_multiplex_stream, jh_multiplex_blockstream) =
+        create_grpc_multiplex_subscription(grpc_addr, grpc_x_token, grpc_addr2, grpc_x_token2);
+    grpc_inspect::block_debug_listen(
+        block_multiplex_stream.resubscribe(),
+        CommitmentConfig::confirmed(),
     );
-    grpc_inspect::block_debug_listen(block_multiplex_stream.resubscribe(), CommitmentConfig::confirmed());
-    grpc_inspect::block_debug_listen(block_multiplex_stream.resubscribe(), CommitmentConfig::finalized());
-
+    grpc_inspect::block_debug_listen(
+        block_multiplex_stream.resubscribe(),
+        CommitmentConfig::finalized(),
+    );
 
     let cluster_info_polling =
         poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
@@ -415,10 +419,6 @@ pub fn create_grpc_subscription(
         vote_account_notifier,
     };
 
-    let endpoint_tasks = vec![
-        slot_task,
-        jh_multiplex_blockstream,
-        cluster_info_polling,
-    ];
+    let endpoint_tasks = vec![slot_task, jh_multiplex_blockstream, cluster_info_polling];
     Ok((streamers, endpoint_tasks))
 }
