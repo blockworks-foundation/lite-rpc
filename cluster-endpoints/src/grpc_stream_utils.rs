@@ -12,7 +12,6 @@ pub fn channelize_stream<T>(
 where
     T: Clone + Send + 'static,
 {
-    // note: broadcast channel will fill up if receivers are slacking
     let (tx, multiplexed_messages) = tokio::sync::broadcast::channel::<T>(1000);
 
     let jh_channelizer = spawn(async move {
