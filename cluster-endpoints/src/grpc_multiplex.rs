@@ -100,9 +100,6 @@ struct SlotExtractor {}
 impl FromYellowstoneExtractor for crate::grpc_multiplex::SlotExtractor {
     type Target = SlotNotification;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
-
-        info!("slot SubscribeUpdate: {:?}", update);
-
         match update.update_oneof {
             Some(UpdateOneof::Slot(update_slot_message)) => {
                 let slot = SlotNotification {
@@ -146,7 +143,7 @@ pub fn create_grpc_multiplex_slots_subscription(
                 entry: Default::default(),
                 blocks: HashMap::new(),
                 blocks_meta: HashMap::new(),
-                commitment: Some(CommitmentLevel::Processed as i32),
+                commitment: Some(yellowstone_grpc_proto::geyser::CommitmentLevel::Processed as i32),
                 accounts_data_slice: Default::default(),
                 ping: None,
             };
