@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::bail;
 use dashmap::DashMap;
 use lite_rpc::bridge::LiteBridge;
-use lite_rpc::cli::Config;
+use lite_rpc::cli::{Config, GrpcSource};
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
@@ -47,6 +47,7 @@ use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{GrpcConnectionTimeouts, GrpcSourceConfig};
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -82,6 +83,7 @@ pub async fn start_postgres(
 }
 
 pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
+    let grpc_sources = args.get_grpc_sources();
     let Config {
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
@@ -93,10 +95,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
-        grpc_addr,
-        grpc_x_token,
-        grpc_addr2,
-        grpc_x_token2,
         ..
     } = args;
 
@@ -113,13 +111,17 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         info!("Creating geyser subscription...");
 
+        let timeouts = GrpcConnectionTimeouts {
+            connect_timeout: Duration::from_secs(5),
+            request_timeout: Duration::from_secs(5),
+            subscribe_timeout: Duration::from_secs(5),
+        };
+
         create_grpc_subscription(
             rpc_client.clone(),
-            grpc_addr,
-            grpc_x_token,
-            grpc_addr2,
-            grpc_x_token2,
-            GRPC_VERSION.to_string(),
+            grpc_sources.iter().map(
+                |s| GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
+            ).collect(),
         )?
     } else {
         info!("Creating RPC poll subscription...");

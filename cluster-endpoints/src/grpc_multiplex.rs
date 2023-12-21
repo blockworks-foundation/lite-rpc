@@ -1,8 +1,7 @@
+use std::collections::HashMap;
 use crate::grpc_stream_utils::channelize_stream;
 use crate::grpc_subscription::map_block_update;
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{
-    create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
@@ -11,11 +10,15 @@ use merge_streams::MergeStreams;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
-use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use std::time::Duration;
+use futures::Stream;
+use itertools::Itertools;
+use solana_sdk::commitment_config;
 use tokio::sync::broadcast::Receiver;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate};
+use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 
 struct BlockExtractor(CommitmentConfig);
 
@@ -32,26 +35,15 @@ impl FromYellowstoneExtractor for BlockExtractor {
     }
 }
 
-pub fn create_grpc_multiplex_subscription(
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
-    grpc_addr2: Option<String>,
-    grpc_x_token2: Option<String>,
+pub fn create_grpc_multiplex_blocks_subscription(
+    grpc_sources: Vec<GrpcSourceConfig>,
 ) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
-    info!("Setup grpc multiplexed connection...");
-    info!(
-        "- configure first connection to {} ({})",
-        grpc_addr,
-        grpc_x_token.is_some()
-    );
-    if let Some(ref grpc_addr2) = grpc_addr2 {
-        info!(
-            "- configure second connection to {} ({})",
-            grpc_addr2,
-            grpc_x_token2.is_some()
-        );
-    } else {
-        info!("- no second grpc connection configured");
+    info!("Setup grpc multiplexed blocks connection...");
+    if grpc_sources.is_empty() {
+        info!("- no grpc connection configured");
+    }
+    for grpc_source in &grpc_sources {
+        info!("- connection to {}", grpc_source);
     }
 
     let timeouts = GrpcConnectionTimeouts {
@@ -62,31 +54,15 @@ pub fn create_grpc_multiplex_subscription(
 
     let multiplex_stream_confirmed = {
         let commitment_config = CommitmentConfig::confirmed();
-        let first_stream = create_geyser_reconnecting_stream(
-            GrpcSourceConfig::new(
-                grpc_addr.clone(),
-                grpc_x_token.clone(),
-                None,
-                timeouts.clone(),
-            ),
-            GeyserFilter::blocks_and_txs(),
-            commitment_config,
-        );
 
-        let mut streams = vec![first_stream];
-
-        if let Some(ref grpc_addr2) = grpc_addr2 {
-            let second_stream = create_geyser_reconnecting_stream(
-                GrpcSourceConfig::new(
-                    grpc_addr2.clone(),
-                    grpc_x_token2.clone(),
-                    None,
-                    timeouts.clone(),
-                ),
-                GeyserFilter::blocks_and_txs(),
-                commitment_config,
-            );
-            streams.push(second_stream);
+        let mut streams = Vec::new();
+        for grpc_source in &grpc_sources {
+            let stream =
+                create_geyser_reconnecting_stream(
+                    grpc_source.clone(),
+                    GeyserFilter(commitment_config).blocks_and_txs(),
+                );
+            streams.push(stream);
         }
 
         create_multiplexed_stream(streams, BlockExtractor(commitment_config))
@@ -94,21 +70,15 @@ pub fn create_grpc_multiplex_subscription(
 
     let multiplex_stream_finalized = {
         let commitment_config = CommitmentConfig::finalized();
-        let first_stream = create_geyser_reconnecting_stream(
-            GrpcSourceConfig::new(grpc_addr, grpc_x_token, None, timeouts.clone()),
-            GeyserFilter::blocks_and_txs(),
-            commitment_config,
-        );
 
-        let mut streams = vec![first_stream];
-
-        if let Some(ref grpc_addr2) = grpc_addr2 {
-            let second_stream = create_geyser_reconnecting_stream(
-                GrpcSourceConfig::new(grpc_addr2.clone(), grpc_x_token2, None, timeouts),
-                GeyserFilter::blocks_and_txs(),
-                commitment_config,
-            );
-            streams.push(second_stream);
+        let mut streams = Vec::new();
+        for grpc_source in &grpc_sources {
+            let stream =
+                create_geyser_reconnecting_stream(
+                    grpc_source.clone(),
+                    GeyserFilter(commitment_config).blocks_and_txs(),
+                );
+            streams.push(stream);
         }
 
         create_multiplexed_stream(streams, BlockExtractor(commitment_config))
@@ -117,10 +87,84 @@ pub fn create_grpc_multiplex_subscription(
     let merged_stream_confirmed_finalize =
         (multiplex_stream_confirmed, multiplex_stream_finalized).merge();
 
-    // let (tx, multiplexed_finalized_blocks) = tokio::sync::broadcast::channel::<ProducedBlock>(1000);
-
     let (multiplexed_finalized_blocks, jh_channelizer) =
         channelize_stream(merged_stream_confirmed_finalize);
 
     (multiplexed_finalized_blocks, jh_channelizer)
 }
+
+
+
+struct SlotExtractor {}
+
+impl FromYellowstoneExtractor for crate::grpc_multiplex::SlotExtractor {
+    type Target = SlotNotification;
+    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
+
+        info!("slot SubscribeUpdate: {:?}", update);
+
+        match update.update_oneof {
+            Some(UpdateOneof::Slot(update_slot_message)) => {
+                let slot = SlotNotification {
+                    estimated_processed_slot: update_slot_message.slot,
+                    processed_slot: update_slot_message.slot,
+                };
+                Some((update_slot_message.slot, slot))
+            }
+            _ => None,
+        }
+    }
+}
+
+pub fn create_grpc_multiplex_slots_subscription(
+    grpc_sources: Vec<GrpcSourceConfig>,
+) -> (Receiver<SlotNotification>, AnyhowJoinHandle) {
+    info!("Setup grpc multiplexed slots connection...");
+    if grpc_sources.is_empty() {
+        info!("- no grpc connection configured");
+    }
+    for grpc_source in &grpc_sources {
+        info!("- connection to {}", grpc_source);
+    }
+
+    let multiplex_stream = {
+        let mut streams = Vec::new();
+        for grpc_source in &grpc_sources {
+
+            let mut slots = HashMap::new();
+            slots.insert(
+                "client".to_string(),
+                SubscribeRequestFilterSlots {
+                    filter_by_commitment: Some(true),
+                },
+            );
+
+            let filter = SubscribeRequest {
+                slots: slots,
+                accounts: Default::default(),
+                transactions: HashMap::new(),
+                entry: Default::default(),
+                blocks: HashMap::new(),
+                blocks_meta: HashMap::new(),
+                commitment: Some(CommitmentLevel::Processed as i32),
+                accounts_data_slice: Default::default(),
+                ping: None,
+            };
+
+            let stream =
+                create_geyser_reconnecting_stream(
+                    grpc_source.clone(),
+                    filter,
+                );
+            streams.push(stream);
+        }
+
+        create_multiplexed_stream(streams, SlotExtractor{})
+    };
+
+    let (multiplexed_stream, jh_channelizer) =
+        channelize_stream(multiplex_stream);
+
+    (multiplexed_stream, jh_channelizer)
+}
+

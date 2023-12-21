@@ -1,4 +1,4 @@
-use crate::grpc_multiplex::create_grpc_multiplex_subscription;
+use crate::grpc_multiplex::{create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription};
 use crate::{
     endpoint_stremers::EndpointStreaming, grpc_inspect,
     rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
@@ -31,8 +31,10 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GrpcSourceConfig};
 use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
+use yellowstone_grpc_proto::geyser::SubscribeRequest;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
     SubscribeRequestFilterSlots, SubscribeUpdateBlock,
@@ -320,92 +322,85 @@ pub fn create_block_processing_task(
 
 pub fn create_grpc_subscription(
     rpc_client: Arc<RpcClient>,
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
-    grpc_addr2: Option<String>,
-    grpc_x_token2: Option<String>,
-    expected_grpc_version: String,
+    grpc_sources: Vec<GrpcSourceConfig>,
 ) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
-    let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(10);
+    // let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(10);
     let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(10);
     let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
 
-    let slot_task: AnyhowJoinHandle = {
-        let grpc_x_token = grpc_x_token.clone();
-        let grpc_addr = grpc_addr.clone();
-        tokio::spawn(async move {
-            loop {
-                let mut slots = HashMap::new();
-                slots.insert(
-                    "client".to_string(),
-                    SubscribeRequestFilterSlots {
-                        filter_by_commitment: Some(true),
-                    },
-                );
-                // connect to grpc
-                let mut client =
-                    GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
+    // let _slot_task: AnyhowJoinHandle = {
+        // FIXME
+    //     let grpc_addr = grpc_sources[0].grpc_addr;
+    //     let grpc_x_token = grpc_sources[0].grpc_x_token;
+    //     tokio::spawn(async move {
+    //         loop {
+    //             let mut slots = HashMap::new();
+    //             slots.insert(
+    //                 "client".to_string(),
+    //                 SubscribeRequestFilterSlots {
+    //                     filter_by_commitment: Some(true),
+    //                 },
+    //             );
+    //             // connect to grpc
+    //             let mut client =
+    //                 GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
+    //
+    //             let mut stream = client
+    //                 .subscribe_once(
+    //                     slots,
+    //                     Default::default(),
+    //                     HashMap::new(),
+    //                     Default::default(),
+    //                     HashMap::new(),
+    //                     Default::default(),
+    //                     Some(CommitmentLevel::Processed),
+    //                     Default::default(),
+    //                     None,
+    //                 )
+    //                 .await?;
+    //
+    //             while let Some(message) = stream.next().await {
+    //                 let message = message?;
+    //
+    //                 let Some(update) = message.update_oneof else {
+    //                     continue;
+    //                 };
+    //
+    //                 match update {
+    //                     UpdateOneof::Slot(slot) => {
+    //                         slot_sx
+    //                             .send(SlotNotification {
+    //                                 estimated_processed_slot: slot.slot,
+    //                                 processed_slot: slot.slot,
+    //                             })
+    //                             .context("Error sending slot notification")?;
+    //                     }
+    //                     UpdateOneof::Ping(_) => {
+    //                         log::trace!("GRPC Ping");
+    //                     }
+    //                     k => {
+    //                         bail!("Unexpected update: {k:?}");
+    //                     }
+    //                 };
+    //             }
+    //             log::error!("Grpc slot subscription broken (resubscribing)");
+    //             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    //         }
+    //     })
+    // };
 
-                let version = client.get_version().await?.version;
-                if version != expected_grpc_version {
-                    log::warn!(
-                        "Expected grpc version {:?}, got {:?}, continue",
-                        expected_grpc_version,
-                        version
-                    );
-                }
-                let mut stream = client
-                    .subscribe_once(
-                        slots,
-                        Default::default(),
-                        HashMap::new(),
-                        Default::default(),
-                        HashMap::new(),
-                        Default::default(),
-                        Some(CommitmentLevel::Processed),
-                        Default::default(),
-                        None,
-                    )
-                    .await?;
+    // processed slot is required to keep up with leader schedule
+    let (slot_multiplex_channel, jh_multiplex_slotstream) =
+        create_grpc_multiplex_slots_subscription(grpc_sources.clone());
 
-                while let Some(message) = stream.next().await {
-                    let message = message?;
-
-                    let Some(update) = message.update_oneof else {
-                        continue;
-                    };
-
-                    match update {
-                        UpdateOneof::Slot(slot) => {
-                            slot_sx
-                                .send(SlotNotification {
-                                    estimated_processed_slot: slot.slot,
-                                    processed_slot: slot.slot,
-                                })
-                                .context("Error sending slot notification")?;
-                        }
-                        UpdateOneof::Ping(_) => {
-                            log::trace!("GRPC Ping");
-                        }
-                        k => {
-                            bail!("Unexpected update: {k:?}");
-                        }
-                    };
-                }
-                log::error!("Grpc slot subscription broken (resubscribing)");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-        })
-    };
-
-    let (block_multiplex_stream, jh_multiplex_blockstream) =
-        create_grpc_multiplex_subscription(grpc_addr, grpc_x_token, grpc_addr2, grpc_x_token2);
+    let (block_multiplex_channel, jh_multiplex_blockstream) =
+        create_grpc_multiplex_blocks_subscription(grpc_sources.clone());
     grpc_inspect::block_debug_listen(
-        block_multiplex_stream.resubscribe(),
+        block_multiplex_channel.resubscribe(),
         CommitmentConfig::confirmed(),
     );
     grpc_inspect::block_debug_listen(
-        block_multiplex_stream.resubscribe(),
+        block_multiplex_channel.resubscribe(),
         CommitmentConfig::finalized(),
     );
 
@@ -413,12 +408,12 @@ pub fn create_grpc_subscription(
         poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
 
     let streamers = EndpointStreaming {
-        blocks_notifier: block_multiplex_stream,
-        slot_notifier,
+        blocks_notifier: block_multiplex_channel,
+        slot_notifier: slot_multiplex_channel,
         cluster_info_notifier,
         vote_account_notifier,
     };
 
-    let endpoint_tasks = vec![slot_task, jh_multiplex_blockstream, cluster_info_polling];
+    let endpoint_tasks = vec![jh_multiplex_slotstream, jh_multiplex_blockstream, cluster_info_polling];
     Ok((streamers, endpoint_tasks))
 }
