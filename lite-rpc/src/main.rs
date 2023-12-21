@@ -257,31 +257,6 @@ pub async fn main() -> anyhow::Result<()> {
 
     let config = Config::load().await?;
 
-    println!("{:?}", config);
-    println!();
-    println!();
-
-    println!("- {:?}", config.grpc_addr);
-    println!("  . {:?}", config.grpc_x_token);
-
-    println!("- {:?}", config.grpc_addr2);
-    println!("  . {:?}", config.grpc_x_token2);
-
-    println!("- {:?}", config.grpc_addr3);
-    println!("  . {:?}", config.grpc_x_token3);
-
-    println!("- {:?}", config.grpc_addr4);
-    println!("  . {:?}", config.grpc_x_token4);
-
-    println!("from vec:");
-    for source in config.get_grpc_sources() {
-        println!("- {:?}", source.addr);
-        println!("  . {:?}", source.x_token);
-    }
-
-    // return Ok(());
-
-
     let ctrl_c_signal = tokio::signal::ctrl_c();
     let Config { rpc_addr, .. } = &config;
     // rpc client
