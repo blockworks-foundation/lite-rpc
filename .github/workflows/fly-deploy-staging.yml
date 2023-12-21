@@ -22,5 +22,3 @@ jobs:
 
 #      - name: Deploy quic-forward-proxy
 #        run: flyctl deploy -c cd/quic-forward-proxy.toml --remote-only
-
-# ping
