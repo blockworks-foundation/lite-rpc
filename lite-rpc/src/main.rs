@@ -8,12 +8,16 @@ use lite_rpc::bridge::LiteBridge;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
-use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
+use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 use crate::rpc_tester::RpcTester;
+use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
+use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
@@ -81,6 +85,7 @@ pub async fn start_postgres(
 }
 
 pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
+    let grpc_sources = args.get_grpc_sources();
     let Config {
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
@@ -92,8 +97,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
-        grpc_addr,
-        grpc_x_token,
         ..
     } = args;
 
@@ -108,23 +111,38 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
+        info!("Creating geyser subscription...");
+
+        let timeouts = GrpcConnectionTimeouts {
+            connect_timeout: Duration::from_secs(5),
+            request_timeout: Duration::from_secs(5),
+            subscribe_timeout: Duration::from_secs(5),
+        };
+
         create_grpc_subscription(
             rpc_client.clone(),
-            grpc_addr,
-            grpc_x_token,
-            GRPC_VERSION.to_string(),
+            grpc_sources
+                .iter()
+                .map(|s| {
+                    GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
+                })
+                .collect(),
         )?
     } else {
+        info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
+
     let EndpointStreaming {
         blocks_notifier,
         cluster_info_notifier,
         slot_notifier,
         vote_account_notifier,
     } = subscriptions;
+
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
+    info!("Got finalized block: {:?}", finalized_block.slot);
 
     let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await?;
 
@@ -250,6 +268,8 @@ pub async fn main() -> anyhow::Result<()> {
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
 
+    info!("Use RPC address: {}", obfuscate_rpcurl(rpc_addr));
+
     let main = start_lite_rpc(config, rpc_client);
 
     tokio::select! {
@@ -294,4 +314,12 @@ fn parse_host_port(host_port: &str) -> Result<SocketAddr, String> {
     } else {
         Ok(addrs[0])
     }
+}
+
+// http://mango.rpcpool.com/c232ab232ba2323
+fn obfuscate_rpcurl(rpc_addr: &str) -> String {
+    if rpc_addr.contains("rpcpool.com") {
+        return rpc_addr.replacen(char::is_numeric, "X", 99);
+    }
+    rpc_addr.to_string()
 }
