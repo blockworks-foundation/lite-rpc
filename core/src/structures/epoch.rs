@@ -60,9 +60,11 @@ impl EpochCache {
         let res_epoch = rpc_client
             .get_account(&solana_sdk::sysvar::epoch_schedule::id())
             .await?;
-        let Some(SysvarAccountType::EpochSchedule(epoch_schedule)) = bincode::deserialize(&res_epoch.data[..])
-        .ok()
-        .map(SysvarAccountType::EpochSchedule) else {
+        let Some(SysvarAccountType::EpochSchedule(epoch_schedule)) =
+            bincode::deserialize(&res_epoch.data[..])
+                .ok()
+                .map(SysvarAccountType::EpochSchedule)
+        else {
             bail!("Error during bootstrap epoch. SysvarAccountType::EpochSchedule can't be deserilized. Epoch can't be calculated.");
         };
 

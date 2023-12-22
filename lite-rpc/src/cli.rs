@@ -42,10 +42,27 @@ pub struct Config {
     pub quic_proxy_addr: Option<String>,
     #[serde(default)]
     pub use_grpc: bool,
+
     #[serde(default = "Config::default_grpc_addr")]
     pub grpc_addr: String,
     #[serde(default)]
     pub grpc_x_token: Option<String>,
+
+    #[serde(default)]
+    pub grpc_addr2: Option<String>,
+    #[serde(default)]
+    pub grpc_x_token2: Option<String>,
+
+    #[serde(default)]
+    pub grpc_addr3: Option<String>,
+    #[serde(default)]
+    pub grpc_x_token3: Option<String>,
+
+    #[serde(default)]
+    pub grpc_addr4: Option<String>,
+    #[serde(default)]
+    pub grpc_x_token4: Option<String>,
+
     /// postgres config
     #[serde(default)]
     pub postgres: Option<PostgresSessionConfig>,
@@ -116,11 +133,44 @@ impl Config {
             .map(|_| true)
             .unwrap_or(config.use_grpc);
 
+        // source 1
         config.grpc_addr = env::var("GRPC_ADDR").unwrap_or(config.grpc_addr);
-
         config.grpc_x_token = env::var("GRPC_X_TOKEN")
             .map(Some)
             .unwrap_or(config.grpc_x_token);
+
+        assert!(
+            env::var("GRPC_ADDR1").is_err(),
+            "use GRPC_ADDR instead of GRPC_ADDR1"
+        );
+        assert!(
+            env::var("GRPC_X_TOKEN1").is_err(),
+            "use GRPC_X_TOKEN instead of GRPC_X_TOKEN1"
+        );
+
+        // source 2
+        config.grpc_addr2 = env::var("GRPC_ADDR2")
+            .map(Some)
+            .unwrap_or(config.grpc_addr2);
+        config.grpc_x_token2 = env::var("GRPC_X_TOKEN2")
+            .map(Some)
+            .unwrap_or(config.grpc_x_token2);
+
+        // source 3
+        config.grpc_addr3 = env::var("GRPC_ADDR3")
+            .map(Some)
+            .unwrap_or(config.grpc_addr3);
+        config.grpc_x_token3 = env::var("GRPC_X_TOKEN3")
+            .map(Some)
+            .unwrap_or(config.grpc_x_token3);
+
+        // source 4
+        config.grpc_addr4 = env::var("GRPC_ADDR4")
+            .map(Some)
+            .unwrap_or(config.grpc_addr4);
+        config.grpc_x_token4 = env::var("GRPC_X_TOKEN4")
+            .map(Some)
+            .unwrap_or(config.grpc_x_token4);
 
         config.postgres = PostgresSessionConfig::new_from_env()?.or(config.postgres);
 
@@ -166,4 +216,42 @@ impl Config {
     pub fn default_grpc_addr() -> String {
         DEFAULT_GRPC_ADDR.to_string()
     }
+
+    pub fn get_grpc_sources(&self) -> Vec<GrpcSource> {
+        let mut sources: Vec<GrpcSource> = vec![];
+
+        sources.push(GrpcSource {
+            addr: self.grpc_addr.clone(),
+            x_token: self.grpc_x_token.clone(),
+        });
+
+        if self.grpc_addr2.is_some() {
+            sources.push(GrpcSource {
+                addr: self.grpc_addr2.clone().unwrap(),
+                x_token: self.grpc_x_token2.clone(),
+            });
+        }
+
+        if self.grpc_addr3.is_some() {
+            sources.push(GrpcSource {
+                addr: self.grpc_addr3.clone().unwrap(),
+                x_token: self.grpc_x_token3.clone(),
+            });
+        }
+
+        if self.grpc_addr4.is_some() {
+            sources.push(GrpcSource {
+                addr: self.grpc_addr4.clone().unwrap(),
+                x_token: self.grpc_x_token4.clone(),
+            });
+        }
+
+        sources
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GrpcSource {
+    pub addr: String,
+    pub x_token: Option<String>,
 }
