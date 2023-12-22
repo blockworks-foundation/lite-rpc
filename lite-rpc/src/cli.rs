@@ -139,8 +139,14 @@ impl Config {
             .map(Some)
             .unwrap_or(config.grpc_x_token);
 
-        assert!(env::var("GRPC_ADDR1").is_err(), "use GRPC_ADDR instead of GRPC_ADDR1");
-        assert!(env::var("GRPC_X_TOKEN1").is_err(), "use GRPC_X_TOKEN instead of GRPC_X_TOKEN1");
+        assert!(
+            env::var("GRPC_ADDR1").is_err(),
+            "use GRPC_ADDR instead of GRPC_ADDR1"
+        );
+        assert!(
+            env::var("GRPC_X_TOKEN1").is_err(),
+            "use GRPC_X_TOKEN instead of GRPC_X_TOKEN1"
+        );
 
         // source 2
         config.grpc_addr2 = env::var("GRPC_ADDR2")
@@ -165,7 +171,7 @@ impl Config {
         config.grpc_x_token4 = env::var("GRPC_X_TOKEN4")
             .map(Some)
             .unwrap_or(config.grpc_x_token4);
-        
+
         config.postgres = PostgresSessionConfig::new_from_env()?.or(config.postgres);
 
         Ok(config)
@@ -212,7 +218,6 @@ impl Config {
     }
 
     pub fn get_grpc_sources(&self) -> Vec<GrpcSource> {
-
         let mut sources: Vec<GrpcSource> = vec![];
 
         sources.push(GrpcSource {
@@ -243,7 +248,6 @@ impl Config {
 
         sources
     }
-
 }
 
 #[derive(Debug, Clone)]

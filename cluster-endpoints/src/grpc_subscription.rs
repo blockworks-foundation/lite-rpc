@@ -1,18 +1,18 @@
-use crate::grpc_multiplex::{create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription};
+use crate::grpc_multiplex::{
+    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription,
+};
 use crate::{
     endpoint_stremers::EndpointStreaming, grpc_inspect,
     rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
 };
-use anyhow::{bail, Context};
+use anyhow::Context;
 use futures::StreamExt;
+use geyser_grpc_connector::grpc_subscription_autoreconnect::GrpcSourceConfig;
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
     encoding::BASE64,
-    structures::{
-        produced_block::{ProducedBlock, TransactionInfo},
-        slot_notification::SlotNotification,
-    },
+    structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
 };
 use solana_sdk::{
@@ -31,13 +31,12 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GrpcSourceConfig};
 use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::SubscribeRequest;
+
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
-    SubscribeRequestFilterSlots, SubscribeUpdateBlock,
+    SubscribeUpdateBlock,
 };
 
 pub fn map_block_update(
@@ -332,7 +331,7 @@ pub fn create_grpc_subscription(
         create_grpc_multiplex_slots_subscription(grpc_sources.clone());
 
     let (block_multiplex_channel, jh_multiplex_blockstream) =
-        create_grpc_multiplex_blocks_subscription(grpc_sources.clone());
+        create_grpc_multiplex_blocks_subscription(grpc_sources);
 
     grpc_inspect::block_debug_listen(
         block_multiplex_channel.resubscribe(),
@@ -353,6 +352,10 @@ pub fn create_grpc_subscription(
         vote_account_notifier,
     };
 
-    let endpoint_tasks = vec![jh_multiplex_slotstream, jh_multiplex_blockstream, cluster_info_polling];
+    let endpoint_tasks = vec![
+        jh_multiplex_slotstream,
+        jh_multiplex_blockstream,
+        cluster_info_polling,
+    ];
     Ok((streamers, endpoint_tasks))
 }

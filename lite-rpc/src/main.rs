@@ -5,16 +5,19 @@ use std::time::Duration;
 use anyhow::bail;
 use dashmap::DashMap;
 use lite_rpc::bridge::LiteBridge;
-use lite_rpc::cli::{Config, GrpcSource};
+use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
-use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
+use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 use crate::rpc_tester::RpcTester;
 use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
+use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
@@ -47,7 +50,6 @@ use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{GrpcConnectionTimeouts, GrpcSourceConfig};
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -119,9 +121,12 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
         create_grpc_subscription(
             rpc_client.clone(),
-            grpc_sources.iter().map(
-                |s| GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
-            ).collect(),
+            grpc_sources
+                .iter()
+                .map(|s| {
+                    GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
+                })
+                .collect(),
         )?
     } else {
         info!("Creating RPC poll subscription...");

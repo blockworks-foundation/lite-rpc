@@ -1,24 +1,25 @@
-use std::collections::HashMap;
 use crate::grpc_stream_utils::channelize_stream;
 use crate::grpc_subscription::map_block_update;
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig, Message};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{
+    create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig,
+};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
 use log::info;
 use merge_streams::MergeStreams;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
-use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_sdk::commitment_config::CommitmentConfig;
+use std::collections::HashMap;
 use std::time::Duration;
-use futures::Stream;
-use itertools::Itertools;
-use solana_sdk::commitment_config;
 use tokio::sync::broadcast::Receiver;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate};
-use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
+use yellowstone_grpc_proto::geyser::{
+    SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate,
+};
 
 struct BlockExtractor(CommitmentConfig);
 
@@ -46,7 +47,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
         info!("- connection to {}", grpc_source);
     }
 
-    let timeouts = GrpcConnectionTimeouts {
+    let _timeouts = GrpcConnectionTimeouts {
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
@@ -57,11 +58,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
         let mut streams = Vec::new();
         for grpc_source in &grpc_sources {
-            let stream =
-                create_geyser_reconnecting_stream(
-                    grpc_source.clone(),
-                    GeyserFilter(commitment_config).blocks_and_txs(),
-                );
+            let stream = create_geyser_reconnecting_stream(
+                grpc_source.clone(),
+                GeyserFilter(commitment_config).blocks_and_txs(),
+            );
             streams.push(stream);
         }
 
@@ -73,11 +73,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
         let mut streams = Vec::new();
         for grpc_source in &grpc_sources {
-            let stream =
-                create_geyser_reconnecting_stream(
-                    grpc_source.clone(),
-                    GeyserFilter(commitment_config).blocks_and_txs(),
-                );
+            let stream = create_geyser_reconnecting_stream(
+                grpc_source.clone(),
+                GeyserFilter(commitment_config).blocks_and_txs(),
+            );
             streams.push(stream);
         }
 
@@ -92,8 +91,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
     (multiplexed_finalized_blocks, jh_channelizer)
 }
-
-
 
 struct SlotExtractor {}
 
@@ -127,7 +124,6 @@ pub fn create_grpc_multiplex_slots_subscription(
     let multiplex_stream = {
         let mut streams = Vec::new();
         for grpc_source in &grpc_sources {
-
             let mut slots = HashMap::new();
             slots.insert(
                 "client".to_string(),
@@ -137,7 +133,7 @@ pub fn create_grpc_multiplex_slots_subscription(
             );
 
             let filter = SubscribeRequest {
-                slots: slots,
+                slots,
                 accounts: Default::default(),
                 transactions: HashMap::new(),
                 entry: Default::default(),
@@ -148,20 +144,14 @@ pub fn create_grpc_multiplex_slots_subscription(
                 ping: None,
             };
 
-            let stream =
-                create_geyser_reconnecting_stream(
-                    grpc_source.clone(),
-                    filter,
-                );
+            let stream = create_geyser_reconnecting_stream(grpc_source.clone(), filter);
             streams.push(stream);
         }
 
-        create_multiplexed_stream(streams, SlotExtractor{})
+        create_multiplexed_stream(streams, SlotExtractor {})
     };
 
-    let (multiplexed_stream, jh_channelizer) =
-        channelize_stream(multiplex_stream);
+    let (multiplexed_stream, jh_channelizer) = channelize_stream(multiplex_stream);
 
     (multiplexed_stream, jh_channelizer)
 }
-
