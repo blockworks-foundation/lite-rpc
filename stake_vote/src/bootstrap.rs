@@ -12,6 +12,7 @@ use futures::future::join_all;
 use futures_util::stream::FuturesUnordered;
 use solana_client::client_error::ClientError;
 use solana_client::rpc_client::RpcClient;
+use solana_client::rpc_response::RpcVoteAccountStatus;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
@@ -41,6 +42,21 @@ pub async fn bootstrap_scheduleepoch_data(data_cache: &DataCache) -> ScheduleEpo
         bootstrap_epoch.absolute_slot,
         new_rate_activation_epoch,
     )
+}
+
+// Return the current and next epoxh leader schedule and the current epoch stakes of vote accounts
+// if the corresponding files exist.
+pub fn bootstrap_leaderschedule_from_files(
+    slots_in_epoch: u64,
+) -> Option<(CalculatedSchedule, RpcVoteAccountStatus)> {
+    bootstrap_current_leader_schedule(slots_in_epoch)
+        .map(|(leader_schedule, current_epoch_stakes, _)| {
+            let vote_acccounts = crate::vote::get_rpc_vote_account_info_from_current_epoch_stakes(
+                &current_epoch_stakes,
+            );
+            (leader_schedule, vote_acccounts)
+        })
+        .ok()
 }
 
 /*
@@ -76,7 +92,7 @@ pub fn run_bootstrap_events(
     stakestore: &mut StakeStore,
     votestore: &mut VoteStore,
     slots_in_epoch: u64,
-) -> anyhow::Result<Option<anyhow::Result<CalculatedSchedule>>> {
+) -> anyhow::Result<Option<anyhow::Result<(CalculatedSchedule, RpcVoteAccountStatus)>>> {
     let result = process_bootstrap_event(event, stakestore, votestore, slots_in_epoch);
     match result {
         BootsrapProcessResult::TaskHandle(jh) => {
@@ -120,7 +136,7 @@ pub enum BootstrapEvent {
         VoteMap,
         EpochVoteStakesCache,
         String,
-        anyhow::Result<CalculatedSchedule>,
+        anyhow::Result<(CalculatedSchedule, RpcVoteAccountStatus)>,
     ),
     Exit,
 }
@@ -130,7 +146,7 @@ enum BootsrapProcessResult {
     TaskHandle(JoinHandle<BootstrapEvent>),
     Event(BootstrapEvent),
     Error(String),
-    End(anyhow::Result<CalculatedSchedule>),
+    End(anyhow::Result<(CalculatedSchedule, RpcVoteAccountStatus)>),
 }
 
 fn process_bootstrap_event(
@@ -230,6 +246,10 @@ fn process_bootstrap_event(
 
                     match bootstrap_current_leader_schedule(slots_in_epoch) {
                         Ok((leader_schedule, current_epoch_stakes, next_epoch_stakes)) => {
+                            let vote_acccounts =
+                                crate::vote::get_rpc_vote_account_info_from_current_epoch_stakes(
+                                    &current_epoch_stakes,
+                                );
                             epoch_cache.add_stakes_for_epoch(current_epoch_stakes);
                             epoch_cache.add_stakes_for_epoch(next_epoch_stakes);
                             BootstrapEvent::AccountsMerged(
@@ -237,7 +257,7 @@ fn process_bootstrap_event(
                                 vote_map,
                                 epoch_cache,
                                 rpc_url,
-                                Ok(leader_schedule),
+                                Ok((leader_schedule, vote_acccounts)),
                             )
                         }
                         Err(err) => BootstrapEvent::AccountsMerged(

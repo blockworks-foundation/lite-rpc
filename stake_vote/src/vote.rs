@@ -282,3 +282,17 @@ pub fn get_rpc_vote_accounts_info(
         delinquent: delinquent_vote_accounts,
     }
 }
+
+pub fn get_rpc_vote_account_info_from_current_epoch_stakes(
+    current_epoch_stakes: &EpochVoteStakes,
+) -> RpcVoteAccountStatus {
+    let current_vote_accounts: Vec<RpcVoteAccountInfo> = current_epoch_stakes
+        .vote_stakes
+        .values()
+        .map(|(stake, vote)| vote.convert_to_rpc_vote_account_info(*stake, true))
+        .collect();
+    RpcVoteAccountStatus {
+        current: current_vote_accounts,
+        delinquent: vec![], //no info about delinquent at startup.
+    }
+}

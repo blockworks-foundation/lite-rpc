@@ -30,6 +30,8 @@ mod stake;
 mod utils;
 mod vote;
 
+pub use bootstrap::bootstrap_leaderschedule_from_files;
+
 const STAKESTORE_INITIAL_CAPACITY: usize = 600000;
 const VOTESTORE_INITIAL_CAPACITY: usize = 600000;
 
@@ -245,7 +247,10 @@ pub async fn start_stakes_and_votes_loop(
                     match crate::bootstrap::run_bootstrap_events(event, &mut spawned_bootstrap_task, &mut stakestore, &mut votestore, current_schedule_epoch.slots_in_epoch) {
                         Ok(Some(boot_res))=> {
                             match boot_res {
-                                Ok(current_schedule_data) => {
+                                Ok((current_schedule_data, vote_stakes)) => {
+                                    data_cache
+                                        .identity_stakes
+                                        .update_stakes_for_identity(vote_stakes).await;
                                     let mut data_schedule = data_cache.leader_schedule.write().await;
                                     *data_schedule = current_schedule_data;
                                 }

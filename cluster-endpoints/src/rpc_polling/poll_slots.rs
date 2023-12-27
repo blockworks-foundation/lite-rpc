@@ -5,7 +5,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{structures::slot_notification::SlotNotification, AnyhowJoinHandle};
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use tokio::sync::broadcast::Sender;
-const AVERAGE_SLOT_CHANGE_TIME: Duration = Duration::from_millis(400);
+const AVERAGE_SLOT_CHANGE_TIME: Duration = Duration::from_millis(800);
 
 pub async fn poll_commitment_slots(
     rpc_client: Arc<RpcClient>,

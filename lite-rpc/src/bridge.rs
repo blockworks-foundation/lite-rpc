@@ -65,10 +65,12 @@ pub struct LiteBridge {
     rpc_client: Arc<RpcClient>,
     transaction_service: TransactionService,
     history: History,
-    state_vote_sendder: tokio::sync::mpsc::Sender<(
-        GetVoteAccountsConfig,
-        tokio::sync::oneshot::Sender<RpcVoteAccountStatus>,
-    )>,
+    state_vote_sendder: Option<
+        tokio::sync::mpsc::Sender<(
+            GetVoteAccountsConfig,
+            tokio::sync::oneshot::Sender<RpcVoteAccountStatus>,
+        )>,
+    >,
 }
 
 impl LiteBridge {
@@ -77,10 +79,12 @@ impl LiteBridge {
         data_cache: DataCache,
         transaction_service: TransactionService,
         history: History,
-        state_vote_sendder: tokio::sync::mpsc::Sender<(
-            GetVoteAccountsConfig,
-            oneshot::Sender<RpcVoteAccountStatus>,
-        )>,
+        state_vote_sendder: Option<
+            tokio::sync::mpsc::Sender<(
+                GetVoteAccountsConfig,
+                oneshot::Sender<RpcVoteAccountStatus>,
+            )>,
+        >,
     ) -> Self {
         Self {
             rpc_client,
@@ -507,14 +511,21 @@ impl LiteRpcServer for LiteBridge {
     ) -> crate::rpc::Result<RpcVoteAccountStatus> {
         let config: GetVoteAccountsConfig =
             GetVoteAccountsConfig::try_from(config.unwrap_or_default()).unwrap_or_default();
-        let (tx, rx) = oneshot::channel();
-        if let Err(err) = self.state_vote_sendder.send((config, tx)).await {
-            return Err(jsonrpsee::core::Error::Custom(format!(
-                "error during query processing:{err}",
-            )));
+        if let Some(state_vote_sendder) = &self.state_vote_sendder {
+            let (tx, rx) = oneshot::channel();
+            if let Err(err) = state_vote_sendder.send((config, tx)).await {
+                return Err(jsonrpsee::core::Error::Custom(format!(
+                    "error during query processing:{err}",
+                )));
+            }
+            rx.await.map_err(|err| {
+                jsonrpsee::core::Error::Custom(format!("error during query processing:{err}"))
+            })
+        } else {
+            self.rpc_client
+                .get_vote_accounts()
+                .await
+                .map_err(|err| (jsonrpsee::core::Error::Custom(err.to_string())))
         }
-        rx.await.map_err(|err| {
-            jsonrpsee::core::Error::Custom(format!("error during query processing:{err}"))
-        })
     }
 }
