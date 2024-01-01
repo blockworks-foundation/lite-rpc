@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
+solana-transaction-status = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -23,6 +24,7 @@ lazy_static = "1.4.0"
 bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
+async-trait = { workspace = true }
 
 [dev-dependencies]
 bincode = { workspace = true }

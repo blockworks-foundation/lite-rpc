@@ -1,13 +1,13 @@
-use anyhow::Context;
+use anyhow::{bail, Context};
+use futures::future::join_all;
 use itertools::Itertools;
 use lazy_static::lazy_static;
 use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::instruction::AccountMeta;
+use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     hash::Hash,
-    instruction::Instruction,
+    instruction::{AccountMeta, Instruction},
     message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
@@ -15,28 +15,34 @@ use solana_sdk::{
     system_instruction,
     transaction::Transaction,
 };
-use std::path::PathBuf;
+use solana_transaction_status::TransactionStatus;
+use std::path::Path;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
+
+use crate::tx_size::TxSize;
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 const WAIT_LIMIT_IN_SECONDS: u64 = 60;
 
 lazy_static! {
-    static ref USER_KEYPAIR: PathBuf = {
-        dirs::home_dir()
-            .unwrap()
-            .join(".config")
-            .join("solana")
-            .join("id.json")
-    };
+    pub static ref USER_KEYPAIR_PATH: String = dirs::home_dir()
+        .unwrap()
+        .join(".config")
+        .join("solana")
+        .join("id.json")
+        .to_str()
+        .unwrap_or_default()
+        .to_string();
 }
+
+pub type Rng8 = rand_chacha::ChaCha8Rng;
 
 pub struct BenchHelper;
 
 impl BenchHelper {
-    pub async fn get_payer() -> anyhow::Result<Keypair> {
-        let payer = tokio::fs::read_to_string(USER_KEYPAIR.as_path())
+    pub async fn get_payer(path: impl AsRef<Path>) -> anyhow::Result<Keypair> {
+        let payer = tokio::fs::read_to_string(path)
             .await
             .context("Error reading payer file")?;
         let payer: Vec<u8> = serde_json::from_str(&payer)?;
@@ -65,6 +71,65 @@ impl BenchHelper {
         }
     }
 
+    pub async fn send_and_confirm_transactions(
+        rpc_client: &RpcClient,
+        txs: &[impl SerializableTransaction],
+        commitment_config: CommitmentConfig,
+        tries: Option<usize>,
+    ) -> anyhow::Result<Vec<anyhow::Result<Option<TransactionStatus>>>> {
+        let sigs = join_all(txs.iter().map(|tx| rpc_client.send_transaction(tx))).await;
+
+        let mut results = sigs
+            .iter()
+            .map(|sig| {
+                let Err(err) = sig else {
+                    return Ok(None);
+                };
+
+                bail!("Error sending transaction: {:?}", err)
+            })
+            .collect_vec();
+
+        // 5 tries
+        for _ in 0..tries.unwrap_or(5) {
+            let sigs = results
+                .iter()
+                .enumerate()
+                .filter_map(|(index, result)| match result {
+                    Ok(None) => Some(sigs[index].as_ref().unwrap().to_owned()),
+                    _ => None,
+                })
+                .collect_vec();
+
+            let mut statuses = rpc_client
+                .get_signature_statuses(&sigs)
+                .await?
+                .value
+                .into_iter();
+
+            results.iter_mut().for_each(|result| {
+                if let Ok(None) = result {
+                    *result = Ok(statuses.next().unwrap());
+                }
+            });
+
+            if results.iter().all(|result| {
+                let Ok(result) = result else { return true };
+                if let Some(result) = result {
+                    result.satisfies_commitment(commitment_config)
+                } else {
+                    false
+                }
+            }) {
+                break;
+            }
+
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+
+        Ok(results)
+    }
+
     pub fn create_transaction(funded_payer: &Keypair, blockhash: Hash) -> Transaction {
         let to_pubkey = Pubkey::new_unique();
 
@@ -77,34 +142,49 @@ impl BenchHelper {
         Transaction::new(&[funded_payer], message, blockhash)
     }
 
-    pub fn generate_random_strings(
-        num_of_txs: usize,
-        random_seed: Option<u64>,
-        n_chars: usize,
-    ) -> Vec<Vec<u8>> {
-        let seed = random_seed.map_or(0, |x| x);
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-        (0..num_of_txs)
-            .map(|_| Alphanumeric.sample_iter(&mut rng).take(n_chars).collect())
+    #[inline]
+    pub fn create_rng(seed: Option<u64>) -> Rng8 {
+        let seed = seed.map_or(0, |x| x);
+        Rng8::seed_from_u64(seed)
+    }
+
+    #[inline]
+    pub fn generate_random_string(rng: &mut Rng8, n_chars: usize) -> Vec<u8> {
+        Alphanumeric.sample_iter(rng).take(n_chars).collect()
+    }
+
+    #[inline]
+    pub fn generate_random_strings(rng: &mut Rng8, amount: usize, n_chars: usize) -> Vec<Vec<u8>> {
+        (0..amount)
+            .map(|_| Self::generate_random_string(rng, n_chars))
             .collect()
     }
 
     #[inline]
     pub fn generate_txs(
         num_of_txs: usize,
-        funded_payer: &Keypair,
+        payer: &Keypair,
         blockhash: Hash,
-        random_seed: Option<u64>,
+        rng: &mut Rng8,
+        size: TxSize,
     ) -> Vec<Transaction> {
-        let seed = random_seed.map_or(0, |x| x);
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
         (0..num_of_txs)
-            .map(|_| {
-                let random_bytes: Vec<u8> = Alphanumeric.sample_iter(&mut rng).take(10).collect();
-
-                Self::create_memo_tx_small(&random_bytes, funded_payer, blockhash)
-            })
+            .map(|_| Self::create_memo_tx(payer, blockhash, rng, size))
             .collect()
+    }
+
+    pub fn create_memo_tx(
+        payer: &Keypair,
+        blockhash: Hash,
+        rng: &mut Rng8,
+        size: TxSize,
+    ) -> Transaction {
+        let rand_str = Self::generate_random_string(rng, size.memo_size());
+
+        match size {
+            TxSize::Small => Self::create_memo_tx_small(&rand_str, payer, blockhash),
+            TxSize::Large => Self::create_memo_tx_large(&rand_str, payer, blockhash),
+        }
     }
 
     pub fn create_memo_tx_small(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
@@ -144,10 +224,10 @@ fn transaction_size_small() {
         "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
     );
 
-    let seed = 42;
-    let random_strings = BenchHelper::generate_random_strings(1, Some(seed), 10);
-    let rand_string = random_strings.first().unwrap();
-    let tx = BenchHelper::create_memo_tx_small(rand_string, &payer_keypair, blockhash);
+    let mut rng = BenchHelper::create_rng(Some(42));
+    let rand_string = BenchHelper::generate_random_string(&mut rng, 10);
+
+    let tx = BenchHelper::create_memo_tx_small(&rand_string, &payer_keypair, blockhash);
 
     assert_eq!(bincode::serialized_size(&tx).unwrap(), 179);
 }
@@ -159,10 +239,10 @@ fn transaction_size_large() {
         "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
     );
 
-    let seed = 42;
-    let random_strings = BenchHelper::generate_random_strings(1, Some(seed), 240);
-    let rand_string = random_strings.first().unwrap();
-    let tx = BenchHelper::create_memo_tx_large(rand_string, &payer_keypair, blockhash);
+    let mut rng = BenchHelper::create_rng(Some(42));
+    let rand_string = BenchHelper::generate_random_string(&mut rng, 240);
+
+    let tx = BenchHelper::create_memo_tx_large(&rand_string, &payer_keypair, blockhash);
 
     assert_eq!(bincode::serialized_size(&tx).unwrap(), 1186);
 }
