@@ -14,8 +14,10 @@ pub struct Args {
 
 #[derive(clap::Args, Debug)]
 pub struct RpcArgs {
+    /// RPC endpoint
     #[arg(short = 'r', long, default_value_t = String::from("http://0.0.0.0:8899"))]
     pub rpc_addr: String,
+    /// path to the payer keypair
     #[arg(short = 'p', long, default_value_t = USER_KEYPAIR_PATH.to_string())]
     pub payer: String,
     /// choose between small (179 bytes) and large (1186 bytes) transactions
@@ -25,6 +27,7 @@ pub struct RpcArgs {
 
 #[derive(clap::Args, Debug)]
 pub struct LiteRpcArgs {
+    /// LiteRPC endpoint
     #[arg(short = 'l', long, default_value_t = String::from("http://0.0.0.0:8890"))]
     pub lite_rpc_addr: String,
 }
