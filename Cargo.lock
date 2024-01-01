@@ -569,6 +569,7 @@ name = "bench"
 version = "0.2.3"
 dependencies = [
  "anyhow",
+ "async-trait",
  "bincode",
  "clap 4.4.17",
  "csv",
@@ -584,6 +585,7 @@ dependencies = [
  "serde_json",
  "solana-rpc-client",
  "solana-sdk",
+ "solana-transaction-status",
  "spl-memo 4.0.0",
  "tokio",
  "tracing-subscriber",
