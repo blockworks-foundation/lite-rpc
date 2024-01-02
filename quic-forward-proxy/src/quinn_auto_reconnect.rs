@@ -29,7 +29,7 @@ enum ConnectionState {
 }
 
 pub struct AutoReconnect {
-    // endoint should be configures with keep-alive and idle timeout
+    // endpoint should be configures with keep-alive and idle timeout
     endpoint: Endpoint,
     current: RwLock<ConnectionState>,
     pub target_address: SocketAddr,
