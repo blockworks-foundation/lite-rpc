@@ -13,8 +13,6 @@ pub mod service_spawner;
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";
 #[from_env]
-pub const DEFAULT_LITE_RPC_ADDR: &str = "http://0.0.0.0:8890";
-#[from_env]
 pub const DEFAULT_WS_ADDR: &str = "ws://0.0.0.0:8900";
 
 #[from_env]
