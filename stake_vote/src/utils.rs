@@ -115,7 +115,7 @@ impl<'a, T, C: TakableContent<T>> Takable<C> for &'a mut TakableMap<T, C> {
         }
     }
 
-    fn merge(mut self, mut content: C) -> anyhow::Result<()> {
+    fn merge(self, mut content: C) -> anyhow::Result<()> {
         if self.content.is_none() {
             //apply stake added during extraction.
             for val in self.updates.drain(..) {

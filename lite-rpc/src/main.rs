@@ -1,14 +1,13 @@
 pub mod rpc_tester;
 
 use crate::rpc_tester::RpcTester;
-use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
+use lite_rpc::bridge::LiteBridge;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
-use lite_rpc::{bridge::LiteBridge, cli::Args};
-use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION, NB_SLOTS_TRANSACTIONS_TO_CACHE};
+use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_leaders_getter::GrpcLeaderGetter;
@@ -37,7 +36,6 @@ use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
 use solana_lite_rpc_history::history::History;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
@@ -90,6 +88,7 @@ pub async fn start_postgres(
 
 pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
     let grpc_sources = args.get_grpc_sources();
+    log::info!("grpc_sources:{grpc_sources:?}");
     let Config {
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
@@ -103,7 +102,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         use_grpc,
         activate_leader_schedule,
         grpc_addr,
-        grpc_x_token,
         ..
     } = args;
 
@@ -139,7 +137,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
-
+    log::info!("ici1");
     let EndpointStreaming {
         blocks_notifier,
         cluster_info_notifier,
@@ -183,7 +181,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     );
     drop(blocks_notifier);
-
+    log::info!("ici1");
     let (notification_channel, postgres) = start_postgres(postgres).await?;
 
     let tpu_config = TpuServiceConfig {
@@ -205,7 +203,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         prometheus_addr,
         data_cache: data_cache.clone(),
     };
-
+    log::info!("ici2");
     //init grpc leader schedule and vote account is configured.
     let (leader_schedule, rpc_stakes_send): (Arc<dyn LeaderFetcherInterface>, Option<_>) =
         if use_grpc && activate_leader_schedule {
@@ -247,11 +245,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             )
         } else {
             (
-                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128)),
+                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 40, 12)),
                 None,
             )
         };
-
+    log::info!("ici4");
     let tpu_service: TpuService = TpuService::new(
         tpu_config,
         validator_identity,
