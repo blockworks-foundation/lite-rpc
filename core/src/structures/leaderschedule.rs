@@ -48,7 +48,7 @@ impl CalculatedSchedule {
         commitment: Option<CommitmentConfig>,
         data_cache: &DataCache,
     ) -> Option<HashMap<String, Vec<usize>>> {
-        log::info!(
+        log::debug!(
             "get_leader_schedule_for_slot current:{:?} next:{:?} ",
             self.current.clone().unwrap_or_default(),
             self.next.clone().unwrap_or_default()

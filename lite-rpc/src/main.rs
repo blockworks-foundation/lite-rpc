@@ -100,7 +100,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
-        activate_leader_schedule,
+        calculate_leader_schedule_form_geyser,
         grpc_addr,
         ..
     } = args;
@@ -210,7 +210,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     };
     //init grpc leader schedule and vote account is configured.
     let (leader_schedule, rpc_stakes_send): (Arc<dyn LeaderFetcherInterface>, Option<_>) =
-        if use_grpc && activate_leader_schedule {
+        if use_grpc && calculate_leader_schedule_form_geyser {
             //init leader schedule grpc process.
             //1) get stored schedule and stakes
             if let Some((leader_schedule, vote_stakes)) =

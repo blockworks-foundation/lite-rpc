@@ -48,9 +48,9 @@ pub async fn start_stakes_and_votes_loop(
     grpc_url: String,
 ) -> anyhow::Result<tokio::task::JoinHandle<()>> {
     log::info!("Start Stake and Vote loop on :{grpc_url}.");
-    let mut stake_vote_geyzer_stream = subscribe_geyzer_stake_vote_owner(grpc_url.clone()).await?;
-    let mut stake_history_geyzer_stream = subscribe_geyzer_stake_history(grpc_url).await?;
-    log::info!("Stake and Vote geyzer subscription done.");
+    let mut stake_vote_geyser_stream = subscribe_geyser_stake_vote_owner(grpc_url.clone()).await?;
+    let mut stake_history_geyser_stream = subscribe_geyser_stake_history(grpc_url).await?;
+    log::info!("Stake and Vote geyser subscription done.");
     let jh = tokio::spawn(async move {
         //Stake account management struct
         let mut stakestore = stake::StakeStore::new(STAKESTORE_INITIAL_CAPACITY);
@@ -60,7 +60,7 @@ pub async fn start_stakes_and_votes_loop(
 
         //Init bootstrap process
         let mut current_schedule_epoch =
-            crate::bootstrap::bootstrap_scheduleepoch_data(&data_cache).await;
+            crate::bootstrap::bootstrap_schedule_epoch_data(&data_cache).await;
 
         //future execution collection.
         let mut spawned_leader_schedule_task = FuturesUnordered::new();
@@ -136,7 +136,7 @@ pub async fn start_stakes_and_votes_loop(
                     rpc_request_processor.take_vote_accounts_and_process(&mut votestore, current_slot, epoch, config).await;
                 }
                 //manage geyser stake_history notification
-                ret = stake_history_geyzer_stream.next() => {
+                ret = stake_history_geyser_stream.next() => {
                     match ret {
                         Some(Ok(msg)) => {
                             if let Some(UpdateOneof::Account(account))  = msg.update_oneof {
@@ -158,7 +158,7 @@ pub async fn start_stakes_and_votes_loop(
                                                     }
                                                 }
                                             }
-                                            None => log::error!("Bootstrap error, can't read stake history from geyzer account data."),
+                                            None => log::error!("Bootstrap error, can't read stake history from geyser account data."),
                                         }
                                     }
                                 }
@@ -174,7 +174,7 @@ pub async fn start_stakes_and_votes_loop(
                 //manage geyser account notification
                 //Geyser delete account notification patch must be installed on the validator.
                 //see https://github.com/solana-labs/solana/pull/33292
-                ret = stake_vote_geyzer_stream.next() => {
+                ret = stake_vote_geyser_stream.next() => {
                     match ret {
                          Some(message) => {
                             //process the message
@@ -182,7 +182,7 @@ pub async fn start_stakes_and_votes_loop(
                                 Ok(msg) => {
                                     match msg.update_oneof {
                                         Some(UpdateOneof::Account(account)) => {
-                                            // log::info!("Stake and Vote geyzer receive an account:{}.",
+                                            // log::info!("Stake and Vote geyser receive an account:{}.",
                                             //     account.account.clone().map(|a|
                                             //         solana_sdk::pubkey::Pubkey::try_from(a.pubkey).map(|k| k.to_string())
                                             //         .unwrap_or("bad pubkey".to_string()).to_string())
@@ -191,7 +191,7 @@ pub async fn start_stakes_and_votes_loop(
                                             //store new account stake.
                                             let current_slot = solana_lite_rpc_core::solana_utils::get_current_confirmed_slot(&data_cache).await;
 
-                                            if let Some(account) = AccountPretty::new_from_geyzer(account, current_slot) {
+                                            if let Some(account) = AccountPretty::new_from_geyser(account, current_slot) {
                                                 match account.owner {
                                                     solana_sdk::stake::program::ID => {
                                                         log::trace!("Geyser notif stake account:{}", account);
@@ -260,7 +260,7 @@ pub async fn start_stakes_and_votes_loop(
                             }
                             log::info!("Bootstrap done.");
                             //update  current epoch to manage epoch  change during  bootstrap.
-                            current_schedule_epoch = crate::bootstrap::bootstrap_scheduleepoch_data(&data_cache).await;
+                            current_schedule_epoch = crate::bootstrap::bootstrap_schedule_epoch_data(&data_cache).await;
                             bootstrap_done = true;
 
                         },
@@ -293,7 +293,7 @@ pub async fn start_stakes_and_votes_loop(
 }
 
 //subscribe Geyser grpc
-async fn subscribe_geyzer_stake_vote_owner(
+async fn subscribe_geyser_stake_vote_owner(
     grpc_url: String,
 ) -> anyhow::Result<impl Stream<Item = Result<SubscribeUpdate, Status>>> {
     let mut client = GeyserGrpcClient::connect(grpc_url, None::<&'static str>, None)?;
@@ -330,7 +330,7 @@ async fn subscribe_geyzer_stake_vote_owner(
 }
 
 //subscribe Geyser grpc
-async fn subscribe_geyzer_stake_history(
+async fn subscribe_geyser_stake_history(
     grpc_url: String,
 ) -> anyhow::Result<impl Stream<Item = Result<SubscribeUpdate, Status>>> {
     let mut client = GeyserGrpcClient::connect(grpc_url, None::<&'static str>, None)?;

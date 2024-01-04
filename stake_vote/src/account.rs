@@ -23,14 +23,14 @@ pub struct AccountPretty {
 }
 
 impl AccountPretty {
-    pub fn new_from_geyzer(
+    pub fn new_from_geyser(
         geyser_account: SubscribeUpdateAccount,
         current_slot: u64,
     ) -> Option<AccountPretty> {
         let Some(inner_account) = geyser_account.account else {
-        log::warn!("Receive a SubscribeUpdateAccount without account.");
-        return None;
-    };
+            log::warn!("Receive a SubscribeUpdateAccount without account.");
+            return None;
+        };
 
         if geyser_account.slot != current_slot {
             log::trace!(

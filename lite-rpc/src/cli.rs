@@ -43,7 +43,7 @@ pub struct Config {
     #[serde(default)]
     pub use_grpc: bool,
     #[serde(default)]
-    pub activate_leader_schedule: bool,
+    pub calculate_leader_schedule_form_geyser: bool,
     #[serde(default = "Config::default_grpc_addr")]
     pub grpc_addr: String,
     #[serde(default)]

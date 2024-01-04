@@ -28,7 +28,7 @@ use tokio::task::JoinHandle;
 pub const CURRENT_EPOCH_VOTE_STAKES_FILE: &str = "current_vote_stakes.json";
 pub const NEXT_EPOCH_VOTE_STAKES_FILE: &str = "next_vote_stakes.json";
 
-pub async fn bootstrap_scheduleepoch_data(data_cache: &DataCache) -> ScheduleEpochData {
+pub async fn bootstrap_schedule_epoch_data(data_cache: &DataCache) -> ScheduleEpochData {
     let new_rate_activation_epoch = solana_sdk::feature_set::FeatureSet::default()
         .new_warmup_cooldown_rate_epoch(data_cache.epoch_data.get_epoch_schedule());
 
