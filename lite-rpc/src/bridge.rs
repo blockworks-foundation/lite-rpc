@@ -3,7 +3,9 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
+use solana_lite_rpc_core::structures::leaderschedule::GetVoteAccountsConfig;
 use solana_sdk::epoch_info::EpochInfo;
+use std::collections::HashMap;
 
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
@@ -22,21 +24,22 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
         RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
-        RpcContextConfig, RpcEncodingConfigWrapper, RpcEpochConfig, RpcGetVoteAccountsConfig,
-        RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig,
-        RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig, RpcTransactionLogsConfig,
-        RpcTransactionLogsFilter,
+        RpcContextConfig, RpcEncodingConfigWrapper, RpcGetVoteAccountsConfig,
+        RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig,
+        RpcSignatureStatusConfig, RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig,
+        RpcTransactionLogsConfig, RpcTransactionLogsFilter,
     },
     response::{
         Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
-        RpcContactInfo, RpcLeaderSchedule, RpcPerfSample, RpcPrioritizationFee, RpcResponseContext,
-        RpcVersionInfo, RpcVoteAccountStatus,
+        RpcContactInfo, RpcPerfSample, RpcPrioritizationFee, RpcResponseContext, RpcVersionInfo,
+        RpcVoteAccountStatus,
     },
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
+use tokio::sync::oneshot;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -62,6 +65,12 @@ pub struct LiteBridge {
     rpc_client: Arc<RpcClient>,
     transaction_service: TransactionService,
     history: History,
+    state_vote_sendder: Option<
+        tokio::sync::mpsc::Sender<(
+            GetVoteAccountsConfig,
+            tokio::sync::oneshot::Sender<RpcVoteAccountStatus>,
+        )>,
+    >,
 }
 
 impl LiteBridge {
@@ -70,12 +79,19 @@ impl LiteBridge {
         data_cache: DataCache,
         transaction_service: TransactionService,
         history: History,
+        state_vote_sendder: Option<
+            tokio::sync::mpsc::Sender<(
+                GetVoteAccountsConfig,
+                oneshot::Sender<RpcVoteAccountStatus>,
+            )>,
+        >,
     ) -> Self {
         Self {
             rpc_client,
             data_cache,
             transaction_service,
             history,
+            state_vote_sendder,
         }
     }
 
@@ -267,21 +283,6 @@ impl LiteRpcServer for LiteBridge {
         Ok(epoch_info)
     }
 
-    async fn get_leader_schedule(
-        &self,
-        _slot: Option<Slot>,
-        _config: Option<RpcEncodingConfigWrapper<RpcEpochConfig>>,
-    ) -> crate::rpc::Result<Option<RpcLeaderSchedule>> {
-        todo!()
-    }
-
-    async fn get_vote_accounts(
-        &self,
-        _config: Option<RpcGetVoteAccountsConfig>,
-    ) -> crate::rpc::Result<RpcVoteAccountStatus> {
-        todo!()
-    }
-
     async fn get_recent_performance_samples(
         &self,
         _limit: Option<usize>,
@@ -469,5 +470,62 @@ impl LiteRpcServer for LiteBridge {
 
     async fn vote_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
         todo!()
+    }
+
+    async fn get_leader_schedule(
+        &self,
+        slot: Option<u64>,
+        config: Option<RpcLeaderScheduleConfig>,
+    ) -> crate::rpc::Result<Option<HashMap<String, Vec<usize>>>> {
+        //TODO verify leader identity.
+        let schedule = self
+            .data_cache
+            .leader_schedule
+            .read()
+            .await
+            .get_leader_schedule_for_slot(slot, config.and_then(|c| c.commitment), &self.data_cache)
+            .await;
+        Ok(schedule)
+    }
+    async fn get_slot_leaders(
+        &self,
+        start_slot: u64,
+        limit: u64,
+    ) -> crate::rpc::Result<Vec<Pubkey>> {
+        let epock_schedule = self.data_cache.epoch_data.get_epoch_schedule();
+
+        self.data_cache
+            .leader_schedule
+            .read()
+            .await
+            .get_slot_leaders(start_slot, limit, epock_schedule)
+            .await
+            .map_err(|err| {
+                jsonrpsee::core::Error::Custom(format!("error during query processing:{err}"))
+            })
+    }
+
+    async fn get_vote_accounts(
+        &self,
+        config: Option<RpcGetVoteAccountsConfig>,
+    ) -> crate::rpc::Result<RpcVoteAccountStatus> {
+        let config: GetVoteAccountsConfig =
+            GetVoteAccountsConfig::try_from(config.unwrap_or_default()).unwrap_or_default();
+        if let Some(state_vote_sendder) = &self.state_vote_sendder {
+            let (tx, rx) = oneshot::channel();
+            if let Err(err) = state_vote_sendder.send((config, tx)).await {
+                return Err(jsonrpsee::core::Error::Custom(format!(
+                    "error during query processing:{err}",
+                )));
+            }
+            rx.await.map_err(|err| {
+                jsonrpsee::core::Error::Custom(format!("error during query processing:{err}"))
+            })
+        } else {
+            self.rpc_client
+                .get_vote_accounts()
+                .await
+                .map_err(|err| (jsonrpsee::core::Error::Custom(err.to_string())))
+        }
     }
 }

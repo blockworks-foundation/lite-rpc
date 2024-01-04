@@ -44,6 +44,10 @@ impl EpochCache {
         }
     }
 
+    pub fn get_epoch_schedule(&self) -> &EpochSchedule {
+        self.epoch_schedule.as_ref()
+    }
+
     pub fn get_slots_in_epoch(&self, epoch: u64) -> u64 {
         self.epoch_schedule.get_slots_in_epoch(epoch)
     }
