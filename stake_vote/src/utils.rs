@@ -280,22 +280,24 @@ mod tests {
         assert_eq!(takable.updates.len(), 0);
 
         //wait for notifier
-        if let Err(_) = tokio::time::timeout(std::time::Duration::from_millis(1000), notif_jh).await
+        if tokio::time::timeout(std::time::Duration::from_millis(1000), notif_jh)
+            .await
+            .is_err()
         {
-            assert!(false, "take notifier timeout");
+            panic!("take notifier timeout");
         }
     }
 
     fn assert_take_content_map(take_content: &TakeResult<Vec<u64>>, len: usize) {
         match take_content {
-            TakeResult::Taken(_) => assert!(false),
+            TakeResult::Taken(_) => unreachable!(),
             TakeResult::Map(content) => assert_eq!(content.len(), len),
         }
     }
     fn assert_take_content_taken(take_content: &TakeResult<Vec<u64>>) {
         match take_content {
             TakeResult::Taken(_) => (),
-            TakeResult::Map(_) => assert!(false),
+            TakeResult::Map(_) => unreachable!(),
         }
     }
 }
