@@ -143,7 +143,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
-    log::info!("ici1");
     let EndpointStreaming {
         blocks_notifier,
         cluster_info_notifier,
@@ -209,7 +208,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         prometheus_addr,
         data_cache: data_cache.clone(),
     };
-    log::info!("ici2");
     //init grpc leader schedule and vote account is configured.
     let (leader_schedule, rpc_stakes_send): (Arc<dyn LeaderFetcherInterface>, Option<_>) =
         if use_grpc && activate_leader_schedule {
@@ -255,7 +253,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                 None,
             )
         };
-    log::info!("ici4");
     let tpu_service: TpuService = TpuService::new(
         tpu_config,
         validator_identity,
