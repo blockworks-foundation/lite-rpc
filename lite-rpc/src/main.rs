@@ -154,8 +154,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
     info!("Got finalized block: {:?}", finalized_block.slot);
 
-    let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await?;
-    let slots_per_epoch = epoch_data.get_epoch_schedule().slots_per_epoch;
+    let (epoch_data, current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
 
     let block_information_store =
         BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
@@ -212,17 +211,15 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let (leader_schedule, rpc_stakes_send): (Arc<dyn LeaderFetcherInterface>, Option<_>) =
         if use_grpc && calculate_leader_schedule_form_geyser {
             //init leader schedule grpc process.
-            //1) get stored schedule and stakes
-            if let Some((leader_schedule, vote_stakes)) =
-                solana_lite_rpc_stakevote::bootstrap_leaderschedule_from_files(slots_per_epoch)
-            {
-                data_cache
-                    .identity_stakes
-                    .update_stakes_for_identity(vote_stakes)
-                    .await;
-                let mut data_schedule = data_cache.leader_schedule.write().await;
-                *data_schedule = leader_schedule;
-            }
+
+            //1) get stored leader schedule and stakes (or via RPC if not present)
+            solana_lite_rpc_stakevote::bootstrat_literpc_leader_schedule(
+                rpc_client.url(),
+                &data_cache,
+                current_epoch_info.epoch,
+            )
+            .await;
+
             //2) start stake vote and leader schedule.
             let (rpc_stakes_send, rpc_stakes_recv) = mpsc::channel(1000);
             let stake_vote_jh = solana_lite_rpc_stakevote::start_stakes_and_votes_loop(
@@ -249,7 +246,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             )
         } else {
             (
-                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128)),
+                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 40, 12)),
                 None,
             )
         };

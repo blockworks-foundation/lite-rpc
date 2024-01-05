@@ -117,7 +117,7 @@ fn process_leadershedule_event(
         ) => {
             match (&mut stakestore.stakes, &mut votestore.votes).take() {
                 TakeResult::Map((stake_map, (vote_map, mut epoch_cache))) => {
-                    log::info!("LeaderScheduleEvent::CalculateScedule");
+                    log::info!("Start calculate leader schedule");
                     //do the calculus in a blocking task.
                     let jh = tokio::task::spawn_blocking({
                         move || {
@@ -221,7 +221,6 @@ fn process_leadershedule_event(
             (new_epoch, slots_in_epoch, epoch_schedule),
             stake_history,
         ) => {
-            log::info!("LeaderScheduleEvent::MergeStoreAndSaveSchedule RECV");
             match (
                 stakestore.stakes.merge(stake_map),
                 votestore.votes.merge((vote_map, epoch_cache)),
@@ -304,7 +303,7 @@ pub fn calculate_leader_schedule(
     let mut seed = [0u8; 32];
     seed[0..8].copy_from_slice(&epoch.to_le_bytes());
     sort_stakes(&mut stakes);
-    log::info!("calculate_leader_schedule stakes:{stakes:?} epoch:{epoch}");
+    //log::info!("calculate_leader_schedule stakes:{stakes:?} epoch:{epoch}");
     LeaderSchedule::new(&stakes, seed, slots_in_epoch, NUM_CONSECUTIVE_LEADER_SLOTS)
 }
 

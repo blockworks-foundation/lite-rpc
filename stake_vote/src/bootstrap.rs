@@ -11,14 +11,19 @@ use anyhow::bail;
 use futures::future::join_all;
 use futures_util::stream::FuturesUnordered;
 use solana_client::client_error::ClientError;
+use solana_client::client_error::ClientErrorKind;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_response::RpcVoteAccountStatus;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
+use solana_program::slot_history::Slot;
 use solana_sdk::account::Account;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::sysvar::epoch_schedule::EpochSchedule;
+use std::collections::HashMap;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -47,9 +52,10 @@ pub async fn bootstrap_schedule_epoch_data(data_cache: &DataCache) -> ScheduleEp
 // Return the current and next epoxh leader schedule and the current epoch stakes of vote accounts
 // if the corresponding files exist.
 pub fn bootstrap_leaderschedule_from_files(
+    current_epoch_of_loading: u64,
     slots_in_epoch: u64,
 ) -> Option<(CalculatedSchedule, RpcVoteAccountStatus)> {
-    bootstrap_current_leader_schedule(slots_in_epoch)
+    bootstrap_current_leader_schedule(slots_in_epoch, current_epoch_of_loading)
         .map(|(leader_schedule, current_epoch_stakes, _)| {
             let vote_acccounts = crate::vote::get_rpc_vote_account_info_from_current_epoch_stakes(
                 &current_epoch_stakes,
@@ -57,6 +63,55 @@ pub fn bootstrap_leaderschedule_from_files(
             (leader_schedule, vote_acccounts)
         })
         .ok()
+}
+
+// Return the current or next epoch leader schedule using the RPC calls.
+pub fn bootstrap_leaderschedule_from_rpc(
+    rpc_url: String,
+    epoch_schedule: &EpochSchedule,
+) -> Result<CalculatedSchedule, ClientError> {
+    let current_epoch = get_rpc_epoch_info(rpc_url.clone())?;
+    let current_schedule_by_node =
+        get_rpc_leader_schedule(rpc_url.clone(), None)?.ok_or(ClientError {
+            request: None,
+            kind: ClientErrorKind::Custom("RPC return no leader schedule".to_string()),
+        })?;
+
+    let first_epoch_slot = epoch_schedule.get_first_slot_in_epoch(current_epoch.epoch);
+    let current_schedule_by_slot = get_rpc_slot_leaders(
+        rpc_url.clone(),
+        first_epoch_slot,
+        epoch_schedule.slots_per_epoch,
+    )?;
+
+    //get next epoch rpc schedule
+    let next_epoch = current_epoch.epoch + 1;
+    let next_first_epoch_slot = epoch_schedule.get_first_slot_in_epoch(next_epoch);
+    let next_schedule_by_node =
+        get_rpc_leader_schedule(rpc_url.clone(), Some(next_first_epoch_slot))?.ok_or(
+            ClientError {
+                request: None,
+                kind: ClientErrorKind::Custom("RPC return no leader schedule".to_string()),
+            },
+        )?;
+    let next_schedule_by_slot = get_rpc_slot_leaders(
+        rpc_url,
+        next_first_epoch_slot,
+        epoch_schedule.slots_per_epoch,
+    )?;
+
+    Ok(CalculatedSchedule {
+        current: Some(LeaderScheduleData {
+            schedule_by_node: current_schedule_by_node.clone(),
+            schedule_by_slot: current_schedule_by_slot.clone(),
+            epoch: current_epoch.epoch,
+        }),
+        next: Some(LeaderScheduleData {
+            schedule_by_node: next_schedule_by_node,
+            schedule_by_slot: next_schedule_by_slot,
+            epoch: current_epoch.epoch + 1,
+        }),
+    })
 }
 
 /*
@@ -92,8 +147,15 @@ pub fn run_bootstrap_events(
     stakestore: &mut StakeStore,
     votestore: &mut VoteStore,
     slots_in_epoch: u64,
+    current_epoch_of_loading: u64,
 ) -> anyhow::Result<Option<anyhow::Result<(CalculatedSchedule, RpcVoteAccountStatus)>>> {
-    let result = process_bootstrap_event(event, stakestore, votestore, slots_in_epoch);
+    let result = process_bootstrap_event(
+        event,
+        stakestore,
+        votestore,
+        slots_in_epoch,
+        current_epoch_of_loading,
+    );
     match result {
         BootsrapProcessResult::TaskHandle(jh) => {
             bootstrap_tasks.push(jh);
@@ -105,6 +167,7 @@ pub fn run_bootstrap_events(
             stakestore,
             votestore,
             slots_in_epoch,
+            current_epoch_of_loading,
         ),
         BootsrapProcessResult::End(leader_schedule_result) => Ok(Some(leader_schedule_result)),
         BootsrapProcessResult::Error(err) => bail!(err),
@@ -154,6 +217,7 @@ fn process_bootstrap_event(
     stakestore: &mut StakeStore,
     votestore: &mut VoteStore,
     slots_in_epoch: u64,
+    current_epoch_of_loading: u64,
 ) -> BootsrapProcessResult {
     match event {
         BootstrapEvent::InitBootstrap {
@@ -161,7 +225,6 @@ fn process_bootstrap_event(
             rpc_url,
         } => {
             let jh = tokio::task::spawn_blocking(move || {
-                log::info!("BootstrapEvent::InitBootstrap RECV");
                 if sleep_time > 0 {
                     std::thread::sleep(Duration::from_secs(sleep_time));
                 }
@@ -180,7 +243,6 @@ fn process_bootstrap_event(
             BootsrapProcessResult::TaskHandle(jh)
         }
         BootstrapEvent::BootstrapAccountsFetched(stakes, votes, history, rpc_url) => {
-            log::info!("BootstrapEvent::BootstrapAccountsFetched RECV");
             match (&mut stakestore.stakes, &mut votestore.votes).take() {
                 TakeResult::Map((stake_map, (vote_map, epoch_cache))) => {
                     BootsrapProcessResult::Event(BootstrapEvent::StoreExtracted(
@@ -220,8 +282,6 @@ fn process_bootstrap_event(
             history,
             rpc_url,
         ) => {
-            log::info!("BootstrapEvent::StoreExtracted RECV");
-
             let stake_history = crate::account::read_historystake_from_account(&history.data);
             if stake_history.is_none() {
                 return BootsrapProcessResult::Error(
@@ -244,7 +304,10 @@ fn process_bootstrap_event(
                         0, //with RPC no way to know the slot of the account update. Set to 0.
                     );
 
-                    match bootstrap_current_leader_schedule(slots_in_epoch) {
+                    match bootstrap_current_leader_schedule(
+                        current_epoch_of_loading,
+                        slots_in_epoch,
+                    ) {
                         Ok((leader_schedule, current_epoch_stakes, next_epoch_stakes)) => {
                             let vote_acccounts =
                                 crate::vote::get_rpc_vote_account_info_from_current_epoch_stakes(
@@ -279,8 +342,6 @@ fn process_bootstrap_event(
             rpc_url,
             leader_schedule_result,
         ) => {
-            log::info!("BootstrapEvent::AccountsMerged RECV");
-
             match (
                 stakestore.stakes.merge(stake_map),
                 votestore.votes.merge((vote_map, epoch_cache)),
@@ -314,39 +375,68 @@ fn bootstrap_accounts(
 }
 
 fn get_stake_account(rpc_url: String) -> Result<(Vec<(Pubkey, Account)>, String), ClientError> {
-    log::info!("TaskToExec RpcGetStakeAccount start");
     let rpc_client = RpcClient::new_with_timeout_and_commitment(
         rpc_url.clone(),
         Duration::from_secs(600),
         CommitmentConfig::finalized(),
     );
-    let res_stake = rpc_client.get_program_accounts(&solana_sdk::stake::program::id());
-    log::info!("TaskToExec RpcGetStakeAccount END");
-    res_stake.map(|stake| (stake, rpc_url))
+    rpc_client
+        .get_program_accounts(&solana_sdk::stake::program::id())
+        .map(|stake| (stake, rpc_url))
 }
 
 fn get_vote_account(rpc_url: String) -> Result<(Vec<(Pubkey, Account)>, String), ClientError> {
-    log::info!("TaskToExec RpcGetVoteAccount start");
     let rpc_client = RpcClient::new_with_timeout_and_commitment(
         rpc_url.clone(),
         Duration::from_secs(600),
         CommitmentConfig::finalized(),
     );
-    let res_vote = rpc_client.get_program_accounts(&solana_sdk::vote::program::id());
-    log::info!("TaskToExec RpcGetVoteAccount END");
-    res_vote.map(|votes| (votes, rpc_url))
+    rpc_client
+        .get_program_accounts(&solana_sdk::vote::program::id())
+        .map(|votes| (votes, rpc_url))
 }
 
 pub fn get_stakehistory_account(rpc_url: String) -> Result<Account, ClientError> {
-    log::info!("TaskToExec RpcGetStakeHistory start");
     let rpc_client = RpcClient::new_with_timeout_and_commitment(
         rpc_url,
         Duration::from_secs(600),
         CommitmentConfig::finalized(),
     );
-    let res_stake = rpc_client.get_account(&solana_sdk::sysvar::stake_history::id());
-    log::info!("TaskToExec RpcGetStakeHistory END",);
-    res_stake
+    rpc_client.get_account(&solana_sdk::sysvar::stake_history::id())
+}
+
+fn get_rpc_epoch_info(rpc_url: String) -> Result<EpochInfo, ClientError> {
+    let rpc_client = RpcClient::new_with_timeout_and_commitment(
+        rpc_url.clone(),
+        Duration::from_secs(600),
+        CommitmentConfig::finalized(),
+    );
+    rpc_client.get_epoch_info()
+}
+
+fn get_rpc_leader_schedule(
+    rpc_url: String,
+    slot: Option<Slot>,
+) -> Result<Option<HashMap<String, Vec<usize>>>, ClientError> {
+    let rpc_client = RpcClient::new_with_timeout_and_commitment(
+        rpc_url.clone(),
+        Duration::from_secs(600),
+        CommitmentConfig::finalized(),
+    );
+    rpc_client.get_leader_schedule(slot)
+}
+
+fn get_rpc_slot_leaders(
+    rpc_url: String,
+    start_slot: u64,
+    limit: u64,
+) -> Result<Vec<Pubkey>, ClientError> {
+    let rpc_client = RpcClient::new_with_timeout_and_commitment(
+        rpc_url.clone(),
+        Duration::from_secs(600),
+        CommitmentConfig::finalized(),
+    );
+    rpc_client.get_slot_leaders(start_slot, limit)
 }
 
 // pub struct BootstrapScheduleResult {
@@ -355,12 +445,25 @@ pub fn get_stakehistory_account(rpc_url: String) -> Result<Account, ClientError>
 // }
 
 pub fn bootstrap_current_leader_schedule(
+    current_epoch_of_loading: u64,
     slots_in_epoch: u64,
 ) -> anyhow::Result<(CalculatedSchedule, EpochVoteStakes, EpochVoteStakes)> {
     let (current_epoch, current_epoch_stakes) =
         crate::utils::read_schedule_vote_stakes(CURRENT_EPOCH_VOTE_STAKES_FILE)?;
     let (next_epoch, next_epoch_stakes) =
         crate::utils::read_schedule_vote_stakes(NEXT_EPOCH_VOTE_STAKES_FILE)?;
+
+    //verify that the current loaded epoch correspond to the current epoch slot
+    if current_epoch_of_loading != current_epoch {
+        return Err(ClientError {
+            request: None,
+            kind: ClientErrorKind::Custom(
+                "Current epoch bootstrap file doesn't correspond to the validator current epoch."
+                    .to_string(),
+            ),
+        }
+        .into());
+    }
 
     //calcualte leader schedule for all vote stakes.
     let current_schedule = crate::leader_schedule::calculate_leader_schedule(
