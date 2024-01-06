@@ -13,7 +13,9 @@ use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use solana_sdk::clock::NUM_CONSECUTIVE_LEADER_SLOTS;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::stake_history::StakeHistory;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 
@@ -305,6 +307,20 @@ pub fn calculate_leader_schedule(
     sort_stakes(&mut stakes);
     //log::info!("calculate_leader_schedule stakes:{stakes:?} epoch:{epoch}");
     LeaderSchedule::new(&stakes, seed, slots_in_epoch, NUM_CONSECUTIVE_LEADER_SLOTS)
+}
+
+pub fn calculate_slot_leaders_from_schedule(
+    leader_scheudle: &HashMap<String, Vec<usize>>,
+) -> Result<Vec<Pubkey>, String> {
+    let mut slot_leaders_map = BTreeMap::new();
+    for (pk, index_list) in leader_scheudle {
+        for index in index_list {
+            let pubkey = Pubkey::from_str(pk)
+                .map_err(|err| format!("Pubkey from leader schedule not a plublic key:{err}"))?;
+            slot_leaders_map.insert(index, pubkey);
+        }
+    }
+    Ok(slot_leaders_map.into_values().collect())
 }
 
 // Cribbed from leader_schedule_utils

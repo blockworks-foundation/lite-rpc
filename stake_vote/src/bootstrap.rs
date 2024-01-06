@@ -77,12 +77,15 @@ pub fn bootstrap_leaderschedule_from_rpc(
             kind: ClientErrorKind::Custom("RPC return no leader schedule".to_string()),
         })?;
 
-    let first_epoch_slot = epoch_schedule.get_first_slot_in_epoch(current_epoch.epoch);
-    let current_schedule_by_slot = get_rpc_slot_leaders(
-        rpc_url.clone(),
-        first_epoch_slot,
-        epoch_schedule.slots_per_epoch,
-    )?;
+    //Calculate the slot leaders by from the node schedule because RPC call get_slot_leaders is limited to 5000 slots.
+    let current_schedule_by_slot =
+        crate::leader_schedule::calculate_slot_leaders_from_schedule(&current_schedule_by_node)
+            .map_err(|err| ClientError {
+                request: None,
+                kind: ClientErrorKind::Custom(format!(
+                    "Leader schedule from RPC can't generate slot leaders because:{err}"
+                )),
+            })?;
 
     //get next epoch rpc schedule
     let next_epoch = current_epoch.epoch + 1;
@@ -94,11 +97,16 @@ pub fn bootstrap_leaderschedule_from_rpc(
                 kind: ClientErrorKind::Custom("RPC return no leader schedule".to_string()),
             },
         )?;
-    let next_schedule_by_slot = get_rpc_slot_leaders(
-        rpc_url,
-        next_first_epoch_slot,
-        epoch_schedule.slots_per_epoch,
-    )?;
+
+    //Calculate the slot leaders by from the node schedule because RPC call get_slot_leaders is limited to 5000 slots.
+    let next_schedule_by_slot =
+        crate::leader_schedule::calculate_slot_leaders_from_schedule(&next_schedule_by_node)
+            .map_err(|err| ClientError {
+                request: None,
+                kind: ClientErrorKind::Custom(format!(
+                    "Leader schedule from RPC can't generate slot leaders because:{err}"
+                )),
+            })?;
 
     Ok(CalculatedSchedule {
         current: Some(LeaderScheduleData {
@@ -424,19 +432,6 @@ fn get_rpc_leader_schedule(
         CommitmentConfig::finalized(),
     );
     rpc_client.get_leader_schedule(slot)
-}
-
-fn get_rpc_slot_leaders(
-    rpc_url: String,
-    start_slot: u64,
-    limit: u64,
-) -> Result<Vec<Pubkey>, ClientError> {
-    let rpc_client = RpcClient::new_with_timeout_and_commitment(
-        rpc_url.clone(),
-        Duration::from_secs(600),
-        CommitmentConfig::finalized(),
-    );
-    rpc_client.get_slot_leaders(start_slot, limit)
 }
 
 // pub struct BootstrapScheduleResult {
