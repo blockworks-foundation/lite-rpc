@@ -1910,9 +1910,9 @@ dependencies = [
 
 [[package]]
 name = "geyser-grpc-connector"
-version = "0.7.1+yellowstone.1.11"
+version = "0.7.2+yellowstone.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f11c9bfa33ff6c5cf688e53df9b2de84b47f932527445bc6e33649c22a7791f7"
+checksum = "5ff13bf8aff2952263d1f70096c8f92a174194fa07e1ce1d1b51f59d78cae87e"
 dependencies = [
  "anyhow",
  "async-stream",
