@@ -246,7 +246,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             )
         } else {
             (
-                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 40, 12)),
+                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128)),
                 None,
             )
         };
