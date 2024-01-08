@@ -13,7 +13,9 @@ use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use solana_sdk::clock::NUM_CONSECUTIVE_LEADER_SLOTS;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::stake_history::StakeHistory;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 
@@ -117,7 +119,7 @@ fn process_leadershedule_event(
         ) => {
             match (&mut stakestore.stakes, &mut votestore.votes).take() {
                 TakeResult::Map((stake_map, (vote_map, mut epoch_cache))) => {
-                    log::info!("LeaderScheduleEvent::CalculateScedule");
+                    log::info!("Start calculate leader schedule");
                     //do the calculus in a blocking task.
                     let jh = tokio::task::spawn_blocking({
                         move || {
@@ -221,7 +223,6 @@ fn process_leadershedule_event(
             (new_epoch, slots_in_epoch, epoch_schedule),
             stake_history,
         ) => {
-            log::info!("LeaderScheduleEvent::MergeStoreAndSaveSchedule RECV");
             match (
                 stakestore.stakes.merge(stake_map),
                 votestore.votes.merge((vote_map, epoch_cache)),
@@ -304,8 +305,22 @@ pub fn calculate_leader_schedule(
     let mut seed = [0u8; 32];
     seed[0..8].copy_from_slice(&epoch.to_le_bytes());
     sort_stakes(&mut stakes);
-    log::info!("calculate_leader_schedule stakes:{stakes:?} epoch:{epoch}");
+    //log::info!("calculate_leader_schedule stakes:{stakes:?} epoch:{epoch}");
     LeaderSchedule::new(&stakes, seed, slots_in_epoch, NUM_CONSECUTIVE_LEADER_SLOTS)
+}
+
+pub fn calculate_slot_leaders_from_schedule(
+    leader_scheudle: &HashMap<String, Vec<usize>>,
+) -> Result<Vec<Pubkey>, String> {
+    let mut slot_leaders_map = BTreeMap::new();
+    for (pk, index_list) in leader_scheudle {
+        for index in index_list {
+            let pubkey = Pubkey::from_str(pk)
+                .map_err(|err| format!("Pubkey from leader schedule not a plublic key:{err}"))?;
+            slot_leaders_map.insert(index, pubkey);
+        }
+    }
+    Ok(slot_leaders_map.into_values().collect())
 }
 
 // Cribbed from leader_schedule_utils

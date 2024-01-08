@@ -44,15 +44,26 @@ impl LeaderFetcherInterface for GrpcLeaderGetter {
             .current
             .as_ref()
             .map(|e| e.epoch)
-            .unwrap_or(to_epoch);
+            .unwrap_or(to_epoch)
+            + 1;
         if from > to {
-            bail!("invalid arguments for get_slot_leaders");
+            bail!(
+                "invalid arguments for get_slot_leaders: from:{from} to:{to} from:{from} > to:{to}"
+            );
         }
         if from_epoch < current_epoch || from_epoch > next_epoch {
-            bail!("invalid arguments for get_slot_leaders");
+            bail!(
+                "invalid arguments for get_slot_leaders: from:{from} to:{to} \
+             from_epoch:{from_epoch} < current_epoch:{current_epoch} \
+             || from_epoch > next_epoch:{next_epoch}"
+            );
         }
         if to_epoch < current_epoch || to_epoch > next_epoch {
-            bail!("invalid arguments for get_slot_leaders");
+            bail!(
+                "invalid arguments for get_slot_leaders: from:{from} to:{to} \
+             to_epoch:{to_epoch} < current_epoch:{current_epoch} \
+                || to_epoch:{to_epoch} > next_epoch:{next_epoch}"
+            );
         }
 
         let limit = to - from;

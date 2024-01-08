@@ -60,7 +60,9 @@ impl EpochCache {
         self.epoch_schedule.get_last_slot_in_epoch(epoch)
     }
 
-    pub async fn bootstrap_epoch(rpc_client: &RpcClient) -> anyhow::Result<EpochCache> {
+    pub async fn bootstrap_epoch(
+        rpc_client: &RpcClient,
+    ) -> anyhow::Result<(EpochCache, EpochInfo)> {
         let res_epoch = rpc_client
             .get_account(&solana_sdk::sysvar::epoch_schedule::id())
             .await?;
@@ -72,9 +74,14 @@ impl EpochCache {
             bail!("Error during bootstrap epoch. SysvarAccountType::EpochSchedule can't be deserilized. Epoch can't be calculated.");
         };
 
-        Ok(EpochCache {
-            epoch_schedule: Arc::new(epoch_schedule),
-        })
+        let epoch_info = rpc_client.get_epoch_info().await?;
+
+        Ok((
+            EpochCache {
+                epoch_schedule: Arc::new(epoch_schedule),
+            },
+            epoch_info,
+        ))
     }
 }
 

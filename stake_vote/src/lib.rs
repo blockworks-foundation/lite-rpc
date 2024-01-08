@@ -30,12 +30,54 @@ mod stake;
 mod utils;
 mod vote;
 
-pub use bootstrap::bootstrap_leaderschedule_from_files;
+// pub use bootstrap::{bootstrap_leaderschedule_from_files, bootstrap_leaderschedule_from_rpc};
 
 const STAKESTORE_INITIAL_CAPACITY: usize = 600000;
 const VOTESTORE_INITIAL_CAPACITY: usize = 600000;
 
 type Slot = u64;
+
+pub async fn bootstrat_literpc_leader_schedule(
+    rpc_url: String,
+    data_cache: &DataCache,
+    current_epoch_of_loading: u64,
+) {
+    //init leader schedule grpc process.
+    //1) get stored schedule and stakes
+    let slots_per_epoch = data_cache.epoch_data.get_epoch_schedule().slots_per_epoch;
+    match crate::bootstrap::bootstrap_leaderschedule_from_files(
+        current_epoch_of_loading,
+        slots_per_epoch,
+    ) {
+        Some((leader_schedule, vote_stakes)) => {
+            data_cache
+                .identity_stakes
+                .update_stakes_for_identity(vote_stakes)
+                .await;
+            let mut data_schedule = data_cache.leader_schedule.write().await;
+            *data_schedule = leader_schedule;
+        }
+        None => {
+            log::info!("Leader schedule bootstrap file not found. Try to boot from rpc.");
+            match crate::bootstrap::bootstrap_leaderschedule_from_rpc(
+                rpc_url,
+                data_cache.epoch_data.get_epoch_schedule(),
+            ) {
+                Ok(leader_schedule) => {
+                    log::info!("Leader schedule bootstrap from rpc done.",);
+                    let mut data_schedule = data_cache.leader_schedule.write().await;
+                    *data_schedule = leader_schedule;
+                }
+                Err(err) => {
+                    log::warn!(
+                        "An error occurs during bootstrap of the leader schedule using rpc:{err}"
+                    );
+                    log::warn!("No schedule has been loaded");
+                }
+            }
+        }
+    }
+}
 
 pub async fn start_stakes_and_votes_loop(
     data_cache: DataCache,
@@ -143,7 +185,7 @@ pub async fn start_stakes_and_votes_loop(
                                 if let Some(account) = account.account {
                                     let acc_id = Pubkey::try_from(account.pubkey).expect("valid pubkey");
                                     if acc_id  == solana_sdk::sysvar::stake_history::ID {
-                                        log::info!("Geyser notifstake_history");
+                                        log::debug!("Geyser notifstake_history");
                                         match crate::account::read_historystake_from_account(account.data.as_slice())  {
                                             Some(stake_history) => {
                                                 let schedule_event = current_schedule_epoch.set_epoch_stake_history(stake_history);
@@ -244,7 +286,7 @@ pub async fn start_stakes_and_votes_loop(
                 }
                 //manage bootstrap event
                 Some(Ok(event)) = spawned_bootstrap_task.next() =>  {
-                    match crate::bootstrap::run_bootstrap_events(event, &mut spawned_bootstrap_task, &mut stakestore, &mut votestore, current_schedule_epoch.slots_in_epoch) {
+                    match crate::bootstrap::run_bootstrap_events(event, &mut spawned_bootstrap_task, &mut stakestore, &mut votestore, current_schedule_epoch.slots_in_epoch, current_schedule_epoch.current_epoch) {
                         Ok(Some(boot_res))=> {
                             match boot_res {
                                 Ok((current_schedule_data, vote_stakes)) => {
