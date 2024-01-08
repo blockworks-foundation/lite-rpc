@@ -135,9 +135,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         recent_confirmed_blocks.retain(|_blockhash, block| {
                             block.slot > current_slot - 100 // must be greater than finalized slot distance (32)
                         });
-                        let cleaned = size_before - recent_confirmed_blocks.len();
-                        if cleaned > 0 {
-                            debug!("cleaned {} confirmed blocks from cache", cleaned);
+                        let cnt_cleaned = size_before - recent_confirmed_blocks.len();
+                        if cnt_cleaned > 0 {
+                            debug!("cleaned {} confirmed blocks from cache", cnt_cleaned);
                         }
                     }
                 }
