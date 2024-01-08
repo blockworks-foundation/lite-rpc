@@ -104,12 +104,11 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             let sender = producedblock_sender;
             let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
-            let mut current_slot: Slot = 0;
+            let mut last_finalized_slot: Slot = 0;
             loop {
                 tokio::select! {
                     confirmed_block = confirmed_blocks_stream.next() => {
                         let confirmed_block = confirmed_block.expect("confirmed block from stream");
-                        current_slot = confirmed_block.slot;
                         trace!("got confirmed block {} with blockhash {}",
                             confirmed_block.slot, confirmed_block.blockhash.clone());
                         if let Err(e) = sender.send(confirmed_block.clone()) {
@@ -122,6 +121,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         let blockhash = meta_finalized.expect("finalized block meta from stream");
                         if let Some(cached_confirmed_block) = recent_confirmed_blocks.remove(&blockhash) {
                             let finalized_block = cached_confirmed_block.to_finalized_block();
+                            last_finalized_slot = finalized_block.slot;
                             debug!("got finalized blockmeta {} with blockhash {}",
                                 finalized_block.slot, finalized_block.blockhash.clone());
                             if let Err(e) = sender.send(finalized_block) {
@@ -135,7 +135,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     _ = cleanup_tick.tick() => {
                         let size_before = recent_confirmed_blocks.len();
                         recent_confirmed_blocks.retain(|_blockhash, block| {
-                            block.slot > current_slot - 100 // must be greater than finalized slot distance (32)
+                            last_finalized_slot == 0 || block.slot > last_finalized_slot - 100
                         });
                         let cnt_cleaned = size_before - recent_confirmed_blocks.len();
                         if cnt_cleaned > 0 {
