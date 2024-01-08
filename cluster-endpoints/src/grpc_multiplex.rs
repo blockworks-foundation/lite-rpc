@@ -7,7 +7,7 @@ use geyser_grpc_connector::grpc_subscription_autoreconnect::{
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -113,7 +113,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         trace!("got confirmed block {} with blockhash {}",
                             confirmed_block.slot, confirmed_block.blockhash.clone());
                         if let Err(e) = sender.send(confirmed_block.clone()) {
-                            panic!("Confirmed block stream send gave error {e:?}");
+                            warn!("Confirmed block channel has no receivers {e:?}");
+                            continue
                         }
                         recent_confirmed_blocks.insert(confirmed_block.blockhash.clone(), confirmed_block);
                     },
@@ -124,7 +125,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             debug!("got finalized blockmeta {} with blockhash {}",
                                 finalized_block.slot, finalized_block.blockhash.clone());
                             if let Err(e) = sender.send(finalized_block) {
-                                panic!("Finalized block stream send gave error {e:?}");
+                                warn!("Finalized block channel has no receivers {e:?}");
+                                continue;
                             }
                         } else {
                             debug!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
