@@ -133,7 +133,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     _ = cleanup_tick.tick() => {
                         let size_before = recent_confirmed_blocks.len();
                         recent_confirmed_blocks.retain(|_blockhash, block| {
-                            block.slot > current_slot - 100 // must be greater than finalized slot distance (31)
+                            block.slot > current_slot - 100 // must be greater than finalized slot distance (32)
                         });
                         let cleaned = size_before - recent_confirmed_blocks.len();
                         if cleaned > 0 {
