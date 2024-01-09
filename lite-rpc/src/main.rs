@@ -19,6 +19,8 @@ use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGet
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
+use solana_lite_rpc_core::stores::stake_store::{StakeStore, STAKESTORE_INITIAL_CAPACITY};
+use solana_lite_rpc_core::stores::vote_store::{VoteStore, VOTESTORE_INITIAL_CAPACITY};
 use solana_lite_rpc_core::stores::{
     block_information_store::{BlockInformation, BlockInformationStore},
     cluster_info_store::ClusterInfo,
@@ -133,25 +135,16 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                 })
                 .collect(),
         )?
-
-        // create_grpc_subscription(
-        //     rpc_client.clone(),
-        //     grpc_addr.clone(),
-        //     GRPC_VERSION.to_string(),
-        // )?
     } else {
         info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
-    let EndpointStreaming {
-        blocks_notifier,
-        cluster_info_notifier,
-        slot_notifier,
-        vote_account_notifier,
-    } = subscriptions;
 
-    let finalized_block =
-        get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
+    let finalized_block = get_latest_block(
+        subscriptions.blocks_notifier.resubscribe(),
+        CommitmentConfig::finalized(),
+    )
+    .await;
     info!("Got finalized block: {:?}", finalized_block.slot);
 
     let (epoch_data, current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
@@ -170,21 +163,14 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         },
         epoch_data,
         leader_schedule: Arc::new(RwLock::new(CalculatedSchedule::default())),
+        stake_store: StakeStore::new(STAKESTORE_INITIAL_CAPACITY),
+        vote_store: VoteStore::new(VOTESTORE_INITIAL_CAPACITY),
     };
 
     let data_cache_service = DataCachingService {
         data_cache: data_cache.clone(),
         clean_duration: Duration::from_secs(120),
     };
-
-    // to avoid laggin we resubscribe to block notification
-    let data_caching_service = data_cache_service.listen(
-        blocks_notifier.resubscribe(),
-        slot_notifier.resubscribe(),
-        cluster_info_notifier,
-        vote_account_notifier,
-    );
-    drop(blocks_notifier);
 
     let (notification_channel, postgres) = start_postgres(postgres).await?;
 
@@ -203,53 +189,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         tpu_connection_path,
     };
 
-    let spawner = ServiceSpawner {
-        prometheus_addr,
-        data_cache: data_cache.clone(),
-    };
-    //init grpc leader schedule and vote account is configured.
-    let (leader_schedule, rpc_stakes_send): (Arc<dyn LeaderFetcherInterface>, Option<_>) =
-        if use_grpc && calculate_leader_schedule_form_geyser {
-            //init leader schedule grpc process.
-
-            //1) get stored leader schedule and stakes (or via RPC if not present)
-            solana_lite_rpc_stakevote::bootstrat_literpc_leader_schedule(
-                rpc_client.url(),
-                &data_cache,
-                current_epoch_info.epoch,
-            )
-            .await;
-
-            //2) start stake vote and leader schedule.
-            let (rpc_stakes_send, rpc_stakes_recv) = mpsc::channel(1000);
-            let stake_vote_jh = solana_lite_rpc_stakevote::start_stakes_and_votes_loop(
-                data_cache.clone(),
-                slot_notifier.resubscribe(),
-                rpc_stakes_recv,
-                Arc::clone(&rpc_client),
-                grpc_addr,
-            )
-            .await?;
-
-            //
-            tokio::spawn(async move {
-                let err = stake_vote_jh.await;
-                log::error!("Vote and stake Services exit with error: {err:?}");
-            });
-
-            (
-                Arc::new(GrpcLeaderGetter::new(
-                    Arc::clone(&data_cache.leader_schedule),
-                    data_cache.epoch_data.clone(),
-                )),
-                Some(rpc_stakes_send),
-            )
-        } else {
-            (
-                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128)),
-                None,
-            )
-        };
     let tpu_service: TpuService = TpuService::new(
         tpu_config,
         validator_identity,
@@ -257,26 +196,20 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         data_cache.clone(),
     )
     .await?;
-    let tx_sender = TxSender::new(data_cache.clone(), tpu_service.clone());
-    let tx_replayer =
-        TransactionReplayer::new(tpu_service.clone(), data_cache.txs.clone(), retry_after);
-    let (transaction_service, tx_service_jh) = spawner.spawn_tx_service(
-        tx_sender,
-        tx_replayer,
-        tpu_service,
-        DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
-        notification_channel.clone(),
-        maximum_retries_per_tx,
-        slot_notifier.resubscribe(),
-    );
 
-    drop(slot_notifier);
-
+    let spawner = ServiceSpawner {
+        prometheus_addr,
+        data_cache: data_cache.clone(),
+    };
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
     let history = History {
         block_storage: Arc::new(InmemoryBlockStore::new(1024)),
     };
+
+    let tx_sender = TxSender::new(data_cache.clone(), tpu_service.clone());
+    let tx_replayer =
+        TransactionReplayer::new(tpu_service.clone(), data_cache.txs.clone(), retry_after);
 
     let bridge_service = tokio::spawn(
         LiteBridge::new(

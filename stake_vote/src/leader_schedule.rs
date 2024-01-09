@@ -1,15 +1,16 @@
-use crate::stake::{StakeMap, StakeStore};
-use crate::utils::{Takable, TakeResult};
-use crate::vote::EpochVoteStakes;
-use crate::vote::EpochVoteStakesCache;
-use crate::vote::StoredVote;
-use crate::vote::{VoteMap, VoteStore};
+use dashmap::DashMap;
 use futures::future::join_all;
 use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use solana_ledger::leader_schedule::LeaderSchedule;
+use solana_lite_rpc_core::stores::stake_store::{StakeMap, StakeStore};
+use solana_lite_rpc_core::stores::takable_map::{Takable, TakeResult};
+use solana_lite_rpc_core::stores::vote_store::{
+    EpochVoteStakes, EpochVoteStakesCache, VoteMap, VoteStore,
+};
 use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
+use solana_lite_rpc_core::structures::stored_vote::StoredVote;
 use solana_sdk::clock::NUM_CONSECUTIVE_LEADER_SLOTS;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::stake_history::StakeHistory;
@@ -250,7 +251,7 @@ fn calculate_epoch_stakes(
     new_epoch: u64,
     stake_history: &StakeHistory,
     new_rate_activation_epoch: Option<solana_sdk::clock::Epoch>,
-) -> HashMap<Pubkey, (u64, Arc<StoredVote>)> {
+) -> DashMap<Pubkey, (u64, StoredVote)> {
     //calculate schedule stakes at beginning of new epoch.
     //Next epoch schedule use the stake at the beginning of last epoch.
     let delegated_stakes: HashMap<Pubkey, u64> =
@@ -264,35 +265,35 @@ fn calculate_epoch_stakes(
                 delegated_stakes
             });
 
-    let staked_vote_map: HashMap<Pubkey, (u64, Arc<StoredVote>)> = vote_map
-        .values()
-        .map(|vote_account| {
-            let delegated_stake = delegated_stakes
-                .get(&vote_account.pubkey)
-                .copied()
-                .unwrap_or_else(|| {
-                    log::info!(
-                        "calculate_epoch_stakes stake with no vote account:{}",
-                        vote_account.pubkey
-                    );
-                    Default::default()
-                });
-            (vote_account.pubkey, (delegated_stake, vote_account.clone()))
-        })
-        .collect();
+    let staked_vote_map = DashMap::<Pubkey, (u64, StoredVote)>::new();
+    vote_map.iter().for_each(|value| {
+        let vote_account = value.value();
+        let delegated_stake = delegated_stakes
+            .get(&vote_account.pubkey)
+            .copied()
+            .unwrap_or_else(|| {
+                log::info!(
+                    "calculate_epoch_stakes stake with no vote account:{}",
+                    vote_account.pubkey
+                );
+                Default::default()
+            });
+        staked_vote_map.insert(vote_account.pubkey, (delegated_stake, vote_account.clone()));
+    });
     staked_vote_map
 }
 
 //Copied from leader_schedule_utils.rs
 // Mostly cribbed from leader_schedule_utils
 pub fn calculate_leader_schedule(
-    stake_vote_map: &HashMap<Pubkey, (u64, Arc<StoredVote>)>,
+    stake_vote_map: &DashMap<Pubkey, (u64, StoredVote)>,
     epoch: u64,
     slots_in_epoch: u64,
 ) -> LeaderSchedule {
     let stakes_map: HashMap<Pubkey, u64> = stake_vote_map
         .iter()
-        .filter_map(|(_, (stake, vote_account))| {
+        .filter_map(|iter| {
+            let (stake, vote_account) = iter.value();
             (*stake != 0u64).then_some((vote_account.vote_data.node_pubkey, *stake))
         })
         .into_grouping_map()

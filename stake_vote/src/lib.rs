@@ -1,16 +1,21 @@
-use crate::account::AccountPretty;
 use crate::bootstrap::BootstrapEvent;
 use futures::Stream;
 use futures_util::stream::FuturesUnordered;
 use futures_util::StreamExt;
 use solana_lite_rpc_core::stores::block_information_store::BlockInformation;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
+use solana_lite_rpc_core::stores::stake_store::StakeStore;
+use solana_lite_rpc_core::stores::vote_store::VoteStore;
+use solana_lite_rpc_core::structures::account_pretty::AccountPretty;
+use solana_lite_rpc_core::structures::account_pretty::read_historystake_from_account;
 use solana_lite_rpc_core::structures::leaderschedule::GetVoteAccountsConfig;
 use solana_lite_rpc_core::types::SlotStream;
+use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
+use yellowstone_grpc_proto::geyser::SubscribeUpdateAccount;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::Receiver;
@@ -20,20 +25,14 @@ use yellowstone_grpc_proto::prelude::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::prelude::SubscribeRequestFilterAccounts;
 use yellowstone_grpc_proto::prelude::SubscribeUpdate;
 use yellowstone_grpc_proto::tonic::Status;
-
-mod account;
 mod bootstrap;
 mod epoch;
 mod leader_schedule;
 mod rpcrequest;
-mod stake;
 mod utils;
 mod vote;
 
 // pub use bootstrap::{bootstrap_leaderschedule_from_files, bootstrap_leaderschedule_from_rpc};
-
-const STAKESTORE_INITIAL_CAPACITY: usize = 600000;
-const VOTESTORE_INITIAL_CAPACITY: usize = 600000;
 
 type Slot = u64;
 
@@ -78,6 +77,36 @@ pub async fn bootstrat_literpc_leader_schedule(
         }
     }
 }
+fn account_pretty_from_geyser(
+        geyser_account: SubscribeUpdateAccount,
+        current_slot: u64,
+    ) -> Option<AccountPretty> {
+        let Some(inner_account) = geyser_account.account else {
+            log::warn!("Receive a SubscribeUpdateAccount without account.");
+            return None;
+        };
+
+        if geyser_account.slot != current_slot {
+            log::trace!(
+                "Get geyser account on a different slot:{} of the current:{current_slot}",
+                geyser_account.slot
+            );
+        }
+
+        Some(AccountPretty {
+            is_startup: geyser_account.is_startup,
+            slot: geyser_account.slot,
+            pubkey: Pubkey::try_from(inner_account.pubkey).expect("valid pubkey"),
+            lamports: inner_account.lamports,
+            owner: Pubkey::try_from(inner_account.owner).expect("valid pubkey"),
+            executable: inner_account.executable,
+            rent_epoch: inner_account.rent_epoch,
+            data: inner_account.data,
+            write_version: inner_account.write_version,
+            txn_signature: bs58::encode(inner_account.txn_signature.unwrap_or_default())
+                .into_string(),
+        })
+    }
 
 pub async fn start_stakes_and_votes_loop(
     data_cache: DataCache,
@@ -88,17 +117,17 @@ pub async fn start_stakes_and_votes_loop(
     )>,
     rpc_client: Arc<RpcClient>,
     grpc_url: String,
-) -> anyhow::Result<tokio::task::JoinHandle<()>> {
+) -> anyhow::Result<AnyhowJoinHandle> {
     log::info!("Start Stake and Vote loop on :{grpc_url}.");
     let mut stake_vote_geyser_stream = subscribe_geyser_stake_vote_owner(grpc_url.clone()).await?;
     let mut stake_history_geyser_stream = subscribe_geyser_stake_history(grpc_url).await?;
     log::info!("Stake and Vote geyser subscription done.");
     let jh = tokio::spawn(async move {
         //Stake account management struct
-        let mut stakestore = stake::StakeStore::new(STAKESTORE_INITIAL_CAPACITY);
+        let mut stakestore = StakeStore::new(0);
 
         //Vote account management struct
-        let mut votestore = vote::VoteStore::new(VOTESTORE_INITIAL_CAPACITY);
+        let mut votestore = VoteStore::new(0);
 
         //Init bootstrap process
         let mut current_schedule_epoch =
@@ -233,7 +262,7 @@ pub async fn start_stakes_and_votes_loop(
                                             //store new account stake.
                                             let current_slot = solana_lite_rpc_core::solana_utils::get_current_confirmed_slot(&data_cache).await;
 
-                                            if let Some(account) = AccountPretty::new_from_geyser(account, current_slot) {
+                                            if let Some(account) = account_pretty_from_geyser(account, current_slot) {
                                                 match account.owner {
                                                     solana_sdk::stake::program::ID => {
                                                         log::trace!("Geyser notif stake account:{}", account);
@@ -330,6 +359,7 @@ pub async fn start_stakes_and_votes_loop(
                 }
             }
         }
+        Ok(())
     });
     Ok(jh)
 }

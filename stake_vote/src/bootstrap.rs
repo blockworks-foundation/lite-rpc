@@ -1,12 +1,6 @@
 use crate::epoch::ScheduleEpochData;
 use crate::leader_schedule::LeaderScheduleGeneratedData;
-use crate::stake::StakeMap;
-use crate::stake::StakeStore;
-use crate::utils::{Takable, TakeResult};
-use crate::vote::EpochVoteStakes;
-use crate::vote::EpochVoteStakesCache;
-use crate::vote::VoteMap;
-use crate::vote::VoteStore;
+use crate::vote::merge_program_account_in_vote_map;
 use anyhow::bail;
 use futures::future::join_all;
 use futures_util::stream::FuturesUnordered;
@@ -15,6 +9,16 @@ use solana_client::client_error::ClientErrorKind;
 use solana_client::rpc_client::RpcClient;
 use solana_client::rpc_response::RpcVoteAccountStatus;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
+use solana_lite_rpc_core::stores::stake_store::merge_program_account_in_strake_map;
+use solana_lite_rpc_core::stores::stake_store::StakeMap;
+use solana_lite_rpc_core::stores::stake_store::StakeStore;
+use solana_lite_rpc_core::stores::takable_map::Takable;
+use solana_lite_rpc_core::stores::takable_map::TakeResult;
+use solana_lite_rpc_core::stores::vote_store::EpochVoteStakes;
+use solana_lite_rpc_core::stores::vote_store::EpochVoteStakesCache;
+use solana_lite_rpc_core::stores::vote_store::VoteMap;
+use solana_lite_rpc_core::stores::vote_store::VoteStore;
+use solana_lite_rpc_core::structures::account_pretty::read_historystake_from_account;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
 use solana_program::slot_history::Slot;
@@ -290,7 +294,9 @@ fn process_bootstrap_event(
             history,
             rpc_url,
         ) => {
-            let stake_history = crate::account::read_historystake_from_account(&history.data);
+            log::info!("BootstrapEvent::StoreExtracted RECV");
+
+            let stake_history = read_historystake_from_account(&history.data);
             if stake_history.is_none() {
                 return BootsrapProcessResult::Error(
                     "Bootstrap error, can't read stake history from account data.".to_string(),
@@ -301,12 +307,12 @@ fn process_bootstrap_event(
             let jh = tokio::task::spawn_blocking({
                 move || {
                     //update pa_list to set slot update to start epoq one.
-                    crate::stake::merge_program_account_in_strake_map(
+                    merge_program_account_in_strake_map(
                         &mut stake_map,
                         stakes,
                         0, //with RPC no way to know the slot of the account update. Set to 0.
                     );
-                    crate::vote::merge_program_account_in_vote_map(
+                    merge_program_account_in_vote_map(
                         &mut vote_map,
                         votes,
                         0, //with RPC no way to know the slot of the account update. Set to 0.

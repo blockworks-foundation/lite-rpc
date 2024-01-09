@@ -1,16 +1,16 @@
-use crate::utils::TakableContent;
-use crate::utils::TakableMap;
-use crate::utils::UpdateAction;
-use crate::AccountPretty;
-use crate::Slot;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
-use solana_sdk::account::Account;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::stake::state::Delegation;
+use solana_sdk::{account::Account, slot_history::Slot};
 use std::collections::HashMap;
 
+use crate::structures::account_pretty::AccountPretty;
+
+use super::takable_map::{TakableContent, TakableMap, UpdateAction};
+
 pub type StakeMap = HashMap<Pubkey, StoredStake>;
+pub const STAKESTORE_INITIAL_CAPACITY: usize = 600000;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct StoredStake {
@@ -27,7 +27,7 @@ impl TakableContent<StoredStake> for StakeMap {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct StakeStore {
     pub stakes: TakableMap<StoredStake, StakeMap>,
 }
@@ -127,7 +127,7 @@ pub fn merge_program_account_in_strake_map(
     stakes_list
         .into_iter()
         .filter_map(|(pk, account)| {
-            match crate::account::read_stake_from_account_data(&account.data) {
+            match crate::structures::account_pretty::read_stake_from_account_data(&account.data) {
                 Ok(opt_stake) => opt_stake.map(|stake| (pk, stake, account.lamports)),
                 Err(err) => {
                     log::warn!("Error during pa account data deserialisation:{err}");

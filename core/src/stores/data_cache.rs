@@ -20,6 +20,8 @@ use crate::{
 };
 
 use super::block_information_store::BlockInformation;
+use super::stake_store::{StakeStore, STAKESTORE_INITIAL_CAPACITY};
+use super::vote_store::{VoteStore, VOTESTORE_INITIAL_CAPACITY};
 pub type TxSubKey = (String, CommitmentConfig);
 
 #[derive(Default, Clone)]
@@ -39,6 +41,8 @@ pub struct DataCache {
     pub cluster_info: ClusterInfo,
     pub epoch_data: EpochCache,
     pub leader_schedule: Arc<RwLock<CalculatedSchedule>>,
+    pub stake_store: StakeStore,
+    pub vote_store: VoteStore,
 }
 
 impl DataCache {
@@ -90,6 +94,8 @@ impl DataCache {
             },
             epoch_data: EpochCache::new_for_tests(),
             leader_schedule: Arc::new(RwLock::new(CalculatedSchedule::default())),
+            stake_store: StakeStore::new(STAKESTORE_INITIAL_CAPACITY),
+            vote_store: VoteStore::new(VOTESTORE_INITIAL_CAPACITY),
         }
     }
 }

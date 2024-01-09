@@ -14,6 +14,8 @@ use solana_lite_rpc_services::{
     tx_sender::TxSender,
 };
 use std::time::Duration;
+
+#[derive(Clone)]
 pub struct ServiceSpawner {
     pub prometheus_addr: String,
     pub data_cache: DataCache,

@@ -1,10 +1,7 @@
-use crate::utils::wait_for_merge_or_get_content;
-use crate::utils::Takable;
-use crate::vote::EpochVoteStakesCache;
-use crate::vote::VoteMap;
-use crate::vote::VoteStore;
 use crate::Slot;
 use futures_util::stream::FuturesUnordered;
+use solana_lite_rpc_core::stores::takable_map::{wait_for_merge_or_get_content, Takable};
+use solana_lite_rpc_core::stores::vote_store::{EpochVoteStakesCache, VoteMap, VoteStore};
 use solana_lite_rpc_core::structures::leaderschedule::GetVoteAccountsConfig;
 use solana_rpc_client_api::response::RpcVoteAccountStatus;
 use tokio::sync::oneshot;
