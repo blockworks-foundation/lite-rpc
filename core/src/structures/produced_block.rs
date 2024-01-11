@@ -177,7 +177,7 @@ impl ProducedBlock {
 
 #[inline]
 fn calc_prioritization_fees(units: u32, additional_fee: u32) -> u64 {
-    (units as u64 * 1000) /  additional_fee as u64
+    (units as u64 * 1000) / additional_fee as u64
 }
 
 #[test]
