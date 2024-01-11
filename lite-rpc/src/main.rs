@@ -10,7 +10,6 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::grpc_leaders_getter::GrpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
@@ -31,7 +30,6 @@ use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
     produced_block::ProducedBlock,
 };
-use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterface;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
@@ -100,8 +98,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
-        calculate_leader_schedule_form_geyser,
-        grpc_addr,
         ..
     } = args;
 
@@ -154,7 +150,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
     info!("Got finalized block: {:?}", finalized_block.slot);
 
-    let (epoch_data, current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
+    let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
 
     let block_information_store =
         BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
@@ -208,48 +204,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         data_cache: data_cache.clone(),
     };
     //init grpc leader schedule and vote account is configured.
-    let (leader_schedule, rpc_stakes_send): (Arc<dyn LeaderFetcherInterface>, Option<_>) =
-        if use_grpc && calculate_leader_schedule_form_geyser {
-            //init leader schedule grpc process.
-
-            //1) get stored leader schedule and stakes (or via RPC if not present)
-            solana_lite_rpc_stakevote::bootstrat_literpc_leader_schedule(
-                rpc_client.url(),
-                &data_cache,
-                current_epoch_info.epoch,
-            )
-            .await;
-
-            //2) start stake vote and leader schedule.
-            let (rpc_stakes_send, rpc_stakes_recv) = mpsc::channel(1000);
-            let stake_vote_jh = solana_lite_rpc_stakevote::start_stakes_and_votes_loop(
-                data_cache.clone(),
-                slot_notifier.resubscribe(),
-                rpc_stakes_recv,
-                Arc::clone(&rpc_client),
-                grpc_addr,
-            )
-            .await?;
-
-            //
-            tokio::spawn(async move {
-                let err = stake_vote_jh.await;
-                log::error!("Vote and stake Services exit with error: {err:?}");
-            });
-
-            (
-                Arc::new(GrpcLeaderGetter::new(
-                    Arc::clone(&data_cache.leader_schedule),
-                    data_cache.epoch_data.clone(),
-                )),
-                Some(rpc_stakes_send),
-            )
-        } else {
-            (
-                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128)),
-                None,
-            )
-        };
+    let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128));
     let tpu_service: TpuService = TpuService::new(
         tpu_config,
         validator_identity,
@@ -284,7 +239,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             data_cache.clone(),
             transaction_service,
             history,
-            rpc_stakes_send,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
