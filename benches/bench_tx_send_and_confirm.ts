@@ -76,7 +76,7 @@ export async function main() {
 }
 
 main().then(x => {
-    console.log('finished sucessfully')
+    console.log('finished successfully')
 }).catch(e => {
     console.log('caught an error : ' + e)
 })

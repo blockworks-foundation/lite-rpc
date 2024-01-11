@@ -20,7 +20,6 @@ solana tpu ([details](quic-forward-proxy/README.md)).
 ### Confirmation strategies
 
 1) Subscribe to new blocks using websockets (deprecated)
-(depricated) 
 2) Polling blocks over RPC.(Current) 
 3) Subscribe blocks over gRPC.
 (Current) 

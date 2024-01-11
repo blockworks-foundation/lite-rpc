@@ -55,6 +55,7 @@ Method calls:
 
 ##### Cluster info Domain
   - [getclusternodes](https://docs.solana.com/api/http#getclusternodes) not in geyser plugin can be get from gossip. Try to update gyser first.
+
 ##### Validator Domain
  - [getslot](https://docs.solana.com/api/http#getslot) Need top add 2 new commitment level for first shred seen and half confirm (1/3 of the stake has voted on the block)
  - [getBlockHeight](https://docs.solana.com/api/http#getblockheight)

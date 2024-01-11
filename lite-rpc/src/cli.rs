@@ -42,7 +42,8 @@ pub struct Config {
     pub quic_proxy_addr: Option<String>,
     #[serde(default)]
     pub use_grpc: bool,
-
+    #[serde(default)]
+    pub calculate_leader_schedule_form_geyser: bool,
     #[serde(default = "Config::default_grpc_addr")]
     pub grpc_addr: String,
     #[serde(default)]

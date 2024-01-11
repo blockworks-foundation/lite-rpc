@@ -1,5 +1,6 @@
 pub mod endpoint_stremers;
 pub mod grpc_inspect;
+pub mod grpc_leaders_getter;
 pub mod grpc_multiplex;
 pub mod grpc_stream_utils;
 pub mod grpc_subscription;

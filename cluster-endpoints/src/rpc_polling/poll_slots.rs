@@ -90,7 +90,7 @@ pub fn poll_slots(
                                 processed_slot: current_slot,
                                 estimated_processed_slot: estimated_slot,
                             })
-                            .context("Connot send slot notification")?;
+                            .context("Cannot send slot notification")?;
                     }
                 }
             }
