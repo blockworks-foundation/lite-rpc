@@ -27,7 +27,7 @@ use yellowstone_grpc_proto::prelude::SubscribeUpdate;
 use yellowstone_grpc_proto::tonic::Status;
 mod bootstrap;
 mod epoch;
-mod leader_schedule;
+mod geyser_leader_schedule;
 mod rpcrequest;
 mod utils;
 mod vote;
@@ -36,7 +36,7 @@ mod vote;
 
 type Slot = u64;
 
-pub async fn bootstrat_literpc_leader_schedule(
+pub async fn bootstrap_literpc_leader_schedule(
     rpc_url: String,
     data_cache: &DataCache,
     current_epoch_of_loading: u64,
@@ -111,10 +111,6 @@ fn account_pretty_from_geyser(
 pub async fn start_stakes_and_votes_loop(
     data_cache: DataCache,
     mut slot_notification: SlotStream,
-    mut vote_account_rpc_request: Receiver<(
-        GetVoteAccountsConfig,
-        tokio::sync::oneshot::Sender<RpcVoteAccountStatus>,
-    )>,
     rpc_client: Arc<RpcClient>,
     grpc_url: String,
 ) -> anyhow::Result<AnyhowJoinHandle> {
@@ -123,12 +119,6 @@ pub async fn start_stakes_and_votes_loop(
     let mut stake_history_geyser_stream = subscribe_geyser_stake_history(grpc_url).await?;
     log::info!("Stake and Vote geyser subscription done.");
     let jh = tokio::spawn(async move {
-        //Stake account management struct
-        let mut stakestore = StakeStore::new(0);
-
-        //Vote account management struct
-        let mut votestore = VoteStore::new(0);
-
         //Init bootstrap process
         let mut current_schedule_epoch =
             crate::bootstrap::bootstrap_schedule_epoch_data(&data_cache).await;
@@ -161,7 +151,7 @@ pub async fn start_stakes_and_votes_loop(
                     let schedule_event = current_schedule_epoch.process_new_confirmed_slot(new_slot, &data_cache).await;
                     if bootstrap_done {
                         if let Some(init_event) = schedule_event {
-                            crate::leader_schedule::run_leader_schedule_events(
+                            crate::geyser_leader_schedule::run_leader_schedule_events(
                                 init_event,
                                 &mut spawned_leader_schedule_task,
                                 &mut stakestore,
@@ -215,12 +205,12 @@ pub async fn start_stakes_and_votes_loop(
                                     let acc_id = Pubkey::try_from(account.pubkey).expect("valid pubkey");
                                     if acc_id  == solana_sdk::sysvar::stake_history::ID {
                                         log::debug!("Geyser notifstake_history");
-                                        match crate::account::read_historystake_from_account(account.data.as_slice())  {
+                                        match read_historystake_from_account(account.data.as_slice())  {
                                             Some(stake_history) => {
                                                 let schedule_event = current_schedule_epoch.set_epoch_stake_history(stake_history);
                                                 if bootstrap_done {
                                                     if let Some(init_event) = schedule_event {
-                                                        crate::leader_schedule::run_leader_schedule_events(
+                                                        crate::geyser_leader_schedule::run_leader_schedule_events(
                                                             init_event,
                                                             &mut spawned_leader_schedule_task,
                                                             &mut stakestore,
@@ -341,7 +331,7 @@ pub async fn start_stakes_and_votes_loop(
                 }
                 //Manage leader schedule generation process
                 Some(Ok(event)) = spawned_leader_schedule_task.next() =>  {
-                    let new_leader_schedule = crate::leader_schedule::run_leader_schedule_events(
+                    let new_leader_schedule = crate::geyser_leader_schedule::run_leader_schedule_events(
                         event,
                         &mut spawned_leader_schedule_task,
                         &mut stakestore,

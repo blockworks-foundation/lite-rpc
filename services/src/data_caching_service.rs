@@ -35,6 +35,7 @@ lazy_static::lazy_static! {
 pub struct DataCachingService {
     pub data_cache: DataCache,
     pub clean_duration: Duration,
+    pub calculate_leader_schedule_form_geyser: bool,
 }
 
 impl DataCachingService {

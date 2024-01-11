@@ -1,4 +1,4 @@
-use crate::leader_schedule::LeaderScheduleEvent;
+use crate::geyser_leader_schedule::GeyserLeaderScheduleEvent;
 use serde::{Deserialize, Serialize};
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_sdk::stake_history::StakeHistory;
@@ -42,7 +42,7 @@ impl ScheduleEpochData {
         &mut self,
         new_slot: u64,
         data_cache: &DataCache,
-    ) -> Option<LeaderScheduleEvent> {
+    ) -> Option<GeyserLeaderScheduleEvent> {
         if self.current_confirmed_slot < new_slot {
             self.current_confirmed_slot = new_slot;
             log::trace!("Receive slot slot: {new_slot:?}");
@@ -55,13 +55,13 @@ impl ScheduleEpochData {
     pub fn set_epoch_stake_history(
         &mut self,
         history: StakeHistory,
-    ) -> Option<LeaderScheduleEvent> {
+    ) -> Option<GeyserLeaderScheduleEvent> {
         log::debug!("set_epoch_stake_history");
         self.new_stake_history = Some(history);
         self.verify_epoch_change()
     }
 
-    async fn manage_change_epoch(&mut self, data_cache: &DataCache) -> Option<LeaderScheduleEvent> {
+    async fn manage_change_epoch(&mut self, data_cache: &DataCache) -> Option<GeyserLeaderScheduleEvent> {
         //execute leaderschedule calculus at the last slot of the current epoch.
         //account change of the slot has been send at confirmed slot.
         //first epoch slot send all stake change and during this send no slot is send.
@@ -89,7 +89,7 @@ impl ScheduleEpochData {
         }
     }
 
-    fn verify_epoch_change(&mut self) -> Option<LeaderScheduleEvent> {
+    fn verify_epoch_change(&mut self) -> Option<GeyserLeaderScheduleEvent> {
         if self.new_stake_history.is_some() && self.next_epoch_change.is_some() {
             log::info!("Change epoch at slot:{}", self.current_confirmed_slot);
             let (next_epoch, last_slot_in_epoch) = self.next_epoch_change.take().unwrap(); //unwrap tested before.
@@ -98,7 +98,7 @@ impl ScheduleEpochData {
 
             //start leader schedule calculus
             //at current epoch change the schedule is calculated for the next epoch.
-            Some(crate::leader_schedule::LeaderScheduleEvent::Init(
+            Some(crate::geyser_leader_schedule::GeyserLeaderScheduleEvent::Init(
                 self.current_epoch,
                 self.slots_in_epoch,
                 self.new_rate_activation_epoch,

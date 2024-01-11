@@ -1,5 +1,5 @@
 use crate::epoch::ScheduleEpochData;
-use crate::leader_schedule::LeaderScheduleGeneratedData;
+use crate::geyser_leader_schedule::LeaderScheduleGeneratedData;
 use crate::vote::merge_program_account_in_vote_map;
 use anyhow::bail;
 use futures::future::join_all;
@@ -83,7 +83,7 @@ pub fn bootstrap_leaderschedule_from_rpc(
 
     //Calculate the slot leaders by from the node schedule because RPC call get_slot_leaders is limited to 5000 slots.
     let current_schedule_by_slot =
-        crate::leader_schedule::calculate_slot_leaders_from_schedule(&current_schedule_by_node)
+        crate::geyser_leader_schedule::calculate_slot_leaders_from_schedule(&current_schedule_by_node)
             .map_err(|err| ClientError {
                 request: None,
                 kind: ClientErrorKind::Custom(format!(
@@ -104,7 +104,7 @@ pub fn bootstrap_leaderschedule_from_rpc(
 
     //Calculate the slot leaders by from the node schedule because RPC call get_slot_leaders is limited to 5000 slots.
     let next_schedule_by_slot =
-        crate::leader_schedule::calculate_slot_leaders_from_schedule(&next_schedule_by_node)
+        crate::geyser_leader_schedule::calculate_slot_leaders_from_schedule(&next_schedule_by_node)
             .map_err(|err| ClientError {
                 request: None,
                 kind: ClientErrorKind::Custom(format!(
@@ -467,13 +467,13 @@ pub fn bootstrap_current_leader_schedule(
     }
 
     //calcualte leader schedule for all vote stakes.
-    let current_schedule = crate::leader_schedule::calculate_leader_schedule(
+    let current_schedule = crate::geyser_leader_schedule::calculate_leader_schedule(
         &current_epoch_stakes,
         current_epoch,
         slots_in_epoch,
     );
 
-    let next_schedule = crate::leader_schedule::calculate_leader_schedule(
+    let next_schedule = crate::geyser_leader_schedule::calculate_leader_schedule(
         &next_epoch_stakes,
         next_epoch,
         slots_in_epoch,

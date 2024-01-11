@@ -170,6 +170,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let data_cache_service = DataCachingService {
         data_cache: data_cache.clone(),
         clean_duration: Duration::from_secs(120),
+        calculate_leader_schedule_form_geyser : calculate_leader_schedule_form_geyser && use_grpc,
     };
 
     let (notification_channel, postgres) = start_postgres(postgres).await?;
@@ -210,6 +211,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let tx_sender = TxSender::new(data_cache.clone(), tpu_service.clone());
     let tx_replayer =
         TransactionReplayer::new(tpu_service.clone(), data_cache.txs.clone(), retry_after);
+
+    subscribe_to_endpoints().await;
 
     let bridge_service = tokio::spawn(
         LiteBridge::new(

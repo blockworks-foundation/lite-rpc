@@ -34,18 +34,12 @@ pub async fn subscribe_to_endpoints(
     drop(blocks_notifier);
 
     //init grpc leader schedule and vote account is configured.
-    /*
-   let spawner = ServiceSpawner {
-        prometheus_addr,
-        data_cache: data_cache.clone(),
-    };
-    //init grpc leader schedule and vote account is configured.
     let (leader_schedule, rpc_stakes_send): (Arc<dyn LeaderFetcherInterface>, Option<_>) =
         if use_grpc && calculate_leader_schedule_form_geyser {
             //init leader schedule grpc process.
 
             //1) get stored leader schedule and stakes (or via RPC if not present)
-            solana_lite_rpc_stakevote::bootstrat_literpc_leader_schedule(
+            solana_lite_rpc_stakevote::bootstrap_literpc_leader_schedule(
                 rpc_client.url(),
                 &data_cache,
                 current_epoch_info.epoch,
@@ -82,7 +76,6 @@ pub async fn subscribe_to_endpoints(
                 None,
             )
         };
-    */
     let (transaction_service, tx_service_jh) = service_spawner.spawn_tx_service(
         tx_sender,
         tx_replayer,
