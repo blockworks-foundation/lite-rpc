@@ -1,4 +1,4 @@
-name: Integration Test with Validator
+name: Cargo Nightly Clippy
 
 on:
   push:
@@ -14,7 +14,7 @@ env:
 
 jobs:
   build_and_test:
-    name: Test lite-rpc against running Validator
+    name: lite-rpc full build
     runs-on: ubuntu-22.04
     steps:
       - name: Install Linux Packages
@@ -28,6 +28,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           # use toolchain version from rust-toolchain.toml
+          toolchain: nightly
           components: rustfmt, clippy
           cache: true
           # avoid the default "-D warnings" which thrashes cache
@@ -44,21 +45,8 @@ jobs:
           cache-targets: false
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install node deps
-        run: yarn
-          
-      - name: Setup Solana Validator v1.16.13
-        run: |
-          sh -c "$(curl -sSfL https://release.solana.com/v1.16.13/install)"
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-          ls "$HOME/.local/share/solana/install/active_release/bin"
-          echo "Solana Cli installed"
-          solana --version
-          echo "Generating keypair..."
-          solana-keygen new -o "$HOME/.config/solana/id.json" --no-passphrase --silent
-          solana config set --url "http://0.0.0.0:8899"
 
-      - name: Run and Test
+      - name: Run fmt+clippy
         run: |
-          bash ./test.bash
+          cargo fmt --all --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings

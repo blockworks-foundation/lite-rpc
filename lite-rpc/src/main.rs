@@ -1,19 +1,20 @@
 pub mod rpc_tester;
 
-use std::time::Duration;
-
+use crate::rpc_tester::RpcTester;
 use anyhow::bail;
-use clap::Parser;
 use dashmap::DashMap;
-use dotenv::dotenv;
+use lite_rpc::bridge::LiteBridge;
+use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
-use lite_rpc::{bridge::LiteBridge, cli::Args};
-use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, GRPC_VERSION};
-
-use crate::rpc_tester::RpcTester;
+use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
+use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
+use solana_lite_rpc_cluster_endpoints::grpc_leaders_getter::GrpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
+use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
@@ -25,14 +26,17 @@ use solana_lite_rpc_core::stores::{
     subscription_store::SubscriptionStore,
     tx_store::TxStore,
 };
+use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
     produced_block::ProducedBlock,
 };
+use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterface;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
 use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
@@ -43,10 +47,11 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
-use std::env;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -61,9 +66,9 @@ async fn get_latest_block(
 }
 
 pub async fn start_postgres(
-    enable: bool,
+    config: Option<PostgresSessionConfig>,
 ) -> anyhow::Result<(Option<NotificationSender>, AnyhowJoinHandle)> {
-    if !enable {
+    let Some(config) = config else {
         return Ok((
             None,
             tokio::spawn(async {
@@ -71,36 +76,38 @@ pub async fn start_postgres(
                 unreachable!()
             }),
         ));
-    }
+    };
 
     let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
 
-    let postgres_session_cache = PostgresSessionCache::new().await?;
+    let postgres_session_cache = PostgresSessionCache::new(config).await?;
     let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
 
     Ok((Some(postgres_send), postgres))
 }
 
-pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
-    let Args {
+pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
+    let grpc_sources = args.get_grpc_sources();
+    log::info!("grpc_sources:{grpc_sources:?}");
+    let Config {
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
         fanout_size,
-        enable_postgres,
+        postgres,
         prometheus_addr,
         identity_keypair,
         maximum_retries_per_tx,
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
+        calculate_leader_schedule_form_geyser,
         grpc_addr,
-        grpc_x_token,
         ..
     } = args;
 
     let validator_identity = Arc::new(
-        load_identity_keypair(&identity_keypair)
-            .await
+        load_identity_keypair(identity_keypair)
+            .await?
             .unwrap_or_else(Keypair::new),
     );
 
@@ -109,13 +116,31 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
+        info!("Creating geyser subscription...");
+
+        let timeouts = GrpcConnectionTimeouts {
+            connect_timeout: Duration::from_secs(5),
+            request_timeout: Duration::from_secs(5),
+            subscribe_timeout: Duration::from_secs(5),
+        };
+
         create_grpc_subscription(
             rpc_client.clone(),
-            grpc_addr,
-            grpc_x_token,
-            GRPC_VERSION.to_string(),
+            grpc_sources
+                .iter()
+                .map(|s| {
+                    GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
+                })
+                .collect(),
         )?
+
+        // create_grpc_subscription(
+        //     rpc_client.clone(),
+        //     grpc_addr.clone(),
+        //     GRPC_VERSION.to_string(),
+        // )?
     } else {
+        info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
     let EndpointStreaming {
@@ -124,10 +149,12 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         slot_notifier,
         vote_account_notifier,
     } = subscriptions;
+
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
+    info!("Got finalized block: {:?}", finalized_block.slot);
 
-    let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await?;
+    let (epoch_data, current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
 
     let block_information_store =
         BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
@@ -142,15 +169,16 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
             store: Arc::new(DashMap::new()),
         },
         epoch_data,
+        leader_schedule: Arc::new(RwLock::new(CalculatedSchedule::default())),
     };
 
-    let lata_cache_service = DataCachingService {
+    let data_cache_service = DataCachingService {
         data_cache: data_cache.clone(),
         clean_duration: Duration::from_secs(120),
     };
 
     // to avoid laggin we resubscribe to block notification
-    let data_caching_service = lata_cache_service.listen(
+    let data_caching_service = data_cache_service.listen(
         blocks_notifier.resubscribe(),
         slot_notifier.resubscribe(),
         cluster_info_notifier,
@@ -158,7 +186,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     );
     drop(blocks_notifier);
 
-    let (notification_channel, postgres) = start_postgres(enable_postgres).await?;
+    let (notification_channel, postgres) = start_postgres(postgres).await?;
 
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,
@@ -179,8 +207,49 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         prometheus_addr,
         data_cache: data_cache.clone(),
     };
-    let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128));
+    //init grpc leader schedule and vote account is configured.
+    let (leader_schedule, rpc_stakes_send): (Arc<dyn LeaderFetcherInterface>, Option<_>) =
+        if use_grpc && calculate_leader_schedule_form_geyser {
+            //init leader schedule grpc process.
 
+            //1) get stored leader schedule and stakes (or via RPC if not present)
+            solana_lite_rpc_stakevote::bootstrat_literpc_leader_schedule(
+                rpc_client.url(),
+                &data_cache,
+                current_epoch_info.epoch,
+            )
+            .await;
+
+            //2) start stake vote and leader schedule.
+            let (rpc_stakes_send, rpc_stakes_recv) = mpsc::channel(1000);
+            let stake_vote_jh = solana_lite_rpc_stakevote::start_stakes_and_votes_loop(
+                data_cache.clone(),
+                slot_notifier.resubscribe(),
+                rpc_stakes_recv,
+                Arc::clone(&rpc_client),
+                grpc_addr,
+            )
+            .await?;
+
+            //
+            tokio::spawn(async move {
+                let err = stake_vote_jh.await;
+                log::error!("Vote and stake Services exit with error: {err:?}");
+            });
+
+            (
+                Arc::new(GrpcLeaderGetter::new(
+                    Arc::clone(&data_cache.leader_schedule),
+                    data_cache.epoch_data.clone(),
+                )),
+                Some(rpc_stakes_send),
+            )
+        } else {
+            (
+                Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128)),
+                None,
+            )
+        };
     let tpu_service: TpuService = TpuService::new(
         tpu_config,
         validator_identity,
@@ -200,6 +269,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
         maximum_retries_per_tx,
         slot_notifier.resubscribe(),
     );
+
     drop(slot_notifier);
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
@@ -214,6 +284,7 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
             data_cache.clone(),
             transaction_service,
             history,
+            rpc_stakes_send,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
@@ -239,34 +310,21 @@ pub async fn start_lite_rpc(args: Args, rpc_client: Arc<RpcClient>) -> anyhow::R
     }
 }
 
-fn get_args() -> Args {
-    let mut args = Args::parse();
-
-    dotenv().ok();
-
-    args.enable_postgres = args.enable_postgres
-        || if let Ok(enable_postgres_env_var) = env::var("PG_ENABLED") {
-            enable_postgres_env_var != "false"
-        } else {
-            false
-        };
-
-    args
-}
-
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let args = get_args();
+    let config = Config::load().await?;
 
     let ctrl_c_signal = tokio::signal::ctrl_c();
-    let Args { rpc_addr, .. } = &args;
+    let Config { rpc_addr, .. } = &config;
     // rpc client
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
 
-    let main = start_lite_rpc(args.clone(), rpc_client);
+    info!("Use RPC address: {}", obfuscate_rpcurl(rpc_addr));
+
+    let main = start_lite_rpc(config, rpc_client);
 
     tokio::select! {
         err = rpc_tester => {
@@ -310,4 +368,12 @@ fn parse_host_port(host_port: &str) -> Result<SocketAddr, String> {
     } else {
         Ok(addrs[0])
     }
+}
+
+// http://mango.rpcpool.com/c232ab232ba2323
+fn obfuscate_rpcurl(rpc_addr: &str) -> String {
+    if rpc_addr.contains("rpcpool.com") {
+        return rpc_addr.replacen(char::is_numeric, "X", 99);
+    }
+    rpc_addr.to_string()
 }

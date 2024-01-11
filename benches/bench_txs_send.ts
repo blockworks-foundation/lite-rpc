@@ -89,7 +89,7 @@ const skip_confirmations = get_postional_arg(5, false) === "true";
             }
 
         }
-        console.log("sucesses : " + successes)
+        console.log("successes : " + successes)
         console.log("failures : " + failures)
         //console.log("time taken to send : " + time_taken_to_send)
     }

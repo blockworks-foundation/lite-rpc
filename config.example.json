@@ -1,0 +1,24 @@
+{
+  "rpc_addr": "http://0.0.0.0:8899",
+  "ws_addr": "ws://0.0.0.0:8900",
+  "lite_rpc_http_addr": "[::]:8890",
+  "lite_rpc_ws_addr": "[::]:8891",
+  "fanout_size": 18,
+  "identity_keypair": null,
+  "prometheus_addr": "[::]:9091",
+  "maximum_retries_per_tx": 40,
+  "transaction_retry_after_secs": 3,
+  "quic_proxy_addr": null,
+  "use_grpc": false,
+  "calculate_leader_schedule_form_geyser": false,
+  "grpc_addr": "http://127.0.0.0:10000",
+  "grpc_x_token": null,
+  "postgres": {
+    "pg_config": "your_postgres_config",
+    "ssl": {
+      "ca_pem_b64": "your_base64_encoded_ca_pem",
+      "client_pks_b64": "your_base64_encoded_client_pks",
+      "client_pks_pass": "your_client_pks_password"
+    }
+  }
+}

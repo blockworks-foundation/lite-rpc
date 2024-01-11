@@ -166,7 +166,13 @@ impl ProducedBlock {
         }
     }
 
-
+    /// moving commitment level to finalized
+    pub fn to_finalized_block(&self) -> Self {
+        ProducedBlock {
+            commitment_config: CommitmentConfig::finalized(),
+            ..self.clone()
+        }
+    }
 }
 
 #[inline]
