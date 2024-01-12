@@ -13,8 +13,6 @@ pub mod service_spawner;
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";
 #[from_env]
-pub const DEFAULT_LITE_RPC_ADDR: &str = "http://0.0.0.0:8890";
-#[from_env]
 pub const DEFAULT_WS_ADDR: &str = "ws://0.0.0.0:8900";
 
 #[from_env]
@@ -35,7 +33,7 @@ pub const DEFAULT_TRANSACTION_CONFIRMATION_STATUS: TransactionConfirmationStatus
     TransactionConfirmationStatus::Finalized;
 
 #[from_env]
-pub const DEFAULT_GRPC_ADDR: &str = "http://127.0.0.0:10000";
+pub const DEFAULT_GRPC_ADDR: &str = "http://localhost:10000";
 
 #[from_env]
 pub const GRPC_VERSION: &str = "1.16.1";

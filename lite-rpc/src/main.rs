@@ -1,7 +1,6 @@
 pub mod rpc_tester;
 
-use std::time::Duration;
-
+use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
 use lite_rpc::bridge::LiteBridge;
@@ -9,9 +8,6 @@ use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
-
-use crate::rpc_tester::RpcTester;
 use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
@@ -29,6 +25,7 @@ use solana_lite_rpc_core::stores::{
     subscription_store::SubscriptionStore,
     tx_store::TxStore,
 };
+use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
     produced_block::ProducedBlock,
@@ -37,6 +34,7 @@ use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
 use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
@@ -49,7 +47,9 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -86,6 +86,7 @@ pub async fn start_postgres(
 
 pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow::Result<()> {
     let grpc_sources = args.get_grpc_sources();
+    log::info!("grpc_sources:{grpc_sources:?}");
     let Config {
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
@@ -128,11 +129,16 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                 })
                 .collect(),
         )?
+
+        // create_grpc_subscription(
+        //     rpc_client.clone(),
+        //     grpc_addr.clone(),
+        //     GRPC_VERSION.to_string(),
+        // )?
     } else {
         info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
-
     let EndpointStreaming {
         blocks_notifier,
         cluster_info_notifier,
@@ -144,7 +150,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
     info!("Got finalized block: {:?}", finalized_block.slot);
 
-    let epoch_data = EpochCache::bootstrap_epoch(&rpc_client).await?;
+    let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
 
     let block_information_store =
         BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
@@ -159,15 +165,16 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             store: Arc::new(DashMap::new()),
         },
         epoch_data,
+        leader_schedule: Arc::new(RwLock::new(CalculatedSchedule::default())),
     };
 
-    let lata_cache_service = DataCachingService {
+    let data_cache_service = DataCachingService {
         data_cache: data_cache.clone(),
         clean_duration: Duration::from_secs(120),
     };
 
     // to avoid laggin we resubscribe to block notification
-    let data_caching_service = lata_cache_service.listen(
+    let data_caching_service = data_cache_service.listen(
         blocks_notifier.resubscribe(),
         slot_notifier.resubscribe(),
         cluster_info_notifier,
@@ -196,8 +203,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         prometheus_addr,
         data_cache: data_cache.clone(),
     };
+    //init grpc leader schedule and vote account is configured.
     let leader_schedule = Arc::new(JsonRpcLeaderGetter::new(rpc_client.clone(), 1024, 128));
-
     let tpu_service: TpuService = TpuService::new(
         tpu_config,
         validator_identity,
@@ -217,6 +224,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         maximum_retries_per_tx,
         slot_notifier.resubscribe(),
     );
+
     drop(slot_notifier);
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });

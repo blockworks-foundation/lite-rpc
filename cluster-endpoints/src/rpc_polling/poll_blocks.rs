@@ -126,7 +126,7 @@ pub fn poll_block(
 
     //slot poller
     let slot_poller = tokio::spawn(async move {
-        log::info!("block listner started");
+        log::info!("block listener started");
         let current_slot = rpc_client
             .get_slot()
             .await

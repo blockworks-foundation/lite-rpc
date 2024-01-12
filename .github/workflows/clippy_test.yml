@@ -28,7 +28,7 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           # use toolchain version from rust-toolchain.toml
-          toolchain: nightly
+          toolchain: nightly-2024-01-05
           components: rustfmt, clippy
           cache: true
           # avoid the default "-D warnings" which thrashes cache
@@ -48,5 +48,5 @@ jobs:
 
       - name: Run fmt+clippy
         run: |
-          cargo fmt --all --check
-          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo +nightly-2024-01-05 fmt --all --check
+          cargo +nightly-2024-01-05 clippy --locked --workspace --all-targets -- -D warnings

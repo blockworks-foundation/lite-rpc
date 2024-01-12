@@ -1,7 +1,7 @@
 {
   "rpc_addr": "http://0.0.0.0:8899",
   "ws_addr": "ws://0.0.0.0:8900",
-  "lite_rpc_http_addr": "http://0.0.0.0:8890",
+  "lite_rpc_http_addr": "[::]:8890",
   "lite_rpc_ws_addr": "[::]:8891",
   "fanout_size": 18,
   "identity_keypair": null,
@@ -10,6 +10,7 @@
   "transaction_retry_after_secs": 3,
   "quic_proxy_addr": null,
   "use_grpc": false,
+  "calculate_leader_schedule_form_geyser": false,
   "grpc_addr": "http://127.0.0.0:10000",
   "grpc_x_token": null,
   "postgres": {

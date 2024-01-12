@@ -1,4 +1,4 @@
-use log::{info, trace, warn};
+use log::{info, trace};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig,
@@ -158,7 +158,7 @@ impl QuicConnectionUtils {
                 }
             }
             Err(_) => {
-                warn!("timeout while writing transaction for {}", identity);
+                log::debug!("timeout while writing transaction for {}", identity);
                 return Err(QuicConnectionError::TimeOut);
             }
         }
@@ -177,7 +177,7 @@ impl QuicConnectionUtils {
                 }
             }
             Err(_) => {
-                warn!("timeout while finishing transaction for {}", identity);
+                log::debug!("timeout while finishing transaction for {}", identity);
                 return Err(QuicConnectionError::TimeOut);
             }
         }
