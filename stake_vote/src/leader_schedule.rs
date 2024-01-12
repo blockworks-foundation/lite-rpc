@@ -299,7 +299,6 @@ pub fn calculate_leader_schedule(
         .aggregate(|acc, _node_pubkey, stake| Some(acc.unwrap_or_default() + stake));
     let mut stakes: Vec<(Pubkey, u64)> = stakes_map
         .into_iter()
-        .map(|(key, stake)| (key, stake))
         .collect();
 
     let mut seed = [0u8; 32];
