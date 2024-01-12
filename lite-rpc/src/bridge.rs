@@ -12,7 +12,6 @@ use solana_lite_rpc_services::{
 
 use anyhow::Context;
 use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
-use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_core::{
     stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
@@ -207,7 +206,7 @@ impl LiteRpcServer for LiteBridge {
             .get_latest_block(commitment_config)
             .await;
 
-        info!("glb {blockhash} {slot} {block_height}");
+        log::trace!("glb {blockhash} {slot} {block_height}");
 
         Ok(RpcResponse {
             context: RpcResponseContext {
