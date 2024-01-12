@@ -297,9 +297,7 @@ pub fn calculate_leader_schedule(
         })
         .into_grouping_map()
         .aggregate(|acc, _node_pubkey, stake| Some(acc.unwrap_or_default() + stake));
-    let mut stakes: Vec<(Pubkey, u64)> = stakes_map
-        .into_iter()
-        .collect();
+    let mut stakes: Vec<(Pubkey, u64)> = stakes_map.into_iter().collect();
 
     let mut seed = [0u8; 32];
     seed[0..8].copy_from_slice(&epoch.to_le_bytes());
