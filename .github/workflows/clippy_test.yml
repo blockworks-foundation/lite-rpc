@@ -48,5 +48,5 @@ jobs:
 
       - name: Run fmt+clippy
         run: |
-          cargo fmt --all --check
-          cargo clippy --locked --workspace --all-targets -- -D warnings
+          cargo +nightly fmt --all --check
+          cargo +nightly clippy --locked --workspace --all-targets -- -D warnings
