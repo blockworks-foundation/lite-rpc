@@ -47,21 +47,13 @@ pub fn map_block_update(
         .transactions
         .into_iter()
         .filter_map(|tx| {
-            let Some(meta) = tx.meta else {
-                return None;
-            };
+            let meta = tx.meta?;
 
-            let Some(transaction) = tx.transaction else {
-                return None;
-            };
+            let transaction = tx.transaction?;
 
-            let Some(message) = transaction.message else {
-                return None;
-            };
+            let message = transaction.message?;
 
-            let Some(header) = message.header else {
-                return None;
-            };
+            let header = message.header?;
 
             let signatures = transaction
                 .signatures

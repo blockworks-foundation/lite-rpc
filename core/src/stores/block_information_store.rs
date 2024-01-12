@@ -58,9 +58,7 @@ impl BlockInformationStore {
     }
 
     pub fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
-        let Some(info) = self.blocks.get(blockhash) else {
-            return None;
-        };
+        let info = self.blocks.get(blockhash)?;
 
         Some(info.value().to_owned())
     }
