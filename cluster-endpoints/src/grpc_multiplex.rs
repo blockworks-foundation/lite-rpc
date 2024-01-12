@@ -70,7 +70,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             loop {
                 let confirmed_blocks_stream = {
                     let commitment_config = CommitmentConfig::confirmed();
-            
+
                     let mut streams = Vec::new();
                     for grpc_source in &grpc_sources {
                         let stream = create_geyser_reconnecting_stream(
@@ -79,13 +79,13 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         );
                         streams.push(stream);
                     }
-            
+
                     create_multiplexed_stream(streams, BlockExtractor(commitment_config))
                 };
-            
+
                 let finalized_blockmeta_stream = {
                     let commitment_config = CommitmentConfig::finalized();
-            
+
                     let mut streams = Vec::new();
                     for grpc_source in &grpc_sources {
                         let stream = create_geyser_reconnecting_stream(
@@ -106,7 +106,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let mut last_finalized_slot: Slot = 0;
                 let mut cleanup_without_recv_blocks: u8 = 0;
                 let mut cleanup_without_recv_blocks_meta: u8 = 0;
-                const MAX_ALLOWED_CLEANUP_WITHOUT_RECV : u8 = 12; // 12*5 = 60s without recving data
+                const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
                 loop {
                     tokio::select! {
                         confirmed_block = confirmed_blocks_stream.next() => {
@@ -206,7 +206,7 @@ pub fn create_grpc_multiplex_slots_subscription(
                             filter_by_commitment: Some(true),
                         },
                     );
-        
+
                     let filter = SubscribeRequest {
                         slots,
                         accounts: Default::default(),
@@ -214,15 +214,17 @@ pub fn create_grpc_multiplex_slots_subscription(
                         entry: Default::default(),
                         blocks: HashMap::new(),
                         blocks_meta: HashMap::new(),
-                        commitment: Some(yellowstone_grpc_proto::geyser::CommitmentLevel::Processed as i32),
+                        commitment: Some(
+                            yellowstone_grpc_proto::geyser::CommitmentLevel::Processed as i32,
+                        ),
                         accounts_data_slice: Default::default(),
                         ping: None,
                     };
-        
+
                     let stream = create_geyser_reconnecting_stream(grpc_source.clone(), filter);
                     streams.push(stream);
                 }
-        
+
                 create_multiplexed_stream(streams, SlotExtractor {})
             };
 
@@ -230,7 +232,7 @@ pub fn create_grpc_multiplex_slots_subscription(
             loop {
                 tokio::select! {
                     slot_data = multiplex_stream.next() => {
-                        if let Some(slot_data) = slot_data {       
+                        if let Some(slot_data) = slot_data {
                             match multiplexed_messages_sender.send(slot_data) {
                                 Ok(receivers) => {
                                     trace!("sent data to {} receivers", receivers);
