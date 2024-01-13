@@ -1,8 +1,6 @@
 use crate::grpc_subscription::map_block_update;
-use futures::StreamExt;
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{
-    create_geyser_reconnecting_stream, GeyserFilter, GrpcSourceConfig,
-};
+use futures::{Stream, StreamExt};
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcSourceConfig, Message};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
@@ -80,7 +78,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         streams.push(stream);
                     }
 
-                    create_multiplexed_stream(streams, BlockExtractor(commitment_config))
+                    create_multiplexed_stream_recover(streams, BlockExtractor(commitment_config))
                 };
 
                 let finalized_blockmeta_stream = {
@@ -94,7 +92,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         );
                         streams.push(stream);
                     }
-                    create_multiplexed_stream(streams, BlockMetaHashExtractor(commitment_config))
+                    create_multiplexed_stream_recover(streams, BlockMetaHashExtractor(commitment_config))
                 };
 
                 // by blockhash
@@ -253,4 +251,20 @@ pub fn create_grpc_multiplex_slots_subscription(
     });
 
     (multiplexed_messages, jh)
+}
+
+// detect if no blocks arrive for N seconds and restart the streams
+fn create_multiplexed_stream_recover<E>(grpc_source_streams: Vec<impl Stream<Item = Message>>,
+                                            extractor: E) -> impl Stream<Item = E::Target>
+    where
+        E: FromYellowstoneExtractor
+{
+
+    create_multiplexed_stream(grpc_source_streams, extractor)
+}
+
+
+#[tokio::test]
+async fn test_multiplexed_slots() {
+
 }
