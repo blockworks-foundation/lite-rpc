@@ -11,8 +11,10 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
+use tokio::time::Instant;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate,
@@ -47,7 +49,9 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
     }
 }
 
-/// connect to multiple grpc sources to consume confirmed blocks and block status update
+const STREAM_RECONNECT_COOLDOWN: Duration = Duration::from_secs(60);
+const STREAM_RECONNECT_AFTER_TIME_WITHOUT_BLOCKS: Duration = Duration::from_secs(30);
+
 pub fn create_grpc_multiplex_blocks_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
 ) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
@@ -59,98 +63,75 @@ pub fn create_grpc_multiplex_blocks_subscription(
         info!("- connection to {}", grpc_source);
     }
 
+    // let confirmed_blocks_stream = create_confirmed_blocks_stream(&grpc_sources);
+
+    // let finalized_blockmeta_stream = create_finalized_blockmeta_stream(&grpc_sources);
+
     // return value is the broadcast receiver
     let (producedblock_sender, blocks_output_stream) =
         tokio::sync::broadcast::channel::<ProducedBlock>(1000);
 
     let jh_block_emitter_task = {
         tokio::task::spawn(async move {
+            // by blockhash
+            let mut recent_confirmed_blocks = HashMap::<String, ProducedBlock>::new();
+            let mut confirmed_blocks_stream = Box::pin(create_confirmed_blocks_stream(&grpc_sources));
+            let mut finalized_blockmeta_stream = Box::pin(create_finalized_blockmeta_stream(&grpc_sources));
+
+            let sender = producedblock_sender;
+            let mut delay_reconnect_until = Instant::now() + STREAM_RECONNECT_COOLDOWN;
+            let mut block_heartbeat_tick = tokio::time::interval(Duration::from_secs(5));
+            let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
+            let mut last_finalized_slot: Slot = 0;
             loop {
-                let confirmed_blocks_stream = {
-                    let commitment_config = CommitmentConfig::confirmed();
-
-                    let mut streams = Vec::new();
-                    for grpc_source in &grpc_sources {
-                        let stream = create_geyser_reconnecting_stream(
-                            grpc_source.clone(),
-                            GeyserFilter(commitment_config).blocks_and_txs(),
-                        );
-                        streams.push(stream);
-                    }
-
-                    create_multiplexed_stream_recover(streams, BlockExtractor(commitment_config))
-                };
-
-                let finalized_blockmeta_stream = {
-                    let commitment_config = CommitmentConfig::finalized();
-
-                    let mut streams = Vec::new();
-                    for grpc_source in &grpc_sources {
-                        let stream = create_geyser_reconnecting_stream(
-                            grpc_source.clone(),
-                            GeyserFilter(commitment_config).blocks_meta(),
-                        );
-                        streams.push(stream);
-                    }
-                    create_multiplexed_stream_recover(streams, BlockMetaHashExtractor(commitment_config))
-                };
-
-                // by blockhash
-                let mut recent_confirmed_blocks = HashMap::<String, ProducedBlock>::new();
-                let mut confirmed_blocks_stream = std::pin::pin!(confirmed_blocks_stream);
-                let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
-
-                let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
-                let mut last_finalized_slot: Slot = 0;
-                let mut cleanup_without_recv_blocks: u8 = 0;
-                let mut cleanup_without_recv_blocks_meta: u8 = 0;
-                const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
-                loop {
-                    tokio::select! {
-                        confirmed_block = confirmed_blocks_stream.next() => {
-                            cleanup_without_recv_blocks = 0;
-
-                            let confirmed_block = confirmed_block.expect("confirmed block from stream");
-                            trace!("got confirmed block {} with blockhash {}",
-                                confirmed_block.slot, confirmed_block.blockhash.clone());
-                            if let Err(e) = producedblock_sender.send(confirmed_block.clone()) {
-                                warn!("Confirmed block channel has no receivers {e:?}");
-                                continue
+                tokio::select! {
+                    confirmed_block = confirmed_blocks_stream.next() => {
+                        let confirmed_block = confirmed_block.expect("confirmed block from stream");
+                        trace!("got confirmed block {} with blockhash {}",
+                            confirmed_block.slot, confirmed_block.blockhash.clone());
+                        if let Err(e) = sender.send(confirmed_block.clone()) {
+                            warn!("Confirmed block channel has no receivers {e:?}");
+                            continue
+                        }
+                        recent_confirmed_blocks.insert(confirmed_block.blockhash.clone(), confirmed_block);
+                        delay_reconnect_until = Instant::now() + STREAM_RECONNECT_AFTER_TIME_WITHOUT_BLOCKS;
+                    },
+                    meta_finalized = finalized_blockmeta_stream.next() => {
+                        let blockhash = meta_finalized.expect("finalized block meta from stream");
+                        if let Some(cached_confirmed_block) = recent_confirmed_blocks.remove(&blockhash) {
+                            let finalized_block = cached_confirmed_block.to_finalized_block();
+                            last_finalized_slot = finalized_block.slot;
+                            debug!("got finalized blockmeta {} with blockhash {}",
+                                finalized_block.slot, finalized_block.blockhash.clone());
+                            delay_reconnect_until = Instant::now() + STREAM_RECONNECT_AFTER_TIME_WITHOUT_BLOCKS;
+                            if let Err(e) = sender.send(finalized_block) {
+                                warn!("Finalized block channel has no receivers {e:?}");
+                                continue;
                             }
-                            recent_confirmed_blocks.insert(confirmed_block.blockhash.clone(), confirmed_block);
-                        },
-                        meta_finalized = finalized_blockmeta_stream.next() => {
-                            cleanup_without_recv_blocks_meta = 0;
-                            let blockhash = meta_finalized.expect("finalized block meta from stream");
-                            if let Some(cached_confirmed_block) = recent_confirmed_blocks.remove(&blockhash) {
-                                let finalized_block = cached_confirmed_block.to_finalized_block();
-                                last_finalized_slot = finalized_block.slot;
-                                debug!("got finalized blockmeta {} with blockhash {}",
-                                    finalized_block.slot, finalized_block.blockhash.clone());
-                                if let Err(e) = producedblock_sender.send(finalized_block) {
-                                    warn!("Finalized block channel has no receivers {e:?}");
-                                    continue;
-                                }
-                            } else {
-                                debug!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
-                            }
-                        },
-                        _ = cleanup_tick.tick() => {
-                            if cleanup_without_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
-                                cleanup_without_recv_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
-                                log::error!("block or block meta stream stopped restaring blocks");
-                                break;
-                            }
-                            cleanup_without_recv_blocks += 1;
-                            cleanup_without_recv_blocks_meta += 1;
-                            let size_before = recent_confirmed_blocks.len();
-                            recent_confirmed_blocks.retain(|_blockhash, block| {
-                                last_finalized_slot == 0 || block.slot > last_finalized_slot - 100
-                            });
-                            let cnt_cleaned = size_before - recent_confirmed_blocks.len();
-                            if cnt_cleaned > 0 {
-                                debug!("cleaned {} confirmed blocks from cache", cnt_cleaned);
-                            }
+                        } else {
+                            debug!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
+                        }
+                    },
+                    _ = cleanup_tick.tick() => {
+                        let size_before = recent_confirmed_blocks.len();
+                        recent_confirmed_blocks.retain(|_blockhash, block| {
+                            last_finalized_slot == 0 || block.slot > last_finalized_slot - 100
+                        });
+                        let cnt_cleaned = size_before - recent_confirmed_blocks.len();
+                        if cnt_cleaned > 0 {
+                            debug!("cleaned {} confirmed blocks from cache", cnt_cleaned);
+                        }
+                    },
+                    _ = block_heartbeat_tick.tick() => {
+                        if Instant::now() > delay_reconnect_until {
+                            // prevent crash loops
+                            delay_reconnect_until = Instant::now() + STREAM_RECONNECT_COOLDOWN;
+
+                            // TODO add attempt counter
+                            warn!("No block data received for {:.2} seconds, restarting streams", STREAM_RECONNECT_AFTER_TIME_WITHOUT_BLOCKS.as_secs_f32());
+
+                            confirmed_blocks_stream = Box::pin(create_confirmed_blocks_stream(&grpc_sources));
+                            finalized_blockmeta_stream = Box::pin(create_finalized_blockmeta_stream(&grpc_sources));
                         }
                     }
                 }
@@ -159,6 +140,35 @@ pub fn create_grpc_multiplex_blocks_subscription(
     };
 
     (blocks_output_stream, jh_block_emitter_task)
+}
+
+fn create_finalized_blockmeta_stream(grpc_sources: &Vec<GrpcSourceConfig>) -> impl Stream<Item=String> + Sized {
+    let commitment_config = CommitmentConfig::finalized();
+
+    let mut streams = Vec::new();
+    for grpc_source in grpc_sources {
+        let stream = create_geyser_reconnecting_stream(
+            grpc_source.clone(),
+            GeyserFilter(commitment_config).blocks_meta(),
+        );
+        streams.push(stream);
+    }
+    create_multiplexed_stream(streams, BlockMetaHashExtractor(commitment_config))
+}
+
+fn create_confirmed_blocks_stream(grpc_sources: &Vec<GrpcSourceConfig>) -> impl Stream<Item=ProducedBlock> + Sized {
+    let commitment_config = CommitmentConfig::confirmed();
+
+    let mut streams = Vec::new();
+    for grpc_source in grpc_sources {
+        let stream = create_geyser_reconnecting_stream(
+            grpc_source.clone(),
+            GeyserFilter(commitment_config).blocks_and_txs(),
+        );
+        streams.push(stream);
+    }
+
+    create_multiplexed_stream(streams, BlockExtractor(commitment_config))
 }
 
 struct SlotExtractor {}
