@@ -158,7 +158,7 @@ impl QuicConnectionUtils {
                 }
             }
             Err(_) => {
-                log::debug!("timeout while writing transaction for {}", identity);
+                warn!("timeout while writing transaction for {}", identity);
                 return Err(QuicConnectionError::TimeOut);
             }
         }
@@ -177,7 +177,7 @@ impl QuicConnectionUtils {
                 }
             }
             Err(_) => {
-                log::debug!("timeout while finishing transaction for {}", identity);
+                warn!("timeout while finishing transaction for {}", identity);
                 return Err(QuicConnectionError::TimeOut);
             }
         }
