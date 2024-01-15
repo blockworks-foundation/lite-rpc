@@ -32,7 +32,7 @@ pub fn block_debug_listen(
                                 block.slot, block.parent_slot
                             );
                         } else {
-                            warn!(
+                            debug!(
                                 "parent slot not correct ({} -> {})",
                                 block.slot, block.parent_slot
                             );
@@ -43,7 +43,7 @@ pub fn block_debug_listen(
                         last_highest_slot_number = block.slot;
                     } else {
                         // note: ATM this fails very often (using the RPC poller)
-                        warn!(
+                        debug!(
                             "Monotonic check failed - block {} is out of order, last highest was {}",
                             block.slot, last_highest_slot_number
                         );

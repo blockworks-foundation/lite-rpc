@@ -1,5 +1,5 @@
 use crate::grpc_subscription::map_block_update;
-use futures::StreamExt;
+use futures::{stream, StreamExt};
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{
     create_geyser_reconnecting_stream, GeyserFilter, GrpcSourceConfig,
 };
@@ -14,10 +14,13 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
 use std::time::Duration;
+use tokio::pin;
 use tokio::sync::broadcast::Receiver;
+use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate,
+    SlotParallelization, SubscribeRequest, SubscribeRequestFilterBlocks,
+    SubscribeRequestFilterSlots, SubscribeUpdate,
 };
 
 struct BlockExtractor(CommitmentConfig);
@@ -65,22 +68,82 @@ pub fn create_grpc_multiplex_blocks_subscription(
     let (producedblock_sender, blocks_output_stream) =
         tokio::sync::broadcast::channel::<ProducedBlock>(1000);
 
+    const PARALLELIZATION: i32 = 4;
     let jh_block_emitter_task = {
         tokio::task::spawn(async move {
             loop {
-                let confirmed_blocks_stream = {
+                let (cb_s, cb_r) = async_channel::unbounded::<ProducedBlock>();
+                {
                     let commitment_config = CommitmentConfig::confirmed();
-
-                    let mut streams = Vec::new();
                     for grpc_source in &grpc_sources {
-                        let stream = create_geyser_reconnecting_stream(
-                            grpc_source.clone(),
-                            GeyserFilter(commitment_config).blocks_and_txs(),
-                        );
-                        streams.push(stream);
-                    }
+                        for id in 0..PARALLELIZATION {
+                            let grpc_source = grpc_source.clone();
+                            let commitment_config = commitment_config.clone();
+                            let cb_s = cb_s.clone();
+                            tokio::task::spawn(async move {
+                                loop {
 
-                    create_multiplexed_stream(streams, BlockExtractor(commitment_config))
+                                    let mut blocks_subs = HashMap::new();
+                                    blocks_subs.insert(
+                                        format!("bk_s_{id:?}"),
+                                        SubscribeRequestFilterBlocks {
+                                            account_include: Default::default(),
+                                            include_transactions: Some(true),
+                                            include_accounts: Some(false),
+                                            include_entries: Some(false),
+                                            slot_parallelization: Some(SlotParallelization {
+                                                filter_id: id,
+                                                filter_size: PARALLELIZATION,
+                                            }),
+                                        },
+                                    );
+                                    // connect to grpc
+                                    let mut client = GeyserGrpcClient::connect(
+                                        grpc_source.grpc_addr.clone(),
+                                        grpc_source.grpc_x_token.clone(),
+                                        None,
+                                    ).unwrap();
+                                    let mut stream = client
+                                        .subscribe_once(
+                                            HashMap::new(),
+                                            Default::default(),
+                                            HashMap::new(),
+                                            Default::default(),
+                                            blocks_subs,
+                                            Default::default(),
+                                            Some(yellowstone_grpc_proto::geyser::CommitmentLevel::Confirmed),
+                                            Default::default(),
+                                            None,
+                                        )
+                                        .await.unwrap();
+
+                                    while let Some(message) = stream.next().await {
+                                        let message = message.unwrap();
+
+                                        let Some(update) = message.update_oneof else {
+                                            continue;
+                                        };
+
+                                        match update {
+                                            UpdateOneof::Block(block) => {
+                                                let block =
+                                                    map_block_update(block, commitment_config);
+                                                cb_s.send(block).await.unwrap();
+                                            }
+                                            UpdateOneof::Ping(_) => {
+                                                log::trace!("GRPC Ping");
+                                            }
+                                            _ => {
+                                                log::trace!("unknown GRPC notification");
+                                            }
+                                        };
+                                    }
+                                    log::error!("Grpc block subscription broken (resubscribing)");
+                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                }
+                            });
+                        }
+                    }
                 };
 
                 let finalized_blockmeta_stream = {
@@ -99,7 +162,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
                 // by blockhash
                 let mut recent_confirmed_blocks = HashMap::<String, ProducedBlock>::new();
-                let mut confirmed_blocks_stream = std::pin::pin!(confirmed_blocks_stream);
                 let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
                 let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
@@ -109,7 +171,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
                 loop {
                     tokio::select! {
-                        confirmed_block = confirmed_blocks_stream.next() => {
+                        confirmed_block = cb_r.recv() => {
                             cleanup_without_recv_blocks = 0;
 
                             let confirmed_block = confirmed_block.expect("confirmed block from stream");
@@ -134,7 +196,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                     continue;
                                 }
                             } else {
-                                debug!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
+                                log::error!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
                             }
                         },
                         _ = cleanup_tick.tick() => {

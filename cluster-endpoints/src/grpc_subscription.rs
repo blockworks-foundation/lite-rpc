@@ -257,6 +257,7 @@ pub fn create_block_processing_task(
                     include_transactions: Some(true),
                     include_accounts: Some(false),
                     include_entries: Some(false),
+                    slot_parallelization: None,
                 },
             );
 
