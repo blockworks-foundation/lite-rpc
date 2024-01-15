@@ -23,6 +23,9 @@ pub struct RpcArgs {
     /// choose between small (179 bytes) and large (1186 bytes) transactions
     #[arg(short = 't', long, value_enum, default_value_t = TxSize::Small)]
     pub tx_size: TxSize,
+    /// confirmation retries
+    #[arg(short = 'c', long)]
+    pub confirmation_retries: Option<usize>,
 }
 
 #[derive(clap::Args, Debug)]

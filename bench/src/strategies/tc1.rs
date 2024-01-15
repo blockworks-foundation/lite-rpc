@@ -49,7 +49,7 @@ impl Tc1 {
             client,
             &[tx],
             CommitmentConfig::confirmed(),
-            Some(100),
+            self.rpc_args.confirmation_retries,
         )
         .await?
         .into_iter()
