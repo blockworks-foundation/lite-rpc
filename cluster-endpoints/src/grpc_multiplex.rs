@@ -1,4 +1,5 @@
-use crate::grpc_subscription::map_block_update;
+use crate::grpc_subscription::{create_block_processing_task, map_block_update};
+use anyhow::Context;
 use futures::StreamExt;
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{
     create_geyser_reconnecting_stream, GeyserFilter, GrpcSourceConfig,
@@ -68,19 +69,39 @@ pub fn create_grpc_multiplex_blocks_subscription(
     let jh_block_emitter_task = {
         tokio::task::spawn(async move {
             loop {
-                let confirmed_blocks_stream = {
+                let (confirmed_block_sender, mut confirmed_block_reciever) =
+                    tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
+                let _confirmed_blocks_tasks = {
                     let commitment_config = CommitmentConfig::confirmed();
 
-                    let mut streams = Vec::new();
+                    let mut tasks = Vec::new();
+                    let mut streams = vec![];
                     for grpc_source in &grpc_sources {
-                        let stream = create_geyser_reconnecting_stream(
-                            grpc_source.clone(),
-                            GeyserFilter(commitment_config).blocks_and_txs(),
-                        );
-                        streams.push(stream);
+                        let (block_sender, block_reciever) = async_channel::unbounded();
+                        tasks.push(create_block_processing_task(
+                            grpc_source.grpc_addr.clone(),
+                            grpc_source.grpc_x_token.clone(),
+                            block_sender,
+                            yellowstone_grpc_proto::geyser::CommitmentLevel::Confirmed,
+                        ));
+                        streams.push(block_reciever)
                     }
-
-                    create_multiplexed_stream(streams, BlockExtractor(commitment_config))
+                    let merging_streams: AnyhowJoinHandle = tokio::task::spawn(async move {
+                        let last_slot = 0;
+                        loop {
+                            let block_message =
+                                futures::stream::select_all(streams.clone()).next().await;
+                            if let Some(block) = block_message {
+                                if block.slot > last_slot {
+                                    confirmed_block_sender
+                                        .send(map_block_update(block, commitment_config))
+                                        .context("Issue to send confirmed block")?;
+                                }
+                            }
+                        }
+                    });
+                    tasks.push(merging_streams);
+                    tasks
                 };
 
                 let finalized_blockmeta_stream = {
@@ -99,7 +120,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
                 // by blockhash
                 let mut recent_confirmed_blocks = HashMap::<String, ProducedBlock>::new();
-                let mut confirmed_blocks_stream = std::pin::pin!(confirmed_blocks_stream);
                 let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
                 let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
@@ -109,7 +129,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
                 loop {
                     tokio::select! {
-                        confirmed_block = confirmed_blocks_stream.next() => {
+                        confirmed_block = confirmed_block_reciever.recv() => {
                             cleanup_without_recv_blocks = 0;
 
                             let confirmed_block = confirmed_block.expect("confirmed block from stream");
@@ -134,7 +154,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                     continue;
                                 }
                             } else {
-                                debug!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
+                                // this warning is ok for first few blocks when we start lrpc
+                                warn!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
                             }
                         },
                         _ = cleanup_tick.tick() => {
