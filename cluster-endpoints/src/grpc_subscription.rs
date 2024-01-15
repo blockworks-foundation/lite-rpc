@@ -31,7 +31,6 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::broadcast::Sender;
 use yellowstone_grpc_client::GeyserGrpcClient;
 
 use yellowstone_grpc_proto::prelude::{
@@ -244,7 +243,7 @@ pub fn map_block_update(
 pub fn create_block_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
-    block_sx: Sender<ProducedBlock>,
+    block_sx: async_channel::Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
@@ -259,12 +258,6 @@ pub fn create_block_processing_task(
                     include_entries: Some(false),
                 },
             );
-
-            let commitment_config = match commitment_level {
-                CommitmentLevel::Confirmed => CommitmentConfig::confirmed(),
-                CommitmentLevel::Finalized => CommitmentConfig::finalized(),
-                CommitmentLevel::Processed => CommitmentConfig::processed(),
-            };
 
             // connect to grpc
             let mut client =
@@ -292,10 +285,10 @@ pub fn create_block_processing_task(
 
                 match update {
                     UpdateOneof::Block(block) => {
-                        let block = map_block_update(block, commitment_config);
                         block_sx
                             .send(block)
-                            .context("Grpc failed to send a block")?;
+                            .await
+                            .context("Problem sending on block channel")?;
                     }
                     UpdateOneof::Ping(_) => {
                         log::trace!("GRPC Ping");
