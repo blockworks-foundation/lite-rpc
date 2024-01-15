@@ -181,6 +181,10 @@ impl LiteRpcServer for LiteBridge {
         todo!()
     }
 
+    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<u64> {
+        Ok(876543)
+    }
+
     async fn get_block_time(&self, _block: u64) -> crate::rpc::Result<u64> {
         todo!()
     }

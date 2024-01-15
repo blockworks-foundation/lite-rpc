@@ -234,4 +234,7 @@ pub trait LiteRpc {
         &self,
         config: Option<RpcGetVoteAccountsConfig>,
     ) -> crate::rpc::Result<RpcVoteAccountStatus>;
+
+    #[method(name = "getBlockPrioFeesDistribution")]
+    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<u64>;
 }
