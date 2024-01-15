@@ -286,14 +286,14 @@ fn create_tpu_client_endpoint(
                 .expect("create_endpoint bind_in_range")
                 .1;
         let config = EndpointConfig::default();
-        quinn::Endpoint::new(config, None, client_socket, TokioRuntime)
+        quinn::Endpoint::new(config, None, client_socket, Arc::new(TokioRuntime))
             .expect("create_endpoint quinn::Endpoint::new")
     };
 
     let mut crypto = rustls::ClientConfig::builder()
         .with_safe_defaults()
         .with_custom_certificate_verifier(SkipServerVerification::new())
-        .with_single_cert(vec![certificate], key)
+        .with_client_auth_cert(vec![certificate], key)
         .expect("Failed to set QUIC client certificates");
 
     crypto.enable_early_data = true;

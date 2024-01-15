@@ -114,14 +114,14 @@ impl QuicProxyConnectionManager {
         let mut endpoint = {
             let client_socket = UdpSocket::bind("[::]:0").unwrap();
             let config = EndpointConfig::default();
-            Endpoint::new(config, None, client_socket, TokioRuntime)
+            Endpoint::new(config, None, client_socket, Arc::new(TokioRuntime))
                 .expect("create_endpoint quinn::Endpoint::new")
         };
 
         let mut crypto = rustls::ClientConfig::builder()
             .with_safe_defaults()
             .with_custom_certificate_verifier(SkipServerVerification::new())
-            .with_single_cert(vec![certificate], key)
+            .with_client_auth_cert(vec![certificate], key)
             .expect("Failed to set QUIC client certificates");
 
         crypto.enable_early_data = true;

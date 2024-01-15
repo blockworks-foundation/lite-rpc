@@ -102,7 +102,7 @@ impl ProxyListener {
         loop {
             let maybe_stream = client_connection.accept_uni().await;
             match maybe_stream {
-                Ok(recv_stream) => {
+                Ok(mut recv_stream) => {
                     let forwarder_channel_copy = forwarder_channel.clone();
                     tokio::spawn(async move {
                         let raw_request = recv_stream.read_to_end(10_000_000).await.unwrap();
