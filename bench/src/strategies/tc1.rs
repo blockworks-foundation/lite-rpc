@@ -50,7 +50,7 @@ impl Tc1 {
             client,
             &[tx],
             CommitmentConfig::confirmed(),
-            None,
+            Some(100),
         )
         .await?
         .into_iter()

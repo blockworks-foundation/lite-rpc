@@ -6,15 +6,18 @@ use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::{
     commitment_config::CommitmentConfig,
+    compute_budget::ComputeBudgetInstruction,
     hash::Hash,
     instruction::{AccountMeta, Instruction},
     message::Message,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
     signer::Signer,
+    signers::Signers,
     system_instruction,
     transaction::Transaction,
 };
+
 use solana_transaction_status::TransactionStatus;
 use std::path::Path;
 use std::{str::FromStr, time::Duration};
@@ -91,7 +94,7 @@ impl BenchHelper {
             .collect_vec();
 
         // 5 tries
-        for _ in 0..tries.unwrap_or(5) {
+        for _ in 0..tries.unwrap_or(100) {
             let sigs = results
                 .iter()
                 .enumerate()
@@ -187,12 +190,47 @@ impl BenchHelper {
         }
     }
 
+    /// first signer is payer
+    pub fn create_tx_with_cu<T: Signers + ?Sized>(
+        signers: &T,
+        blockhash: Hash,
+        mut instructions: Vec<Instruction>,
+        priority_fee: Option<u64>,
+        cu_budget: Option<u32>,
+    ) -> Transaction {
+        // get cu budget from CU_BUDGET
+        let cu_budget = cu_budget.unwrap_or_else(|| {
+            std::env::var("CU_BUDGET")
+                .unwrap_or_else(|_| "5000".to_string())
+                .parse()
+                .expect("Invalid env CU_BUDGET")
+        });
+
+        // PRIORITY_FEE_MICRO_LAMPORTS
+        let priority_fee = priority_fee.unwrap_or_else(|| {
+            std::env::var("PRIORITY_FEE_MICRO_LAMPORTS")
+                .unwrap_or_else(|_| "3".to_string())
+                .parse()
+                .expect("Invalid env PRIORITY_FEE_MICRO_LAMPORTS")
+        });
+
+        let cu_limit = ComputeBudgetInstruction::set_compute_unit_limit(cu_budget);
+        let cu_price = ComputeBudgetInstruction::set_compute_unit_price(priority_fee);
+
+        instructions.push(cu_limit);
+        instructions.push(cu_price);
+
+        let message = Message::new(&instructions, Some(signers.pubkeys().first().unwrap()));
+
+        Transaction::new(signers, message, blockhash)
+    }
+
     pub fn create_memo_tx_small(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
         let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
 
         let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
-        let message = Message::new(&[instruction], Some(&payer.pubkey()));
-        Transaction::new(&[payer], message, blockhash)
+
+        Self::create_tx_with_cu(&[payer], blockhash, vec![instruction], None, None)
     }
 
     pub fn create_memo_tx_large(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
@@ -208,12 +246,11 @@ impl BenchHelper {
                 .map(|keypair| AccountMeta::new_readonly(keypair.pubkey(), true))
                 .collect_vec(),
         );
-        let message = Message::new(&[instruction], Some(&payer.pubkey()));
 
         let mut signers = vec![payer];
         signers.extend(accounts.iter());
 
-        Transaction::new(&signers, message, blockhash)
+        Self::create_tx_with_cu(&signers, blockhash, vec![instruction], None, None)
     }
 }
 

@@ -583,6 +583,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "serde",
  "serde_json",
+ "solana-compute-budget-program",
  "solana-rpc-client",
  "solana-sdk",
  "solana-transaction-status",
@@ -4196,6 +4197,16 @@ dependencies = [
  "solana-udp-client",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "solana-compute-budget-program"
+version = "1.16.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa1c6c014d6b34f2184598e115fc1de59c5ae52080677ae1fa8000aa0400e23f"
+dependencies = [
+ "solana-program-runtime",
+ "solana-sdk",
 ]
 
 [[package]]
