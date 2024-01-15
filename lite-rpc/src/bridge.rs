@@ -37,6 +37,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_histo
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
+use crate::block_priofees::PrioFeesService;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -62,6 +63,7 @@ pub struct LiteBridge {
     rpc_client: Arc<RpcClient>,
     transaction_service: TransactionService,
     history: History,
+    prio_fees_service: PrioFeesService,
 }
 
 impl LiteBridge {
@@ -70,12 +72,14 @@ impl LiteBridge {
         data_cache: DataCache,
         transaction_service: TransactionService,
         history: History,
+        prio_fees_service: PrioFeesService,
     ) -> Self {
         Self {
             rpc_client,
             data_cache,
             transaction_service,
             history,
+            prio_fees_service,
         }
     }
 

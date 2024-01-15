@@ -4,10 +4,11 @@ use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
 use lite_rpc::bridge::LiteBridge;
+use lite_rpc::block_priofees::PrioFeesService;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
-use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
+use lite_rpc::{block_priofees, DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE};
 use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
@@ -140,6 +141,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         create_json_rpc_polling_subscription(rpc_client.clone())?
     };
     let EndpointStreaming {
+        // note: blocks_notifier will be dropped at some point
         blocks_notifier,
         cluster_info_notifier,
         slot_notifier,
@@ -180,6 +182,12 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         cluster_info_notifier,
         vote_account_notifier,
     );
+
+    let mut prio_fees_service = block_priofees::PrioFeesService::new();
+    let block_priofees = tokio::spawn(block_priofees::start_priofees_service(
+        prio_fees_service.block_fees_store.clone(),
+        blocks_notifier.resubscribe()));
+
     drop(blocks_notifier);
 
     let (notification_channel, postgres) = start_postgres(postgres).await?;
@@ -239,6 +247,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             data_cache.clone(),
             transaction_service,
             history,
+            prio_fees_service,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
