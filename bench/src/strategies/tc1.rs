@@ -73,11 +73,12 @@ impl Strategy for Tc1 {
         let mut rng = BenchHelper::create_rng(None);
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
 
-        let tx = self.create_tx(&rpc, &payer, &mut rng).await?;
+        let rpc_tx = self.create_tx(&rpc, &payer, &mut rng).await?;
+        let lite_rpc_tx = self.create_tx(&lite_rpc, &payer, &mut rng).await?;
 
         let (rpc_slot, lite_rpc_slot) = tokio::join!(
-            self.send_transaction_and_get_slot(&rpc, tx.clone()),
-            self.send_transaction_and_get_slot(&lite_rpc, tx)
+            self.send_transaction_and_get_slot(&rpc, rpc_tx),
+            self.send_transaction_and_get_slot(&lite_rpc, lite_rpc_tx)
         );
 
         Ok(Tc1Result {
