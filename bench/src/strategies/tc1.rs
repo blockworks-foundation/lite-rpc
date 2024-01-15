@@ -1,5 +1,6 @@
 use anyhow::Context;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::hash::Hash;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 
@@ -27,12 +28,10 @@ pub struct Tc1 {
 impl Tc1 {
     async fn create_tx(
         &self,
-        rpc: &RpcClient,
+        hash: Hash,
         payer: &Keypair,
         rng: &mut Rng8,
     ) -> anyhow::Result<Transaction> {
-        let hash = rpc.get_latest_blockhash().await?;
-
         Ok(BenchHelper::create_memo_tx(
             payer,
             hash,
@@ -73,8 +72,15 @@ impl Strategy for Tc1 {
         let mut rng = BenchHelper::create_rng(None);
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
 
-        let rpc_tx = self.create_tx(&rpc, &payer, &mut rng).await?;
-        let lite_rpc_tx = self.create_tx(&lite_rpc, &payer, &mut rng).await?;
+        let rpc_tx = {
+            let hash = rpc.get_latest_blockhash().await?;
+            self.create_tx(hash, &payer, &mut rng).await?
+        };
+
+        let lite_rpc_tx = {
+            let hash = lite_rpc.get_latest_blockhash().await?;
+            self.create_tx(hash, &payer, &mut rng).await?
+        };
 
         let (rpc_slot, lite_rpc_slot) = tokio::join!(
             self.send_transaction_and_get_slot(&rpc, rpc_tx),
