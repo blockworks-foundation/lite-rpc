@@ -6,3 +6,4 @@ bench/metrics.csv
 *out.json*
 .env
 test-ledger
+metrics.csv
