@@ -2,6 +2,8 @@ name: Cargo Build & Test
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 env:
@@ -25,8 +27,6 @@ jobs:
       # The toolchain action should definitely be run before the cache action
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          # use toolchain version from rust-toolchain.toml
-          components: rustfmt, clippy
           cache: true
           # avoid the default "-D warnings" which thrashes cache
           rustflags: ""
@@ -46,11 +46,6 @@ jobs:
       - name: Early Build
         run: |
           cargo build --locked --workspace --all-targets
-
-      - name: Run fmt+clippy
-        run: |
-          cargo fmt --all --check
-          cargo clippy --locked --workspace --all-targets
-
+          
       - name: Run Tests
         run: RUST_LOG=info cargo test

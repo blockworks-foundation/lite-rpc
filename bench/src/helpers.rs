@@ -146,7 +146,7 @@ fn transaction_size_small() {
 
     let seed = 42;
     let random_strings = BenchHelper::generate_random_strings(1, Some(seed), 10);
-    let rand_string = random_strings.get(0).unwrap();
+    let rand_string = random_strings.first().unwrap();
     let tx = BenchHelper::create_memo_tx_small(rand_string, &payer_keypair, blockhash);
 
     assert_eq!(bincode::serialized_size(&tx).unwrap(), 179);
@@ -161,7 +161,7 @@ fn transaction_size_large() {
 
     let seed = 42;
     let random_strings = BenchHelper::generate_random_strings(1, Some(seed), 240);
-    let rand_string = random_strings.get(0).unwrap();
+    let rand_string = random_strings.first().unwrap();
     let tx = BenchHelper::create_memo_tx_large(rand_string, &payer_keypair, blockhash);
 
     assert_eq!(bincode::serialized_size(&tx).unwrap(), 1186);

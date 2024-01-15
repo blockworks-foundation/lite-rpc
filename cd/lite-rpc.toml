@@ -5,9 +5,6 @@ kill_timeout = 5
 [build]
   dockerfile = "../Dockerfile"
 
-[experimental]
-  cmd = ["sh", "-c", "lite-rpc --rpc-addr $RPC_URL --ws-addr $WS_URL --quic-proxy-addr $QUIC_PROXY_ADDR"]
-
 [env]
   PORT_HTTP = "8890"
   PORT_WS = "8891"

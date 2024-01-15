@@ -1,4 +1,4 @@
-use log::{trace, warn};
+use log::{info, trace};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig,
@@ -61,6 +61,7 @@ impl QuicConnectionUtils {
         let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+        apply_gso_workaround(&mut transport_config);
         config.transport_config(Arc::new(transport_config));
 
         endpoint.set_default_client_config(config);
@@ -157,7 +158,7 @@ impl QuicConnectionUtils {
                 }
             }
             Err(_) => {
-                warn!("timeout while writing transaction for {}", identity);
+                log::debug!("timeout while writing transaction for {}", identity);
                 return Err(QuicConnectionError::TimeOut);
             }
         }
@@ -176,7 +177,7 @@ impl QuicConnectionUtils {
                 }
             }
             Err(_) => {
-                warn!("timeout while finishing transaction for {}", identity);
+                log::debug!("timeout while finishing transaction for {}", identity);
                 return Err(QuicConnectionError::TimeOut);
             }
         }
@@ -232,4 +233,24 @@ pub fn connection_stats(connection: &Connection) -> String {
         connection.stats().path.rtt,
         connection.stats().frame_rx
     )
+}
+
+/// env flag to optionally disable GSO (generic segmentation offload) on environments where Quinn cannot detect it properly
+/// see https://github.com/quinn-rs/quinn/pull/1671
+pub fn apply_gso_workaround(tc: &mut TransportConfig) {
+    if disable_gso() {
+        tc.enable_segmentation_offload(false);
+    }
+}
+
+pub fn log_gso_workaround() {
+    info!("GSO force-disabled? {}", disable_gso());
+}
+
+/// note: true means that quinn's heuristic for GSO detection is used to decide if GSO is used
+fn disable_gso() -> bool {
+    std::env::var("DISABLE_GSO")
+        .unwrap_or("false".to_string())
+        .parse::<bool>()
+        .expect("flag must be true or false")
 }

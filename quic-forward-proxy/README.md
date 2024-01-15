@@ -95,7 +95,7 @@ Implementation Details
   * _proxy_ will maintain multiple quic connection per TPU according to the Solana validator quic policy
   * _proxy_ will use lightweight quic streams to send the transactions
 * inbound traffic (from Lite RPC)
-  * client-proxy-communcation is done via QUIC using a custom wire format
+  * client-proxy-communication is done via QUIC using a custom wire format
   * _proxy_ supports only quic ATM but that could be extended to support other protocols
   * _proxy_ should perform client authentication by TLS (see [issue](https://github.com/blockworks-foundation/lite-rpc/issues/167))
 * _proxy_ uses a single queue (channel) for buffering the transactions from any inbound connection

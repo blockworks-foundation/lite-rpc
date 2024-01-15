@@ -2,6 +2,8 @@ name: Integration Test with Validator
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 env:

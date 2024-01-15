@@ -1,9 +1,10 @@
-use std::sync::{atomic::AtomicU64, Arc};
-
+use crate::structures::leaderschedule::CalculatedSchedule;
 use dashmap::DashMap;
 use solana_sdk::hash::Hash;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
+use std::sync::{atomic::AtomicU64, Arc};
+use tokio::sync::RwLock;
 
 use crate::{
     stores::{
@@ -37,6 +38,7 @@ pub struct DataCache {
     pub identity_stakes: IdentityStakes,
     pub cluster_info: ClusterInfo,
     pub epoch_data: EpochCache,
+    pub leader_schedule: Arc<RwLock<CalculatedSchedule>>,
 }
 
 impl DataCache {
@@ -54,15 +56,11 @@ impl DataCache {
     pub async fn check_if_confirmed_or_expired_blockheight(
         &self,
         sent_transaction_info: &SentTransactionInfo,
+        current_blockheight: u64,
     ) -> bool {
         self.txs
             .is_transaction_confirmed(&sent_transaction_info.signature)
-            || self
-                .block_information_store
-                .get_latest_block(CommitmentConfig::processed())
-                .await
-                .block_height
-                > sent_transaction_info.last_valid_block_height
+            || current_blockheight > sent_transaction_info.last_valid_block_height
     }
 
     pub async fn get_current_epoch(&self, commitment: CommitmentConfig) -> Epoch {
@@ -88,10 +86,10 @@ impl DataCache {
             slot_cache: SlotCache::new(0),
             tx_subs: SubscriptionStore::default(),
             txs: TxStore {
-                save_for_additional_slots: 0,
                 store: Arc::new(DashMap::new()),
             },
             epoch_data: EpochCache::new_for_tests(),
+            leader_schedule: Arc::new(RwLock::new(CalculatedSchedule::default())),
         }
     }
 }

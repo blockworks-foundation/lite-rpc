@@ -1,0 +1,24 @@
+name: Deploy to Fly Staging
+
+on:
+  push:
+      branches: [main]
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout 
+        uses: actions/checkout@v2
+
+      - name: Setup Fly
+        uses: superfly/flyctl-actions/setup-flyctl@master
+      
+      - name: Deploy lite-rpc-staging
+        run: flyctl deploy -c cd/lite-rpc-staging.toml --remote-only
+
+#      - name: Deploy quic-forward-proxy
+#        run: flyctl deploy -c cd/quic-forward-proxy.toml --remote-only

@@ -1,0 +1,20 @@
+#
+# LiteRPC entrypoint will be served under https://api.mngo.cloud/lite-rpc-staging/v1/
+#
+
+app = "solana-lite-rpc-staging"
+kill_signal = "SIGINT"
+kill_timeout = 5
+primary_region = "nrt"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[env]
+  PORT_HTTP = "8890"
+  PORT_WS = "8891"
+  RUST_LOG = "info"
+
+ [metrics]
+   path = "/metrics"
+   port = 9091

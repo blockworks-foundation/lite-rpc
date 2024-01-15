@@ -3,6 +3,7 @@
 pub mod epoch;
 pub mod identity_stakes;
 pub mod leader_data;
+pub mod leaderschedule;
 pub mod notifications;
 pub mod produced_block;
 pub mod proxy_request_format;

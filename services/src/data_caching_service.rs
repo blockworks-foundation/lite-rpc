@@ -71,7 +71,7 @@ impl DataCachingService {
                     let last_valid_blockheight = if let Some(block_info) = block_info {
                         block_info.last_valid_blockheight
                     } else {
-                        block.slot + MAX_RECENT_BLOCKHASHES as u64
+                        block.block_height + MAX_RECENT_BLOCKHASHES as u64
                     };
 
                     if data_cache.txs.update_status(

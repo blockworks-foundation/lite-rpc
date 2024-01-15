@@ -7,6 +7,8 @@ use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
 use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket};
 
+use super::postgres_config::{PostgresSessionConfig, PostgresSessionSslConfig};
+
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 
 pub trait SchemaSize {
@@ -36,18 +38,19 @@ pub struct PostgresSession {
 }
 
 impl PostgresSession {
-    pub async fn new() -> anyhow::Result<Self> {
-        let pg_config = std::env::var("PG_CONFIG").context("env PG_CONFIG not found")?;
+    pub async fn new(
+        PostgresSessionConfig { pg_config, ssl }: &PostgresSessionConfig,
+    ) -> anyhow::Result<Self> {
         let pg_config = pg_config.parse::<tokio_postgres::Config>()?;
 
         let client = if let SslMode::Disable = pg_config.get_ssl_mode() {
             Self::spawn_connection(pg_config, NoTls).await?
         } else {
-            let ca_pem_b64 = std::env::var("CA_PEM_B64").context("env CA_PEM_B64 not found")?;
-            let client_pks_b64 =
-                std::env::var("CLIENT_PKS_B64").context("env CLIENT_PKS_B64 not found")?;
-            let client_pks_password =
-                std::env::var("CLIENT_PKS_PASS").context("env CLIENT_PKS_PASS not found")?;
+            let PostgresSessionSslConfig {
+                ca_pem_b64,
+                client_pks_b64,
+                client_pks_pass,
+            } = ssl.as_ref().unwrap();
 
             let ca_pem = BinaryEncoding::Base64
                 .decode(ca_pem_b64)
@@ -58,9 +61,7 @@ impl PostgresSession {
 
             let connector = TlsConnector::builder()
                 .add_root_certificate(Certificate::from_pem(&ca_pem)?)
-                .identity(
-                    Identity::from_pkcs12(&client_pks, &client_pks_password).context("Identity")?,
-                )
+                .identity(Identity::from_pkcs12(&client_pks, client_pks_pass).context("Identity")?)
                 .danger_accept_invalid_hostnames(true)
                 .danger_accept_invalid_certs(true)
                 .build()?;
@@ -136,13 +137,15 @@ impl PostgresSession {
 #[derive(Clone)]
 pub struct PostgresSessionCache {
     session: Arc<RwLock<PostgresSession>>,
+    config: PostgresSessionConfig,
 }
 
 impl PostgresSessionCache {
-    pub async fn new() -> anyhow::Result<Self> {
-        let session = PostgresSession::new().await?;
+    pub async fn new(config: PostgresSessionConfig) -> anyhow::Result<Self> {
+        let session = PostgresSession::new(&config).await?;
         Ok(Self {
             session: Arc::new(RwLock::new(session)),
+            config,
         })
     }
 
@@ -150,7 +153,7 @@ impl PostgresSessionCache {
         let session = self.session.read().await;
         if session.client.is_closed() {
             drop(session);
-            let session = PostgresSession::new().await?;
+            let session = PostgresSession::new(&self.config).await?;
             *self.session.write().await = session.clone();
             Ok(session)
         } else {

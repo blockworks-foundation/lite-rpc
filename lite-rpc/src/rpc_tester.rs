@@ -27,7 +27,7 @@ impl RpcTester {
             // sleep for 5 seconds
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             // do a simple request to self for getVersion
-            let Err(err) = rpc_client.get_version().await else {
+            let Err(err) = rpc_client.get_slot().await else {
                 RPC_RESPONDING.set(1.0);
                 continue;
             };

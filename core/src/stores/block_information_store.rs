@@ -37,7 +37,6 @@ impl BlockInformation {
 #[derive(Clone)]
 pub struct BlockInformationStore {
     blocks: Arc<DashMap<String, BlockInformation>>,
-    latest_processed_block: Arc<RwLock<BlockInformation>>,
     latest_confirmed_block: Arc<RwLock<BlockInformation>>,
     latest_finalized_block: Arc<RwLock<BlockInformation>>,
 }
@@ -52,7 +51,6 @@ impl BlockInformationStore {
         );
 
         Self {
-            latest_processed_block: Arc::new(RwLock::new(latest_finalized_block.clone())),
             latest_confirmed_block: Arc::new(RwLock::new(latest_finalized_block.clone())),
             latest_finalized_block: Arc::new(RwLock::new(latest_finalized_block)),
             blocks,
@@ -60,9 +58,7 @@ impl BlockInformationStore {
     }
 
     pub fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
-        let Some(info) = self.blocks.get(blockhash) else {
-            return None;
-        };
+        let info = self.blocks.get(blockhash)?;
 
         Some(info.value().to_owned())
     }
@@ -73,10 +69,8 @@ impl BlockInformationStore {
     ) -> Arc<RwLock<BlockInformation>> {
         if commitment_config.is_finalized() {
             self.latest_finalized_block.clone()
-        } else if commitment_config.is_confirmed() {
-            self.latest_confirmed_block.clone()
         } else {
-            self.latest_processed_block.clone()
+            self.latest_confirmed_block.clone()
         }
     }
 
