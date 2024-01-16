@@ -3,7 +3,6 @@ use crossbeam_channel::Sender;
 
 use log::{debug, error, info, trace, warn};
 
-use solana_lite_rpc_core::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_core::solana_utils::SerializableTransaction;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::identity_stakes::IdentityStakesData;
@@ -39,6 +38,7 @@ use tracing_subscriber::EnvFilter;
 use solana_lite_rpc_quic_forward_proxy::proxy::QuicForwardProxy;
 use solana_lite_rpc_quic_forward_proxy::tls_self_signed_pair_generator::SelfSignedTlsConfigProvider;
 use solana_lite_rpc_quic_forward_proxy::validator_identity::ValidatorIdentity;
+use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_services::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use tracing_subscriber::fmt::format::FmtSpan;
 

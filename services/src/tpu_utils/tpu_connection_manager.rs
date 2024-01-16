@@ -3,8 +3,6 @@ use log::{error, trace};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
-    quic_connection::{PooledConnection, QuicConnectionPool},
-    quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
     stores::data_cache::DataCache,
     structures::{
         identity_stakes::IdentityStakesData, rotating_queue::RotatingQueue,
@@ -22,6 +20,11 @@ use std::{
     },
 };
 use tokio::sync::{broadcast::Receiver, broadcast::Sender};
+
+use crate::{
+    quic_connection::{PooledConnection, QuicConnectionPool},
+    quic_connection_utils::{QuicConnectionParameters, QuicConnectionUtils},
+};
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =

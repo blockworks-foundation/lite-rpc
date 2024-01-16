@@ -11,7 +11,7 @@ use log::{debug, info, trace, warn};
 use quinn::{
     ClientConfig, Endpoint, EndpointConfig, IdleTimeout, TokioRuntime, TransportConfig, VarInt,
 };
-use solana_lite_rpc_core::quic_connection_utils::apply_gso_workaround;
+use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_sdk::quic::QUIC_MAX_TIMEOUT;
 use solana_streamer::nonblocking::quic::ALPN_TPU_PROTOCOL_ID;
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
