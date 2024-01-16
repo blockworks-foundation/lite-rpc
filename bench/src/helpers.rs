@@ -18,7 +18,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
-use solana_transaction_status::{TransactionStatus, TransactionConfirmationStatus};
+use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use std::path::Path;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
@@ -89,7 +89,7 @@ impl BenchHelper {
         }))
         .await;
 
-        let mut results = sigs
+        let mut results: Vec<anyhow::Result<Option<TransactionStatus>>> = sigs
             .iter()
             .map(|sig| {
                 let Err(err) = sig else {
@@ -106,9 +106,16 @@ impl BenchHelper {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, result)| match result {
-                    Ok(None) => {
+                    Ok(status) => {
+                        if let Some(status) = status {
+                            if status.confirmation_status() == commitment_config {
+                                return None;
+                            }
+                        }
+
                         let sig = sigs[index].as_ref().unwrap().to_owned();
-                        log::info!("{url} Waiting for confirmation of {}", sig);
+                        log::info!("{url} Waiting for {commitment_config:?} of {}", sig);
+
                         Some(sig)
                     }
                     _ => None,
@@ -124,28 +131,33 @@ impl BenchHelper {
             results.iter_mut().enumerate().for_each(|(index, result)| {
                 if let Ok(None) = result {
                     *result = Ok(statuses.next().unwrap());
-                    if let Ok(Some(status)) = result {
-                        log::info!(
-                            "{url} Transaction {:?} {:?} in slot {:?}",
-                            sigs[index],
-                            status.confirmation_status(),
-                            status.slot,
-                        );
+                    let sig = &sigs[index];
+                    match result {
+                        Ok(Some(status)) => {
+                            log::info!(
+                                "{url} Transaction {:?} {:?} in slot {:?}",
+                                sig,
+                                status.confirmation_status(),
+                                status.slot,
+                            );
+                        }
+                        Ok(None) => {
+                            log::warn!("{url} No status found for {}", sig);
+                        }
+                        _ => unreachable!(),
                     }
                 }
             });
 
-            if results.iter().all(|result| {
-                match result {
-                    Err(_) => true,
-                    Ok(None) => false,
-                    Ok(Some(status)) => status.confirmation_status() == commitment_config,
-                }
+            if results.iter().all(|result| match result {
+                Err(_) => true,
+                Ok(None) => false,
+                Ok(Some(status)) => status.confirmation_status() == commitment_config,
             }) {
                 break;
             }
 
-            log::info!("{url} Waiting for confirmation (500ms)...");
+            log::info!("{url} Waiting for {commitment_config:?} (500ms)...");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 

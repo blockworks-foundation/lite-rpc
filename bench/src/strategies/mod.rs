@@ -34,6 +34,8 @@ impl Strategies {
             Strategies::Tc4(tc4) => csv_writer.serialize(tc4.execute().await?)?,
         }
 
+        log::info!("metrics written to {}", metrics_file_name);
+
         csv_writer.flush()?;
 
         Ok(())

@@ -2,9 +2,9 @@ use anyhow::Context;
 use futures::future::join_all;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::hash::Hash;
+use solana_sdk::signature::Keypair;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::Transaction;
-use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use solana_transaction_status::TransactionConfirmationStatus;
 
 use crate::helpers::{BenchHelper, Rng8};
@@ -14,8 +14,8 @@ use crate::cli::{ExtraRpcArgs, LiteRpcArgs, RpcArgs};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Tc1Result {
-    rpcs: Option<Vec<String>>,
-    slots: Option<Vec<Slot>>,
+    rpc: String,
+    slot: Slot,
 }
 
 /// send 2 txs (one via LiteRPC, one via Solana RPC) and compare confirmation slot (=slot distance)
@@ -69,7 +69,7 @@ impl Tc1 {
 
 #[async_trait::async_trait]
 impl Strategy for Tc1 {
-    type Output = Tc1Result;
+    type Output = Vec<Tc1Result>;
 
     async fn execute(&self) -> anyhow::Result<Self::Output> {
         let mut rng = BenchHelper::create_rng(None);
@@ -110,24 +110,22 @@ impl Strategy for Tc1 {
         .await;
 
         // filter out errors and log them
-        let (rpcs, slots) = slots
+        let res = slots
             .into_iter()
             .zip(endpoints.iter())
             .filter_map(|(slot, endpoint)| match slot {
-                Ok(slot) => Some((endpoint.to_owned(), slot)),
+                Ok(slot) => Some(Tc1Result {
+                    rpc: endpoint.to_owned(), 
+                    slot
+                }),
                 Err(err) => {
                     log::error!("error with endpoint {} : {}", endpoint, err);
                     None
                 }
             })
-            .unzip::<_, _, Vec<_>, Vec<_>>();
+            .collect::<Vec<_>>();
 
-        println!("rpcs: {:?}", rpcs);
-        println!("slots: {:?}", slots);
+        Ok(res)
 
-        Ok(Tc1Result {
-            rpcs: Some(rpcs),
-            slots: Some(slots),
-        })
     }
 }
