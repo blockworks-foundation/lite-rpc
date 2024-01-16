@@ -7,7 +7,6 @@ edition = "2021"
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-transaction-status = { workspace = true }
-solana-compute-budget-program = { workspace = true }
 log = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
