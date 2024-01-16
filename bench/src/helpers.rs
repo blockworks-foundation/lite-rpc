@@ -23,6 +23,8 @@ use std::path::Path;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
 
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+
 use crate::tx_size::TxSize;
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
@@ -78,12 +80,36 @@ impl BenchHelper {
         rpc_client: &RpcClient,
         txs: &[impl SerializableTransaction],
         commitment_config: TransactionConfirmationStatus,
-        tries: Option<usize>,
+        tries: Option<u64>,
+        multi_progress_bar: &MultiProgress,
     ) -> anyhow::Result<Vec<anyhow::Result<Option<TransactionStatus>>>> {
-        let url = rpc_client.url();
+        let progress_bar_style = ProgressStyle::with_template(
+            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+        )
+        .unwrap()
+        .progress_chars("##-");
 
-        let sigs = join_all(txs.iter().map(|tx| {
-            log::info!("{url} Sending transaction {}", tx.get_signature());
+        let url = rpc_client.url();
+        let url_slice = url[..url.len().min(20)].to_string();
+
+        let tries = tries.unwrap_or(100);
+
+        let progress_bars = txs
+            .iter()
+            .map(|tx| {
+                let pb = multi_progress_bar.add(ProgressBar::new(tries));
+                pb.set_style(progress_bar_style.clone());
+                pb.set_message(tx.get_signature().to_string());
+                pb
+            })
+            .collect_vec();
+
+        let sigs = join_all(txs.iter().enumerate().map(|(index, tx)| {
+            progress_bars[index].reset_elapsed();
+            progress_bars[index]
+                .set_message(format!("{url_slice} {} Sending...", tx.get_signature()));
+
+            //log::info!("{url} Sending transaction {}", tx.get_signature());
 
             rpc_client.send_transaction(tx)
         }))
@@ -101,7 +127,7 @@ impl BenchHelper {
             .collect_vec();
 
         // 5 tries
-        for _ in 0..tries.unwrap_or(100) {
+        for _ in 0..tries {
             let sigs = results
                 .iter()
                 .enumerate()
@@ -114,7 +140,13 @@ impl BenchHelper {
                         }
 
                         let sig = sigs[index].as_ref().unwrap().to_owned();
-                        log::info!("{url} Waiting for {commitment_config:?} of {}", sig);
+                        let pb = &progress_bars[index];
+
+                        pb.set_message(format!(
+                            "{url_slice} Waiting for {commitment_config:?} of {sig}",
+                        ));
+
+                        //log::info!("{url} Waiting for {commitment_config:?} of {}", sig);
 
                         Some(sig)
                     }
@@ -132,17 +164,27 @@ impl BenchHelper {
                 if let Ok(None) = result {
                     *result = Ok(statuses.next().unwrap());
                     let sig = &sigs[index];
+                    let pb = &progress_bars[index];
+                    pb.inc(1);
+
                     match result {
                         Ok(Some(status)) => {
-                            log::info!(
-                                "{url} Transaction {:?} {:?} in slot {:?}",
-                                sig,
-                                status.confirmation_status(),
-                                status.slot,
-                            );
+                            if status.confirmation_status() == commitment_config {
+                                pb.finish_with_message(format!(
+                                    "{url_slice} {sig} {:?} in slot {:?}",
+                                    status.confirmation_status(),
+                                    status.slot,
+                                ));
+                            } else {
+                                pb.set_message(format!(
+                                    "{url_slice} {sig} {:?} in slot {:?}",
+                                    status.confirmation_status(),
+                                    status.slot,
+                                ));
+                            }
                         }
                         Ok(None) => {
-                            log::warn!("{url} No status found for {}", sig);
+                            pb.set_message(format!("{url_slice} {sig} No status found"));
                         }
                         _ => unreachable!(),
                     }
@@ -157,7 +199,7 @@ impl BenchHelper {
                 break;
             }
 
-            log::info!("{url} Waiting for {commitment_config:?} (500ms)...");
+            log::info!("{url_slice} Waiting for {commitment_config:?} (500ms)...");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 

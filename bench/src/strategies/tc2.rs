@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use indicatif::MultiProgress;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
@@ -19,7 +20,7 @@ pub struct Tc2Result {
     avg_rpc: RpcStat,
     runs: usize,
     bulk: usize,
-    retries: usize,
+    retries: Option<u64>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -40,9 +41,6 @@ pub struct Tc2 {
     /// number of times to send the bulk
     #[arg(short = 'R', long, default_value_t = 5)]
     runs: usize,
-    /// confirmation retries
-    #[arg(short = 'c', long, default_value_t = 5)]
-    retries: usize,
 
     #[command(flatten)]
     rpc_args: RpcArgs,
@@ -52,7 +50,12 @@ pub struct Tc2 {
 }
 
 impl Tc2 {
-    pub async fn send_bulk_txs(&self, rpc: &RpcClient, payer: &Keypair) -> anyhow::Result<RpcStat> {
+    pub async fn send_bulk_txs(
+        &self,
+        rpc: &RpcClient,
+        payer: &Keypair,
+        multi_progress_bar: &MultiProgress,
+    ) -> anyhow::Result<RpcStat> {
         let hash = rpc.get_latest_blockhash().await?;
         let mut rng = BenchHelper::create_rng(None);
         let txs =
@@ -64,7 +67,8 @@ impl Tc2 {
             rpc,
             &txs,
             TransactionConfirmationStatus::Confirmed,
-            Some(self.retries),
+            self.rpc_args.confirmation_retries,
+            multi_progress_bar,
         )
         .await?;
 
@@ -144,6 +148,8 @@ impl Strategy for Tc2 {
 
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
 
+        let multi_progress_bar = MultiProgress::new();
+
         let mut use_lite_rpc = true;
 
         let mut rpc_results = Vec::with_capacity(self.runs);
@@ -156,7 +162,7 @@ impl Strategy for Tc2 {
                 (&rpc, &mut rpc_results)
             };
 
-            let stat = self.send_bulk_txs(rpc, &payer).await?;
+            let stat = self.send_bulk_txs(rpc, &payer, &multi_progress_bar).await?;
             list.push(stat);
 
             use_lite_rpc = !use_lite_rpc;
@@ -172,7 +178,7 @@ impl Strategy for Tc2 {
             avg_rpc,
             runs: self.runs,
             bulk: self.bulk,
-            retries: self.retries,
+            retries: self.rpc_args.confirmation_retries,
         })
     }
 }

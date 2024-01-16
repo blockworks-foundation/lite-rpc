@@ -27,6 +27,7 @@ itertools = { workspace = true }
 spl-memo = "4.0.0"
 async-trait = { workspace = true }
 dotenv = { workspace = true }
+indicatif = { workspace = true }
 
 [dev-dependencies]
 bincode = { workspace = true }

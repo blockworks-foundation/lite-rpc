@@ -1,5 +1,6 @@
 use anyhow::Context;
 use futures::future::join_all;
+use indicatif::MultiProgress;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::hash::Hash;
 use solana_sdk::signature::Keypair;
@@ -50,12 +51,14 @@ impl Tc1 {
         &self,
         client: &RpcClient,
         tx: Transaction,
+        multi_progress_bar: &MultiProgress,
     ) -> anyhow::Result<u64> {
         let status = BenchHelper::send_and_confirm_transactions(
             client,
             &[tx],
             TransactionConfirmationStatus::Confirmed,
             self.rpc_args.confirmation_retries,
+            multi_progress_bar,
         )
         .await?
         .into_iter()
@@ -74,6 +77,8 @@ impl Strategy for Tc1 {
     async fn execute(&self) -> anyhow::Result<Self::Output> {
         let mut rng = BenchHelper::create_rng(None);
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
+
+        let multi_progress_bar = MultiProgress::new();
 
         let endpoints = {
             let mut endpoints = vec![
@@ -102,11 +107,9 @@ impl Strategy for Tc1 {
             txs
         };
 
-        let slots = join_all(
-            rpcs.iter()
-                .zip(txs.iter())
-                .map(|(rpc, tx)| self.send_transaction_and_get_slot(rpc, tx.clone())),
-        )
+        let slots = join_all(rpcs.iter().zip(txs.iter()).map(|(rpc, tx)| {
+            self.send_transaction_and_get_slot(rpc, tx.clone(), &multi_progress_bar)
+        }))
         .await;
 
         // filter out errors and log them
@@ -115,8 +118,8 @@ impl Strategy for Tc1 {
             .zip(endpoints.iter())
             .filter_map(|(slot, endpoint)| match slot {
                 Ok(slot) => Some(Tc1Result {
-                    rpc: endpoint.to_owned(), 
-                    slot
+                    rpc: endpoint.to_owned(),
+                    slot,
                 }),
                 Err(err) => {
                     log::error!("error with endpoint {} : {}", endpoint, err);
@@ -126,6 +129,5 @@ impl Strategy for Tc1 {
             .collect::<Vec<_>>();
 
         Ok(res)
-
     }
 }

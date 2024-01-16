@@ -25,7 +25,7 @@ pub struct RpcArgs {
     pub tx_size: TxSize,
     /// confirmation retries
     #[arg(short = 'c', long)]
-    pub confirmation_retries: Option<usize>,
+    pub confirmation_retries: Option<u64>,
 }
 
 #[derive(clap::Args, Debug)]
