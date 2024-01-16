@@ -7,7 +7,7 @@ use crate::util::FALLBACK_TIMEOUT;
 use anyhow::{anyhow, bail, Context};
 use log::{debug, error, info, trace, warn};
 use quinn::{Connecting, Endpoint, ServerConfig, VarInt};
-use solana_lite_rpc_core::quic_connection_utils::apply_gso_workaround;
+use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_sdk::packet::PACKET_DATA_SIZE;
 use std::net::SocketAddr;
 use std::sync::Arc;
