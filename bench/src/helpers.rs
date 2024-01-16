@@ -76,6 +76,18 @@ impl BenchHelper {
         }
     }
 
+    pub fn create_progress_bar(len: u64, message: Option<String>) -> ProgressBar {
+        let progress_bar_style = ProgressStyle::with_template(
+            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+        )
+        .unwrap()
+        .progress_chars("##-");
+
+        ProgressBar::new(len)
+            .with_style(progress_bar_style)
+            .with_message(message.unwrap_or("...".to_string()))
+    }
+
     pub async fn send_and_confirm_transactions(
         rpc_client: &RpcClient,
         txs: &[impl SerializableTransaction],
@@ -83,12 +95,6 @@ impl BenchHelper {
         tries: Option<u64>,
         multi_progress_bar: &MultiProgress,
     ) -> anyhow::Result<Vec<anyhow::Result<Option<TransactionStatus>>>> {
-        let progress_bar_style = ProgressStyle::with_template(
-            "[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-        )
-        .unwrap()
-        .progress_chars("##-");
-
         let url = rpc_client.url();
         let url_slice = url[..url.len().min(20)].to_string();
 
@@ -97,10 +103,10 @@ impl BenchHelper {
         let progress_bars = txs
             .iter()
             .map(|tx| {
-                let pb = multi_progress_bar.add(ProgressBar::new(tries));
-                pb.set_style(progress_bar_style.clone());
-                pb.set_message(tx.get_signature().to_string());
-                pb
+                multi_progress_bar.add(Self::create_progress_bar(
+                    tries,
+                    Some(tx.get_signature().to_string()),
+                ))
             })
             .collect_vec();
 
