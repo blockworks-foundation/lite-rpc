@@ -1,18 +1,20 @@
 use anyhow::Context;
+use futures::future::join_all;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::hash::Hash;
+use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 
 use crate::helpers::{BenchHelper, Rng8};
 
 use super::Strategy;
-use crate::cli::{LiteRpcArgs, RpcArgs};
+use crate::cli::{ExtraRpcArgs, LiteRpcArgs, RpcArgs};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Tc1Result {
-    rpc_slot: u64,
-    lite_rpc_slot: u64,
+    rpcs: Option<Vec<String>>,
+    slots: Option<Vec<Slot>>,
 }
 
 /// send 2 txs (one via LiteRPC, one via Solana RPC) and compare confirmation slot (=slot distance)
@@ -23,6 +25,9 @@ pub struct Tc1 {
 
     #[command(flatten)]
     lite_rpc_args: LiteRpcArgs,
+
+    #[command(flatten)]
+    other_rpcs: ExtraRpcArgs,
 }
 
 impl Tc1 {
@@ -66,30 +71,59 @@ impl Strategy for Tc1 {
     type Output = Tc1Result;
 
     async fn execute(&self) -> anyhow::Result<Self::Output> {
-        let lite_rpc = RpcClient::new(self.lite_rpc_args.lite_rpc_addr.clone());
-        let rpc = RpcClient::new(self.rpc_args.rpc_addr.clone());
-
         let mut rng = BenchHelper::create_rng(None);
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
 
-        let rpc_tx = {
-            let hash = rpc.get_latest_blockhash().await?;
-            self.create_tx(hash, &payer, &mut rng).await?
+        let endpoints = {
+            let mut endpoints = vec![
+                self.rpc_args.rpc_addr.clone(),
+                self.lite_rpc_args.lite_rpc_addr.clone(),
+            ];
+
+            if let Some(extra_endpoints) = &self.other_rpcs.other_rpcs {
+                endpoints.extend(extra_endpoints.clone());
+            }
+
+            endpoints
         };
 
-        let lite_rpc_tx = {
-            let hash = lite_rpc.get_latest_blockhash().await?;
-            self.create_tx(hash, &payer, &mut rng).await?
+        let rpcs = endpoints
+            .iter()
+            .map(|rpc_addr| RpcClient::new(rpc_addr.to_string()))
+            .collect::<Vec<_>>();
+
+        let txs = {
+            let hash = rpcs[0].get_latest_blockhash().await?;
+            let mut txs = Vec::with_capacity(rpcs.len());
+            for _ in rpcs.iter() {
+                txs.push(self.create_tx(hash, &payer, &mut rng).await?);
+            }
+            txs
         };
 
-        let (rpc_slot, lite_rpc_slot) = tokio::join!(
-            self.send_transaction_and_get_slot(&rpc, rpc_tx),
-            self.send_transaction_and_get_slot(&lite_rpc, lite_rpc_tx)
-        );
+        let slots = join_all(
+            rpcs.iter()
+                .zip(txs.iter())
+                .map(|(rpc, tx)| self.send_transaction_and_get_slot(rpc, tx.clone())),
+        )
+        .await;
+
+        // filter out errors and log them
+        let (rpcs, slots) = slots
+            .into_iter()
+            .zip(endpoints.iter())
+            .filter_map(|(slot, endpoint)| match slot {
+                Ok(slot) => Some((endpoint.to_owned(), slot)),
+                Err(err) => {
+                    log::error!("error with endpoint {} : {}", endpoint, err);
+                    None
+                }
+            })
+            .unzip::<_, _, Vec<_>, Vec<_>>();
 
         Ok(Tc1Result {
-            rpc_slot: rpc_slot?,
-            lite_rpc_slot: lite_rpc_slot?,
+            rpcs: Some(rpcs),
+            slots: Some(slots),
         })
     }
 }

@@ -20,6 +20,8 @@ use tokio::{
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
+    dotenv::dotenv().ok();
+
     tracing_subscriber::fmt::init();
 
     let Args {

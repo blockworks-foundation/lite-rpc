@@ -34,3 +34,10 @@ pub struct LiteRpcArgs {
     #[arg(short = 'l', long, default_value_t = String::from("http://0.0.0.0:8890"))]
     pub lite_rpc_addr: String,
 }
+
+#[derive(clap::Args, Debug)]
+pub struct ExtraRpcArgs {
+    /// other endpoints
+    #[arg(short = 'e', long)]
+    pub other_rpcs: Option<Vec<String>>,
+}

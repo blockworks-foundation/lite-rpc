@@ -80,7 +80,14 @@ impl BenchHelper {
         commitment_config: CommitmentConfig,
         tries: Option<usize>,
     ) -> anyhow::Result<Vec<anyhow::Result<Option<TransactionStatus>>>> {
-        let sigs = join_all(txs.iter().map(|tx| rpc_client.send_transaction(tx))).await;
+        let url = rpc_client.url();
+
+        let sigs = join_all(txs.iter().map(|tx| {
+            log::info!("{url} Sending transaction {}", tx.get_signature());
+
+            rpc_client.send_transaction(tx)
+        }))
+        .await;
 
         let mut results = sigs
             .iter()
@@ -99,7 +106,11 @@ impl BenchHelper {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, result)| match result {
-                    Ok(None) => Some(sigs[index].as_ref().unwrap().to_owned()),
+                    Ok(None) => {
+                        let sig = sigs[index].as_ref().unwrap().to_owned();
+                        log::info!("{url} Waiting for confirmation of {}", sig);
+                        Some(sig)
+                    }
                     _ => None,
                 })
                 .collect_vec();
@@ -110,9 +121,17 @@ impl BenchHelper {
                 .value
                 .into_iter();
 
-            results.iter_mut().for_each(|result| {
+            results.iter_mut().enumerate().for_each(|(index, result)| {
                 if let Ok(None) = result {
                     *result = Ok(statuses.next().unwrap());
+                    if let Ok(Some(status)) = result {
+                        log::info!(
+                            "{url} Transaction {:?} {:?} in slot {:?}",
+                            sigs[index],
+                            status.confirmation_status(),
+                            status.slot,
+                        );
+                    }
                 }
             });
 
@@ -127,6 +146,7 @@ impl BenchHelper {
                 break;
             }
 
+            log::info!("{url} Waiting for confirmation (500ms)...");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
@@ -198,27 +218,27 @@ impl BenchHelper {
         priority_fee: Option<u64>,
         cu_budget: Option<u32>,
     ) -> Transaction {
-        // get cu budget from CU_BUDGET
-        let cu_budget = cu_budget.unwrap_or_else(|| {
+        let cu_budget = cu_budget.or_else(|| {
             std::env::var("CU_BUDGET")
-                .unwrap_or_else(|_| "5000".to_string())
-                .parse()
-                .expect("Invalid env CU_BUDGET")
+                .ok()
+                .and_then(|budget_str| budget_str.parse::<u32>().ok())
         });
 
-        // PRIORITY_FEE_MICRO_LAMPORTS
-        let priority_fee = priority_fee.unwrap_or_else(|| {
+        let priority_fee = priority_fee.or_else(|| {
             std::env::var("PRIORITY_FEE_MICRO_LAMPORTS")
-                .unwrap_or_else(|_| "3".to_string())
-                .parse()
-                .expect("Invalid env PRIORITY_FEE_MICRO_LAMPORTS")
+                .ok()
+                .and_then(|fee_str| fee_str.parse::<u64>().ok())
         });
 
-        let cu_limit = ComputeBudgetInstruction::set_compute_unit_limit(cu_budget);
-        let cu_price = ComputeBudgetInstruction::set_compute_unit_price(priority_fee);
+        if let Some(cu_budget) = cu_budget {
+            let cu_limit = ComputeBudgetInstruction::set_compute_unit_limit(cu_budget);
+            instructions.push(cu_limit);
+        }
 
-        instructions.push(cu_limit);
-        instructions.push(cu_price);
+        if let Some(priority_fee) = priority_fee {
+            let cu_price = ComputeBudgetInstruction::set_compute_unit_price(priority_fee);
+            instructions.push(cu_price);
+        }
 
         let message = Message::new(&instructions, Some(signers.pubkeys().first().unwrap()));
 
