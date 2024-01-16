@@ -37,7 +37,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_histo
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
-use crate::block_priofees::PrioFeesService;
+use crate::block_priofees::{PrioFeesService, PrioritizationFeesInfo};
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -179,10 +179,6 @@ impl LiteRpcServer for LiteBridge {
 
     async fn get_block_height(&self, _config: Option<RpcContextConfig>) -> crate::rpc::Result<u64> {
         todo!()
-    }
-
-    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<u64> {
-        Ok(876543)
     }
 
     async fn get_block_time(&self, _block: u64) -> crate::rpc::Result<u64> {
@@ -502,5 +498,19 @@ impl LiteRpcServer for LiteBridge {
         _config: Option<RpcGetVoteAccountsConfig>,
     ) -> crate::rpc::Result<RpcVoteAccountStatus> {
         todo!()
+    }
+
+    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<PrioritizationFeesInfo> {
+        let priofees = self.prio_fees_service.get_median_priofees().await;
+        match priofees {
+            Some(priofees) => {
+                return Ok(priofees);
+            }
+            None => {
+                return Err(jsonrpsee::core::Error::Custom(
+                    format!("No priofees stats found for block {}", 99999),
+                ));
+            }
+        }
     }
 }

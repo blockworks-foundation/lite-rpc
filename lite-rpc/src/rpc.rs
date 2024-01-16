@@ -18,6 +18,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::collections::HashMap;
+use crate::block_priofees::PrioritizationFeesInfo;
 
 pub type Result<T> = std::result::Result<T, jsonrpsee::core::Error>;
 
@@ -235,6 +236,11 @@ pub trait LiteRpc {
         config: Option<RpcGetVoteAccountsConfig>,
     ) -> crate::rpc::Result<RpcVoteAccountStatus>;
 
+    // ***********************
+    // expose prio fees distribution per block
+    // (this is special method not available in solana rpc)
+    // ***********************
+
     #[method(name = "getBlockPrioFeesDistribution")]
-    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<u64>;
+    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<PrioritizationFeesInfo> ;
 }

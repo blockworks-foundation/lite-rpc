@@ -183,7 +183,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     );
 
-    let mut prio_fees_service = block_priofees::PrioFeesService::new();
+    let mut prio_fees_service = block_priofees::PrioFeesService::new(data_cache.clone());
     let block_priofees = tokio::spawn(block_priofees::start_priofees_service(
         prio_fees_service.block_fees_store.clone(),
         blocks_notifier.resubscribe()));
@@ -260,6 +260,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         }
         res = bridge_service => {
             anyhow::bail!("Server {res:?}")
+        }
+        res = block_priofees => {
+            anyhow::bail!("Prio Fees Service {res:?}")
         }
         res = postgres => {
             anyhow::bail!("Postgres service {res:?}");
