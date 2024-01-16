@@ -578,7 +578,7 @@ dependencies = [
  "dotenv",
  "futures",
  "indicatif",
- "itertools",
+ "itertools 0.10.5",
  "lazy_static",
  "log",
  "rand 0.8.5",
