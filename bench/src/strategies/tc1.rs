@@ -5,6 +5,7 @@ use solana_sdk::hash::Hash;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+use solana_transaction_status::TransactionConfirmationStatus;
 
 use crate::helpers::{BenchHelper, Rng8};
 
@@ -53,7 +54,7 @@ impl Tc1 {
         let status = BenchHelper::send_and_confirm_transactions(
             client,
             &[tx],
-            CommitmentConfig::confirmed(),
+            TransactionConfirmationStatus::Confirmed,
             self.rpc_args.confirmation_retries,
         )
         .await?
@@ -120,6 +121,9 @@ impl Strategy for Tc1 {
                 }
             })
             .unzip::<_, _, Vec<_>, Vec<_>>();
+
+        println!("rpcs: {:?}", rpcs);
+        println!("slots: {:?}", slots);
 
         Ok(Tc1Result {
             rpcs: Some(rpcs),

@@ -18,7 +18,7 @@ use solana_sdk::{
     transaction::Transaction,
 };
 
-use solana_transaction_status::TransactionStatus;
+use solana_transaction_status::{TransactionStatus, TransactionConfirmationStatus};
 use std::path::Path;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
@@ -77,7 +77,7 @@ impl BenchHelper {
     pub async fn send_and_confirm_transactions(
         rpc_client: &RpcClient,
         txs: &[impl SerializableTransaction],
-        commitment_config: CommitmentConfig,
+        commitment_config: TransactionConfirmationStatus,
         tries: Option<usize>,
     ) -> anyhow::Result<Vec<anyhow::Result<Option<TransactionStatus>>>> {
         let url = rpc_client.url();
@@ -136,11 +136,10 @@ impl BenchHelper {
             });
 
             if results.iter().all(|result| {
-                let Ok(result) = result else { return true };
-                if let Some(result) = result {
-                    result.satisfies_commitment(commitment_config)
-                } else {
-                    false
+                match result {
+                    Err(_) => true,
+                    Ok(None) => false,
+                    Ok(Some(status)) => status.confirmation_status() == commitment_config,
                 }
             }) {
                 break;

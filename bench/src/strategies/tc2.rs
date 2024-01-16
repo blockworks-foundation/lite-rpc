@@ -4,6 +4,7 @@ use std::time::Duration;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+use solana_transaction_status::TransactionConfirmationStatus;
 
 use crate::helpers::BenchHelper;
 
@@ -62,7 +63,7 @@ impl Tc2 {
         let txs = BenchHelper::send_and_confirm_transactions(
             rpc,
             &txs,
-            CommitmentConfig::confirmed(),
+            TransactionConfirmationStatus::Confirmed,
             Some(self.retries),
         )
         .await?;
