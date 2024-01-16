@@ -16,9 +16,8 @@ use solana_sdk::pubkey::Pubkey;
 use tokio::sync::broadcast::error::TryRecvError;
 use tokio::sync::{broadcast::Receiver, RwLock};
 
-use solana_lite_rpc_core::quic_connection_utils::{
-    apply_gso_workaround, QuicConnectionParameters, SkipServerVerification,
-};
+use crate::quic_connection_utils::{QuicConnectionParameters, SkipServerVerification};
+use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_lite_rpc_core::structures::proxy_request_format::{TpuForwardingRequest, TxData};
 
 use crate::tpu_utils::quinn_auto_reconnect::AutoReconnect;

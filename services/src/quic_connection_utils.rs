@@ -1,8 +1,10 @@
-use log::{info, trace};
+use log::trace;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig,
 };
+use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_sdk::pubkey::Pubkey;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -13,6 +15,23 @@ use std::{
     time::Duration,
 };
 use tokio::time::timeout;
+
+lazy_static::lazy_static! {
+    static ref NB_QUIC_0RTT_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_timedout", "Number of times 0RTT timedout")).unwrap();
+    static ref NB_QUIC_CONNECTION_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_timedout", "Number of times connection timedout")).unwrap();
+    static ref NB_QUIC_CONNECTION_ERRORED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_errored", "Number of times connection errored")).unwrap();
+    static ref NB_QUIC_WRITEALL_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_writeall_timedout", "Number of times writeall timedout")).unwrap();
+    static ref NB_QUIC_WRITEALL_ERRORED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_writeall_errored", "Number of times writeall errored")).unwrap();
+    static ref NB_QUIC_FINISH_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_finish_timedout", "Number of times finish timedout")).unwrap();
+    static ref NB_QUIC_FINISH_ERRORED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_finish_errored", "Number of times finish errored")).unwrap();
+}
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 
@@ -74,8 +93,20 @@ impl QuicConnectionUtils {
         connection_timeout: Duration,
     ) -> anyhow::Result<Connection> {
         let connecting = endpoint.connect(addr, "connect")?;
-        let res = timeout(connection_timeout, connecting).await??;
-        Ok(res)
+        match timeout(connection_timeout, connecting).await {
+            Ok(res) => match res {
+                Ok(connection) => Ok(connection),
+                Err(e) => {
+                    NB_QUIC_CONNECTION_ERRORED.inc();
+                    Err(e.into())
+                }
+            },
+            Err(_) => {
+                // timed out
+                NB_QUIC_CONNECTION_TIMEOUT.inc();
+                Err(ConnectionError::TimedOut.into())
+            }
+        }
     }
 
     pub async fn make_connection_0rtt(
@@ -89,13 +120,18 @@ impl QuicConnectionUtils {
                 if (timeout(connection_timeout, zero_rtt).await).is_ok() {
                     connection
                 } else {
+                    NB_QUIC_0RTT_TIMEOUT.inc();
                     return Err(ConnectionError::TimedOut.into());
                 }
             }
             Err(connecting) => {
                 if let Ok(connecting_result) = timeout(connection_timeout, connecting).await {
+                    if connecting_result.is_err() {
+                        NB_QUIC_CONNECTION_ERRORED.inc();
+                    }
                     connecting_result?
                 } else {
+                    NB_QUIC_CONNECTION_TIMEOUT.inc();
                     return Err(ConnectionError::TimedOut.into());
                 }
             }
@@ -153,11 +189,13 @@ impl QuicConnectionUtils {
                         identity,
                         e
                     );
+                    NB_QUIC_WRITEALL_ERRORED.inc();
                     return Err(QuicConnectionError::ConnectionError { retry: true });
                 }
             }
             Err(_) => {
                 log::debug!("timeout while writing transaction for {}", identity);
+                NB_QUIC_WRITEALL_TIMEOUT.inc();
                 return Err(QuicConnectionError::TimeOut);
             }
         }
@@ -172,11 +210,13 @@ impl QuicConnectionUtils {
                         identity,
                         e
                     );
+                    NB_QUIC_FINISH_ERRORED.inc();
                     return Err(QuicConnectionError::ConnectionError { retry: false });
                 }
             }
             Err(_) => {
                 log::debug!("timeout while finishing transaction for {}", identity);
+                NB_QUIC_FINISH_TIMEOUT.inc();
                 return Err(QuicConnectionError::TimeOut);
             }
         }
@@ -216,40 +256,4 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
     ) -> Result<rustls::client::ServerCertVerified, rustls::Error> {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
-}
-
-// connection for sending proxy request: FrameStats {
-// ACK: 2, CONNECTION_CLOSE: 0, CRYPTO: 3, DATA_BLOCKED: 0, DATAGRAM: 0, HANDSHAKE_DONE: 1,
-// MAX_DATA: 0, MAX_STREAM_DATA: 1, MAX_STREAMS_BIDI: 0, MAX_STREAMS_UNI: 0, NEW_CONNECTION_ID: 4,
-// NEW_TOKEN: 0, PATH_CHALLENGE: 0, PATH_RESPONSE: 0, PING: 0, RESET_STREAM: 0, RETIRE_CONNECTION_ID: 1,
-// STREAM_DATA_BLOCKED: 0, STREAMS_BLOCKED_BIDI: 0, STREAMS_BLOCKED_UNI: 0, STOP_SENDING: 0, STREAM: 0 }
-// rtt=1.08178ms
-pub fn connection_stats(connection: &Connection) -> String {
-    // see https://www.rfc-editor.org/rfc/rfc9000.html#name-frame-types-and-formats
-    format!(
-        "stable_id {}, rtt={:?}, stats {:?}",
-        connection.stable_id(),
-        connection.stats().path.rtt,
-        connection.stats().frame_rx
-    )
-}
-
-/// env flag to optionally disable GSO (generic segmentation offload) on environments where Quinn cannot detect it properly
-/// see https://github.com/quinn-rs/quinn/pull/1671
-pub fn apply_gso_workaround(tc: &mut TransportConfig) {
-    if disable_gso() {
-        tc.enable_segmentation_offload(false);
-    }
-}
-
-pub fn log_gso_workaround() {
-    info!("GSO force-disabled? {}", disable_gso());
-}
-
-/// note: true means that quinn's heuristic for GSO detection is used to decide if GSO is used
-fn disable_gso() -> bool {
-    std::env::var("DISABLE_GSO")
-        .unwrap_or("false".to_string())
-        .parse::<bool>()
-        .expect("flag must be true or false")
 }

@@ -1,10 +1,11 @@
-use crate::{
-    quic_connection_utils::{QuicConnectionError, QuicConnectionParameters, QuicConnectionUtils},
-    structures::rotating_queue::RotatingQueue,
+use crate::quic_connection_utils::{
+    QuicConnectionError, QuicConnectionParameters, QuicConnectionUtils,
 };
 use futures::FutureExt;
 use log::warn;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::{Connection, Endpoint};
+use solana_lite_rpc_core::structures::rotating_queue::RotatingQueue;
 use solana_sdk::pubkey::Pubkey;
 use std::{
     net::SocketAddr,
@@ -16,6 +17,19 @@ use std::{
 use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
 
 pub type EndpointPool = RotatingQueue<Endpoint>;
+
+lazy_static::lazy_static! {
+    static ref NB_QUIC_CONNECTION_RESET: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_nb_connection_reset", "Number of times connection was reset")).unwrap();
+    static ref NB_QUIC_CONNECTION_REQUESTED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_nb_connection_requested", "Number of connections requested")).unwrap();
+    static ref TRIED_SEND_TRANSCTION_TRIED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_nb_send_transaction_tried", "Number of times send transaction was tried")).unwrap();
+    static ref SEND_TRANSCTION_SUCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_nb_send_transaction_successful", "Number of times send transaction was successful")).unwrap();
+    static ref NB_QUIC_COULDNOT_ESTABLISH_CONNECTION: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_nb_couldnot_establish_connection", "Number of times quic connection could not be established")).unwrap();
+}
 
 #[derive(Clone)]
 #[warn(clippy::rc_clone_in_vec_init)]
@@ -52,10 +66,10 @@ impl QuicConnection {
         }
     }
 
-    async fn connect(&self) -> Option<Connection> {
+    async fn connect(&self, is_already_connected: bool) -> Option<Connection> {
         QuicConnectionUtils::connect(
             self.identity,
-            true,
+            is_already_connected,
             self.endpoint.clone(),
             self.socket_address,
             self.connection_params.connection_timeout,
@@ -80,7 +94,8 @@ impl QuicConnection {
                     if connection.stable_id() != current_stable_id {
                         Some(connection)
                     } else {
-                        let new_conn = self.connect().await;
+                        NB_QUIC_CONNECTION_RESET.inc();
+                        let new_conn = self.connect(true).await;
                         if let Some(new_conn) = new_conn {
                             *conn = Some(new_conn);
                             conn.clone()
@@ -94,7 +109,8 @@ impl QuicConnection {
                 }
             }
             None => {
-                let connection = self.connect().await;
+                NB_QUIC_CONNECTION_REQUESTED.inc();
+                let connection = self.connect(false).await;
                 *self.connection.write().await = connection.clone();
                 self.has_connected_once.store(true, Ordering::Relaxed);
                 connection
@@ -114,6 +130,7 @@ impl QuicConnection {
             let connection = self.get_connection().await;
 
             if let Some(connection) = connection {
+                TRIED_SEND_TRANSCTION_TRIED.inc();
                 let current_stable_id = connection.stable_id() as u64;
                 match QuicConnectionUtils::open_unistream(
                     connection,
@@ -131,7 +148,7 @@ impl QuicConnection {
                         .await
                         {
                             Ok(()) => {
-                                // do nothing
+                                SEND_TRANSCTION_SUCESSFUL.inc();
                             }
                             Err(QuicConnectionError::ConnectionError { retry }) => {
                                 do_retry = retry;
@@ -154,6 +171,7 @@ impl QuicConnection {
                     break;
                 }
             } else {
+                NB_QUIC_COULDNOT_ESTABLISH_CONNECTION.inc();
                 warn!(
                     "Could not establish connection with {}",
                     self.identity.to_string()
