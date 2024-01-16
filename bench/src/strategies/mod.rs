@@ -1,6 +1,3 @@
-use csv::Writer;
-use std::fs::File;
-
 use self::tc1::Tc1;
 use self::tc2::Tc2;
 use self::tc3::Tc3;
