@@ -14,9 +14,7 @@ pub struct Tc4 {
 
 #[async_trait::async_trait]
 impl Strategy for Tc4 {
-    type Output = serde_json::Value;
-
-    async fn execute(&self) -> anyhow::Result<Self::Output> {
+    async fn execute(&self) -> anyhow::Result<Vec<serde_json::Value>> {
         todo!()
     }
 }

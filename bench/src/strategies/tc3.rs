@@ -27,9 +27,7 @@ pub struct Tc3 {
 
 #[async_trait::async_trait]
 impl Strategy for Tc3 {
-    type Output = Tc3Result;
-
-    async fn execute(&self) -> anyhow::Result<Self::Output> {
+    async fn execute(&self) -> anyhow::Result<Vec<serde_json::Value>> {
         let rpc = Arc::new(RpcClient::new(self.rpc_cli_options.rpc_addr.clone()));
         let payer = Arc::new(BenchHelper::get_payer(&self.rpc_cli_options.payer).await?);
 
@@ -65,10 +63,11 @@ impl Strategy for Tc3 {
 
         let calls_per_second = txs as f64 / (self.time_ms as f64 * 1000.0);
 
-        Ok(Tc3Result {
+        Ok(vec![serde_json::to_value(Tc3Result {
             calls_per_second,
             failed: failed.load(Ordering::Relaxed),
             success: success.load(Ordering::Relaxed),
         })
+        .unwrap()])
     }
 }

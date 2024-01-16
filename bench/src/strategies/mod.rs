@@ -1,3 +1,6 @@
+use csv::Writer;
+use std::fs::File;
+
 use self::tc1::Tc1;
 use self::tc2::Tc2;
 use self::tc3::Tc3;
@@ -10,9 +13,7 @@ pub mod tc4;
 
 #[async_trait::async_trait]
 pub trait Strategy {
-    type Output: serde::Serialize;
-
-    async fn execute(&self) -> anyhow::Result<Self::Output>;
+    async fn execute(&self) -> anyhow::Result<Vec<serde_json::Value>>;
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -23,21 +24,16 @@ pub enum Strategies {
     Tc4(Tc4),
 }
 
-impl Strategies {
-    pub async fn execute(&self, metrics_file_name: &str) -> anyhow::Result<()> {
-        let mut csv_writer = csv::Writer::from_path(metrics_file_name).unwrap();
+#[async_trait::async_trait]
+impl Strategy for Strategies {
+    async fn execute(&self) -> anyhow::Result<Vec<serde_json::Value>> {
+        let res = match self {
+            Strategies::Tc1(tc1) => tc1.execute().await?,
+            Strategies::Tc2(tc2) => tc2.execute().await?,
+            Strategies::Tc3(tc3) => tc3.execute().await?,
+            Strategies::Tc4(tc4) => tc4.execute().await?,
+        };
 
-        match self {
-            Strategies::Tc1(tc1) => csv_writer.serialize(tc1.execute().await?)?,
-            Strategies::Tc2(tc2) => csv_writer.serialize(tc2.execute().await?)?,
-            Strategies::Tc3(tc3) => csv_writer.serialize(tc3.execute().await?)?,
-            Strategies::Tc4(tc4) => csv_writer.serialize(tc4.execute().await?)?,
-        }
-
-        log::info!("metrics written to {}", metrics_file_name);
-
-        csv_writer.flush()?;
-
-        Ok(())
+        Ok(res)
     }
 }

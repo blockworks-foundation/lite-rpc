@@ -72,9 +72,7 @@ impl Tc1 {
 
 #[async_trait::async_trait]
 impl Strategy for Tc1 {
-    type Output = Vec<Tc1Result>;
-
-    async fn execute(&self) -> anyhow::Result<Self::Output> {
+    async fn execute(&self) -> anyhow::Result<Vec<serde_json::Value>> {
         let mut rng = BenchHelper::create_rng(None);
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
 
@@ -126,6 +124,7 @@ impl Strategy for Tc1 {
                     None
                 }
             })
+            .map(|r| serde_json::to_value(r).unwrap())
             .collect::<Vec<_>>();
 
         Ok(res)

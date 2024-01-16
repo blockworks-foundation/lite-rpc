@@ -1,10 +1,9 @@
 use std::collections::HashMap;
-use std::time::Duration;
 
 use indicatif::MultiProgress;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::signature::Keypair;
 use solana_sdk::slot_history::Slot;
-use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use solana_transaction_status::TransactionConfirmationStatus;
 
 use crate::helpers::BenchHelper;
@@ -12,25 +11,17 @@ use crate::helpers::BenchHelper;
 use super::Strategy;
 use crate::cli::{LiteRpcArgs, RpcArgs};
 
-#[derive(Debug, serde::Serialize)]
-pub struct Tc2Result {
-    lite_rpc: Vec<RpcStat>,
-    rpc: Vec<RpcStat>,
-    avg_lite_rpc: RpcStat,
-    avg_rpc: RpcStat,
-    runs: usize,
-    bulk: usize,
-    retries: Option<u64>,
-}
-
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct RpcStat {
-    time: Duration,
+    rpc: String,
+    time_ns: u128,
     mode_slot: u64,
     confirmed: u64,
     unconfirmed: u64,
     failed: u64,
 }
+
+pub type Tc2Result = RpcStat;
 
 /// send bulk (100-200) * 5 txs; measure the confirmation rate
 #[derive(clap::Args, Debug)]
@@ -80,7 +71,7 @@ impl Tc2 {
         for tx in txs {
             match tx {
                 Ok(Some(status)) => {
-                    if status.satisfies_commitment(CommitmentConfig::confirmed()) {
+                    if status.confirmation_status() == TransactionConfirmationStatus::Confirmed {
                         confirmed += 1;
                         *slot_hz.entry(status.slot).or_default() += 1;
                     } else {
@@ -103,7 +94,8 @@ impl Tc2 {
             .unwrap_or_default();
 
         Ok(RpcStat {
-            time,
+            rpc: rpc.url().to_string(),
+            time_ns: time.as_nanos(),
             mode_slot,
             confirmed,
             unconfirmed,
@@ -114,35 +106,36 @@ impl Tc2 {
     fn get_stats_avg(stats: &[RpcStat]) -> RpcStat {
         let len = stats.len();
 
-        let mut avg = RpcStat {
-            time: Duration::default(),
-            mode_slot: 0,
-            confirmed: 0,
-            unconfirmed: 0,
-            failed: 0,
-        };
+        let mut avg = stats[0].clone();
 
-        for stat in stats {
-            avg.time += stat.time;
+        for stat in stats.iter().skip(1) {
+            avg.time_ns += stat.time_ns;
             avg.confirmed += stat.confirmed;
             avg.unconfirmed += stat.unconfirmed;
             avg.failed += stat.failed;
         }
 
-        avg.time /= len as u32;
+        avg.rpc = "avg".to_string();
+        avg.time_ns /= len as u128;
         avg.confirmed /= len as u64;
         avg.unconfirmed /= len as u64;
         avg.failed /= len as u64;
 
         avg
     }
+
+    fn get_results(mut stats: Vec<RpcStat>) -> Vec<Tc2Result> {
+        let avg = Self::get_stats_avg(&stats);
+
+        stats.push(avg);
+
+        stats
+    }
 }
 
 #[async_trait::async_trait]
 impl Strategy for Tc2 {
-    type Output = Tc2Result;
-
-    async fn execute(&self) -> anyhow::Result<Self::Output> {
+    async fn execute(&self) -> anyhow::Result<Vec<serde_json::Value>> {
         let lite_rpc = RpcClient::new(self.lite_rpc_args.lite_rpc_addr.clone());
         let rpc = RpcClient::new(self.rpc_args.rpc_addr.clone());
 
@@ -155,7 +148,7 @@ impl Strategy for Tc2 {
         let mut rpc_results = Vec::with_capacity(self.runs);
         let mut lite_rpc_results = Vec::with_capacity(self.runs);
 
-        for _ in 0..self.runs {
+        for _ in 0..(self.runs * 2) {
             let (rpc, list) = if use_lite_rpc {
                 (&lite_rpc, &mut lite_rpc_results)
             } else {
@@ -168,17 +161,18 @@ impl Strategy for Tc2 {
             use_lite_rpc = !use_lite_rpc;
         }
 
-        let avg_lite_rpc = Self::get_stats_avg(&lite_rpc_results);
-        let avg_rpc = Self::get_stats_avg(&rpc_results);
+        let rpc_results = Self::get_results(rpc_results);
+        let lite_rpc_results = Self::get_results(lite_rpc_results);
 
-        Ok(Tc2Result {
-            lite_rpc: lite_rpc_results,
-            rpc: rpc_results,
-            avg_lite_rpc,
-            avg_rpc,
-            runs: self.runs,
-            bulk: self.bulk,
-            retries: self.rpc_args.confirmation_retries,
-        })
+        let mut results = rpc_results;
+
+        results.extend(lite_rpc_results);
+
+        let results = results
+            .into_iter()
+            .map(|r| serde_json::to_value(r).unwrap())
+            .collect::<Vec<_>>();
+
+        Ok(results)
     }
 }
