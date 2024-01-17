@@ -42,8 +42,8 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
-use solana_lite_rpc_block_priofees::block_priofees::{PrioFeesService, PrioFeesUpdateMessage};
-use solana_lite_rpc_block_priofees::rpc_data::PrioFeesStats;
+use solana_lite_rpc_block_priofees::PrioFeesService;
+use solana_lite_rpc_block_priofees::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =

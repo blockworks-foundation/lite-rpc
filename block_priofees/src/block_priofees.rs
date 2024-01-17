@@ -1,4 +1,4 @@
-use crate::rpc_data::PrioFeesStats;
+use crate::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
 use dashmap::DashMap;
 use log::{error, info, trace, warn};
 use solana_lite_rpc_core::types::BlockStream;
@@ -115,11 +115,6 @@ pub async fn start_block_priofees_task(
     )
 }
 
-#[derive(Clone, Debug)]
-pub struct PrioFeesUpdateMessage {
-    pub slot: Slot,
-    pub priofees_stats: PrioFeesStats,
-}
 
 fn calculate_supp_info(
     // Vec(prioritization_fees, cu_consumed)
