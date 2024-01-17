@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use jsonrpsee::{core::SubscriptionResult, DisconnectError, PendingSubscriptionSink, server::ServerBuilder};
-use log::info;
+use log::{debug, info};
 use prometheus::{IntCounter, opts, register_int_counter};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
@@ -31,7 +31,6 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
     stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
 };
-use solana_lite_rpc_core::traits::subscription_sink::SubscriptionSink;
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
@@ -42,7 +41,7 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
-use crate::block_priofees::{PrioFeesService, PrioritizationFeesInfo};
+use crate::block_priofees::{PrioFeesService, PrioFeesUpdateMessage, PrioritizationFeesInfo};
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -521,74 +520,37 @@ impl LiteRpcServer for LiteBridge {
         }
     }
 
+    // use websocket-tungstenite-retry->examples/consume_literpc_priofees.rs to test
     async fn block_priofees_subscribe(
         &self,
         pending: PendingSubscriptionSink,
-        // config: RpcSignatureSubscribeConfig,
     ) -> SubscriptionResult {
-
-        info!("block_priofees_subscribe REQUESTED");
         let sink = pending.accept().await?;
 
         let mut block_fees_stream = self.prio_fees_service.block_fees_stream.resubscribe();
         tokio::spawn(async move {
             RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
-            while let Ok(fees) = block_fees_stream.recv().await {
+            while let Ok(PrioFeesUpdateMessage { slot: confirmation_slot, fees_info}) = block_fees_stream.recv().await {
+                let result_message =
+                    jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
+                        context: RpcResponseContext {
+                            slot: confirmation_slot,
+                            api_version: None,
+                        },
+                        value: fees_info,
+                    });
 
-                let priofees =  jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
-                    context: RpcResponseContext {
-                        slot: 99999,
-                        api_version: None,
-                    },
-                    value: fees,
-                });
-
-                match sink.send(priofees.unwrap()).await {
+                match sink.send(result_message.unwrap()).await {
                     Ok(()) => {
                         // success
                     }
                     Err(DisconnectError(_subscription_message)) => {
-                        info!("Disconnecting subscription: {:?}", _subscription_message);
+                        debug!("Stopping subscription task on disconnect");
                         return;
                     }
                 };
-                sleep(Duration::from_secs(1)).await;
             }
         });
-
-        // let pubsub = self.inner.clone();
-        // self.subscription_task_spawner.spawn(Box::pin(async move {
-        //     let _ = handle_accepted(pubsub, sink, kind, params).await;
-        // }));
-        //
-        //
-        // let handle_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
-        // handle_sink.send(99999, serde_json::json!({
-        //     "blocksize": 99999,
-        //     "slot": 99999,
-        //     "commitment_config": "confirmed"
-        // })).await;
-
-        // let msg =  jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
-        //     context: RpcResponseContext {
-        //         slot,
-        //         api_version: None,
-        //     },
-        //     value: message,
-        // }).expect("failed to create subscription message");
-
-
-
-
-        // RPC_SIGNATURE_SUBSCRIBE.inc();
-        // let sink = pending.accept().await?;
-        //
-        // let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);
-        // self.data_cache.tx_subs.signature_subscribe(
-        //     signature,
-        //     config.commitment.unwrap_or_default(),
-        //     Arc::new(jsonrpsee_sink),
-        // );
 
         Ok(())
     }

@@ -4,9 +4,10 @@ use dashmap::DashMap;
 use dashmap::mapref::multiple::RefMulti;
 use jsonrpsee::core::Serialize;
 use jsonrpsee::tracing::field::debug;
-use log::{debug, error, info};
+use log::{debug, error, info, trace, warn};
 use solana_rpc_client_api::response::Fees;
 use solana_sdk::clock::Slot;
+use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
 use solana_lite_rpc_cluster_endpoints::CommitmentLevel;
@@ -24,7 +25,7 @@ pub struct PrioFeeStore {
 
 pub struct PrioFeesService {
     pub block_fees_store: PrioFeeStore,
-    pub block_fees_stream: Receiver<PrioritizationFeesInfo>,
+    pub block_fees_stream: Receiver<PrioFeesUpdateMessage>,
 }
 
 impl PrioFeesService {
@@ -50,9 +51,10 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
         slot_cache: data_cache.slot_cache,
     };
     let (priofees_update_sender, priofees_update_receiver) = tokio::sync::broadcast::channel(100);
+    drop(priofees_update_receiver);
 
     let jh_priofees_task = tokio::spawn(async move {
-        loop {
+        'recv_loop: loop {
             let block = block_stream.recv().await;
             match block {
                 Ok(block) => {
@@ -71,17 +73,26 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
 
                     let prioritization_fees_info = calculate_supp_info(&block_prio_fees);
 
-                    debug!("Store prioritization_fees_info for block {}", slot);
+                    trace!("Got prioritization_fees_info for block {}", slot);
+
                     recent_data.insert(slot, prioritization_fees_info.clone());
-                    debug!("Sending prioritization_fees_info for block {}", slot);
-                    priofees_update_sender.send(prioritization_fees_info).unwrap();
+                    let msg = PrioFeesUpdateMessage {
+                        slot,
+                        fees_info: prioritization_fees_info,
+                    };
+                    priofees_update_sender.send(msg).unwrap();
                 }
-                Err(e) => {
-                    error!("failed to receive block: {:?}", e);
-                    break;
+                Err(Lagged(_lagged)) => {
+                    warn!("channel error receiving block for priofees calculation - continue");
+                    continue 'recv_loop;
+                }
+                Err(Closed) => {
+                    error!("failed to receive block, sender closed - aborting");
+                    break 'recv_loop;;
                 }
             }
         }
+        info!("priofees task shutting down");
     });
 
     (
@@ -93,6 +104,11 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
     )
 }
 
+#[derive(Clone, Debug)]
+pub struct PrioFeesUpdateMessage {
+    pub slot: Slot,
+    pub fees_info: PrioritizationFeesInfo,
+}
 
 // used as RPC DTO
 #[derive(Clone, Serialize, Debug)]
