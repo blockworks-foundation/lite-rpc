@@ -13,7 +13,7 @@ primary_region = "nrt"
 [env]
   PORT_HTTP = "8890"
   PORT_WS = "8891"
-  RUST_LOG = "info,lite_rpc=debug,solana_lite_rpc_block_priofees=trace"
+  RUST_LOG = "info"
 
  [metrics]
    path = "/metrics"
