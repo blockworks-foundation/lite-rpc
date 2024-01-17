@@ -52,7 +52,7 @@ impl PrioFeesService {
 
 }
 
-pub async fn start_priofees_service(store: PrioFeeStore, mut block_stream: BlockStream) {
+pub async fn start_priofees_task(store: PrioFeeStore, mut block_stream: BlockStream) {
     loop {
         let block = block_stream.recv().await;
         match block {

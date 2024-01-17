@@ -242,5 +242,10 @@ pub trait LiteRpc {
     // ***********************
 
     #[method(name = "getBlockPrioFeesDistribution")]
-    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<PrioritizationFeesInfo> ;
+    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<PrioritizationFeesInfo>;
+
+    #[subscription(name = "blockPrioFeesSubscribe" => "blockPrioFeesNotification", unsubscribe="blockPrioFeesUnsubscribe", item=PrioritizationFeesInfo)]
+    async fn block_priofees_subscribe(
+        &self
+    ) -> SubscriptionResult;
 }

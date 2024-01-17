@@ -4,7 +4,6 @@ use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
 use lite_rpc::bridge::LiteBridge;
-use lite_rpc::block_priofees::PrioFeesService;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
@@ -51,6 +50,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
+use tokio::time::{Instant, timeout};
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -159,6 +159,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     } = subscriptions;
 
+    info!("Waiting for first finalized block...");
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
     info!("Got finalized block: {:?}", finalized_block.slot);
@@ -195,7 +196,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     );
 
     let mut prio_fees_service = block_priofees::PrioFeesService::new(data_cache.clone());
-    let block_priofees = tokio::spawn(block_priofees::start_priofees_service(
+    let block_priofees = tokio::spawn(block_priofees::start_priofees_task(
         prio_fees_service.block_fees_store.clone(),
         blocks_notifier.resubscribe()));
 
