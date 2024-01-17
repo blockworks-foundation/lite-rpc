@@ -247,5 +247,4 @@ pub trait LiteRpc {
     /// subscribe to prio fees distribution per block; uses confirmation level "confirmed"
     #[subscription(name = "blockPrioritizationFeesSubscribe" => "blockPrioritizationFeesNotification", unsubscribe="blockPrioritizationFeesUnsubscribe", item=PrioFeesStats)]
     async fn latest_block_priofees_subscribe(&self) -> SubscriptionResult;
-
 }

@@ -43,6 +43,7 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
 use solana_lite_rpc_block_priofees::start_block_priofees_task;
+use solana_lite_rpc_cluster_endpoints::grpc_multiplex::create_grpc_multiplex_processed_blocks_subscription;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
@@ -200,8 +201,22 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     );
 
+    let timeouts = GrpcConnectionTimeouts {
+        connect_timeout: Duration::from_secs(5),
+        request_timeout: Duration::from_secs(5),
+        subscribe_timeout: Duration::from_secs(5),
+    };
+    let (processed_blocks_receiver, _jh_processed_blocks) =
+        create_grpc_multiplex_processed_blocks_subscription(
+            grpc_sources
+                .iter()
+                .map(|s| {
+                    GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
+                })
+                .collect(),
+        );
     let (block_priofees_task, block_priofees_service) =
-        start_block_priofees_task(blocks_notifier.resubscribe()).await;
+        start_block_priofees_task(processed_blocks_receiver.resubscribe()).await;
 
     drop(blocks_notifier);
 
