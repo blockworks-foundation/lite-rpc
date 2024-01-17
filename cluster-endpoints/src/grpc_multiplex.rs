@@ -1,4 +1,6 @@
-use crate::grpc_subscription::{create_block_processing_task, map_block_update};
+use crate::grpc_subscription::{
+    create_block_processing_task, create_slot_stream_task, map_block_update,
+};
 use anyhow::Context;
 use futures::StreamExt;
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{
@@ -17,9 +19,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{
-    SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate,
-};
+use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
 struct BlockExtractor(CommitmentConfig);
 
@@ -71,7 +71,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             loop {
                 let (confirmed_block_sender, mut confirmed_block_reciever) =
                     tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
-                let _confirmed_blocks_tasks = {
+                let confirmed_blocks_tasks = {
                     let commitment_config = CommitmentConfig::confirmed();
 
                     let mut tasks = Vec::new();
@@ -189,6 +189,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         }
                     }
                 }
+                // abort all the tasks
+                confirmed_blocks_tasks.iter().for_each(|task| task.abort());
             }
         })
     };
@@ -225,65 +227,42 @@ pub fn create_grpc_multiplex_slots_subscription(
         info!("- connection to {}", grpc_source);
     }
 
-    let (multiplexed_messages_sender, multiplexed_messages) = tokio::sync::broadcast::channel(1000);
+    let (multiplexed_messages_sender, multiplexed_messages_rx) =
+        tokio::sync::broadcast::channel(1000);
 
     let jh = tokio::spawn(async move {
         loop {
-            let multiplex_stream = {
-                let mut streams = Vec::new();
-                for grpc_source in &grpc_sources {
-                    let mut slots = HashMap::new();
-                    slots.insert(
-                        "client".to_string(),
-                        SubscribeRequestFilterSlots {
-                            filter_by_commitment: Some(true),
-                        },
-                    );
+            let mut streams_tasks = Vec::new();
+            let mut recievers = Vec::new();
+            for grpc_source in &grpc_sources {
+                let (sx, rx) = async_channel::bounded(1);
+                let task = create_slot_stream_task(
+                    grpc_source.grpc_addr.clone(),
+                    grpc_source.grpc_x_token.clone(),
+                    sx,
+                    yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
+                );
+                streams_tasks.push(task);
+                recievers.push(rx);
+            }
 
-                    let filter = SubscribeRequest {
-                        slots,
-                        accounts: Default::default(),
-                        transactions: HashMap::new(),
-                        entry: Default::default(),
-                        blocks: HashMap::new(),
-                        blocks_meta: HashMap::new(),
-                        commitment: Some(
-                            yellowstone_grpc_proto::geyser::CommitmentLevel::Processed as i32,
-                        ),
-                        accounts_data_slice: Default::default(),
-                        ping: None,
-                    };
-
-                    let stream = create_geyser_reconnecting_stream(grpc_source.clone(), filter);
-                    streams.push(stream);
-                }
-
-                create_multiplexed_stream(streams, SlotExtractor {})
-            };
-
-            let mut multiplex_stream = std::pin::pin!(multiplex_stream);
-            loop {
-                tokio::select! {
-                    slot_data = multiplex_stream.next() => {
-                        if let Some(slot_data) = slot_data {
-                            match multiplexed_messages_sender.send(slot_data) {
-                                Ok(receivers) => {
-                                    trace!("sent data to {} receivers", receivers);
-                                }
-                                Err(send_error) => log::error!("Get error while sending on slot channel {}", send_error),
-                            };
-                        } else {
-                            debug!("Slot stream send None type");
-                        }
-                    },
-                    _ = tokio::time::sleep(Duration::from_secs(30)) => {
-                        log::error!("Slots timedout restarting subscription");
-                        break;
-                    }
+            while let Ok(slot_update) = tokio::time::timeout(
+                Duration::from_secs(30),
+                futures::stream::select_all(recievers.clone()).next(),
+            )
+            .await
+            {
+                if let Some(slot_update) = slot_update {
+                    multiplexed_messages_sender.send(SlotNotification {
+                        processed_slot: slot_update.slot,
+                        estimated_processed_slot: slot_update.slot,
+                    })?;
                 }
             }
+
+            streams_tasks.iter().for_each(|task| task.abort());
         }
     });
 
-    (multiplexed_messages, jh)
+    (multiplexed_messages_rx, jh)
 }
