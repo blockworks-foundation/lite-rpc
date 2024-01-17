@@ -1,4 +1,4 @@
-use crate::structures::leader_data::LeaderData;
+use crate::leader_data::LeaderData;
 use async_trait::async_trait;
 use solana_sdk::slot_history::Slot;
 

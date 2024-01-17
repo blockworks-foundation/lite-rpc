@@ -9,7 +9,7 @@ use solana_sdk::{
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::structures::produced_block::ProducedBlock;
+use crate::produced_block::ProducedBlock;
 
 #[derive(Clone, Debug)]
 pub struct BlockInformation {

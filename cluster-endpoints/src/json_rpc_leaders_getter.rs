@@ -2,9 +2,7 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_lite_rpc_core::{
-    structures::leader_data::LeaderData, traits::leaders_fetcher_interface::LeaderFetcherInterface,
-};
+use solana_lite_rpc_cluster::{leader_data::LeaderData, leaders_fetcher_interface::LeaderFetcherInterface};
 use std::{collections::VecDeque, sync::Arc};
 use tokio::sync::RwLock;
 

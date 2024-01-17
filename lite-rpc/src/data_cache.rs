@@ -22,12 +22,6 @@ use crate::{
 use super::block_information_store::BlockInformation;
 pub type TxSubKey = (String, CommitmentConfig);
 
-#[derive(Default, Clone)]
-pub struct SlotCache {
-    current_slot: AtomicSlot,
-    estimated_slot: AtomicSlot,
-}
-
 /// The central data store for all data from the cluster.
 #[derive(Clone)]
 pub struct DataCache {
@@ -94,30 +88,11 @@ impl DataCache {
     }
 }
 
-impl SlotCache {
-    pub fn new(slot: Slot) -> Self {
-        Self {
-            current_slot: Arc::new(AtomicU64::new(slot)),
-            estimated_slot: Arc::new(AtomicU64::new(slot)),
-        }
-    }
-    pub fn get_current_slot(&self) -> Slot {
-        self.current_slot.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub fn get_estimated_slot(&self) -> Slot {
-        self.estimated_slot
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    pub fn update(&self, slot_notification: SlotNotification) {
-        self.current_slot.store(
-            slot_notification.processed_slot,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        self.estimated_slot.store(
-            slot_notification.estimated_processed_slot,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-    }
+pub async fn get_current_confirmed_slot(data_cache: &DataCache) -> u64 {
+    let commitment = CommitmentConfig::confirmed();
+    let BlockInformation { slot, .. } = data_cache
+        .block_information_store
+        .get_latest_block(commitment)
+        .await;
+    slot
 }

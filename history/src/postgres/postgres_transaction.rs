@@ -1,4 +1,5 @@
-use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
+use solana_lite_rpc_blocks_processing::produced_block::TransactionInfo;
+use solana_lite_rpc_core::encoding::BASE64;
 use solana_sdk::slot_history::Slot;
 use tokio_postgres::types::ToSql;
 

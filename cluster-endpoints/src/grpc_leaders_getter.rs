@@ -1,10 +1,7 @@
 use anyhow::{bail, Error};
 use async_trait::async_trait;
-use solana_lite_rpc_core::structures::epoch::EpochCache;
-use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
-use solana_lite_rpc_core::{
-    structures::leader_data::LeaderData, traits::leaders_fetcher_interface::LeaderFetcherInterface,
-};
+use solana_lite_rpc_cluster::{epoch::EpochCache, leaderschedule::CalculatedSchedule, leaders_fetcher_interface::LeaderFetcherInterface, leader_data::LeaderData};
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

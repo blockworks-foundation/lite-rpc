@@ -1,10 +1,8 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_lite_rpc_blocks_processing::produced_block::ProducedBlock;
 use solana_lite_rpc_core::{
-    structures::{
-        produced_block::ProducedBlock,
-        slot_notification::{AtomicSlot, SlotNotification},
-    },
+    structures::slot_notification::{AtomicSlot, SlotNotification},
     AnyhowJoinHandle,
 };
 use solana_rpc_client_api::config::RpcBlockConfig;

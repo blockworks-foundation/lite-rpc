@@ -8,7 +8,7 @@ use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
 use log::{debug, info, trace, warn};
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+use solana_lite_rpc_blocks_processing::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;

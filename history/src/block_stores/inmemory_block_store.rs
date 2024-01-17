@@ -1,9 +1,6 @@
 use async_trait::async_trait;
-use solana_lite_rpc_core::{
-    commitment_utils::Commitment,
-    structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageInterface, BLOCK_NOT_FOUND},
-};
+use solana_lite_rpc_blocks_processing::{produced_block::ProducedBlock, block_storage_interface::{BlockStorageInterface, BLOCK_NOT_FOUND}};
+use solana_lite_rpc_core::commitment_utils::Commitment;
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::slot_history::Slot;
 use std::{collections::BTreeMap, ops::Range};

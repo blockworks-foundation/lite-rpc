@@ -1,4 +1,5 @@
-use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
+use solana_lite_rpc_blocks_processing::produced_block::ProducedBlock;
+use solana_lite_rpc_core::encoding::BASE64;
 use tokio_postgres::types::ToSql;
 
 use super::postgres_session::PostgresSession;

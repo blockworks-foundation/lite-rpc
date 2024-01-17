@@ -9,8 +9,9 @@ use solana_transaction_status::{
     option_serializer::OptionSerializer, Reward, RewardType, UiConfirmedBlock,
     UiTransactionStatusMeta,
 };
+use tokio::sync::broadcast::Receiver;
 
-use crate::encoding::BinaryEncoding;
+use solana_lite_rpc_core::encoding::BinaryEncoding;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
@@ -189,3 +190,5 @@ fn overflow_u32() {
 
     assert_eq!(40_000_000_000, prioritization_fees);
 }
+
+pub type BlockStream = Receiver<ProducedBlock>;

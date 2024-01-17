@@ -1,5 +1,5 @@
 use log::{debug, warn};
-use solana_lite_rpc_core::types::BlockStream;
+use solana_lite_rpc_blocks_processing::produced_block::BlockStream;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;

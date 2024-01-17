@@ -1,6 +1,7 @@
 use std::sync::{atomic::AtomicU64, Arc};
 
 use solana_sdk::slot_history::Slot;
+use tokio::sync::broadcast::Receiver;
 
 pub type AtomicSlot = Arc<AtomicU64>;
 
@@ -9,3 +10,5 @@ pub struct SlotNotification {
     pub processed_slot: Slot,
     pub estimated_processed_slot: Slot,
 }
+
+pub type SlotStream = Receiver<SlotNotification>;

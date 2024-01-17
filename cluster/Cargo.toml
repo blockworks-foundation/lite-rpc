@@ -1,20 +1,15 @@
 [package]
-name = "solana-lite-rpc-cluster-endpoints"
+name = "solana-lite-rpc-cluster"
 version = "0.2.3"
 edition = "2021"
-description = "Core classes and methods used by solana lite rpc"
+description = "Library to store cluster state"
 rust-version = "1.70.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
-#geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-#geyser-grpc-connector = { tag = "v0.5.0+yellowstone.1.11+solana.1.16.17", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
-geyser-grpc-connector = "0.7.2+yellowstone.1.11"
-
+solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-blocks-processing = { workspace = true }
-solana-lite-rpc-transaction-processing = { workspace = true }
-solana-lite-rpc-cluster = { workspace = true }
 
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
@@ -23,7 +18,9 @@ solana-version = { workspace = true }
 solana-client = { workspace = true }
 solana-net-utils = { workspace = true }
 solana-pubsub-client = { workspace = true }
+solana-rpc-client = { workspace = true }
 solana-streamer = { workspace = true }
+solana-account-decoder = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = "1.*"
@@ -32,7 +29,6 @@ bs58 = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
-merge-streams = "0.1.2"
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
@@ -41,11 +37,4 @@ quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
-derive_more = "0.99.17"
-async-channel = { workspace = true }
-solana-lite-rpc-core = { workspace = true }
-yellowstone-grpc-client = { workspace = true }
-yellowstone-grpc-proto = { workspace = true }
-itertools = {workspace = true}
-prometheus = { workspace = true }
-lazy_static = { workspace = true }
+itertools = { workspace = true }

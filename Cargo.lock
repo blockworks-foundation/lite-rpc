@@ -5030,6 +5030,75 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-lite-rpc-blocks-processing"
+version = "0.2.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.5",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "dashmap 5.5.3",
+ "futures",
+ "itertools 0.10.5",
+ "log",
+ "quinn",
+ "rustls 0.20.9",
+ "serde",
+ "serde_json",
+ "solana-account-decoder",
+ "solana-client",
+ "solana-lite-rpc-core",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "solana-lite-rpc-cluster"
+version = "0.2.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.5",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "dashmap 5.5.3",
+ "futures",
+ "itertools 0.10.5",
+ "log",
+ "quinn",
+ "rustls 0.20.9",
+ "serde",
+ "serde_json",
+ "solana-account-decoder",
+ "solana-client",
+ "solana-lite-rpc-blocks-processing",
+ "solana-lite-rpc-core",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "solana-lite-rpc-cluster-endpoints"
 version = "0.2.3"
 dependencies = [
@@ -5055,7 +5124,10 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-client",
+ "solana-lite-rpc-blocks-processing",
+ "solana-lite-rpc-cluster",
  "solana-lite-rpc-core",
+ "solana-lite-rpc-transaction-processing",
  "solana-net-utils",
  "solana-pubsub-client",
  "solana-rpc-client-api",
@@ -5117,7 +5189,10 @@ dependencies = [
  "native-tls",
  "postgres-native-tls",
  "serde",
+ "solana-lite-rpc-blocks-processing",
+ "solana-lite-rpc-cluster",
  "solana-lite-rpc-core",
+ "solana-lite-rpc-transaction-processing",
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",
@@ -5271,6 +5346,39 @@ dependencies = [
  "tokio",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
+]
+
+[[package]]
+name = "solana-lite-rpc-transaction-processing"
+version = "0.2.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.5",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "dashmap 5.5.3",
+ "futures",
+ "itertools 0.10.5",
+ "log",
+ "quinn",
+ "rustls 0.20.9",
+ "serde",
+ "serde_json",
+ "solana-account-decoder",
+ "solana-client",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

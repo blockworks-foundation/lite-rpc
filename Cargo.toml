@@ -60,10 +60,15 @@ dotenv = "0.15.0"
 async-channel = "1.8.0"
 quinn = "0.9.4"
 rustls = { version = "0.20.9", default-features = false }
+
 solana-lite-rpc-services = {path = "services", version="0.2.3"}
 solana-lite-rpc-core = {path = "core", version="0.2.3"}
 solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.3"}
 solana-lite-rpc-history = {path = "history", version="0.2.3"}
+solana-lite-rpc-blocks-processing = {path = "blocks-processing", version="0.2.3"}
+solana-lite-rpc-transaction-processing = {path = "transaction-processing", version="0.2.3"}
+solana-lite-rpc-cluster = {path = "cluster", version="0.2.3"}
+solana-lite-rpc-network = {path = "network", version="0.2.3"}
 solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.3"}
 
 async-trait = "0.1.68"

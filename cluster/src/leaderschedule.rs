@@ -1,5 +1,5 @@
-use crate::stores::block_information_store::BlockInformation;
-use crate::stores::data_cache::DataCache;
+use solana_lite_rpc_blocks_processing::block_information_store::BlockInformation;
+use solana_lite_rpc_blocks_processing::block_information_store::BlockInformationStore;
 use solana_rpc_client_api::config::RpcGetVoteAccountsConfig;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::ParsePubkeyError;
@@ -8,6 +8,8 @@ use solana_sdk::slot_history::Slot;
 use solana_sdk::sysvar::epoch_schedule::EpochSchedule;
 use std::collections::HashMap;
 use std::str::FromStr;
+
+use crate::epoch::EpochCache;
 
 #[derive(Clone, Default)]
 pub struct GetVoteAccountsConfig {
@@ -46,7 +48,8 @@ impl CalculatedSchedule {
         &self,
         slot: Option<u64>,
         commitment: Option<CommitmentConfig>,
-        data_cache: &DataCache,
+        block_information_store: &BlockInformationStore,
+        epoch_cache: &EpochCache,
     ) -> Option<HashMap<String, Vec<usize>>> {
         log::debug!(
             "get_leader_schedule_for_slot current:{:?} next:{:?} ",
@@ -58,14 +61,13 @@ impl CalculatedSchedule {
         let slot = match slot {
             Some(slot) => slot,
             None => {
-                let BlockInformation { slot, .. } = data_cache
-                    .block_information_store
+                let BlockInformation { slot, .. } = block_information_store
                     .get_latest_block(commitment)
                     .await;
                 slot
             }
         };
-        let epoch = data_cache.epoch_data.get_epoch_at_slot(slot);
+        let epoch = epoch_cache.get_epoch_at_slot(slot);
 
         let get_schedule = |schedule_data: Option<&LeaderScheduleData>| {
             schedule_data.and_then(|current| {

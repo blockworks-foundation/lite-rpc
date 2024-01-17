@@ -8,6 +8,10 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
+solana-lite-rpc-blocks-processing = { workspace = true }
+solana-lite-rpc-transaction-processing = { workspace = true }
+solana-lite-rpc-cluster = { workspace = true }
+
 solana-sdk = { workspace = true }
 solana-transaction-status = { workspace = true }
 solana-rpc-client = { workspace = true }

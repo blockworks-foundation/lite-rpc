@@ -1,4 +1,5 @@
-use solana_lite_rpc_core::types::{BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream};
+use solana_lite_rpc_blocks_processing::produced_block::BlockStream;
+use solana_lite_rpc_core::{types::{ClusterInfoStream, VoteAccountStream}, structures::slot_notification::SlotStream};
 pub struct EndpointStreaming {
     pub blocks_notifier: BlockStream,
     pub slot_notifier: SlotStream,

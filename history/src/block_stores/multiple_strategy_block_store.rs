@@ -6,11 +6,8 @@
 use crate::block_stores::inmemory_block_store::InmemoryBlockStore;
 use anyhow::{bail, Result};
 use async_trait::async_trait;
-use solana_lite_rpc_core::{
-    commitment_utils::Commitment,
-    structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageImpl, BlockStorageInterface, BLOCK_NOT_FOUND},
-};
+use solana_lite_rpc_blocks_processing::{block_storage_interface::{BlockStorageImpl, BlockStorageInterface, BLOCK_NOT_FOUND}, produced_block::ProducedBlock};
+use solana_lite_rpc_core::commitment_utils::Commitment;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};

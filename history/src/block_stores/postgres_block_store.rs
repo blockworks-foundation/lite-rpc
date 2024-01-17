@@ -3,10 +3,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
-use solana_lite_rpc_core::{
-    structures::{epoch::EpochCache, produced_block::ProducedBlock},
-    traits::block_storage_interface::BlockStorageInterface,
-};
+use solana_lite_rpc_blocks_processing::{produced_block::ProducedBlock, block_storage_interface::BlockStorageInterface};
+use solana_lite_rpc_cluster::epoch::EpochCache;
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_sdk::{slot_history::Slot, stake_history::Epoch};
 use tokio::sync::RwLock;

@@ -10,9 +10,9 @@ use futures::StreamExt;
 use geyser_grpc_connector::grpc_subscription_autoreconnect::GrpcSourceConfig;
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_lite_rpc_blocks_processing::produced_block::{TransactionInfo, ProducedBlock};
 use solana_lite_rpc_core::{
     encoding::BASE64,
-    structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
 };
 use solana_sdk::{

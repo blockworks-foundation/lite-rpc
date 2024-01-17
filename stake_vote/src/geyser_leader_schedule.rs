@@ -1,0 +1,342 @@
+use dashmap::DashMap;
+use futures::future::join_all;
+use futures::stream::FuturesUnordered;
+use itertools::Itertools;
+use serde::{Deserialize, Serialize};
+use solana_ledger::leader_schedule::LeaderSchedule;
+use solana_lite_rpc_core::stores::stake_store::{StakeMap, StakeStore};
+use solana_lite_rpc_core::stores::takable_map::{Takable, TakeResult};
+use solana_lite_rpc_core::stores::vote_store::{
+    EpochVoteStakes, EpochVoteStakesCache, VoteMap, VoteStore,
+};
+use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
+use solana_lite_rpc_core::structures::stored_vote::StoredVote;
+use solana_sdk::clock::NUM_CONSECUTIVE_LEADER_SLOTS;
+use solana_sdk::pubkey::Pubkey;
+use solana_sdk::stake_history::StakeHistory;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
+use tokio::task::JoinHandle;
+
+#[derive(Debug)]
+pub struct LeaderScheduleGeneratedData {
+    pub schedule: LeaderSchedule,
+    pub rpc_data: LeaderScheduleData,
+    pub epoch: u64,
+}
+
+impl LeaderScheduleGeneratedData {
+    pub fn get_schedule_by_nodes(schedule: &LeaderSchedule) -> HashMap<String, Vec<usize>> {
+        schedule
+            .get_slot_leaders()
+            .iter()
+            .enumerate()
+            .map(|(i, pk)| (pk.to_string(), i))
+            .into_group_map()
+            .into_iter()
+            .collect()
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EpochStake {
+    epoch: u64,
+    stake_vote_map: HashMap<Pubkey, (u64, Arc<StoredVote>)>,
+}
+
+/*
+Leader schedule calculus state diagram
+
+InitLeaderschedule
+       |
+   |extract store stake and vote|
+     |                   |
+   Error          CalculateScedule(stakes, votes)
+     |                   |
+ | Wait(1s)|       |Calculate schedule|
+     |                       |
+InitLeaderscedule        MergeStore(stakes, votes, schedule)
+                             |                      |
+                           Error                   SaveSchedule(schedule)
+                             |                              |
+              |never occurs restart (wait 1s)|         |save schedule and verify (opt)|
+                             |
+                      InitLeaderscedule
+*/
+
+#[allow(clippy::large_enum_variant)] //256 byte large and only use during schedule calculus.
+pub enum GeyserLeaderScheduleEvent {
+    Init(u64, u64, Option<solana_sdk::clock::Epoch>, StakeHistory),
+    MergeStoreAndSaveSchedule(
+        StakeMap,
+        VoteMap,
+        EpochVoteStakesCache,
+        LeaderScheduleGeneratedData,
+        (u64, u64, Option<solana_sdk::clock::Epoch>),
+        StakeHistory,
+    ),
+}
+
+enum GeyserLeaderScheduleResult {
+    TaskHandle(JoinHandle<GeyserLeaderScheduleEvent>),
+    Event(GeyserLeaderScheduleEvent),
+    End(LeaderScheduleGeneratedData),
+}
+
+//Execute the leader schedule process.
+pub fn run_leader_schedule_events(
+    event: GeyserLeaderScheduleEvent,
+    schedule_tasks: &mut FuturesUnordered<JoinHandle<GeyserLeaderScheduleEvent>>,
+    stakestore: &mut StakeStore,
+    votestore: &mut VoteStore,
+) -> Option<LeaderScheduleGeneratedData> {
+    let result = process_leadershedule_event(event, stakestore, votestore);
+    match result {
+        GeyserLeaderScheduleResult::TaskHandle(jh) => {
+            schedule_tasks.push(jh);
+            None
+        }
+        GeyserLeaderScheduleResult::Event(event) => {
+            run_leader_schedule_events(event, schedule_tasks, stakestore, votestore)
+        }
+        GeyserLeaderScheduleResult::End(schedule) => Some(schedule),
+    }
+}
+
+fn process_leadershedule_event(
+    //    rpc_url: String,
+    event: GeyserLeaderScheduleEvent,
+    stakestore: &mut StakeStore,
+    votestore: &mut VoteStore,
+) -> GeyserLeaderScheduleResult {
+    match event {
+        GeyserLeaderScheduleEvent::Init(
+            new_epoch,
+            slots_in_epoch,
+            new_rate_activation_epoch,
+            stake_history,
+        ) => {
+            match (&mut stakestore.stakes, &mut votestore.votes).take() {
+                TakeResult::Map((stake_map, (vote_map, mut epoch_cache))) => {
+                    log::info!("Start calculate leader schedule");
+                    //do the calculus in a blocking task.
+                    let jh = tokio::task::spawn_blocking({
+                        move || {
+                            let epoch_vote_stakes = calculate_epoch_stakes(
+                                &stake_map,
+                                &vote_map,
+                                new_epoch,
+                                &stake_history,
+                                new_rate_activation_epoch,
+                            );
+
+                            let next_epoch = new_epoch + 1;
+                            let leader_schedule = calculate_leader_schedule(
+                                &epoch_vote_stakes,
+                                next_epoch,
+                                slots_in_epoch,
+                            );
+
+                            if std::path::Path::new(crate::bootstrap::NEXT_EPOCH_VOTE_STAKES_FILE)
+                                .exists()
+                            {
+                                if let Err(err) = std::fs::rename(
+                                    crate::bootstrap::NEXT_EPOCH_VOTE_STAKES_FILE,
+                                    crate::bootstrap::CURRENT_EPOCH_VOTE_STAKES_FILE,
+                                ) {
+                                    log::error!(
+                                    "Fail to rename current leader schedule on disk because :{err}"
+                                );
+                                }
+                            }
+
+                            //save new vote stake in a file for bootstrap.
+                            if let Err(err) = crate::utils::save_schedule_vote_stakes(
+                                crate::bootstrap::NEXT_EPOCH_VOTE_STAKES_FILE,
+                                &epoch_vote_stakes,
+                                next_epoch,
+                            ) {
+                                log::error!(
+                                    "Error during saving the new leader schedule of epoch:{} in a file error:{err}",
+                                    next_epoch
+                                );
+                            }
+
+                            epoch_cache.add_stakes_for_epoch(EpochVoteStakes {
+                                epoch: new_epoch,
+                                vote_stakes: epoch_vote_stakes,
+                            });
+
+                            log::info!("End calculate leader schedule");
+
+                            let rpc_data = LeaderScheduleData {
+                                schedule_by_node:
+                                    LeaderScheduleGeneratedData::get_schedule_by_nodes(
+                                        &leader_schedule,
+                                    ),
+                                schedule_by_slot: leader_schedule.get_slot_leaders().to_vec(),
+                                epoch: next_epoch,
+                            };
+
+                            GeyserLeaderScheduleEvent::MergeStoreAndSaveSchedule(
+                                stake_map,
+                                vote_map,
+                                epoch_cache,
+                                LeaderScheduleGeneratedData {
+                                    schedule: leader_schedule,
+                                    rpc_data,
+                                    epoch: next_epoch,
+                                },
+                                (new_epoch, slots_in_epoch, new_rate_activation_epoch),
+                                stake_history,
+                            )
+                        }
+                    });
+                    GeyserLeaderScheduleResult::TaskHandle(jh)
+                }
+                TakeResult::Taken(stake_notify) => {
+                    let notif_jh = tokio::spawn({
+                        async move {
+                            let notifs = stake_notify
+                                .iter()
+                                .map(|n| n.notified())
+                                .collect::<Vec<tokio::sync::futures::Notified>>();
+                            join_all(notifs).await;
+                            GeyserLeaderScheduleEvent::Init(
+                                new_epoch,
+                                slots_in_epoch,
+                                new_rate_activation_epoch,
+                                stake_history,
+                            )
+                        }
+                    });
+                    GeyserLeaderScheduleResult::TaskHandle(notif_jh)
+                }
+            }
+        }
+        GeyserLeaderScheduleEvent::MergeStoreAndSaveSchedule(
+            stake_map,
+            vote_map,
+            epoch_cache,
+            schedule_data,
+            (new_epoch, slots_in_epoch, epoch_schedule),
+            stake_history,
+        ) => {
+            match (
+                stakestore.stakes.merge(stake_map),
+                votestore.votes.merge((vote_map, epoch_cache)),
+            ) {
+                (Ok(()), Ok(())) => GeyserLeaderScheduleResult::End(schedule_data),
+                _ => {
+                    //this shoud never arrive because the store has been extracted before.
+                    //TODO remove this error using type state
+                    log::warn!("LeaderScheduleEvent::MergeStoreAndSaveSchedule merge stake or vote fail, -restart Schedule");
+                    GeyserLeaderScheduleResult::Event(GeyserLeaderScheduleEvent::Init(
+                        new_epoch,
+                        slots_in_epoch,
+                        epoch_schedule,
+                        stake_history,
+                    ))
+                }
+            }
+        }
+    }
+}
+
+fn calculate_epoch_stakes(
+    stake_map: &StakeMap,
+    vote_map: &VoteMap,
+    new_epoch: u64,
+    stake_history: &StakeHistory,
+    new_rate_activation_epoch: Option<solana_sdk::clock::Epoch>,
+) -> DashMap<Pubkey, (u64, StoredVote)> {
+    //calculate schedule stakes at beginning of new epoch.
+    //Next epoch schedule use the stake at the beginning of last epoch.
+    let delegated_stakes: HashMap<Pubkey, u64> =
+        stake_map
+            .values()
+            .fold(HashMap::default(), |mut delegated_stakes, stake_account| {
+                let delegation = stake_account.stake;
+                let entry = delegated_stakes.entry(delegation.voter_pubkey).or_default();
+                *entry +=
+                    delegation.stake(new_epoch, Some(stake_history), new_rate_activation_epoch);
+                delegated_stakes
+            });
+
+    let staked_vote_map = DashMap::<Pubkey, (u64, StoredVote)>::new();
+    vote_map.iter().for_each(|value| {
+        let vote_account = value.value();
+        let delegated_stake = delegated_stakes
+            .get(&vote_account.pubkey)
+            .copied()
+            .unwrap_or_else(|| {
+                log::info!(
+                    "calculate_epoch_stakes stake with no vote account:{}",
+                    vote_account.pubkey
+                );
+                Default::default()
+            });
+        staked_vote_map.insert(vote_account.pubkey, (delegated_stake, vote_account.clone()));
+    });
+    staked_vote_map
+}
+
+//Copied from leader_schedule_utils.rs
+// Mostly cribbed from leader_schedule_utils
+pub fn calculate_leader_schedule(
+    stake_vote_map: &DashMap<Pubkey, (u64, StoredVote)>,
+    epoch: u64,
+    slots_in_epoch: u64,
+) -> LeaderSchedule {
+    let stakes_map: HashMap<Pubkey, u64> = stake_vote_map
+        .iter()
+        .filter_map(|iter| {
+            let (stake, vote_account) = iter.value();
+            (*stake != 0u64).then_some((vote_account.vote_data.node_pubkey, *stake))
+        })
+        .into_grouping_map()
+        .aggregate(|acc, _node_pubkey, stake| Some(acc.unwrap_or_default() + stake));
+    let mut stakes: Vec<(Pubkey, u64)> = stakes_map
+        .into_iter()
+        .map(|(key, stake)| (key, stake))
+        .collect();
+
+    let mut seed = [0u8; 32];
+    seed[0..8].copy_from_slice(&epoch.to_le_bytes());
+    sort_stakes(&mut stakes);
+    //log::info!("calculate_leader_schedule stakes:{stakes:?} epoch:{epoch}");
+    LeaderSchedule::new(&stakes, seed, slots_in_epoch, NUM_CONSECUTIVE_LEADER_SLOTS)
+}
+
+pub fn calculate_slot_leaders_from_schedule(
+    leader_scheudle: &HashMap<String, Vec<usize>>,
+) -> Result<Vec<Pubkey>, String> {
+    let mut slot_leaders_map = BTreeMap::new();
+    for (pk, index_list) in leader_scheudle {
+        for index in index_list {
+            let pubkey = Pubkey::from_str(pk)
+                .map_err(|err| format!("Pubkey from leader schedule not a plublic key:{err}"))?;
+            slot_leaders_map.insert(index, pubkey);
+        }
+    }
+    Ok(slot_leaders_map.into_values().collect())
+}
+
+// Cribbed from leader_schedule_utils
+fn sort_stakes(stakes: &mut Vec<(Pubkey, u64)>) {
+    // Sort first by stake. If stakes are the same, sort by pubkey to ensure a
+    // deterministic result.
+    // Note: Use unstable sort, because we dedup right after to remove the equal elements.
+    stakes.sort_unstable_by(|(l_pubkey, l_stake), (r_pubkey, r_stake)| {
+        if r_stake == l_stake {
+            r_pubkey.cmp(l_pubkey)
+        } else {
+            r_stake.cmp(l_stake)
+        }
+    });
+
+    // Now that it's sorted, we can do an O(n) dedup.
+    stakes.dedup();
+}
