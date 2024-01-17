@@ -527,7 +527,7 @@ impl LiteRpcServer for LiteBridge {
     ) -> SubscriptionResult {
         let sink = pending.accept().await?;
 
-        let mut block_fees_stream = self.prio_fees_service.block_fees_stream.resubscribe();
+        let mut block_fees_stream = self.prio_fees_service.block_fees_stream.subscribe();
         tokio::spawn(async move {
             RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
             while let Ok(PrioFeesUpdateMessage { slot: confirmation_slot, fees_info}) = block_fees_stream.recv().await {

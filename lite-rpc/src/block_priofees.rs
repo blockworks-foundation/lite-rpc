@@ -7,7 +7,9 @@ use jsonrpsee::tracing::field::debug;
 use log::{debug, error, info, trace, warn};
 use solana_rpc_client_api::response::Fees;
 use solana_sdk::clock::Slot;
+use tokio::sync::broadcast::Sender;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
+use tokio::sync::broadcast::error::SendError;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
 use solana_lite_rpc_cluster_endpoints::CommitmentLevel;
@@ -25,7 +27,8 @@ pub struct PrioFeeStore {
 
 pub struct PrioFeesService {
     pub block_fees_store: PrioFeeStore,
-    pub block_fees_stream: Receiver<PrioFeesUpdateMessage>,
+    // use .subscribe() to get a receiver
+    pub block_fees_stream: Sender<PrioFeesUpdateMessage>,
 }
 
 impl PrioFeesService {
@@ -50,10 +53,11 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
         recent: recent_data.clone(),
         slot_cache: data_cache.slot_cache,
     };
-    let (priofees_update_sender, priofees_update_receiver) = tokio::sync::broadcast::channel(100);
-    drop(priofees_update_receiver);
+    let (priofees_update_sender, _priofees_update_receiver) = tokio::sync::broadcast::channel(100);
+    let senderfoooo = priofees_update_sender.clone();
 
     let jh_priofees_task = tokio::spawn(async move {
+        let sender = priofees_update_sender.clone();
         'recv_loop: loop {
             let block = block_stream.recv().await;
             match block {
@@ -80,7 +84,15 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
                         slot,
                         fees_info: prioritization_fees_info,
                     };
-                    priofees_update_sender.send(msg).unwrap();
+                    let send_result = sender.send(msg);
+                    match send_result {
+                        Ok(n_subscribers) => {
+                            trace!("sent priofees update message to {} subscribers", n_subscribers);
+                        }
+                        Err(_) => {
+                            trace!("no subscribers for priofees update message");
+                        }
+                    }
                 }
                 Err(Lagged(_lagged)) => {
                     warn!("channel error receiving block for priofees calculation - continue");
@@ -99,7 +111,7 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
         jh_priofees_task,
          PrioFeesService {
             block_fees_store: store,
-            block_fees_stream: priofees_update_receiver,
+            block_fees_stream: senderfoooo,
         }
     )
 }
