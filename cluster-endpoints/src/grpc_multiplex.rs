@@ -235,7 +235,7 @@ pub fn create_grpc_multiplex_slots_subscription(
             let mut streams_tasks = Vec::new();
             let mut recievers = Vec::new();
             for grpc_source in &grpc_sources {
-                let (sx, rx) = async_channel::bounded(1);
+                let (sx, rx) = async_channel::unbounded();
                 let task = create_slot_stream_task(
                     grpc_source.grpc_addr.clone(),
                     grpc_source.grpc_x_token.clone(),
