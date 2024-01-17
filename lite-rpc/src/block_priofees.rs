@@ -53,8 +53,8 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
         recent: recent_data.clone(),
         slot_cache: data_cache.slot_cache,
     };
-    let (priofees_update_sender, _priofees_update_receiver) = tokio::sync::broadcast::channel(100);
-    let senderfoooo = priofees_update_sender.clone();
+    let (priofees_update_sender, _priofees_update_receiver) = tokio::sync::broadcast::channel(1); // TODO set to hiher value
+    let sender_to_return = priofees_update_sender.clone();
 
     let jh_priofees_task = tokio::spawn(async move {
         let sender = priofees_update_sender.clone();
@@ -87,7 +87,7 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
                     let send_result = sender.send(msg);
                     match send_result {
                         Ok(n_subscribers) => {
-                            trace!("sent priofees update message to {} subscribers", n_subscribers);
+                            trace!("sent priofees update message to {} subscribers (buffer={})", n_subscribers, sender.len());
                         }
                         Err(_) => {
                             trace!("no subscribers for priofees update message");
@@ -111,7 +111,7 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
         jh_priofees_task,
          PrioFeesService {
             block_fees_store: store,
-            block_fees_stream: senderfoooo,
+            block_fees_stream: sender_to_return,
         }
     )
 }

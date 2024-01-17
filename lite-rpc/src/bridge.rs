@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use jsonrpsee::{core::SubscriptionResult, DisconnectError, PendingSubscriptionSink, server::ServerBuilder};
-use log::{debug, info};
+use log::{debug, error, info, trace, warn};
 use prometheus::{IntCounter, opts, register_int_counter};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
@@ -25,6 +25,8 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_histo
 use solana_sdk::epoch_info::EpochInfo;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use tokio::net::ToSocketAddrs;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 use tokio::time::sleep;
 
 use solana_lite_rpc_core::{
@@ -530,25 +532,39 @@ impl LiteRpcServer for LiteBridge {
         let mut block_fees_stream = self.prio_fees_service.block_fees_stream.subscribe();
         tokio::spawn(async move {
             RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
-            while let Ok(PrioFeesUpdateMessage { slot: confirmation_slot, fees_info}) = block_fees_stream.recv().await {
-                let result_message =
-                    jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
-                        context: RpcResponseContext {
-                            slot: confirmation_slot,
-                            api_version: None,
-                        },
-                        value: fees_info,
-                    });
 
-                match sink.send(result_message.unwrap()).await {
-                    Ok(()) => {
-                        // success
+            'recv_loop: loop {
+                match block_fees_stream.recv().await {
+                    Ok(PrioFeesUpdateMessage { slot: confirmation_slot, fees_info}) => {
+                        let result_message =
+                            jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
+                                context: RpcResponseContext {
+                                    slot: confirmation_slot,
+                                    api_version: None,
+                                },
+                                value: fees_info,
+                            });
+
+                        match sink.send(result_message.unwrap()).await {
+                            Ok(()) => {
+                                // success
+                            }
+                            Err(DisconnectError(_subscription_message)) => {
+                                debug!("Stopping subscription task on disconnect");
+                                return;
+                            }
+                        };
                     }
-                    Err(DisconnectError(_subscription_message)) => {
-                        debug!("Stopping subscription task on disconnect");
-                        return;
+                    Err(Lagged(lagged)) => {
+                        // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
+                        warn!("subscriber laggs some({}) priofees update messages - continue", lagged);
+                        continue 'recv_loop;
                     }
-                };
+                    Err(Closed) => {
+                        error!("failed to receive block, sender closed - aborting");
+                       return;
+                    }
+                }
             }
         });
 

@@ -244,6 +244,7 @@ pub trait LiteRpc {
     #[method(name = "getBlockPrioFeesDistribution")]
     async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<PrioritizationFeesInfo>;
 
+    /// subscribe to prio fees distribution per block; uses confirmation level "confirmed"
     #[subscription(name = "blockPrioFeesSubscribe" => "blockPrioFeesNotification", unsubscribe="blockPrioFeesUnsubscribe", item=PrioritizationFeesInfo)]
     async fn block_priofees_subscribe(
         &self
