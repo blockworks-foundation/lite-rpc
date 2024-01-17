@@ -24,7 +24,6 @@ impl Display for FeePoint {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct PrioFeesUpdateMessage {
     pub slot: Slot,

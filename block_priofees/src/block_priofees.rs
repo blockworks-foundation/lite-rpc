@@ -1,12 +1,10 @@
 use crate::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
 use crate::stats_calculation::calculate_supp_stats;
-use dashmap::DashMap;
 use log::{error, info, trace, warn};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::RwLock;
@@ -32,7 +30,7 @@ impl PrioFeesService {
     pub async fn get_latest_priofees(&self) -> Option<(Slot, PrioFeesStats)> {
         let lock = self.block_fees_store.recent.read().await;
         let latest_in_store = lock.last_key_value();
-        return latest_in_store.map(|x| (x.0.clone(), x.1.clone()));
+        latest_in_store.map(|x| (*x.0, x.1.clone()))
     }
 }
 

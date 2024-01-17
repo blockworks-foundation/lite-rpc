@@ -520,9 +520,9 @@ impl LiteRpcServer for LiteBridge {
                 });
             }
             None => {
-                return Err(jsonrpsee::core::Error::Custom(format!(
-                    "No latest priofees stats available found"
-                )));
+                return Err(jsonrpsee::core::Error::Custom(
+                    "No latest priofees stats available found".to_string(),
+                ));
             }
         }
     }

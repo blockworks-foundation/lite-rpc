@@ -1,3 +1,4 @@
+use solana_sdk::feature_set::full_inflation::mainnet::certusone::vote;
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
@@ -5,7 +6,6 @@ use solana_sdk::{
     slot_history::Slot,
     transaction::TransactionError,
 };
-use solana_sdk::feature_set::full_inflation::mainnet::certusone::vote;
 use solana_transaction_status::{
     option_serializer::OptionSerializer, Reward, RewardType, UiConfirmedBlock,
     UiTransactionStatusMeta,
@@ -131,9 +131,10 @@ impl ProducedBlock {
                 let blockhash = tx.message.recent_blockhash().to_string();
                 let message = BinaryEncoding::Base64.encode(tx.message.serialize());
 
-                let is_vote_transaction = tx.message
-                    .instructions()
-                    .iter().any(|i| i.program_id(tx.message.static_account_keys()).eq(&vote::id()));
+                let is_vote_transaction = tx.message.instructions().iter().any(|i| {
+                    i.program_id(tx.message.static_account_keys())
+                        .eq(&vote::id())
+                });
 
                 Some(TransactionInfo {
                     signature,
