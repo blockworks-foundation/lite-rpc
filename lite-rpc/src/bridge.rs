@@ -59,6 +59,8 @@ lazy_static::lazy_static! {
     register_int_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
     static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
     register_int_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
+    static ref RPC_BLOCK_PRIOFEES_SUBSCRIBE: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_block_priofees_subscribe", "RPC call to subscribe to block prio fees")).unwrap();
 }
 
 /// A bridge between clients and tpu
@@ -528,8 +530,15 @@ impl LiteRpcServer for LiteBridge {
         info!("block_priofees_subscribe REQUESTED");
         let sink = pending.accept().await?;
 
+        // let prio_fees_service = self.prio_fees_service.clone();
         tokio::spawn(async move {
+            RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
             loop {
+                // let fees = prio_fees_service.get_median_priofees().await;
+                // if fees.is_none() {
+                //     continue;
+                // }
+                // let fees = prio_fees_service.get_median_priofees().await.unwrap(); // TODO handle None case
                 let priofees =  jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
                     context: RpcResponseContext {
                         slot: 99999,
@@ -541,6 +550,7 @@ impl LiteRpcServer for LiteBridge {
                         "commitment_config": "confirmed"
                     }),
                 });
+
                 match sink.send(priofees.unwrap()).await {
                     Ok(()) => {
                         // success

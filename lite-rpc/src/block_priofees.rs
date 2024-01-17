@@ -22,6 +22,7 @@ pub struct PrioFeeStore {
 
 pub struct PrioFeesService {
     pub block_fees_store: PrioFeeStore,
+    pub block_fees_stream: Receiver<PrioritizationFeesInfo>,
 }
 
 impl PrioFeesService {
@@ -45,8 +46,10 @@ impl PrioFeesService {
             recent: Arc::new(DashMap::new()),
             slot_cache: data_cache.slot_cache,
         };
+        let (tx, rx) = tokio::sync::broadcast::channel(100);
         Self {
-            block_fees_store
+            block_fees_store,
+            block_fees_stream: rx,
         }
     }
 
