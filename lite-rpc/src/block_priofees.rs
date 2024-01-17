@@ -8,11 +8,13 @@ use log::{debug, error, info};
 use solana_rpc_client_api::response::Fees;
 use solana_sdk::clock::Slot;
 use tokio::sync::broadcast::Receiver;
+use tokio::task::JoinHandle;
 use solana_lite_rpc_cluster_endpoints::CommitmentLevel;
 use solana_lite_rpc_core::stores::data_cache::{DataCache, SlotCache};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::types::BlockStream;
 
+/// put everything required to serve sync data calls here
 #[derive(Clone)]
 pub struct PrioFeeStore {
     // TODO cleanup
@@ -40,51 +42,55 @@ impl PrioFeesService {
     }
 }
 
-impl PrioFeesService {
-    pub fn new(data_cache: DataCache) -> Self {
-        let block_fees_store = PrioFeeStore {
-            recent: Arc::new(DashMap::new()),
-            slot_cache: data_cache.slot_cache,
-        };
-        let (tx, rx) = tokio::sync::broadcast::channel(100);
-        Self {
-            block_fees_store,
-            block_fees_stream: rx,
-        }
-    }
 
-}
+pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockStream) -> (JoinHandle<()>, PrioFeesService) {
+    let recent_data = Arc::new(DashMap::new());
+    let store = PrioFeeStore {
+        recent: recent_data.clone(),
+        slot_cache: data_cache.slot_cache,
+    };
+    let (priofees_update_sender, priofees_update_receiver) = tokio::sync::broadcast::channel(100);
 
-pub async fn start_priofees_task(store: PrioFeeStore, mut block_stream: BlockStream) {
-    loop {
-        let block = block_stream.recv().await;
-        match block {
-            Ok(block) => {
-                if !block.commitment_config.is_confirmed() {
-                    continue;
+    let jh_priofees_task = tokio::spawn(async move {
+        loop {
+            let block = block_stream.recv().await;
+            match block {
+                Ok(block) => {
+                    if !block.commitment_config.is_confirmed() {
+                        continue;
+                    }
+                    let slot = block.slot;
+
+                    // first do some cleanup
+                    recent_data.retain(|slot, _| *slot > slot - 100);
+
+                    let block_prio_fees =
+                        block.transactions.iter().map(|tx| {
+                            (tx.prioritization_fees.unwrap_or_default(), tx.cu_consumed.unwrap_or_default())
+                        }).collect::<Vec<(u64, u64)>>();
+
+                    let prioritization_fees_info = calculate_supp_info(&block_prio_fees);
+
+                    debug!("Store prioritization_fees_info for block {}", slot);
+                    recent_data.insert(slot, prioritization_fees_info.clone());
+                    debug!("Sending prioritization_fees_info for block {}", slot);
+                    priofees_update_sender.send(prioritization_fees_info).unwrap();
                 }
-                let slot = block.slot;
-
-                // first do some cleanup
-                store.recent.retain(|slot, _| *slot > slot - 100);
-
-                let block_prio_fees =
-                    block.transactions.iter().map(|tx| {
-                        (tx.prioritization_fees.unwrap_or_default(), tx.cu_consumed.unwrap_or_default())
-                    }).collect::<Vec<(u64, u64)>>();
-
-                let prioritization_fees_info = calculate_supp_info(&block_prio_fees);
-
-                debug!("Store prioritization_fees_info for block {}", slot);
-                store.recent.insert(slot, prioritization_fees_info);
-
-            }
-            Err(e) => {
-                error!("failed to receive block: {:?}", e);
-                break;
+                Err(e) => {
+                    error!("failed to receive block: {:?}", e);
+                    break;
+                }
             }
         }
-    }
+    });
+
+    (
+        jh_priofees_task,
+         PrioFeesService {
+            block_fees_store: store,
+            block_fees_stream: priofees_update_receiver,
+        }
+    )
 }
 
 

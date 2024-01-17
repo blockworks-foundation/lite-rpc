@@ -1,30 +1,18 @@
-use crate::{
-    configs::{IsBlockHashValidConfig, SendTransactionConfig},
-    jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
-    rpc::LiteRpcServer,
-};
-use solana_sdk::epoch_info::EpochInfo;
+use std::{str::FromStr, sync::Arc};
 use std::collections::HashMap;
-
-use solana_lite_rpc_services::{
-    transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
-};
+use std::time::Duration;
 
 use anyhow::Context;
-use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink, DisconnectError};
-use prometheus::{opts, register_int_counter, IntCounter};
-use solana_lite_rpc_core::{
-    stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
-    AnyhowJoinHandle,
-};
-use solana_lite_rpc_history::history::History;
+use jsonrpsee::{core::SubscriptionResult, DisconnectError, PendingSubscriptionSink, server::ServerBuilder};
+use log::info;
+use prometheus::{IntCounter, opts, register_int_counter};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
-        RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
+        RpcBlockConfig, RpcBlocksConfigWrapper, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter,
         RpcContextConfig, RpcEncodingConfigWrapper, RpcGetVoteAccountsConfig,
         RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig,
-        RpcSignatureStatusConfig, RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig,
+        RpcSignaturesForAddressConfig, RpcSignatureStatusConfig, RpcSignatureSubscribeConfig,
         RpcTransactionLogsConfig, RpcTransactionLogsFilter,
     },
     response::{
@@ -34,14 +22,26 @@ use solana_rpc_client_api::{
     },
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
+use solana_sdk::epoch_info::EpochInfo;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
-use std::{str::FromStr, sync::Arc};
-use std::time::Duration;
-use jsonrpsee::core::client::SubscriptionMessage;
-use log::info;
 use tokio::net::ToSocketAddrs;
 use tokio::time::sleep;
+
+use solana_lite_rpc_core::{
+    AnyhowJoinHandle,
+    stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
+};
 use solana_lite_rpc_core::traits::subscription_sink::SubscriptionSink;
+use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_services::{
+    transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
+};
+
+use crate::{
+    configs::{IsBlockHashValidConfig, SendTransactionConfig},
+    jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
+    rpc::LiteRpcServer,
+};
 use crate::block_priofees::{PrioFeesService, PrioritizationFeesInfo};
 
 lazy_static::lazy_static! {
@@ -530,25 +530,17 @@ impl LiteRpcServer for LiteBridge {
         info!("block_priofees_subscribe REQUESTED");
         let sink = pending.accept().await?;
 
-        // let prio_fees_service = self.prio_fees_service.clone();
+        let mut block_fees_stream = self.prio_fees_service.block_fees_stream.resubscribe();
         tokio::spawn(async move {
             RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
-            loop {
-                // let fees = prio_fees_service.get_median_priofees().await;
-                // if fees.is_none() {
-                //     continue;
-                // }
-                // let fees = prio_fees_service.get_median_priofees().await.unwrap(); // TODO handle None case
+            while let Ok(fees) = block_fees_stream.recv().await {
+
                 let priofees =  jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
                     context: RpcResponseContext {
                         slot: 99999,
                         api_version: None,
                     },
-                    value: serde_json::json!({
-                        "blocksize": 99999,
-                        "slot": 99999,
-                        "commitment_config": "confirmed"
-                    }),
+                    value: fees,
                 });
 
                 match sink.send(priofees.unwrap()).await {
@@ -561,7 +553,7 @@ impl LiteRpcServer for LiteBridge {
                     }
                 };
                 sleep(Duration::from_secs(1)).await;
-            } // -- END loop
+            }
         });
 
         // let pubsub = self.inner.clone();
