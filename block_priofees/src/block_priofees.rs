@@ -4,20 +4,22 @@ use dashmap::DashMap;
 use log::{error, info, trace, warn};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
+use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 use tokio::sync::broadcast::Sender;
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 // note: ATM only the latest slot (highest key) is used
-// note: if that value grows we should move from DashMap to a more efficient data structure (TreeMap)
 const SLOTS_TO_RETAIN: u64 = 100;
 
 /// put everything required to serve sync data calls here
 #[derive(Clone)]
 pub struct PrioFeeStore {
     // store priofees stats for recently confirmed blocks up to CLEANUP_SLOTS_AFTER
-    recent: Arc<DashMap<Slot, PrioFeesStats>>,
+    recent: Arc<RwLock<BTreeMap<Slot, PrioFeesStats>>>,
 }
 
 pub struct PrioFeesService {
@@ -28,19 +30,16 @@ pub struct PrioFeesService {
 
 impl PrioFeesService {
     pub async fn get_latest_priofees(&self) -> Option<(Slot, PrioFeesStats)> {
-        let latest_in_store = self
-            .block_fees_store
-            .recent
-            .iter()
-            .max_by(|a, b| a.key().cmp(b.key()));
-        return latest_in_store.map(|x| (x.key().clone(), x.value().clone()));
+        let lock = self.block_fees_store.recent.read().await;
+        let latest_in_store = lock.last_key_value();
+        return latest_in_store.map(|x| (x.0.clone(), x.1.clone()));
     }
 }
 
 pub async fn start_block_priofees_task(
     mut block_stream: BlockStream,
 ) -> (JoinHandle<()>, PrioFeesService) {
-    let recent_data = Arc::new(DashMap::new());
+    let recent_data = Arc::new(RwLock::new(BTreeMap::new()));
     let store = PrioFeeStore {
         recent: recent_data.clone(),
     };
@@ -53,8 +52,11 @@ pub async fn start_block_priofees_task(
             let block = block_stream.recv().await;
             match block {
                 Ok(block) => {
-                    // first do some cleanup
-                    recent_data.retain(|slot, _| *slot > slot - SLOTS_TO_RETAIN);
+                    {
+                        // first do some cleanup
+                        let mut lock = recent_data.write().await;
+                        lock.retain(|slot, _| *slot > slot - SLOTS_TO_RETAIN);
+                    }
 
                     if !block.commitment_config.is_confirmed() {
                         continue;
@@ -76,7 +78,11 @@ pub async fn start_block_priofees_task(
 
                     trace!("Got prio fees stats for confirmed block {}", confirmed_slot);
 
-                    recent_data.insert(confirmed_slot, priofees_stats.clone());
+                    {
+                        // first do some cleanup
+                        let mut lock = recent_data.write().await;
+                        lock.insert(confirmed_slot, priofees_stats.clone());
+                    }
                     let msg = PrioFeesUpdateMessage {
                         slot: confirmed_slot,
                         priofees_stats,
