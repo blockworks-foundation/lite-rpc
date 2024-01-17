@@ -1,4 +1,4 @@
-use log::{debug, warn};
+use log::{debug, error, warn};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::error::RecvError;
@@ -56,7 +56,7 @@ pub fn block_debug_listen(
                     );
                 }
                 Err(other_err) => {
-                    panic!("Error receiving block: {:?}", other_err);
+                    error!("Error receiving block: {:?}", other_err);
                 }
             }
 
