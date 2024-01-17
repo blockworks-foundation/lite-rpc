@@ -10,7 +10,8 @@ use tokio::sync::broadcast::Sender;
 use tokio::task::JoinHandle;
 
 // note: ATM only the latest slot (highest key) is used
-const SLOTS_TO_RETAIN: u64 = 5000;
+// note: if that value grows we should move from DashMap to a more efficient data structure (TreeMap)
+const SLOTS_TO_RETAIN: u64 = 100;
 
 /// put everything required to serve sync data calls here
 #[derive(Clone)]
