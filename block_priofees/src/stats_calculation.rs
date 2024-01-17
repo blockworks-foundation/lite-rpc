@@ -1,6 +1,7 @@
 use crate::rpc_data::PrioFeesStats;
 use itertools::Itertools;
 use std::collections::HashMap;
+use log::info;
 
 pub fn calculate_supp_stats(
     // Vec(prioritization_fees, cu_consumed)
@@ -12,8 +13,10 @@ pub fn calculate_supp_stats(
     } else {
         prio_fees_in_block.clone()
     };
+    // sort by prioritization fees
     prio_fees_in_block.sort_by(|a, b| a.0.cmp(&b.0));
 
+    // get stats by transaction
     let median_index = prio_fees_in_block.len() / 2;
     let p75_index = prio_fees_in_block.len() * 75 / 100;
     let p90_index = prio_fees_in_block.len() * 90 / 100;
@@ -45,6 +48,32 @@ pub fn calculate_supp_stats(
     assert_eq!(p_75, *fine_percentiles.get("p75").unwrap());
     assert_eq!(p_90, *fine_percentiles.get("p90").unwrap());
     assert_eq!(p_max, *fine_percentiles.get("p100").unwrap());
+
+    // get stats by CU
+    let mut med_cu = None;
+    let mut p75_cu = None;
+    let mut p90_cu = None;
+    let mut p95_cu = None;
+    let cu_sum: u64 = prio_fees_in_block.iter().map(|x| x.1).sum();
+    let mut agg: u64 = 0;
+    for (prio, cu) in prio_fees_in_block {
+        agg = agg + cu;
+        if med_cu.is_none() && agg > (cu_sum as f64 * 0.5) as u64 {
+            med_cu = Some(prio);
+        } else if p75_cu.is_none() && agg > (cu_sum as f64 * 0.75) as u64 {
+            p75_cu = Some(prio)
+        } else if p90_cu.is_none() && agg > (cu_sum as f64 * 0.9) as u64 {
+            p90_cu = Some(prio);
+        } else if p95_cu.is_none() && agg > (cu_sum as f64 * 0.95) as u64 {
+            p95_cu = Some(prio)
+        }
+    }
+
+    println!("cu_sum: {}", cu_sum);
+    println!("med_cu: {:?}", med_cu);
+    println!("p75_cu: {:?}", p75_cu);
+    println!("p90_cu: {:?}", p90_cu);
+    println!("p95_cu: {:?}", p95_cu);
 
     PrioFeesStats {
         p_min,
