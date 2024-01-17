@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use jsonrpsee::core::Serialize;
 use solana_sdk::clock::Slot;
+use std::collections::HashMap;
 
 #[derive(Clone, Serialize, Debug)]
 pub struct PrioFeesStats {
@@ -12,7 +12,6 @@ pub struct PrioFeesStats {
     // p0, p5, p10, ..., p95, p100
     pub fine_percentiles: HashMap<String, u64>,
 }
-
 
 #[derive(Clone, Debug)]
 pub struct PrioFeesUpdateMessage {

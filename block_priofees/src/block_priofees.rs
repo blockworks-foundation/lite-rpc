@@ -1,4 +1,5 @@
 use crate::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
+use crate::stats_calculation::calculate_supp_stats;
 use dashmap::DashMap;
 use log::{error, info, trace, warn};
 use solana_lite_rpc_core::types::BlockStream;
@@ -7,7 +8,6 @@ use std::sync::Arc;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 use tokio::sync::broadcast::Sender;
 use tokio::task::JoinHandle;
-use crate::stats_calculation::calculate_supp_stats;
 
 // note: ATM only the latest slot (highest key) is used
 const SLOTS_TO_RETAIN: u64 = 5000;
@@ -60,7 +60,7 @@ pub async fn start_block_priofees_task(
                     }
                     let confirmed_slot = block.slot;
 
-                    let block_prio_fees = block
+                    let block_priofees = block
                         .transactions
                         .iter()
                         .map(|tx| {
@@ -71,7 +71,7 @@ pub async fn start_block_priofees_task(
                         })
                         .collect::<Vec<(u64, u64)>>();
 
-                    let priofees_stats = calculate_supp_stats(&block_prio_fees);
+                    let priofees_stats = calculate_supp_stats(&block_priofees);
 
                     trace!("Got prio fees stats for confirmed block {}", confirmed_slot);
 
@@ -115,4 +115,3 @@ pub async fn start_block_priofees_task(
         },
     )
 }
-

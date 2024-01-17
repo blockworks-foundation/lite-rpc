@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use itertools::Itertools;
 use crate::rpc_data::PrioFeesStats;
+use itertools::Itertools;
+use std::collections::HashMap;
 
 pub fn calculate_supp_stats(
     // Vec(prioritization_fees, cu_consumed)
@@ -23,8 +23,10 @@ pub fn calculate_supp_stats(
     let p_90 = prio_fees_in_block[p90_index].0;
     let p_max = prio_fees_in_block.last().map(|x| x.0).unwrap();
 
-    let fine_percentiles: HashMap<String, u64> =
-        (0..=100).step_by(5).map(|percent| percent).map(|x| {
+    let fine_percentiles: HashMap<String, u64> = (0..=100)
+        .step_by(5)
+        .map(|percent| percent)
+        .map(|x| {
             let prio_fee = if x == 100 {
                 prio_fees_in_block.last().unwrap().0
             } else {
@@ -32,8 +34,9 @@ pub fn calculate_supp_stats(
                 prio_fees_in_block[index].0
             };
             (format!("p{}", x), prio_fee)
-        }).into_group_map_by(|x| x.0.clone())
-            .into_iter()
+        })
+        .into_group_map_by(|x| x.0.clone())
+        .into_iter()
         .map(|(k, v)| (k, v.iter().exactly_one().unwrap().1))
         .collect();
 
@@ -79,19 +82,15 @@ mod tests {
             (67, 6),
             (68, 7),
             (72, 8),
-            ];
+        ];
         let supp_info = calculate_supp_stats(&prio_fees_in_block);
         assert_eq!(supp_info.fine_percentiles.get("p25").unwrap(), &43);
     }
 
-
     #[test]
     fn test_large_list() {
-        let prio_fees_in_block: Vec<(u64,u64)> = (0..1000).map(|x| (x,x)).collect();
+        let prio_fees_in_block: Vec<(u64, u64)> = (0..1000).map(|x| (x, x)).collect();
         let supp_info = calculate_supp_stats(&prio_fees_in_block);
         assert_eq!(supp_info.fine_percentiles.get("p95").unwrap(), &950);
-
     }
-
-
 }

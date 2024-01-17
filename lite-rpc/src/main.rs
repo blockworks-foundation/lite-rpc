@@ -42,6 +42,7 @@ use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceCon
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
+use solana_lite_rpc_block_priofees::start_block_priofees_task;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
@@ -52,7 +53,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
-use solana_lite_rpc_block_priofees::start_block_priofees_task;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -200,7 +200,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     );
 
-    let (block_prio_fees_task, block_prio_fees_service) =
+    let (block_priofees_task, block_priofees_service) =
         start_block_priofees_task(blocks_notifier.resubscribe()).await;
 
     drop(blocks_notifier);
@@ -262,7 +262,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             data_cache.clone(),
             transaction_service,
             history,
-            block_prio_fees_service,
+            block_priofees_service,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
@@ -276,7 +276,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         res = bridge_service => {
             anyhow::bail!("Server {res:?}")
         }
-        res = block_prio_fees_task => {
+        res = block_priofees_task => {
             anyhow::bail!("Prio Fees Service {res:?}")
         }
         res = postgres => {
