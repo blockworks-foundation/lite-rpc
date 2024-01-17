@@ -5,10 +5,10 @@ use std::fmt::Display;
 
 #[derive(Clone, Serialize, Debug)]
 pub struct PrioFeesStats {
-    // (p0, 0), (p5, 100), (p10, 200), ..., (p95, 3000), (p100, 3000)
-    pub fees_by_tx: Vec<FeePoint>,
-    // (p0, 0), (p5, 100), (p10, 200), ..., (p95, 3000), (p100, 3000)
-    pub fees_by_cu: Vec<FeePoint>,
+    pub fees_by_tx: Vec<u64>,
+    pub percentiles_by_tx: Vec<f32>,
+    pub fees_by_cu: Vec<u64>,
+    pub percentiles_by_cu: Vec<f32>,
 }
 
 #[derive(Clone, Serialize, Debug, Eq, PartialEq, Hash)]

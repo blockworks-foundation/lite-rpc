@@ -59,9 +59,14 @@ pub fn calculate_supp_stats(
         })
         .collect_vec();
 
+
+
+
     PrioFeesStats {
-        fees_by_tx: dist_fee_by_index,
-        fees_by_cu: dist_fee_by_cu,
+        fees_by_tx: dist_fee_by_index.iter().map(|fee_point| fee_point.v).collect_vec(),
+        percentiles_by_tx: dist_fee_by_index.iter().map(|fee_point| fee_point.p as f32 / 100.0).collect_vec(),
+        fees_by_cu: dist_fee_by_cu.iter().map(|fee_point| fee_point.v).collect_vec(),
+        percentiles_by_cu: dist_fee_by_cu.iter().map(|fee_point| fee_point.p as f32 / 100.0).collect_vec(),
     }
 }
 
