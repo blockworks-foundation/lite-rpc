@@ -380,15 +380,6 @@ pub fn create_grpc_subscription(
     let (block_multiplex_channel, jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources);
 
-    grpc_inspect::block_debug_listen(
-        block_multiplex_channel.resubscribe(),
-        CommitmentConfig::confirmed(),
-    );
-    grpc_inspect::block_debug_listen(
-        block_multiplex_channel.resubscribe(),
-        CommitmentConfig::finalized(),
-    );
-
     let cluster_info_polling =
         poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
 
