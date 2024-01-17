@@ -4280,6 +4280,7 @@ name = "solana-lite-rpc-block-priofees"
 version = "0.2.3"
 dependencies = [
  "dashmap 5.5.3",
+ "itertools 0.10.5",
  "jsonrpsee",
  "lazy_static",
  "log",
