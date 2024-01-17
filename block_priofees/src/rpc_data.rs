@@ -11,6 +11,13 @@ pub struct PrioFeesStats {
     pub p_max: u64,
     // p0, p5, p10, ..., p95, p100
     pub fine_percentiles: HashMap<String, u64>,
+
+    pub p_median_cu: u64,
+    pub p_75_cu: u64,
+    pub p_90_cu: u64,
+    pub p_95_cu: u64,
+    // p0, p5, p10, ..., p95, p100
+    pub fine_percentiles_cu: HashMap<String, u64>,
 }
 
 #[derive(Clone, Debug)]

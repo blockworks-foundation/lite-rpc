@@ -1,7 +1,7 @@
 use crate::rpc_data::PrioFeesStats;
 use itertools::Itertools;
-use std::collections::HashMap;
 use log::info;
+use std::collections::HashMap;
 
 pub fn calculate_supp_stats(
     // Vec(prioritization_fees, cu_consumed)
@@ -29,14 +29,14 @@ pub fn calculate_supp_stats(
     let fine_percentiles: HashMap<String, u64> = (0..=100)
         .step_by(5)
         .map(|percent| percent)
-        .map(|x| {
-            let prio_fee = if x == 100 {
+        .map(|p| {
+            let prio_fee = if p == 100 {
                 prio_fees_in_block.last().unwrap().0
             } else {
-                let index = prio_fees_in_block.len() * x / 100;
+                let index = prio_fees_in_block.len() * p / 100;
                 prio_fees_in_block[index].0
             };
-            (format!("p{}", x), prio_fee)
+            (format!("p{}", p), prio_fee)
         })
         .into_group_map_by(|x| x.0.clone())
         .into_iter()
@@ -50,6 +50,8 @@ pub fn calculate_supp_stats(
     assert_eq!(p_max, *fine_percentiles.get("p100").unwrap());
 
     // get stats by CU
+    // e.g. 95 -> 3000
+    let mut fine_percentiles_cu: HashMap<i32, u64> = HashMap::new();
     let mut med_cu = None;
     let mut p75_cu = None;
     let mut p90_cu = None;
@@ -58,22 +60,33 @@ pub fn calculate_supp_stats(
     let mut agg: u64 = 0;
     for (prio, cu) in prio_fees_in_block {
         agg = agg + cu;
+
         if med_cu.is_none() && agg > (cu_sum as f64 * 0.5) as u64 {
             med_cu = Some(prio);
-        } else if p75_cu.is_none() && agg > (cu_sum as f64 * 0.75) as u64 {
+        }
+        if p75_cu.is_none() && agg > (cu_sum as f64 * 0.75) as u64 {
             p75_cu = Some(prio)
-        } else if p90_cu.is_none() && agg > (cu_sum as f64 * 0.9) as u64 {
+        }
+        if p90_cu.is_none() && agg > (cu_sum as f64 * 0.9) as u64 {
             p90_cu = Some(prio);
-        } else if p95_cu.is_none() && agg > (cu_sum as f64 * 0.95) as u64 {
-            p95_cu = Some(prio)
+        }
+        if p95_cu.is_none() && agg > (cu_sum as f64 * 0.95) as u64 {
+            p95_cu = Some(prio);
+        }
+
+        for p in (0..=100).step_by(5) {
+            if !fine_percentiles_cu.contains_key(&p) {
+                if agg > (cu_sum as f64 * p as f64 / 100.0) as u64 {
+                    fine_percentiles_cu.insert(p, prio);
+                }
+            }
         }
     }
 
-    println!("cu_sum: {}", cu_sum);
-    println!("med_cu: {:?}", med_cu);
-    println!("p75_cu: {:?}", p75_cu);
-    println!("p90_cu: {:?}", p90_cu);
-    println!("p95_cu: {:?}", p95_cu);
+    let fine_percentiles_cu_str = fine_percentiles_cu
+        .iter()
+        .map(|(k, v)| (format!("p{}", k), *v))
+        .collect::<HashMap<String, u64>>();
 
     PrioFeesStats {
         p_min,
@@ -82,6 +95,11 @@ pub fn calculate_supp_stats(
         p_90,
         p_max,
         fine_percentiles,
+        p_median_cu: med_cu.unwrap_or(0),
+        p_75_cu: p75_cu.unwrap_or(0),
+        p_90_cu: p90_cu.unwrap_or(0),
+        p_95_cu: p95_cu.unwrap_or(0),
+        fine_percentiles_cu: fine_percentiles_cu_str,
     }
 }
 
