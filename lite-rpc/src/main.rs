@@ -53,7 +53,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
-use tokio::time::{Instant, timeout};
+use tokio::time::{timeout, Instant};
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -68,8 +68,11 @@ async fn get_latest_block(
                 }
             }
             Err(_elapsed) => {
-                debug!("waiting for latest block ({}) ... {:.02}ms",
-                    commitment_config.commitment, started.elapsed().as_secs_f32() * 1000.0);
+                debug!(
+                    "waiting for latest block ({}) ... {:.02}ms",
+                    commitment_config.commitment,
+                    started.elapsed().as_secs_f32() * 1000.0
+                );
             }
             Ok(Err(_error)) => {
                 panic!("Did not recv blocks");
@@ -199,9 +202,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     );
 
     let (block_prio_fees_task, block_prio_fees_service) =
-        block_priofees::start_priofees_task(
-            data_cache.clone(),
-            blocks_notifier.resubscribe()).await;
+        block_priofees::start_block_priofees_task(blocks_notifier.resubscribe()).await;
 
     drop(blocks_notifier);
 

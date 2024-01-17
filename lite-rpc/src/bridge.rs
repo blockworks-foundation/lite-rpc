@@ -1,17 +1,19 @@
-use std::{str::FromStr, sync::Arc};
 use std::collections::HashMap;
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::Context;
-use jsonrpsee::{core::SubscriptionResult, DisconnectError, PendingSubscriptionSink, server::ServerBuilder};
+use jsonrpsee::{
+    core::SubscriptionResult, server::ServerBuilder, DisconnectError, PendingSubscriptionSink,
+};
 use log::{debug, error, warn};
-use prometheus::{IntCounter, opts, register_int_counter};
+use prometheus::{opts, register_int_counter, IntCounter};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
-        RpcBlockConfig, RpcBlocksConfigWrapper, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter,
+        RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
         RpcContextConfig, RpcEncodingConfigWrapper, RpcGetVoteAccountsConfig,
         RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig,
-        RpcSignaturesForAddressConfig, RpcSignatureStatusConfig, RpcSignatureSubscribeConfig,
+        RpcSignatureStatusConfig, RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig,
         RpcTransactionLogsConfig, RpcTransactionLogsFilter,
     },
     response::{
@@ -20,15 +22,15 @@ use solana_rpc_client_api::{
         RpcVoteAccountStatus,
     },
 };
-use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_sdk::epoch_info::EpochInfo;
+use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use tokio::net::ToSocketAddrs;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 
 use solana_lite_rpc_core::{
-    AnyhowJoinHandle,
     stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
+    AnyhowJoinHandle,
 };
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_services::{
@@ -40,7 +42,8 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
-use solana_lite_rpc_block_priofees::block_priofees::{PrioFeesService, PrioFeesUpdateMessage, PrioFeesStats};
+use solana_lite_rpc_block_priofees::block_priofees::{PrioFeesService, PrioFeesUpdateMessage};
+use solana_lite_rpc_block_priofees::rpc_data::PrioFeesStats;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -508,8 +511,7 @@ impl LiteRpcServer for LiteBridge {
     async fn get_latest_block_priofees(&self) -> crate::rpc::Result<RpcResponse<PrioFeesStats>> {
         match self.prio_fees_service.get_latest_priofees().await {
             Some((confirmation_slot, priofees)) => {
-                return Ok(
-                    RpcResponse {
+                return Ok(RpcResponse {
                     context: RpcResponseContext {
                         slot: confirmation_slot,
                         api_version: None,
@@ -518,9 +520,9 @@ impl LiteRpcServer for LiteBridge {
                 });
             }
             None => {
-                return Err(jsonrpsee::core::Error::Custom(
-                    format!("No latest priofees stats available found"),
-                ));
+                return Err(jsonrpsee::core::Error::Custom(format!(
+                    "No latest priofees stats available found"
+                )));
             }
         }
     }
@@ -538,7 +540,10 @@ impl LiteRpcServer for LiteBridge {
 
             'recv_loop: loop {
                 match block_fees_stream.recv().await {
-                    Ok(PrioFeesUpdateMessage { slot: confirmation_slot, priofees_stats }) => {
+                    Ok(PrioFeesUpdateMessage {
+                        slot: confirmation_slot,
+                        priofees_stats,
+                    }) => {
                         let result_message =
                             jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
                                 context: RpcResponseContext {
@@ -561,12 +566,15 @@ impl LiteRpcServer for LiteBridge {
                     }
                     Err(Lagged(lagged)) => {
                         // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
-                        warn!("subscriber laggs some({}) priofees update messages - continue", lagged);
+                        warn!(
+                            "subscriber laggs some({}) priofees update messages - continue",
+                            lagged
+                        );
                         continue 'recv_loop;
                     }
                     Err(Closed) => {
                         error!("failed to receive block, sender closed - aborting");
-                       return;
+                        return;
                     }
                 }
             }
