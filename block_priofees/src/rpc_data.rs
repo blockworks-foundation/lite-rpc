@@ -1,14 +1,13 @@
 use jsonrpsee::core::Serialize;
 use solana_sdk::clock::Slot;
-use std::collections::HashMap;
 use std::fmt::Display;
 
 #[derive(Clone, Serialize, Debug)]
 pub struct PrioFeesStats {
-    pub fees_by_tx: Vec<u64>,
-    pub percentiles_by_tx: Vec<f32>,
-    pub fees_by_cu: Vec<u64>,
-    pub percentiles_by_cu: Vec<f32>,
+    pub by_tx: Vec<u64>,
+    pub by_tx_percentiles: Vec<f32>,
+    pub by_cu: Vec<u64>,
+    pub by_cu_percentiles: Vec<f32>,
 }
 
 #[derive(Clone, Serialize, Debug, Eq, PartialEq, Hash)]

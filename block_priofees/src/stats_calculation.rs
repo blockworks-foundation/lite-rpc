@@ -41,7 +41,7 @@ pub fn calculate_supp_stats(
         agg = agg + cu;
         for p in (0..=100).step_by(5) {
             if !dist_fee_by_cu.contains_key(&p) {
-                if agg > (cu_sum as f64 * p as f64 / 100.0) as u64 {
+                if agg >= (cu_sum as f64 * p as f64 / 100.0) as u64 {
                     dist_fee_by_cu.insert(p, prio);
                 }
             }
@@ -59,14 +59,11 @@ pub fn calculate_supp_stats(
         })
         .collect_vec();
 
-
-
-
     PrioFeesStats {
-        fees_by_tx: dist_fee_by_index.iter().map(|fee_point| fee_point.v).collect_vec(),
-        percentiles_by_tx: dist_fee_by_index.iter().map(|fee_point| fee_point.p as f32 / 100.0).collect_vec(),
-        fees_by_cu: dist_fee_by_cu.iter().map(|fee_point| fee_point.v).collect_vec(),
-        percentiles_by_cu: dist_fee_by_cu.iter().map(|fee_point| fee_point.p as f32 / 100.0).collect_vec(),
+        by_tx: dist_fee_by_index.iter().map(|fee_point| fee_point.v).collect_vec(),
+        by_tx_percentiles: dist_fee_by_index.iter().map(|fee_point| fee_point.p as f32 / 100.0).collect_vec(),
+        by_cu: dist_fee_by_cu.iter().map(|fee_point| fee_point.v).collect_vec(),
+        by_cu_percentiles: dist_fee_by_cu.iter().map(|fee_point| fee_point.p as f32 / 100.0).collect_vec(),
     }
 }
 
@@ -77,7 +74,7 @@ mod tests {
     #[test]
     fn test_calculate_supp_info() {
         let prio_fees_in_block = vec![(2, 2), (4, 4), (5, 5), (3, 3), (1, 1)];
-        let supp_info = calculate_supp_stats(&prio_fees_in_block).fees_by_tx;
+        let supp_info = calculate_supp_stats(&prio_fees_in_block).by_tx;
         assert_eq!(supp_info[0], ("p_0".to_string(), 1));
         assert_eq!(supp_info[10], ("p_50".to_string(), 3));
         assert_eq!(supp_info[15], ("p_75".to_string(), 4));
@@ -98,13 +95,13 @@ mod tests {
             (72, 8),
         ];
         let supp_info = calculate_supp_stats(&prio_fees_in_block);
-        assert_eq!(supp_info.fees_by_tx[5], ("p_25".to_string(), 43));
+        assert_eq!(supp_info.by_tx[5], ("p_25".to_string(), 43));
     }
 
     #[test]
     fn test_large_list() {
         let prio_fees_in_block: Vec<(u64, u64)> = (0..1000).map(|x| (x, x)).collect();
         let supp_info = calculate_supp_stats(&prio_fees_in_block);
-        assert_eq!(supp_info.fees_by_tx[19], ("p_95".to_string(), 950));
+        assert_eq!(supp_info.by_tx[19], ("p_95".to_string(), 950));
     }
 }
