@@ -8,33 +8,12 @@ description = "Expose priority fees stats per block via RPC and WebSocket"
 solana-lite-rpc-core = {workspace = true}
 
 solana-sdk = { workspace = true }
-solana-rpc-client = { workspace = true }
-solana-rpc-client-api = { workspace = true }
-solana-transaction-status = { workspace = true }
-solana-version = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-bincode = { workspace = true }
-bs58 = { workspace = true }
-base64 = { workspace = true }
-thiserror = { workspace = true }
-futures = { workspace = true }
-bytes = { workspace = true }
-anyhow = { workspace = true }
 log = { workspace = true }
-clap = { workspace = true }
 dashmap = { workspace = true }
-const_env = { workspace = true }
 jsonrpsee = { workspace = true }
 tracing-subscriber = { workspace = true }
-native-tls = { workspace = true }
-postgres-native-tls = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
-dotenv = { workspace = true }
-async-channel = { workspace = true }
-quinn = { workspace = true }
-async-trait = { workspace = true }
-tokio = { version = "1.28.2", features = ["full", "fs"]}
-tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
-chrono = { workspace = true }
+tokio = { version = "1.28.2", features = ["full"]}

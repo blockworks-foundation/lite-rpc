@@ -1,10 +1,9 @@
 use std::{str::FromStr, sync::Arc};
 use std::collections::HashMap;
-use std::time::Duration;
 
 use anyhow::Context;
 use jsonrpsee::{core::SubscriptionResult, DisconnectError, PendingSubscriptionSink, server::ServerBuilder};
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, warn};
 use prometheus::{IntCounter, opts, register_int_counter};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
@@ -25,9 +24,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_histo
 use solana_sdk::epoch_info::EpochInfo;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use tokio::net::ToSocketAddrs;
-use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
-use tokio::time::sleep;
 
 use solana_lite_rpc_core::{
     AnyhowJoinHandle,

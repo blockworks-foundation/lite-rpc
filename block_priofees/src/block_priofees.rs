@@ -1,26 +1,18 @@
 use std::ops::Deref;
 use std::sync::Arc;
 use dashmap::DashMap;
-use dashmap::mapref::multiple::RefMulti;
 use jsonrpsee::core::Serialize;
-use jsonrpsee::tracing::field::debug;
 use log::{debug, error, info, trace, warn};
-use solana_rpc_client_api::response::Fees;
 use solana_sdk::clock::Slot;
 use tokio::sync::broadcast::Sender;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
-use tokio::sync::broadcast::error::SendError;
-use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
-// use solana_lite_rpc_cluster_endpoints::CommitmentLevel;
 use solana_lite_rpc_core::stores::data_cache::{DataCache, SlotCache};
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::types::BlockStream;
 
 /// put everything required to serve sync data calls here
 #[derive(Clone)]
 pub struct PrioFeeStore {
-    // TODO cleanup
     recent: Arc<DashMap<Slot, PrioFeesStats>>,
     slot_cache: SlotCache,
 }
