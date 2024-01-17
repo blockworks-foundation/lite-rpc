@@ -9,7 +9,7 @@ use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{block_priofees, DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE};
-use log::info;
+use log::{debug, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
@@ -56,12 +56,23 @@ async fn get_latest_block(
     mut block_stream: BlockStream,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    while let Ok(block) = block_stream.recv().await {
-        if block.commitment_config == commitment_config {
-            return block;
+    let started = Instant::now();
+    loop {
+        match timeout(Duration::from_millis(500), block_stream.recv()).await {
+            Ok(Ok(block)) => {
+                if block.commitment_config == commitment_config {
+                    return block;
+                }
+            }
+            Err(_elapsed) => {
+                debug!("waiting for latest block ({}) ... {:.02}ms",
+                    commitment_config.commitment, started.elapsed().as_secs_f32() * 1000.0);
+            }
+            Ok(Err(_error)) => {
+                panic!("Did not recv blocks");
+            }
         }
     }
-    panic!("Did  not recv blocks");
 }
 
 pub async fn start_postgres(
