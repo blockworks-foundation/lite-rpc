@@ -26,9 +26,8 @@ pub fn calculate_supp_stats(
     let p_90 = prio_fees_in_block[p90_index].0;
     let p_max = prio_fees_in_block.last().map(|x| x.0).unwrap();
 
-    let fine_percentiles: HashMap<String, u64> = (0..=100)
-        .step_by(5)
-        .map(|percent| percent)
+    let dist_fee_by_index: Vec<(String, u64)> =
+        (0..=100).step_by(5)
         .map(|p| {
             let prio_fee = if p == 100 {
                 prio_fees_in_block.last().unwrap().0
@@ -38,10 +37,7 @@ pub fn calculate_supp_stats(
             };
             (format!("p{}", p), prio_fee)
         })
-        .into_group_map_by(|x| x.0.clone())
-        .into_iter()
-        .map(|(k, v)| (k, v.iter().exactly_one().unwrap().1))
-        .collect();
+        .collect_vec();
 
     // assert_eq!(p_min, *fine_percentiles.get("p0").unwrap());
     // assert_eq!(p_median, *fine_percentiles.get("p50").unwrap());
@@ -51,7 +47,7 @@ pub fn calculate_supp_stats(
 
     // get stats by CU
     // e.g. 95 -> 3000
-    let mut fine_percentiles_cu: HashMap<i32, u64> = HashMap::new();
+    let mut dist_fee_by_cu: HashMap<i32, u64> = HashMap::new();
     let mut med_cu = None;
     let mut p75_cu = None;
     let mut p90_cu = None;
@@ -75,9 +71,9 @@ pub fn calculate_supp_stats(
         }
 
         for p in (0..=100).step_by(5) {
-            if !fine_percentiles_cu.contains_key(&p) {
+            if !dist_fee_by_cu.contains_key(&p) {
                 if agg > (cu_sum as f64 * p as f64 / 100.0) as u64 {
-                    fine_percentiles_cu.insert(p, prio);
+                    dist_fee_by_cu.insert(p, prio);
                 }
             }
         }
@@ -88,10 +84,13 @@ pub fn calculate_supp_stats(
     // assert_eq!(p90_cu.as_ref(), fine_percentiles_cu.get(&90));
     // assert_eq!(p95_cu.as_ref(), fine_percentiles_cu.get(&95));
 
-    let fine_percentiles_cu_str = fine_percentiles_cu
-        .iter()
-        .map(|(k, v)| (format!("p{}", k), *v))
-        .collect::<HashMap<String, u64>>();
+    // e.g. (p0, 0), (p5, 100), (p10, 200), ..., (p95, 3000), (p100, 3000)
+    let dist_fee_by_cu: Vec<(String, u64)> =
+        dist_fee_by_cu
+        .into_iter()
+        .sorted_by_key(|(p, _)| *p)
+        .map(|(p, fees)| (format!("p{}", p), fees))
+        .collect_vec();
 
     PrioFeesStats {
         p_min,
@@ -99,12 +98,12 @@ pub fn calculate_supp_stats(
         p_75,
         p_90,
         p_max,
-        fine_percentiles,
+        dist_fee_by_index,
         p_median_cu: med_cu.unwrap_or(0),
         p_75_cu: p75_cu.unwrap_or(0),
         p_90_cu: p90_cu.unwrap_or(0),
         p_95_cu: p95_cu.unwrap_or(0),
-        fine_percentiles_cu: fine_percentiles_cu_str,
+        dist_fee_by_cu,
     }
 }
 
@@ -136,13 +135,14 @@ mod tests {
             (72, 8),
         ];
         let supp_info = calculate_supp_stats(&prio_fees_in_block);
-        assert_eq!(supp_info.fine_percentiles.get("p25").unwrap(), &43);
+        println!("supp_info.dist_fee {:?}", &supp_info.dist_fee_by_index);
+        assert_eq!(supp_info.dist_fee_by_index[5], ("p25".to_string(), 43));
     }
 
     #[test]
     fn test_large_list() {
         let prio_fees_in_block: Vec<(u64, u64)> = (0..1000).map(|x| (x, x)).collect();
         let supp_info = calculate_supp_stats(&prio_fees_in_block);
-        assert_eq!(supp_info.fine_percentiles.get("p95").unwrap(), &950);
+        assert_eq!(supp_info.dist_fee_by_index[19], ("p95".to_string(), 950));
     }
 }
