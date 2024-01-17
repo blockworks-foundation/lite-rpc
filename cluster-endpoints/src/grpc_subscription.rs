@@ -31,6 +31,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
+use solana_sdk::feature_set::full_inflation::mainnet::certusone::vote;
 use yellowstone_grpc_client::GeyserGrpcClient;
 
 use yellowstone_grpc_proto::prelude::{
@@ -180,8 +181,13 @@ pub fn map_block_update(
                 })
                 .or(legacy_prioritization_fees);
 
+            let is_vote_transaction = message
+                .instructions()
+                .iter().any(|i| i.program_id(message.static_account_keys()).eq(&vote::id()));
+
             Some(TransactionInfo {
                 signature: signature.to_string(),
+                is_vote: is_vote_transaction,
                 err,
                 cu_requested,
                 prioritization_fees,

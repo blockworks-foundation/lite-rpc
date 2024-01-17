@@ -66,6 +66,7 @@ pub async fn start_block_priofees_task(
                     let block_priofees = block
                         .transactions
                         .iter()
+                        .filter(|tx| !tx.is_vote)
                         .map(|tx| {
                             (
                                 tx.prioritization_fees.unwrap_or_default(),

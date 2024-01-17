@@ -5,6 +5,7 @@ use solana_sdk::{
     slot_history::Slot,
     transaction::TransactionError,
 };
+use solana_sdk::feature_set::full_inflation::mainnet::certusone::vote;
 use solana_transaction_status::{
     option_serializer::OptionSerializer, Reward, RewardType, UiConfirmedBlock,
     UiTransactionStatusMeta,
@@ -15,6 +16,7 @@ use crate::encoding::BinaryEncoding;
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
     pub signature: String,
+    pub is_vote: bool,
     pub err: Option<TransactionError>,
     pub cu_requested: Option<u32>,
     pub prioritization_fees: Option<u64>,
@@ -129,8 +131,13 @@ impl ProducedBlock {
                 let blockhash = tx.message.recent_blockhash().to_string();
                 let message = BinaryEncoding::Base64.encode(tx.message.serialize());
 
+                let is_vote_transaction = tx.message
+                    .instructions()
+                    .iter().any(|i| i.program_id(tx.message.static_account_keys()).eq(&vote::id()));
+
                 Some(TransactionInfo {
                     signature,
+                    is_vote: is_vote_transaction,
                     err,
                     cu_requested,
                     prioritization_fees,
