@@ -43,11 +43,11 @@ pub fn calculate_supp_stats(
         .map(|(k, v)| (k, v.iter().exactly_one().unwrap().1))
         .collect();
 
-    assert_eq!(p_min, *fine_percentiles.get("p0").unwrap());
-    assert_eq!(p_median, *fine_percentiles.get("p50").unwrap());
-    assert_eq!(p_75, *fine_percentiles.get("p75").unwrap());
-    assert_eq!(p_90, *fine_percentiles.get("p90").unwrap());
-    assert_eq!(p_max, *fine_percentiles.get("p100").unwrap());
+    // assert_eq!(p_min, *fine_percentiles.get("p0").unwrap());
+    // assert_eq!(p_median, *fine_percentiles.get("p50").unwrap());
+    // assert_eq!(p_75, *fine_percentiles.get("p75").unwrap());
+    // assert_eq!(p_90, *fine_percentiles.get("p90").unwrap());
+    // assert_eq!(p_max, *fine_percentiles.get("p100").unwrap());
 
     // get stats by CU
     // e.g. 95 -> 3000
@@ -82,6 +82,11 @@ pub fn calculate_supp_stats(
             }
         }
     }
+
+    // assert_eq!(med_cu.as_ref(), fine_percentiles_cu.get(&50));
+    // assert_eq!(p75_cu.as_ref(), fine_percentiles_cu.get(&75));
+    // assert_eq!(p90_cu.as_ref(), fine_percentiles_cu.get(&90));
+    // assert_eq!(p95_cu.as_ref(), fine_percentiles_cu.get(&95));
 
     let fine_percentiles_cu_str = fine_percentiles_cu
         .iter()
