@@ -93,11 +93,6 @@ pub struct PrioritizationFeesInfo {
     pub p_75: u64,
     pub p_90: u64,
     pub p_max: u64,
-
-    pub med_cu: Option<u64>,
-    pub p75_cu: Option<u64>,
-    pub p90_cu: Option<u64>,
-    pub p95_cu: Option<u64>,
 }
 
 
@@ -122,37 +117,34 @@ fn calculate_supp_info(
     let p_90 = prio_fees_in_block[p90_index].0;
     let p_max = prio_fees_in_block.last().map(|x| x.0).unwrap();
 
-    // TODO try to get rid of Option
-    let mut med_cu = None;
-    let mut p75_cu = None;
-    let mut p90_cu = None;
-    let mut p95_cu = None;
-
-    // get stats by CU
-    let cu_sum: u64 = prio_fees_in_block.iter().map(|x| x.1).sum();
-    let mut agg: u64 = 0;
-    for (prio, cu) in prio_fees_in_block {
-        agg = agg + cu;
-        if med_cu.is_none() && agg > (cu_sum as f64 * 0.5) as u64 {
-            med_cu = Some(prio);
-        } else if p75_cu.is_none() && agg > (cu_sum as f64 * 0.75) as u64 {
-            p75_cu = Some(prio)
-        } else if p90_cu.is_none() && agg > (cu_sum as f64 * 0.9) as u64 {
-            p90_cu = Some(prio);
-        } else if p95_cu.is_none() && agg > (cu_sum as f64 * 0.95) as u64 {
-            p95_cu = Some(prio)
-        }
-    }
-
     PrioritizationFeesInfo {
         p_min,
         p_median,
         p_75,
         p_90,
         p_max,
-        med_cu,
-        p75_cu,
-        p90_cu,
-        p95_cu,
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_supp_info() {
+        let prio_fees_in_block = vec![
+            (2, 2),
+            (4, 4),
+            (5, 5),
+            (3, 3),
+            (1, 1),
+        ];
+        let supp_info = calculate_supp_info(&prio_fees_in_block);
+        assert_eq!(supp_info.p_min, 1);
+        assert_eq!(supp_info.p_median, 3);
+        assert_eq!(supp_info.p_75, 4);
+        assert_eq!(supp_info.p_90, 5);
+        assert_eq!(supp_info.p_max, 5);
     }
 }
