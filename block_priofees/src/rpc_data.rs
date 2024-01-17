@@ -14,14 +14,14 @@ pub struct PrioFeesStats {
 #[derive(Clone, Serialize, Debug, Eq, PartialEq, Hash)]
 pub struct FeePoint {
     // percentile
-    pub p: String,
+    pub p: u32,
     // value of fees in lamports
     pub v: u64,
 }
 
 impl Display for FeePoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}, {})", self.p, self.v)
+        write!(f, "(p{}, {})", self.p, self.v)
     }
 }
 

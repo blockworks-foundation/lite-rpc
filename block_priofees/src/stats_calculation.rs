@@ -25,7 +25,7 @@ pub fn calculate_supp_stats(
                 prio_fees_in_block[index].0
             };
             FeePoint {
-                p: format!("p_{}", p),
+                p: p as u32,
                 v: prio_fee,
             }
         })
@@ -54,7 +54,7 @@ pub fn calculate_supp_stats(
         .into_iter()
         .sorted_by_key(|(p, _)| *p)
         .map(|(p, fees)| FeePoint {
-            p: format!("p_{}", p),
+            p: p as u32,
             v: fees,
         })
         .collect_vec();
