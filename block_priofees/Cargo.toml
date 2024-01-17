@@ -1,15 +1,12 @@
 [package]
-name = "lite-rpc"
+name = "solana-lite-rpc-block-priofees"
 version = "0.2.3"
 edition = "2021"
-description = "A lite version of solana rpc to send and confirm transactions"
-rust-version = "1.70.0"
-default-run = "lite-rpc"
-repository = "https://github.com/blockworks-foundation/lite-rpc"
-license = "AGPL"
-publish = false
+description = "Expose priority fees stats per block via RPC and WebSocket"
 
 [dependencies]
+solana-lite-rpc-core = {workspace = true}
+
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
@@ -41,12 +38,3 @@ async-trait = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 chrono = { workspace = true }
-
-solana-lite-rpc-core = { workspace = true }
-solana-lite-rpc-services = { workspace = true }
-solana-lite-rpc-cluster-endpoints = { workspace = true }
-solana-lite-rpc-history = { workspace = true }
-solana-lite-rpc-block-priofees = { workspace = true }
-
-[dev-dependencies]
-bench = { path = "../bench" }

@@ -2518,6 +2518,7 @@ dependencies = [
  "quinn",
  "serde",
  "serde_json",
+ "solana-lite-rpc-block-priofees",
  "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
  "solana-lite-rpc-history",
@@ -4272,6 +4273,44 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 2.0.48",
+]
+
+[[package]]
+name = "solana-lite-rpc-block-priofees"
+version = "0.2.3"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "async-trait",
+ "base64 0.21.7",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "clap 4.4.17",
+ "const_env",
+ "dashmap 5.5.3",
+ "dotenv",
+ "futures",
+ "jsonrpsee",
+ "lazy_static",
+ "log",
+ "native-tls",
+ "postgres-native-tls",
+ "prometheus",
+ "quinn",
+ "serde",
+ "serde_json",
+ "solana-lite-rpc-core",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
+ "tokio-postgres",
+ "tracing-subscriber",
 ]
 
 [[package]]

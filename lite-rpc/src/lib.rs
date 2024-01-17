@@ -9,7 +9,6 @@ pub mod jsonrpsee_subscrption_handler_sink;
 pub mod postgres_logger;
 pub mod rpc;
 pub mod service_spawner;
-pub mod block_priofees;
 
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";

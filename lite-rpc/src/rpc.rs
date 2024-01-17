@@ -18,7 +18,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::collections::HashMap;
-use crate::block_priofees::PrioFeesStats;
+use solana_lite_rpc_block_priofees::block_priofees::PrioFeesStats;
 
 pub type Result<T> = std::result::Result<T, jsonrpsee::core::Error>;
 
