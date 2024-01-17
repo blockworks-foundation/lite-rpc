@@ -8,6 +8,7 @@ use log::{debug, error, info};
 use solana_rpc_client_api::response::Fees;
 use solana_sdk::clock::Slot;
 use tokio::sync::broadcast::Receiver;
+use solana_lite_rpc_cluster_endpoints::CommitmentLevel;
 use solana_lite_rpc_core::stores::data_cache::{DataCache, SlotCache};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::types::BlockStream;
@@ -25,18 +26,12 @@ pub struct PrioFeesService {
 
 impl PrioFeesService {
     pub async fn get_median_priofees(&self) -> Option<PrioritizationFeesInfo> {
-        // let slot = self.block_fees_store.slot_cache.get_current_slot();
-        // info!("Return prio feeds for current slot {}", slot);
-        let maxxxx = self.block_fees_store.recent.iter().max_by(|a, b| a.key().cmp(b.key()));
+        // TODO remove
+        let slot_slotcache = self.block_fees_store.slot_cache.get_current_slot();
+        info!("current slot (according to slot cache) is {}", slot_slotcache);
+        let highest_slotnumber = self.block_fees_store.recent.iter().max_by(|a, b| a.key().cmp(b.key()));
 
-        match maxxxx {
-            Some(xx) => {
-                return Some(xx.value().clone());
-            }
-            None => {
-                return None;
-            }
-        }
+        return highest_slotnumber.map(|x| x.value().clone());
 
         // self.block_fees_store.recent.
         // let lookup = self.block_fees_store.recent.get(&slot);
@@ -62,6 +57,9 @@ pub async fn start_priofees_service(store: PrioFeeStore, mut block_stream: Block
         let block = block_stream.recv().await;
         match block {
             Ok(block) => {
+                if !block.commitment_config.is_confirmed() {
+                    continue;
+                }
                 let slot = block.slot;
 
                 // first do some cleanup
