@@ -18,7 +18,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::slot_history::Slot;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::collections::HashMap;
-use crate::block_priofees::PrioritizationFeesInfo;
+use crate::block_priofees::PrioFeesStats;
 
 pub type Result<T> = std::result::Result<T, jsonrpsee::core::Error>;
 
@@ -241,12 +241,11 @@ pub trait LiteRpc {
     // (this is special method not available in solana rpc)
     // ***********************
 
-    #[method(name = "getBlockPrioFeesDistribution")]
-    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<PrioritizationFeesInfo>;
+    #[method(name = "getLatestBlockPrioFees")]
+    async fn get_latest_block_priofees(&self) -> crate::rpc::Result<RpcResponse<PrioFeesStats>>;
 
     /// subscribe to prio fees distribution per block; uses confirmation level "confirmed"
-    #[subscription(name = "blockPrioFeesSubscribe" => "blockPrioFeesNotification", unsubscribe="blockPrioFeesUnsubscribe", item=PrioritizationFeesInfo)]
-    async fn block_priofees_subscribe(
-        &self
-    ) -> SubscriptionResult;
+    #[subscription(name = "blockPrioFeesSubscribe" => "blockPrioFeesNotification", unsubscribe="blockPrioFeesUnsubscribe", item=PrioritizationFeesStats)]
+    async fn latest_block_priofees_subscribe(&self) -> SubscriptionResult;
+
 }

@@ -21,7 +21,7 @@ use solana_lite_rpc_core::types::BlockStream;
 #[derive(Clone)]
 pub struct PrioFeeStore {
     // TODO cleanup
-    recent: Arc<DashMap<Slot, PrioritizationFeesInfo>>,
+    recent: Arc<DashMap<Slot, PrioFeesStats>>,
     slot_cache: SlotCache,
 }
 
@@ -32,17 +32,9 @@ pub struct PrioFeesService {
 }
 
 impl PrioFeesService {
-    pub async fn get_median_priofees(&self) -> Option<PrioritizationFeesInfo> {
-        // TODO remove
-        let slot_slotcache = self.block_fees_store.slot_cache.get_current_slot();
-        info!("current slot (according to slot cache) is {}", slot_slotcache);
-        let highest_slotnumber = self.block_fees_store.recent.iter().max_by(|a, b| a.key().cmp(b.key()));
-
-        return highest_slotnumber.map(|x| x.value().clone());
-
-        // self.block_fees_store.recent.
-        // let lookup = self.block_fees_store.recent.get(&slot);
-        // return (slot, foo);
+    pub async fn get_latest_priofees(&self) -> Option<(Slot, PrioFeesStats)> {
+        let latest_in_store = self.block_fees_store.recent.iter().max_by(|a, b| a.key().cmp(b.key()));
+        return latest_in_store.map(|x| (x.key().clone(), x.value().clone()));
     }
 }
 
@@ -75,14 +67,14 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
                             (tx.prioritization_fees.unwrap_or_default(), tx.cu_consumed.unwrap_or_default())
                         }).collect::<Vec<(u64, u64)>>();
 
-                    let prioritization_fees_info = calculate_supp_info(&block_prio_fees);
+                    let priofees_stats = calculate_supp_info(&block_prio_fees);
 
-                    trace!("Got prioritization_fees_info for block {}", slot);
+                    trace!("Got prio fees stats for block {}", slot);
 
-                    recent_data.insert(slot, prioritization_fees_info.clone());
+                    recent_data.insert(slot, priofees_stats.clone());
                     let msg = PrioFeesUpdateMessage {
                         slot,
-                        fees_info: prioritization_fees_info,
+                        priofees_stats,
                     };
                     let send_result = sender.send(msg);
                     match send_result {
@@ -100,7 +92,7 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
                 }
                 Err(Closed) => {
                     error!("failed to receive block, sender closed - aborting");
-                    break 'recv_loop;;
+                    break 'recv_loop;
                 }
             }
         }
@@ -119,12 +111,12 @@ pub async fn start_priofees_task(data_cache: DataCache, mut block_stream: BlockS
 #[derive(Clone, Debug)]
 pub struct PrioFeesUpdateMessage {
     pub slot: Slot,
-    pub fees_info: PrioritizationFeesInfo,
+    pub priofees_stats: PrioFeesStats,
 }
 
 // used as RPC DTO
 #[derive(Clone, Serialize, Debug)]
-pub struct PrioritizationFeesInfo {
+pub struct PrioFeesStats {
     pub p_min: u64,
     pub p_median: u64,
     pub p_75: u64,
@@ -136,7 +128,7 @@ pub struct PrioritizationFeesInfo {
 fn calculate_supp_info(
     // Vec(prioritization_fees, cu_consumed)
     prio_fees_in_block: &Vec<(u64, u64)>,
-) -> PrioritizationFeesInfo {
+) -> PrioFeesStats {
     let mut prio_fees_in_block = if prio_fees_in_block.is_empty() {
         // TODO is that smart?
         vec![(0, 0)]
@@ -154,7 +146,7 @@ fn calculate_supp_info(
     let p_90 = prio_fees_in_block[p90_index].0;
     let p_max = prio_fees_in_block.last().map(|x| x.0).unwrap();
 
-    PrioritizationFeesInfo {
+    PrioFeesStats {
         p_min,
         p_median,
         p_75,

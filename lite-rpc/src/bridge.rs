@@ -43,7 +43,7 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
-use crate::block_priofees::{PrioFeesService, PrioFeesUpdateMessage, PrioritizationFeesInfo};
+use crate::block_priofees::{PrioFeesService, PrioFeesUpdateMessage, PrioFeesStats};
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -508,22 +508,28 @@ impl LiteRpcServer for LiteBridge {
         todo!()
     }
 
-    async fn get_block_priofees_distribution(&self) -> crate::rpc::Result<PrioritizationFeesInfo> {
-        let priofees = self.prio_fees_service.get_median_priofees().await;
-        match priofees {
-            Some(priofees) => {
-                return Ok(priofees);
+    async fn get_latest_block_priofees(&self) -> crate::rpc::Result<RpcResponse<PrioFeesStats>> {
+        match self.prio_fees_service.get_latest_priofees().await {
+            Some((confirmation_slot, priofees)) => {
+                return Ok(
+                    RpcResponse {
+                    context: RpcResponseContext {
+                        slot: confirmation_slot,
+                        api_version: None,
+                    },
+                    value: priofees,
+                });
             }
             None => {
                 return Err(jsonrpsee::core::Error::Custom(
-                    format!("No priofees stats found for block {}", 99999),
+                    format!("No latest priofees stats available found"),
                 ));
             }
         }
     }
 
     // use websocket-tungstenite-retry->examples/consume_literpc_priofees.rs to test
-    async fn block_priofees_subscribe(
+    async fn latest_block_priofees_subscribe(
         &self,
         pending: PendingSubscriptionSink,
     ) -> SubscriptionResult {
@@ -535,19 +541,20 @@ impl LiteRpcServer for LiteBridge {
 
             'recv_loop: loop {
                 match block_fees_stream.recv().await {
-                    Ok(PrioFeesUpdateMessage { slot: confirmation_slot, fees_info}) => {
+                    Ok(PrioFeesUpdateMessage { slot: confirmation_slot, priofees_stats }) => {
                         let result_message =
                             jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
                                 context: RpcResponseContext {
                                     slot: confirmation_slot,
                                     api_version: None,
                                 },
-                                value: fees_info,
+                                value: priofees_stats,
                             });
 
                         match sink.send(result_message.unwrap()).await {
                             Ok(()) => {
                                 // success
+                                continue 'recv_loop;
                             }
                             Err(DisconnectError(_subscription_message)) => {
                                 debug!("Stopping subscription task on disconnect");
