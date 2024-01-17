@@ -259,6 +259,8 @@ pub fn create_grpc_multiplex_slots_subscription(
                     })?;
                 }
             }
+
+            streams_tasks.iter().for_each(|task| task.abort());
         }
     });
 
