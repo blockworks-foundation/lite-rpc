@@ -21,6 +21,7 @@ use std::{
         Arc,
     },
 };
+use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::from_ui_block;
 
 pub struct MultipleStrategyBlockStorage {
     inmemory_for_storage: InmemoryBlockStore, // for confirmed blocks
@@ -115,7 +116,7 @@ impl BlockStorageInterface for MultipleStrategyBlockStorage {
                     .get_block_with_config(slot, config)
                     .await
                 {
-                    Ok(block) => Ok(ProducedBlock::from_ui_block(
+                    Ok(block) => Ok(from_ui_block(
                         block,
                         slot,
                         CommitmentConfig::finalized(),

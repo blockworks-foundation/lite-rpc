@@ -17,6 +17,7 @@ async-trait = { workspace = true }
 tokio = "1.*"
 
 solana-lite-rpc-core = {workspace = true}
+solana-lite-rpc-cluster-endpoints = { workspace = true }
 solana-rpc-client-api = {workspace = true}
 native-tls = { workspace = true }
 postgres-native-tls = { workspace = true }

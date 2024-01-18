@@ -15,7 +15,6 @@ use solana_lite_rpc_core::{
     structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
 };
-use solana_sdk::feature_set::full_inflation::mainnet::certusone::vote;
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
@@ -32,6 +31,9 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
+use log::info;
+use solana_sdk::program_utils::limited_deserialize;
+use solana_sdk::vote::instruction::VoteInstruction;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterSlots, SubscribeUpdateSlot};
 
@@ -40,7 +42,8 @@ use yellowstone_grpc_proto::prelude::{
     SubscribeUpdateBlock,
 };
 
-pub fn map_block_update(
+/// grpc version of ProducedBlock mapping
+pub fn from_grpc_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
@@ -182,10 +185,12 @@ pub fn map_block_update(
                 })
                 .or(legacy_prioritization_fees);
 
-            let is_vote_transaction = message
-                .instructions()
-                .iter()
-                .any(|i| i.program_id(message.static_account_keys()).eq(&vote::id()));
+            let is_vote_transaction = message.instructions().iter().any(|i| {
+                i.program_id(message.static_account_keys())
+                    .eq(&solana_sdk::vote::program::id()) &&
+                    limited_deserialize::<VoteInstruction>(&i.data)
+                        .map(|vi| vi.is_simple_vote()).unwrap_or(false)
+            });
 
             Some(TransactionInfo {
                 signature: signature.to_string(),
