@@ -2,7 +2,7 @@ use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription,
 };
 use crate::{
-    endpoint_stremers::EndpointStreaming, grpc_inspect,
+    endpoint_stremers::EndpointStreaming,
     rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
 };
 use anyhow::Context;
