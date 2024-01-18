@@ -33,6 +33,7 @@ use solana_sdk::{
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
 use yellowstone_grpc_client::GeyserGrpcClient;
+use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterSlots, SubscribeUpdateSlot};
 
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
@@ -294,6 +295,67 @@ pub fn create_block_processing_task(
                     UpdateOneof::Block(block) => {
                         block_sx
                             .send(block)
+                            .await
+                            .context("Problem sending on block channel")?;
+                    }
+                    UpdateOneof::Ping(_) => {
+                        log::trace!("GRPC Ping");
+                    }
+                    _ => {
+                        log::trace!("unknown GRPC notification");
+                    }
+                };
+            }
+            log::error!("Grpc block subscription broken (resubscribing)");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    })
+}
+
+pub fn create_slot_stream_task(
+    grpc_addr: String,
+    grpc_x_token: Option<String>,
+    slot_sx: async_channel::Sender<SubscribeUpdateSlot>,
+    commitment_level: CommitmentLevel,
+) -> AnyhowJoinHandle {
+    tokio::spawn(async move {
+        loop {
+            let mut slots = HashMap::new();
+            slots.insert(
+                "client_slot".to_string(),
+                SubscribeRequestFilterSlots {
+                    filter_by_commitment: Some(true),
+                },
+            );
+
+            // connect to grpc
+            let mut client =
+                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
+            let mut stream = client
+                .subscribe_once(
+                    slots,
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    Some(commitment_level),
+                    Default::default(),
+                    None,
+                )
+                .await?;
+
+            while let Some(message) = stream.next().await {
+                let message = message?;
+
+                let Some(update) = message.update_oneof else {
+                    continue;
+                };
+
+                match update {
+                    UpdateOneof::Slot(slot) => {
+                        slot_sx
+                            .send(slot)
                             .await
                             .context("Problem sending on block channel")?;
                     }

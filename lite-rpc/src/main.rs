@@ -228,7 +228,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         quic_connection_params: QuicConnectionParameters {
             connection_timeout: Duration::from_secs(1),
             connection_retry_count: 10,
-            finalize_timeout: Duration::from_millis(200),
+            finalize_timeout: Duration::from_millis(1000),
             max_number_of_connections: 8,
             unistream_timeout: Duration::from_millis(500),
             write_timeout: Duration::from_secs(1),
