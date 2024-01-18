@@ -63,7 +63,10 @@ impl TxStore {
         let length_before = self.store.len();
         self.store
             .retain(|_k, v| v.last_valid_blockheight >= current_finalized_blockheight);
-        log::info!("Cleaned {} transactions", length_before - self.store.len());
+        log::info!(
+            "Cleaned {} transactions",
+            length_before.saturating_sub(self.store.len())
+        );
     }
 
     pub fn is_transaction_confirmed(&self, signature: &String) -> bool {
