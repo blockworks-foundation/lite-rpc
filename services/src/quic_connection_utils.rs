@@ -55,12 +55,20 @@ pub struct QuicConnectionUtils {}
 
 impl QuicConnectionUtils {
     pub fn create_endpoint(certificate: rustls::Certificate, key: rustls::PrivateKey) -> Endpoint {
+        const DATAGRAM_RECEIVE_BUFFER_SIZE: usize = 64 * 1024 * 1024;
+        const DATAGRAM_SEND_BUFFER_SIZE: usize = 64 * 1024 * 1024;
+        const INITIAL_MAXIMUM_TRANSMISSION_UNIT: u16 = MINIMUM_MAXIMUM_TRANSMISSION_UNIT;
+        const MINIMUM_MAXIMUM_TRANSMISSION_UNIT: u16 = 1280;
+
         let mut endpoint = {
             let client_socket =
                 solana_net_utils::bind_in_range(IpAddr::V4(Ipv4Addr::UNSPECIFIED), (8000, 10000))
                     .expect("create_endpoint bind_in_range")
                     .1;
-            let config = EndpointConfig::default();
+            let mut config = EndpointConfig::default();
+            config
+                .max_udp_payload_size(MINIMUM_MAXIMUM_TRANSMISSION_UNIT)
+                .expect("Should set max MTU");
             quinn::Endpoint::new(config, None, client_socket, Arc::new(TokioRuntime))
                 .expect("create_endpoint quinn::Endpoint::new")
         };
@@ -79,11 +87,6 @@ impl QuicConnectionUtils {
         let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
-
-        const DATAGRAM_RECEIVE_BUFFER_SIZE: usize = 1024 * 1024 * 1024;
-        const DATAGRAM_SEND_BUFFER_SIZE: usize = 1024 * 1024 * 1024;
-        const INITIAL_MAXIMUM_TRANSMISSION_UNIT: u16 = MINIMUM_MAXIMUM_TRANSMISSION_UNIT;
-        const MINIMUM_MAXIMUM_TRANSMISSION_UNIT: u16 = 1280;
         transport_config.datagram_receive_buffer_size(Some(DATAGRAM_RECEIVE_BUFFER_SIZE));
         transport_config.datagram_send_buffer_size(DATAGRAM_SEND_BUFFER_SIZE);
         transport_config.initial_mtu(INITIAL_MAXIMUM_TRANSMISSION_UNIT);
