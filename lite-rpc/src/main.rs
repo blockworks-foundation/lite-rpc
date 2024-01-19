@@ -291,9 +291,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         res = bridge_service => {
             anyhow::bail!("Server {res:?}")
         }
-        res = block_priofees_task => {
-            anyhow::bail!("Prio Fees Service {res:?}")
-        }
+        // allow it to fail
+        // res = block_priofees_task => {
+        //     anyhow::bail!("Prio Fees Service {res:?}")
+        // }
         res = postgres => {
             anyhow::bail!("Postgres service {res:?}");
         }
