@@ -2,7 +2,7 @@ use log::trace;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
-    TokioRuntime, TransportConfig,
+    TokioRuntime, TransportConfig, VarInt,
 };
 use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_sdk::pubkey::Pubkey;
@@ -79,6 +79,18 @@ impl QuicConnectionUtils {
         let timeout = IdleTimeout::try_from(Duration::from_secs(1)).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(500)));
+
+        const DATAGRAM_RECEIVE_BUFFER_SIZE: usize = 1024 * 1024 * 1024;
+        const DATAGRAM_SEND_BUFFER_SIZE: usize = 1024 * 1024 * 1024;
+        const INITIAL_MAXIMUM_TRANSMISSION_UNIT: u16 = MINIMUM_MAXIMUM_TRANSMISSION_UNIT;
+        const MINIMUM_MAXIMUM_TRANSMISSION_UNIT: u16 = 1280;
+        transport_config.datagram_receive_buffer_size(Some(DATAGRAM_RECEIVE_BUFFER_SIZE));
+        transport_config.datagram_send_buffer_size(DATAGRAM_SEND_BUFFER_SIZE);
+        transport_config.initial_mtu(INITIAL_MAXIMUM_TRANSMISSION_UNIT);
+        transport_config.max_concurrent_bidi_streams(VarInt::from(0u8));
+        transport_config.max_concurrent_uni_streams(VarInt::from(0u8));
+        transport_config.min_mtu(MINIMUM_MAXIMUM_TRANSMISSION_UNIT);
+        transport_config.mtu_discovery_config(None);
         apply_gso_workaround(&mut transport_config);
         config.transport_config(Arc::new(transport_config));
 
