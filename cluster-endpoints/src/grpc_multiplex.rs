@@ -169,14 +169,15 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             let processed_block = processed_block.expect("processed block from stream");
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
+                            if let Err(e) = producedblock_sender.send(processed_block.clone()) {
+                                warn!("produced block channel has no receivers {e:?}");
+                                continue
+                            }
                             if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
                                 if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
                                     warn!("produced block channel has no receivers {e:?}");
                                     continue
                                 }
-                            } else if let Err(e) = producedblock_sender.send(processed_block.clone()) {
-                                warn!("produced block channel has no receivers {e:?}");
-                                continue
                             }
                             recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
                         },
