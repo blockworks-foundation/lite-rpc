@@ -136,7 +136,8 @@ pub fn block_debug_confirmation_levels(mut block_notifier: BlockStream) -> JoinH
                         ) {
                             let finalized = saw_finalized_at.get(&blockhash).unwrap();
                             debug!(
-                                "sequence: {:?} -> {:?} -> {:?}",
+                                "block sequence seen on channel for block {} (slot {}): {:?} -> {:?} -> {:?}",
+                                blockhash, slot,
                                 format_timestamp(&processed.1),
                                 format_timestamp(&confirmed.1),
                                 format_timestamp(&finalized.1)
