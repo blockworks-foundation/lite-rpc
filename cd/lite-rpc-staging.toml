@@ -13,7 +13,7 @@ primary_region = "nrt"
 [env]
   PORT_HTTP = "8890"
   PORT_WS = "8891"
-  RUST_LOG = "info, solana_lite_rpc_cluster_endpoints=debug"
+  RUST_LOG = "info"
 
  [metrics]
    path = "/metrics"
