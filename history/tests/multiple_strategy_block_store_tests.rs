@@ -1,14 +1,13 @@
-use solana_lite_rpc_core::{
-    structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::BlockStorageInterface,
-};
-use solana_lite_rpc_history::{
-    block_stores::inmemory_block_store::InmemoryBlockStore,
-    block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage,
-};
-use solana_rpc_client_api::config::RpcBlockConfig;
+use solana_lite_rpc_core::structures::epoch::EpochCache;
+use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::BlockStorageData;
+use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
+use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
+use solana_sdk::pubkey::Pubkey;
+use solana_sdk::reward_type::RewardType;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
-use std::sync::Arc;
+use solana_transaction_status::Reward;
 
 pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
     ProducedBlock {
@@ -21,137 +20,62 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
         commitment_config,
         leader_id: None,
         slot,
-        rewards: None,
+        rewards: Some(vec![Reward {
+            pubkey: Pubkey::new_unique().to_string(),
+            lamports: 5000,
+            post_balance: 1000000,
+            reward_type: Some(RewardType::Voting),
+            commission: None,
+        }]),
     }
 }
 
+#[ignore = "need postgres database"]
 #[tokio::test]
 async fn test_in_multiple_stategy_block_store() {
-    let persistent_store: Arc<dyn BlockStorageInterface> = Arc::new(InmemoryBlockStore::new(10));
-    let number_of_slots_in_memory = 3;
-    let block_storage = MultipleStrategyBlockStorage::new(
+    tracing_subscriber::fmt::init();
+
+    let pg_session_config = PostgresSessionConfig::new_from_env().unwrap().unwrap();
+    let epoch_cache = EpochCache::new_for_tests();
+    let persistent_store = PostgresBlockStore::new(epoch_cache.clone(), pg_session_config).await;
+    let multi_store = MultipleStrategyBlockStorage::new(
         persistent_store.clone(),
-        None,
-        number_of_slots_in_memory,
+        None, // not supported
     );
 
-    block_storage
-        .save(create_test_block(1235, CommitmentConfig::confirmed()))
+    persistent_store.prepare_epoch_schema(1200).await.unwrap();
+
+    persistent_store
+        .write_block(&create_test_block(1200, CommitmentConfig::confirmed()))
         .await
         .unwrap();
-    block_storage
-        .save(create_test_block(1236, CommitmentConfig::confirmed()))
+    // span range of slots between those two
+    persistent_store
+        .write_block(&create_test_block(1289, CommitmentConfig::confirmed()))
         .await
         .unwrap();
 
-    assert!(block_storage
-        .get(1235, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_some());
-    assert!(block_storage
-        .get(1236, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_some());
-    assert!(persistent_store
-        .get(1235, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_none());
-    assert!(persistent_store
-        .get(1236, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_none());
+    assert!(multi_store.query_block(1200).await.ok().is_some());
 
-    block_storage
-        .save(create_test_block(1235, CommitmentConfig::finalized()))
-        .await
-        .unwrap();
-    block_storage
-        .save(create_test_block(1236, CommitmentConfig::finalized()))
-        .await
-        .unwrap();
-    block_storage
-        .save(create_test_block(1237, CommitmentConfig::finalized()))
-        .await
-        .unwrap();
+    assert!(multi_store.query_block(1289).await.ok().is_some());
 
-    assert!(block_storage
-        .get(1235, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_some());
-    assert!(block_storage
-        .get(1236, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_some());
-    assert!(block_storage
-        .get(1237, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_some());
-    assert!(persistent_store
-        .get(1235, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_some());
-    assert!(persistent_store
-        .get(1236, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_some());
-    assert!(persistent_store
-        .get(1237, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_some());
-    assert!(block_storage.get_in_memory_block(1237).await.ok().is_some());
+    // not in range
+    assert!(multi_store.query_block(1000).await.is_err());
+    // the range check should give "true", yet no block is returned
+    assert!(multi_store.query_block(1250).await.is_err());
+    // not in range
+    assert!(multi_store.query_block(9999).await.is_err());
 
-    // blocks are replaced by finalized blocks
+    let block_1200: BlockStorageData = multi_store.query_block(1200).await.unwrap();
+    assert_eq!(1, block_1200.rewards.as_ref().unwrap().len());
     assert_eq!(
-        persistent_store
-            .get(1235, RpcBlockConfig::default())
-            .await
+        5000,
+        block_1200
+            .rewards
+            .as_ref()
             .unwrap()
-            .blockhash,
-        block_storage
-            .get_in_memory_block(1235)
-            .await
+            .first()
             .unwrap()
-            .blockhash
+            .lamports
     );
-    assert_eq!(
-        persistent_store
-            .get(1236, RpcBlockConfig::default())
-            .await
-            .unwrap()
-            .blockhash,
-        block_storage
-            .get_in_memory_block(1236)
-            .await
-            .unwrap()
-            .blockhash
-    );
-    assert_eq!(
-        persistent_store
-            .get(1237, RpcBlockConfig::default())
-            .await
-            .unwrap()
-            .blockhash,
-        block_storage
-            .get_in_memory_block(1237)
-            .await
-            .unwrap()
-            .blockhash
-    );
-
-    // no block yet added returns none
-    assert!(block_storage
-        .get(1238, RpcBlockConfig::default())
-        .await
-        .ok()
-        .is_none());
 }

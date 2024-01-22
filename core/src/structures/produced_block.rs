@@ -1,6 +1,6 @@
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
-    commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
     transaction::TransactionError,
@@ -23,7 +23,8 @@ pub struct TransactionInfo {
     pub message: String,
 }
 
-#[derive(Default, Debug, Clone)]
+// TODO try to remove Clone
+#[derive(Debug, Clone)]
 pub struct ProducedBlock {
     pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
