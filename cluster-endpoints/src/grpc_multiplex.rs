@@ -25,6 +25,7 @@ use tokio::select;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
+use tokio::time::Instant;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -69,6 +70,10 @@ fn map_yellowstone_update(update: SubscribeUpdate, commitment_config: Commitment
     }
 }
 
+/// connect to all sources provided using transparent autoconnection task
+/// shutdown handling:
+/// - task will shutdown of the receiver side of block_sender gets closed
+/// - will also shutdown the grpc autoconnection task(s)
 fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     block_sender: UnboundedSender<ProducedBlock>,
@@ -81,8 +86,6 @@ fn create_grpc_multiplex_processed_block_stream(
         let (jh_geyser_task, message_channel) =
             create_geyser_autoconnection_task(grpc_source.clone(),
               GeyserFilter(commitment_config).blocks_and_txs());
-        // TODO remove from task list - the task is aborted when the channel is dropped
-        // tasks.push(jh_geyser_task);
         channels.push(message_channel)
     }
 
@@ -108,7 +111,7 @@ fn create_grpc_multiplex_processed_block_stream(
                                 .send(produced_block)
                                 .context("Send block to channel");
                             if send_result.is_err() {
-                                warn!("Block channel has no receiver - aborting");
+                                warn!("Block channel receiver is closed - aborting");
                                 return;
                             }
 
@@ -125,11 +128,11 @@ fn create_grpc_multiplex_processed_block_stream(
                     }
                 }
                 None => {
-                    warn!("Multiplexed geyser stream terminated - aborting task");
+                    warn!("Multiplexed geyser source stream terminated - aborting task");
                     return;
                 }
             }
-        }
+        } // -- END receiver loop
     });
     tasks.push(jh_merging_streams.abort_handle());
     tasks
@@ -141,6 +144,7 @@ fn create_grpc_multiplex_block_meta_stream(
 ) -> impl Stream<Item = String> {
     let mut streams = Vec::new();
     for grpc_source in grpc_sources {
+        // TOOD use task
         let stream = create_geyser_reconnecting_stream(
             grpc_source.clone(),
             GeyserFilter(commitment_config).blocks_meta(),
@@ -150,7 +154,7 @@ fn create_grpc_multiplex_block_meta_stream(
     create_multiplexed_stream(streams, BlockMetaHashExtractor(commitment_config))
 }
 
-/// connect to multiple grpc sources to consume confirmed blocks and block status update
+/// connect to multiple grpc sources to consume processed blocks and block status update
 pub fn create_grpc_multiplex_blocks_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
 ) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
