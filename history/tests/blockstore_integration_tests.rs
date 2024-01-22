@@ -24,7 +24,7 @@ use tracing_subscriber::EnvFilter;
 const NUM_PARALLEL_TASKS: usize = 1;
 
 const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
-
+#[ignore = "need to enable postgres"]
 #[tokio::test]
 async fn storage_test() {
     // RUST_LOG=info,storage_integration_tests=debug,solana_lite_rpc_history=trace

@@ -30,6 +30,7 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
     }
 }
 
+#[ignore = "need postgres database"]
 #[tokio::test]
 async fn test_in_multiple_stategy_block_store() {
     tracing_subscriber::fmt::init();
