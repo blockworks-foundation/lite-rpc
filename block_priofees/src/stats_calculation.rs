@@ -9,6 +9,7 @@ pub fn calculate_supp_stats(
     prio_fees_in_block: &Vec<(u64, u64)>,
 ) -> PrioFeesStats {
     let prio_fees_in_block = if prio_fees_in_block.is_empty() {
+        // note: percentile for empty array is undefined
         vec![(0, 0)]
     } else {
         // sort by prioritization fees
@@ -113,6 +114,31 @@ mod tests {
         let supp_info = calculate_supp_stats(&prio_fees_in_block);
         assert_eq!(supp_info.by_tx[5], 43);
         assert_eq!(supp_info.by_tx_percentiles[5], 0.25);
+    }
+
+    #[test]
+    fn test_simple_non_integer_index() {
+        // Messwerte: 3 – 5 – 5 – 6 – 7 – 7 – 8 – 10 – 10
+        // In diesem Fall lautet es also 5.
+        let values = vec![
+            (3, 1),
+            (5, 2),
+            (5, 3),
+            (6, 4),
+            (7, 5),
+            (7, 6),
+            (8, 7),
+            (10, 8),
+            (10, 9),
+        ];
+
+        let supp_info = calculate_supp_stats(&values);
+
+
+        assert_eq!(supp_info.by_tx_percentiles[4], 0.20);
+        assert_eq!(supp_info.by_tx[5], 5);
+
+
     }
 
     #[test]
