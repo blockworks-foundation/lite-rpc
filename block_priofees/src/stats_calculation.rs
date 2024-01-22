@@ -2,6 +2,8 @@ use crate::rpc_data::{FeePoint, PrioFeesStats};
 use itertools::Itertools;
 use std::collections::HashMap;
 
+/// `quantile` function is the same as the median if q=50, the same as the minimum if q=0 and the same as the maximum if q=100.
+
 pub fn calculate_supp_stats(
     // Vec(prioritization_fees, cu_consumed)
     prio_fees_in_block: &Vec<(u64, u64)>,
@@ -18,11 +20,10 @@ pub fn calculate_supp_stats(
     let dist_fee_by_index: Vec<FeePoint> = (0..=100)
         .step_by(5)
         .map(|p| {
-            let prio_fee = if p == 100 {
-                prio_fees_in_block.last().unwrap().0
-            } else {
+            let prio_fee = {
                 let index = prio_fees_in_block.len() * p / 100;
-                prio_fees_in_block[index].0
+                let cap_index = index.min(prio_fees_in_block.len() - 1);
+                prio_fees_in_block[cap_index].0
             };
             FeePoint {
                 p: p as u32,
@@ -89,6 +90,13 @@ mod tests {
         assert_eq!(supp_info[15], 4);
         assert_eq!(supp_info[18], 5);
         assert_eq!(supp_info[20], 5);
+    }
+
+    #[test]
+    fn test_empty_array() {
+        let prio_fees_in_block = vec![];
+        let supp_info = calculate_supp_stats(&prio_fees_in_block).by_tx;
+        assert_eq!(supp_info[0], 0);
     }
 
     #[test]
