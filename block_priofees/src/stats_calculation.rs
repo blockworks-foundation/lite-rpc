@@ -8,13 +8,12 @@ pub fn calculate_supp_stats(
     // Vec(prioritization_fees, cu_consumed)
     prio_fees_in_block: &Vec<(u64, u64)>,
 ) -> PrioFeesStats {
-    let mut prio_fees_in_block = if prio_fees_in_block.is_empty() {
+    let prio_fees_in_block = if prio_fees_in_block.is_empty() {
         vec![(0, 0)]
     } else {
-        prio_fees_in_block.clone()
+        // sort by prioritization fees
+        prio_fees_in_block.iter().sorted_by_key(|(prio, _cu)| prio).cloned().collect_vec()
     };
-    // sort by prioritization fees
-    prio_fees_in_block.sort_by(|a, b| a.0.cmp(&b.0));
 
     // get stats by transaction
     let dist_fee_by_index: Vec<FeePoint> = (0..=100)
