@@ -16,9 +16,8 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 use futures::future::select_all;
-use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig};
+use geyser_grpc_connector::{Message, GeyserFilter, GrpcSourceConfig};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::Message;
 use itertools::Itertools;
 use merge_streams::MergeStreams;
 use tokio::select;
@@ -135,6 +134,7 @@ fn create_grpc_multiplex_processed_block_stream(
         } // -- END receiver loop
     });
     tasks.push(jh_merging_streams.abort_handle());
+    // TODO return only one
     tasks
 }
 
@@ -142,16 +142,18 @@ fn create_grpc_multiplex_block_meta_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     commitment_config: CommitmentConfig,
 ) -> impl Stream<Item = String> {
-    let mut streams = Vec::new();
+
+    let mut channels = vec![];
     for grpc_source in grpc_sources {
-        // TOOD use task
-        let stream = create_geyser_reconnecting_stream(
-            grpc_source.clone(),
-            GeyserFilter(commitment_config).blocks_meta(),
-        );
-        streams.push(stream);
+        let (jh_geyser_task, message_channel) =
+            create_geyser_autoconnection_task(grpc_source.clone(),
+                      GeyserFilter(commitment_config).blocks_meta());
+        channels.push(message_channel)
     }
-    create_multiplexed_stream(streams, BlockMetaHashExtractor(commitment_config))
+
+    let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
+
+    create_multiplexed_stream(source_channels, BlockMetaHashExtractor(commitment_config))
 }
 
 /// connect to multiple grpc sources to consume processed blocks and block status update
