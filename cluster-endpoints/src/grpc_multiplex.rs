@@ -69,67 +69,69 @@ fn map_yellowstone_update(update: SubscribeUpdate, commitment_config: Commitment
     }
 }
 
-fn create_grpc_multiplex_block_stream(
+fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    confirmed_block_sender: UnboundedSender<ProducedBlock>,
+    block_sender: UnboundedSender<ProducedBlock>,
 ) -> Vec<AbortHandle> {
     let commitment_config = CommitmentConfig::processed();
-
 
     let mut tasks: Vec<AbortHandle> = Vec::new();
     let mut channels = vec![];
     for grpc_source in grpc_sources {
-        // let (block_sender, block_reciever) = async_channel::unbounded();
-
-        let processed_level = CommitmentConfig::processed();
         let (jh_geyser_task, message_channel) =
             create_geyser_autoconnection_task(grpc_source.clone(),
-              GeyserFilter(processed_level).blocks_and_txs());
-
-
-        // tasks.push(create_block_processing_task(
-        //     grpc_source.grpc_addr.clone(),
-        //     grpc_source.grpc_x_token.clone(),
-        //     block_sender,
-        //     yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
-        // ));
-
-        tasks.push(jh_geyser_task);
+              GeyserFilter(commitment_config).blocks_and_txs());
+        // TODO remove from task list - the task is aborted when the channel is dropped
+        // tasks.push(jh_geyser_task);
         channels.push(message_channel)
     }
 
     let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
     let mut fused_streams = source_channels.merge();
 
-    let merging_streams: AnyhowJoinHandle = tokio::task::spawn(async move {
+    let jh_merging_streams =
+        tokio::task::spawn(async move {
         let mut slots_processed = BTreeSet::<u64>::new();
         loop {
             const MAX_SIZE: usize = 1024;
-            if let Some(Message::GeyserSubscribeUpdate(subscribe_update)) = fused_streams.next().await {
-                let mapped = map_yellowstone_update(*subscribe_update, commitment_config);
-                if let Some((slot, produced_block)) = mapped {
-                    // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
-                    // it means that the slot is too old to process
-                    if !slots_processed.contains(&slot)
-                        && (slots_processed.len() < MAX_SIZE / 2
+            match fused_streams.next().await {
+                Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
+                    let mapped = map_yellowstone_update(*subscribe_update, commitment_config);
+                    if let Some((slot, produced_block)) = mapped {
+                        // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
+                        // it means that the slot is too old to process
+                        if !slots_processed.contains(&slot)
+                            && (slots_processed.len() < MAX_SIZE / 2
                             || slot > slots_processed.first().cloned().unwrap_or_default())
-                    {
-                        confirmed_block_sender
-                            .send(produced_block)
-                            .context("Issue to send confirmed block")?;
-                        slots_processed.insert(slot);
-                        if slots_processed.len() > MAX_SIZE {
-                            slots_processed.pop_first();
+                        {
+                            let send_result = block_sender
+                                .send(produced_block)
+                                .context("Send block to channel");
+                            if send_result.is_err() {
+                                warn!("Block channel has no receiver - aborting");
+                                return;
+                            }
+
+                            slots_processed.insert(slot);
+                            if slots_processed.len() > MAX_SIZE {
+                                slots_processed.pop_first();
+                            }
                         }
                     }
                 }
-            } else {
-                // unsophisticated way to handle all other cases
-                warn!("unexpected message from geyser stream"); // FIXME
+                Some(Message::Connecting(attempt)) => {
+                    if attempt > 1 {
+                        warn!("Multiplexed geyser stream performs reconnect attempt {}", attempt);
+                    }
+                }
+                None => {
+                    warn!("Multiplexed geyser stream terminated - aborting task");
+                    return;
+                }
             }
         }
     });
-    tasks.push(merging_streams.abort_handle());
+    tasks.push(jh_merging_streams.abort_handle());
     tasks
 }
 
@@ -170,8 +172,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let (processed_block_sender, mut processed_block_reciever) =
                     tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
 
-                let confirmed_blocks_tasks =
-                    create_grpc_multiplex_block_stream(&grpc_sources, processed_block_sender);
+                let processed_blocks_tasks =
+                    create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
 
                 let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
                     &grpc_sources,
@@ -273,7 +275,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     }
                 }
                 // abort all the tasks
-                confirmed_blocks_tasks.iter().for_each(|task| task.abort());
+                processed_blocks_tasks.iter().for_each(|task| task.abort());
             }
         })
     };
