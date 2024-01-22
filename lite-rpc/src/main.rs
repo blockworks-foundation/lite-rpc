@@ -12,9 +12,6 @@ use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_inspect::block_debug_confirmation_levels;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
-    GrpcConnectionTimeouts, GrpcSourceConfig,
-};
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
@@ -51,6 +48,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig};
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
