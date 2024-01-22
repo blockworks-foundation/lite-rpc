@@ -53,7 +53,7 @@ fn create_grpc_multiplex_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     confirmed_block_sender: UnboundedSender<ProducedBlock>,
 ) -> Vec<AnyhowJoinHandle> {
-    let commitment_config = CommitmentConfig::confirmed();
+    let commitment_config = CommitmentConfig::processed();
 
     let mut tasks = Vec::new();
     let mut streams = vec![];
@@ -63,7 +63,7 @@ fn create_grpc_multiplex_block_stream(
             grpc_source.grpc_addr.clone(),
             grpc_source.grpc_x_token.clone(),
             block_sender,
-            yellowstone_grpc_proto::geyser::CommitmentLevel::Confirmed,
+            yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
         ));
         streams.push(block_reciever)
     }
@@ -192,7 +192,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             } else {
                                 confirmed_block_not_yet_processed.insert(blockhash.clone());
-                                log::info!("confirmed blocks not found : {}", confirmed_block_not_yet_processed.len());
+                                log::debug!("confirmed blocks not found : {}", confirmed_block_not_yet_processed.len());
                             }
                         },
                         meta_finalized = finalized_blockmeta_stream.next() => {
