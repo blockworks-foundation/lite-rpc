@@ -8,8 +8,8 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
-#geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
+#geyser-grpc-connector = { tag = "v1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
