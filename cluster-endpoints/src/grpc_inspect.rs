@@ -14,6 +14,7 @@ use tokio::time::sleep;
 pub fn block_debug_confirmation_levels(mut block_notifier: BlockStream) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut cleanup_before_slot = 0;
+        // throttle cleanup
         let mut slots_since_last_cleanup = 0;
         // use blockhash as key instead of slot as for processed the slot is ambiguous
         let mut saw_processed_at: HashMap<String, (Slot, SystemTime)> = HashMap::new();

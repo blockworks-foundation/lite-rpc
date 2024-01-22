@@ -1,11 +1,11 @@
 use crate::grpc_subscription::{
-    create_block_processing_task, create_slot_stream_task, map_block_update,
+    create_slot_stream_task, map_block_update,
 };
 use anyhow::Context;
 use futures::{Stream, StreamExt};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    create_multiplexed_stream, FromYellowstoneExtractor,
+    FromYellowstoneExtractor,
 };
 use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
@@ -15,16 +15,13 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
-use futures::future::select_all;
 use geyser_grpc_connector::{Message, GeyserFilter, GrpcSourceConfig};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use itertools::Itertools;
 use merge_streams::MergeStreams;
-use tokio::select;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
-use tokio::time::Instant;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -82,7 +79,8 @@ fn create_grpc_multiplex_processed_block_stream(
     let mut tasks: Vec<AbortHandle> = Vec::new();
     let mut channels = vec![];
     for grpc_source in grpc_sources {
-        let (jh_geyser_task, message_channel) =
+        // tasks will be shutdown automatically if the channel gets closed
+        let (_jh_geyser_task, message_channel) =
             create_geyser_autoconnection_task(grpc_source.clone(),
               GeyserFilter(commitment_config).blocks_and_txs());
         channels.push(message_channel)
@@ -153,7 +151,8 @@ fn create_grpc_multiplex_block_meta_stream(
 
     let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
 
-    create_multiplexed_stream(source_channels, BlockMetaHashExtractor(commitment_config))
+    assert!(commitment_config != CommitmentConfig::processed(), "fastestwins strategy must not be used for processed level");
+    geyser_grpc_connector::grpcmultiplex_fastestwins::create_multiplexed_stream(source_channels, BlockMetaHashExtractor(commitment_config))
 }
 
 /// connect to multiple grpc sources to consume processed blocks and block status update
