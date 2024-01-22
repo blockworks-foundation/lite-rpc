@@ -109,13 +109,13 @@ const fn get_max_safe_updates<T: SchemaSize>() -> usize {
 }
 
 async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> anyhow::Result<()> {
-    const NUMBER_OF_ARGS: usize = 8;
-
     if txs.is_empty() {
         return Ok(());
     }
 
-    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * txs.len());
+    const NB_ARGUMENTS: usize = 8;
+
+    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS * txs.len());
 
     for tx in txs.iter() {
         let PostgresTx {
@@ -139,17 +139,17 @@ async fn send_txs(postgres_session: &PostgresSession, txs: &[PostgresTx]) -> any
         args.push(quic_response);
     }
 
-    let mut query = String::from(
+    let values = PostgresSession::values_vecvec(NB_ARGUMENTS, txs.len(), &[]);
+    let statement = format!(
         r#"
             INSERT INTO lite_rpc.Txs 
             (signature, recent_slot, forwarded_slot, forwarded_local_time, processed_slot, cu_consumed, cu_requested, quic_response)
-            VALUES
+            VALUES {}
         "#,
+        values
     );
 
-    PostgresSession::multiline_query(&mut query, NUMBER_OF_ARGS, txs.len(), &[]);
-
-    postgres_session.client.execute(&query, &args).await?;
+    postgres_session.client.execute(&statement, &args).await?;
 
     Ok(())
 }
@@ -158,13 +158,13 @@ async fn update_txs(
     postgres_session: &PostgresSession,
     txs: &[PostgresTxUpdate],
 ) -> anyhow::Result<()> {
-    const NUMBER_OF_ARGS: usize = 5;
+    const NB_ARGUMENTS: usize = 5;
 
     if txs.is_empty() {
         return Ok(());
     }
 
-    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NUMBER_OF_ARGS * txs.len());
+    let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS * txs.len());
 
     for tx in txs.iter() {
         let PostgresTxUpdate {
@@ -182,32 +182,26 @@ async fn update_txs(
         args.push(cu_price);
     }
 
-    let mut query = String::from(
+    let values = PostgresSession::values_vecvec(
+        NB_ARGUMENTS,
+        txs.len(),
+        &["text", "bigint", "bigint", "bigint", "bigint"],
+    );
+
+    let statement = format!(
         r#"
             UPDATE lite_rpc.Txs AS t1 SET
                 processed_slot  = t2.processed_slot,
                 cu_consumed = t2.cu_consumed,
                 cu_requested = t2.cu_requested,
                 cu_price = t2.cu_price
-            FROM (VALUES
-        "#,
-    );
-
-    PostgresSession::multiline_query(
-        &mut query,
-        NUMBER_OF_ARGS,
-        txs.len(),
-        &["text", "bigint", "bigint", "bigint", "bigint"],
-    );
-
-    query.push_str(
-        r#"
-            ) AS t2(signature, processed_slot, cu_consumed, cu_requested, cu_price)
+            FROM (VALUES {}) AS t2(signature, processed_slot, cu_consumed, cu_requested, cu_price)
             WHERE t1.signature = t2.signature
         "#,
+        values
     );
 
-    postgres_session.execute(&query, &args).await?;
+    postgres_session.execute(&statement, &args).await?;
 
     Ok(())
 }

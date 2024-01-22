@@ -16,6 +16,8 @@ use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast::{Receiver, Sender};
 
+pub const NUM_PARALLEL_TASKS_DEFAULT: usize = 16;
+
 pub async fn process_block(
     rpc_client: &RpcClient,
     slot: Slot,
@@ -42,6 +44,7 @@ pub fn poll_block(
     rpc_client: Arc<RpcClient>,
     block_notification_sender: Sender<ProducedBlock>,
     slot_notification: Receiver<SlotNotification>,
+    num_parallel_tasks: usize,
 ) -> Vec<AnyhowJoinHandle> {
     let mut tasks: Vec<AnyhowJoinHandle> = vec![];
 
@@ -50,7 +53,7 @@ pub fn poll_block(
     let (block_schedule_queue_sx, block_schedule_queue_rx) =
         async_channel::unbounded::<(Slot, CommitmentConfig)>();
 
-    for _i in 0..16 {
+    for _i in 0..num_parallel_tasks {
         let block_notification_sender = block_notification_sender.clone();
         let rpc_client = rpc_client.clone();
         let block_schedule_queue_rx = block_schedule_queue_rx.clone();

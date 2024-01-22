@@ -1,5 +1,6 @@
 pub mod commitment_utils;
 pub mod encoding;
+pub mod iterutils;
 pub mod keypair_loader;
 pub mod network_utils;
 pub mod solana_utils;
