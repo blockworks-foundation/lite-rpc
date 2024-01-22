@@ -10,6 +10,7 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
+use solana_lite_rpc_cluster_endpoints::grpc_inspect::block_debug_confirmation_levels;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
@@ -145,6 +146,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         slot_notifier,
         vote_account_notifier,
     } = subscriptions;
+
+    block_debug_confirmation_levels(blocks_notifier.resubscribe());
 
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
