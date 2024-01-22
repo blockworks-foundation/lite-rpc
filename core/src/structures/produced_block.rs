@@ -49,4 +49,12 @@ impl ProducedBlock {
             ..self.clone()
         }
     }
+
+    /// moving commitment level to finalized
+    pub fn to_confirmed_block(&self) -> Self {
+        ProducedBlock {
+            commitment_config: CommitmentConfig::confirmed(),
+            ..self.clone()
+        }
+    }
 }

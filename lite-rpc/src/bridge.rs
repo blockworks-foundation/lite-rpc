@@ -28,10 +28,7 @@ use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use tokio::net::ToSocketAddrs;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 
-use solana_lite_rpc_core::{
-    stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
-    AnyhowJoinHandle,
-};
+use solana_lite_rpc_core::{stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps}, AnyhowJoinHandle, encoding};
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
@@ -326,10 +323,26 @@ impl LiteRpcServer for LiteBridge {
     ) -> crate::rpc::Result<String> {
         RPC_SEND_TX.inc();
 
+        // Copied these constants from solana labs code
+        const MAX_BASE58_SIZE: usize = 1683;
+        const MAX_BASE64_SIZE: usize = 1644;
+
         let SendTransactionConfig {
             encoding,
             max_retries,
         } = send_transaction_config.unwrap_or_default();
+
+        let expected_size = match encoding {
+            encoding::BinaryEncoding::Base58 => MAX_BASE58_SIZE,
+            encoding::BinaryEncoding::Base64 => MAX_BASE64_SIZE,
+        };
+        if tx.len() > expected_size {
+            return Err(jsonrpsee::core::Error::Custom(format!(
+                "Transaction too large, expected : {} transaction len {}",
+                expected_size,
+                tx.len()
+            )));
+        }
 
         let raw_tx = match encoding.decode(tx) {
             Ok(raw_tx) => raw_tx,

@@ -1767,7 +1767,7 @@ dependencies = [
 [[package]]
 name = "geyser-grpc-connector"
 version = "0.7.1+yellowstone.1.11"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v1.17.15#a3e8e89af71632f31895a688e82c1ab091b11c2f"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v1.17.15#4d737e7c2e8a7bb85b1580da094370dafba3eb8e"
 dependencies = [
  "anyhow",
  "async-stream",
