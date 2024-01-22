@@ -135,8 +135,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let (processed_block_sender, mut processed_block_reciever) =
                     tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
 
-                let processed_blocks_tasks =
-                    create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
+                let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
+                    &grpc_sources,
+                    processed_block_sender,
+                );
 
                 let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
                     &grpc_sources,
