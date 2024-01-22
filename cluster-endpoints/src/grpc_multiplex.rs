@@ -1,5 +1,5 @@
-use crate::grpc_subscription::{
-    create_block_processing_task, create_slot_stream_task, from_grpc_block_update,
+use crate::grpc_subscription::{create_block_processing_task, map_block_update};
+use crate::grpc_subscription::{create_slot_stream_task, from_grpc_block_update,
 };
 use anyhow::{bail, Context};
 use futures::StreamExt;
@@ -10,7 +10,6 @@ use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
 use log::{debug, info, trace, warn};
-use merge_streams::MergeStreams;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -193,58 +192,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 // abort all the tasks
                 confirmed_blocks_tasks.iter().for_each(|task| task.abort());
             }
-        })
-    };
-
-    (blocks_output_stream, jh_block_emitter_task)
-}
-
-pub fn create_grpc_multiplex_processed_blocks_subscription(
-    grpc_sources: Vec<GrpcSourceConfig>,
-) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
-    info!("Setup grpc multiplexed processed blocks connection...");
-    if grpc_sources.is_empty() {
-        info!("- no grpc connection configured");
-    }
-    for grpc_source in &grpc_sources {
-        info!("- connection to {}", grpc_source);
-    }
-
-    // return value is the broadcast receiver
-    let (producedblock_sender, blocks_output_stream) =
-        tokio::sync::broadcast::channel::<ProducedBlock>(1000);
-
-    let jh_block_emitter_task = {
-        tokio::task::spawn(async move {
-            // 'reconnect_loop: loop {
-            {
-                let commitment_config = CommitmentConfig::processed();
-
-                let mut tasks = Vec::new();
-                let mut streams = vec![];
-                for grpc_source in &grpc_sources {
-                    let (block_sender, block_reciever) = async_channel::unbounded();
-                    tasks.push(create_block_processing_task(
-                        grpc_source.grpc_addr.clone(),
-                        grpc_source.grpc_x_token.clone(),
-                        block_sender,
-                        yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
-                    ));
-                    streams.push(Box::pin(block_reciever));
-                }
-
-                let mut merged = streams.merge();
-
-                while let Some(update_block) = merged.next().await {
-                    let _todo = producedblock_sender
-                        .send(from_grpc_block_update(update_block, commitment_config));
-                    // TODO handle error
-                    // .expect();
-                }
-            };
-
-            // } -- reconnect loop
-            bail!("reconnect loop exited");
         })
     };
 

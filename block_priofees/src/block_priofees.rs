@@ -16,7 +16,7 @@ const SLOTS_TO_RETAIN: u64 = 100;
 /// put everything required to serve sync data calls here
 #[derive(Clone)]
 pub struct PrioFeeStore {
-    // store priofees stats for recently processed blocks up to CLEANUP_SLOTS_AFTER
+    // store priofees stats for recently confirmed blocks up to CLEANUP_SLOTS_AFTER
     recent: Arc<RwLock<BTreeMap<Slot, PrioFeesStats>>>,
 }
 
@@ -56,10 +56,10 @@ pub async fn start_block_priofees_task(
                         lock.retain(|slot, _| *slot > slot - SLOTS_TO_RETAIN);
                     }
 
-                    if !block.commitment_config.is_processed() {
+                    if !block.commitment_config.is_confirmed() {
                         continue;
                     }
-                    let processed_slot = block.slot;
+                    let confirmed_slot = block.slot;
 
                     let block_priofees = block
                         .transactions
@@ -75,15 +75,15 @@ pub async fn start_block_priofees_task(
 
                     let priofees_stats = calculate_supp_stats(&block_priofees);
 
-                    trace!("Got prio fees stats for processed block {}", processed_slot);
+                    trace!("Got prio fees stats for confirmed block {}", confirmed_slot);
 
                     {
                         // first do some cleanup
                         let mut lock = recent_data.write().await;
-                        lock.insert(processed_slot, priofees_stats.clone());
+                        lock.insert(confirmed_slot, priofees_stats.clone());
                     }
                     let msg = PrioFeesUpdateMessage {
-                        slot: processed_slot,
+                        slot: confirmed_slot,
                         priofees_stats,
                     };
                     let send_result = sender.send(msg);
