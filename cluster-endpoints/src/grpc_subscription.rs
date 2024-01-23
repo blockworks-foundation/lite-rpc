@@ -31,6 +31,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
+use tokio::task::AbortHandle;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterSlots, SubscribeUpdateSlot};
 
@@ -241,71 +242,7 @@ pub fn map_block_update(
     }
 }
 
-pub fn create_block_processing_task(
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
-    block_sx: async_channel::Sender<SubscribeUpdateBlock>,
-    commitment_level: CommitmentLevel,
-) -> AnyhowJoinHandle {
-    tokio::spawn(async move {
-        loop {
-            let mut blocks_subs = HashMap::new();
-            blocks_subs.insert(
-                "client".to_string(),
-                SubscribeRequestFilterBlocks {
-                    account_include: Default::default(),
-                    include_transactions: Some(true),
-                    include_accounts: Some(false),
-                    include_entries: Some(false),
-                },
-            );
-
-            // connect to grpc
-            let mut client =
-                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
-            let mut stream = client
-                .subscribe_once(
-                    HashMap::new(),
-                    Default::default(),
-                    HashMap::new(),
-                    Default::default(),
-                    blocks_subs,
-                    Default::default(),
-                    Some(commitment_level),
-                    Default::default(),
-                    None,
-                )
-                .await?;
-
-            while let Some(message) = stream.next().await {
-                let message = message?;
-
-                let Some(update) = message.update_oneof else {
-                    continue;
-                };
-
-                match update {
-                    UpdateOneof::Block(block) => {
-                        block_sx
-                            .send(block)
-                            .await
-                            .context("Problem sending on block channel")?;
-                    }
-                    UpdateOneof::Ping(_) => {
-                        log::trace!("GRPC Ping");
-                    }
-                    _ => {
-                        log::trace!("unknown GRPC notification");
-                    }
-                };
-            }
-            log::error!("Grpc block subscription broken (resubscribing)");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-    })
-}
-
-pub fn create_slot_stream_task(
+pub fn __create_slot_stream_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
     slot_sx: async_channel::Sender<SubscribeUpdateSlot>,
@@ -360,7 +297,7 @@ pub fn create_slot_stream_task(
                     }
                 };
             }
-            log::error!("Grpc block subscription broken (resubscribing)");
+            log::error!("Grpc slot subscription broken (resubscribing)");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     })

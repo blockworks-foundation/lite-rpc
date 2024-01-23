@@ -1,7 +1,7 @@
 use crate::grpc_subscription::{
-    create_slot_stream_task, map_block_update,
+    map_block_update,
 };
-use anyhow::Context;
+use anyhow::{bail, Context};
 use futures::{Stream, StreamExt};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
@@ -24,7 +24,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate};
 
 struct BlockExtractor(CommitmentConfig);
 
@@ -55,8 +55,16 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
     }
 }
 
-// TODO check this - it's redunandant
-fn map_yellowstone_update(update: SubscribeUpdate, commitment_config: CommitmentConfig) -> Option<(Slot, ProducedBlock)> {
+fn map_slotfrom_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
+    match update.update_oneof {
+        Some(UpdateOneof::Slot(update_slot_message)) => {
+            Some(update_slot_message.slot)
+        }
+        _ => None,
+    }
+}
+
+fn map_block_from_yellowstone_update(update: SubscribeUpdate, commitment_config: CommitmentConfig) -> Option<(Slot, ProducedBlock)> {
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
             let block = map_block_update(update_block_message, commitment_config);
@@ -76,7 +84,6 @@ fn create_grpc_multiplex_processed_block_stream(
 ) -> Vec<AbortHandle> {
     let commitment_config = CommitmentConfig::processed();
 
-    let mut tasks: Vec<AbortHandle> = Vec::new();
     let mut channels = vec![];
     for grpc_source in grpc_sources {
         // tasks will be shutdown automatically if the channel gets closed
@@ -96,8 +103,9 @@ fn create_grpc_multiplex_processed_block_stream(
             const MAX_SIZE: usize = 1024;
             match fused_streams.next().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
-                    let mapped = map_yellowstone_update(*subscribe_update, commitment_config);
-                    if let Some((slot, produced_block)) = mapped {
+                    let mapfilter = map_block_from_yellowstone_update(*subscribe_update, commitment_config);
+                    if let Some((slot, produced_block)) = mapfilter {
+                        let commitment_level_block = produced_block.commitment_config.commitment;
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
                         if !slots_processed.contains(&slot)
@@ -111,6 +119,8 @@ fn create_grpc_multiplex_processed_block_stream(
                                 warn!("Block channel receiver is closed - aborting");
                                 return;
                             }
+
+                            trace!("emitted block #{}@{} from multiplexer", slot, commitment_level_block);
 
                             slots_processed.insert(slot);
                             if slots_processed.len() > MAX_SIZE {
@@ -131,9 +141,7 @@ fn create_grpc_multiplex_processed_block_stream(
             }
         } // -- END receiver loop
     });
-    tasks.push(jh_merging_streams.abort_handle());
-    // TODO return only one
-    tasks
+    vec![jh_merging_streams.abort_handle()]
 }
 
 fn create_grpc_multiplex_block_meta_stream(
@@ -306,9 +314,11 @@ impl FromYellowstoneExtractor for crate::grpc_multiplex::SlotExtractor {
     }
 }
 
+// TODO add -processed to metho dname
 pub fn create_grpc_multiplex_slots_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
 ) -> (Receiver<SlotNotification>, AnyhowJoinHandle) {
+    const commitment_config: CommitmentConfig = CommitmentConfig::processed();
     info!("Setup grpc multiplexed slots connection...");
     if grpc_sources.is_empty() {
         info!("- no grpc connection configured");
@@ -320,39 +330,46 @@ pub fn create_grpc_multiplex_slots_subscription(
     let (multiplexed_messages_sender, multiplexed_messages_rx) =
         tokio::sync::broadcast::channel(1000);
 
-    let jh = tokio::spawn(async move {
-        loop {
-            let mut streams_tasks = Vec::new();
-            let mut recievers = Vec::new();
+    let jh_multiplex_task = tokio::spawn(async move {
+        'reconnect_loop: loop {
+
+            let mut tasks: Vec<AbortHandle> = Vec::new();
+            let mut channels = vec![];
             for grpc_source in &grpc_sources {
-                let (sx, rx) = async_channel::unbounded();
-                let task = create_slot_stream_task(
-                    grpc_source.grpc_addr.clone(),
-                    grpc_source.grpc_x_token.clone(),
-                    sx,
-                    yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
-                );
-                streams_tasks.push(task);
-                recievers.push(rx);
+                // tasks will be shutdown automatically if the channel gets closed
+                let (_jh_geyser_task, message_channel) =
+                    create_geyser_autoconnection_task(grpc_source.clone(),
+                          GeyserFilter(commitment_config).slots());
+                channels.push(message_channel)
             }
 
-            while let Ok(slot_update) = tokio::time::timeout(
+            let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
+            let mut fused_streams = source_channels.merge();
+
+            // TODO handle cases
+            'recv_loop: while let Ok(slot_update) = tokio::time::timeout(
                 Duration::from_secs(30),
-                futures::stream::select_all(recievers.clone()).next(),
-            )
-            .await
-            {
-                if let Some(slot_update) = slot_update {
-                    multiplexed_messages_sender.send(SlotNotification {
-                        processed_slot: slot_update.slot,
-                        estimated_processed_slot: slot_update.slot,
-                    })?;
+                fused_streams.next()).await {
+                if let Some(Message::GeyserSubscribeUpdate(slot_update)) = slot_update {
+                    let mapfilter = map_slotfrom_yellowstone_update(*slot_update);
+                    if let Some(slot) = mapfilter {
+                        let send_result = multiplexed_messages_sender.send(SlotNotification {
+                            processed_slot: slot,
+                            estimated_processed_slot: slot,
+                        }).context("Send slot to channel");
+                        if send_result.is_err() {
+                            warn!("Slot channel receiver is closed - aborting");
+                            bail!("Slot channel receiver is closed - aborting");
+                        }
+
+                        trace!("emitted slot #{}@{} from multiplexer",
+                                slot, commitment_config.commitment);
+                    }
                 }
             }
 
-            streams_tasks.iter().for_each(|task| task.abort());
         }
     });
 
-    (multiplexed_messages_rx, jh)
+    (multiplexed_messages_rx, jh_multiplex_task)
 }
