@@ -5,7 +5,6 @@
 app = "solana-lite-rpc-staging"
 kill_signal = "SIGINT"
 kill_timeout = 5
-primary_region = "nrt"
 
 [build]
   dockerfile = "../Dockerfile"
