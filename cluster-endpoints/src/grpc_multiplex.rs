@@ -22,6 +22,7 @@ use merge_streams::MergeStreams;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
+use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate};
@@ -116,6 +117,8 @@ fn create_grpc_multiplex_block_meta_stream(
 }
 
 /// connect to multiple grpc sources to consume processed blocks and block status update
+/// emits full blocks for commitment levels processed, confirmed, finalized in that order
+/// the channel must never be closed
 pub fn create_grpc_multiplex_blocks_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
 ) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
@@ -128,14 +131,23 @@ pub fn create_grpc_multiplex_blocks_subscription(
     }
 
     // return value is the broadcast receiver
+    // must NEVER be closed form inside this method
     let (producedblock_sender, blocks_output_stream) =
         tokio::sync::broadcast::channel::<ProducedBlock>(1000);
 
+    let mut reconnect_attempts = 0;
     let jh_block_emitter_task = {
         tokio::task::spawn(async move {
-            loop {
-                let (processed_block_sender, mut processed_block_reciever) =
-                    tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
+            // channel must NEVER GET CLOSED
+            let (processed_block_sender, mut processed_block_reciever) =
+                tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
+
+            'reconnect_loop: loop {
+                let processed_block_sender = processed_block_sender.clone();
+                reconnect_attempts += 1;
+                if reconnect_attempts > 1 {
+                    warn!("Multiplexed geyser stream performs reconnect attempt {}", reconnect_attempts);
+                }
 
                 let processed_blocks_tasks =
                     create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
@@ -164,7 +176,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 //  start logging errors when we recieve first finalized block
                 let mut finalized_block_recieved = false;
                 const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
-                loop {
+                'recv_loop: loop {
                     tokio::select! {
                         processed_block = processed_block_reciever.recv() => {
                             cleanup_without_recv_blocks = 0;
@@ -174,56 +186,56 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 processed_block.slot, processed_block.blockhash.clone());
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
                                 warn!("produced block channel has no receivers {e:?}");
-                                continue
+                                continue 'recv_loop;
                             }
                             if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
                                 if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
-                                    warn!("produced block channel has no receivers {e:?}");
-                                    continue
+                                    warn!("failed to send processed block, channel has no receivers {e:?}");
+                                    continue 'recv_loop;
                                 }
                             }
                             recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
                         },
-                        meta_confirmed = confirmed_blockmeta_stream.next() => {
+                        Some(confirmed_blockhash) = confirmed_blockmeta_stream.next() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
-                            let blockhash = meta_confirmed.expect("confirmed block meta from stream");
-                            if let Some(cached_processed_block) = recent_processed_blocks.get(&blockhash) {
+                            if let Some(cached_processed_block) = recent_processed_blocks.get(&confirmed_blockhash) {
                                 let confirmed_block = cached_processed_block.to_confirmed_block();
                                 debug!("got confirmed blockmeta {} with blockhash {}",
                                     confirmed_block.slot, confirmed_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(confirmed_block) {
-                                    warn!("Finalized block channel has no receivers {e:?}");
-                                    continue;
+                                    warn!("failed to send confirmed block, channel has no receivers {e:?}");
+                                    continue 'recv_loop;
                                 }
                             } else {
-                                confirmed_block_not_yet_processed.insert(blockhash.clone());
+                                confirmed_block_not_yet_processed.insert(confirmed_blockhash.clone());
                                 log::debug!("confirmed blocks not found : {}", confirmed_block_not_yet_processed.len());
                             }
                         },
-                        meta_finalized = finalized_blockmeta_stream.next() => {
+                        Some(finalized_blockhash) = finalized_blockmeta_stream.next() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
-                            let blockhash = meta_finalized.expect("finalized block meta from stream");
-                            if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
+                            if let Some(cached_processed_block) = recent_processed_blocks.remove(&finalized_blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
                                 last_finalized_slot = finalized_block.slot;
                                 finalized_block_recieved = true;
                                 debug!("got finalized blockmeta {} with blockhash {}",
                                     finalized_block.slot, finalized_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(finalized_block) {
-                                    warn!("Finalized block channel has no receivers {e:?}");
-                                    continue;
+                                    warn!("failed to send finalized block, channel has no receivers {e:?}");
+                                    continue 'recv_loop;
                                 }
                             } else if finalized_block_recieved {
                                 // this warning is ok for first few blocks when we start lrpc
-                                log::error!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
+                                log::error!("finalized block meta received for blockhash {} which was never seen or already emitted", finalized_blockhash);
                             }
                         },
                         _ = cleanup_tick.tick() => {
                             if cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
                                 cleanup_without_recv_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
                                 cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
-                                log::error!("block or block meta stream stopped restaring blocks");
-                                break;
+                                log::error!("block or block meta geyser stream stopped - restarting multiplexer");
+                                // throttle a bit
+                                sleep(Duration::from_millis(1500)).await;
+                                break 'recv_loop;
                             }
                             cleanup_without_recv_blocks += 1;
                             cleanup_without_finalized_recv_blocks_meta += 1;
@@ -234,14 +246,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             });
                             let cnt_cleaned = size_before - recent_processed_blocks.len();
                             if cnt_cleaned > 0 {
-                                debug!("cleaned {} confirmed blocks from cache", cnt_cleaned);
+                                debug!("cleaned {} processed blocks from cache", cnt_cleaned);
                             }
                         }
                     }
-                }
-                // abort all the tasks
-                processed_blocks_tasks.iter().for_each(|task| task.abort());
-            }
+                } // -- END receiver loop
+            } // -- END reconnect loop
         })
     };
 
