@@ -208,7 +208,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             } else {
                                 confirmed_block_not_yet_processed.insert(confirmed_blockhash.clone());
-                                log::debug!("confirmed blocks not found : {}", confirmed_block_not_yet_processed.len());
+                                log::debug!("processed block {} not found - add to wait list, size={}", confirmed_blockhash, confirmed_block_not_yet_processed.len());
                             }
                         },
                         Some(finalized_blockhash) = finalized_blockmeta_stream.next() => {
