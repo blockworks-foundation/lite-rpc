@@ -26,54 +26,6 @@ use tokio_stream::wrappers::ReceiverStream;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate};
 
-struct BlockExtractor(CommitmentConfig);
-
-impl FromYellowstoneExtractor for BlockExtractor {
-    type Target = ProducedBlock;
-    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
-        match update.update_oneof {
-            Some(UpdateOneof::Block(update_block_message)) => {
-                let block = map_block_update(update_block_message, self.0);
-                Some((block.slot, block))
-            }
-            _ => None,
-        }
-    }
-}
-
-struct BlockMetaHashExtractor(CommitmentConfig);
-
-impl FromYellowstoneExtractor for BlockMetaHashExtractor {
-    type Target = String;
-    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(u64, String)> {
-        match update.update_oneof {
-            Some(UpdateOneof::BlockMeta(block_meta)) => {
-                Some((block_meta.slot, block_meta.blockhash))
-            }
-            _ => None,
-        }
-    }
-}
-
-fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
-    match update.update_oneof {
-        Some(UpdateOneof::Slot(update_slot_message)) => {
-            Some(update_slot_message.slot)
-        }
-        _ => None,
-    }
-}
-
-fn map_block_from_yellowstone_update(update: SubscribeUpdate, commitment_config: CommitmentConfig) -> Option<(Slot, ProducedBlock)> {
-    match update.update_oneof {
-        Some(UpdateOneof::Block(update_block_message)) => {
-            let block = map_block_update(update_block_message, commitment_config);
-            Some((block.slot, block))
-        }
-        _ => None,
-    }
-}
-
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
 /// - task will shutdown of the receiver side of block_sender gets closed
@@ -296,24 +248,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
     (blocks_output_stream, jh_block_emitter_task)
 }
 
-struct SlotExtractor {}
-
-impl FromYellowstoneExtractor for crate::grpc_multiplex::SlotExtractor {
-    type Target = SlotNotification;
-    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
-        match update.update_oneof {
-            Some(UpdateOneof::Slot(update_slot_message)) => {
-                let slot = SlotNotification {
-                    estimated_processed_slot: update_slot_message.slot,
-                    processed_slot: update_slot_message.slot,
-                };
-                Some((update_slot_message.slot, slot))
-            }
-            _ => None,
-        }
-    }
-}
-
 pub fn create_grpc_multiplex_processed_slots_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
 ) -> (Receiver<SlotNotification>, AnyhowJoinHandle) {
@@ -372,3 +306,38 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
 
     (multiplexed_messages_rx, jh_multiplex_task)
 }
+
+
+struct BlockMetaHashExtractor(CommitmentConfig);
+
+impl FromYellowstoneExtractor for BlockMetaHashExtractor {
+    type Target = String;
+    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(u64, String)> {
+        match update.update_oneof {
+            Some(UpdateOneof::BlockMeta(block_meta)) => {
+                Some((block_meta.slot, block_meta.blockhash))
+            }
+            _ => None,
+        }
+    }
+}
+
+fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
+    match update.update_oneof {
+        Some(UpdateOneof::Slot(update_slot_message)) => {
+            Some(update_slot_message.slot)
+        }
+        _ => None,
+    }
+}
+
+fn map_block_from_yellowstone_update(update: SubscribeUpdate, commitment_config: CommitmentConfig) -> Option<(Slot, ProducedBlock)> {
+    match update.update_oneof {
+        Some(UpdateOneof::Block(update_block_message)) => {
+            let block = map_block_update(update_block_message, commitment_config);
+            Some((block.slot, block))
+        }
+        _ => None,
+    }
+}
+
