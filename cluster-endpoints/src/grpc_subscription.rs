@@ -1,5 +1,5 @@
 use crate::grpc_multiplex::{
-    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription,
+    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
 use crate::{
     endpoint_stremers::EndpointStreaming,
@@ -312,7 +312,7 @@ pub fn create_grpc_subscription(
 
     // processed slot is required to keep up with leader schedule
     let (slot_multiplex_channel, jh_multiplex_slotstream) =
-        create_grpc_multiplex_slots_subscription(grpc_sources.clone());
+        create_grpc_multiplex_processed_slots_subscription(grpc_sources.clone());
 
     let (block_multiplex_channel, jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources);

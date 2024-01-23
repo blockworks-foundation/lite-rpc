@@ -22,7 +22,7 @@ use merge_streams::MergeStreams;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
-use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
+use tokio_stream::wrappers::ReceiverStream;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate};
 
@@ -55,7 +55,7 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
     }
 }
 
-fn map_slotfrom_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
+fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
     match update.update_oneof {
         Some(UpdateOneof::Slot(update_slot_message)) => {
             Some(update_slot_message.slot)
@@ -151,7 +151,7 @@ fn create_grpc_multiplex_block_meta_stream(
 
     let mut channels = vec![];
     for grpc_source in grpc_sources {
-        let (jh_geyser_task, message_channel) =
+        let (_jh_geyser_task, message_channel) =
             create_geyser_autoconnection_task(grpc_source.clone(),
                       GeyserFilter(commitment_config).blocks_meta());
         channels.push(message_channel)
@@ -314,11 +314,10 @@ impl FromYellowstoneExtractor for crate::grpc_multiplex::SlotExtractor {
     }
 }
 
-// TODO add -processed to metho dname
-pub fn create_grpc_multiplex_slots_subscription(
+pub fn create_grpc_multiplex_processed_slots_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
 ) -> (Receiver<SlotNotification>, AnyhowJoinHandle) {
-    const commitment_config: CommitmentConfig = CommitmentConfig::processed();
+    const COMMITMENT_CONFIG: CommitmentConfig = CommitmentConfig::processed();
     info!("Setup grpc multiplexed slots connection...");
     if grpc_sources.is_empty() {
         info!("- no grpc connection configured");
@@ -339,7 +338,7 @@ pub fn create_grpc_multiplex_slots_subscription(
                 // tasks will be shutdown automatically if the channel gets closed
                 let (_jh_geyser_task, message_channel) =
                     create_geyser_autoconnection_task(grpc_source.clone(),
-                          GeyserFilter(commitment_config).slots());
+                          GeyserFilter(COMMITMENT_CONFIG).slots());
                 channels.push(message_channel)
             }
 
@@ -351,7 +350,7 @@ pub fn create_grpc_multiplex_slots_subscription(
                 Duration::from_secs(30),
                 fused_streams.next()).await {
                 if let Some(Message::GeyserSubscribeUpdate(slot_update)) = slot_update {
-                    let mapfilter = map_slotfrom_yellowstone_update(*slot_update);
+                    let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                     if let Some(slot) = mapfilter {
                         let send_result = multiplexed_messages_sender.send(SlotNotification {
                             processed_slot: slot,
@@ -363,7 +362,7 @@ pub fn create_grpc_multiplex_slots_subscription(
                         }
 
                         trace!("emitted slot #{}@{} from multiplexer",
-                                slot, commitment_config.commitment);
+                                slot, COMMITMENT_CONFIG.commitment);
                     }
                 }
             }
