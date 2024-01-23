@@ -22,6 +22,7 @@ use merge_streams::MergeStreams;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
+use tokio::time::error::Elapsed;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -290,28 +291,42 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
             let mut fused_streams = source_channels.merge();
 
             // TODO handle cases
-            'recv_loop: while let Ok(slot_update) = tokio::time::timeout(
-                Duration::from_secs(30),
-                fused_streams.next()).await {
-                if let Some(Message::GeyserSubscribeUpdate(slot_update)) = slot_update {
-                    let mapfilter = map_slot_from_yellowstone_update(*slot_update);
-                    if let Some(slot) = mapfilter {
-                        let send_result = multiplexed_messages_sender.send(SlotNotification {
-                            processed_slot: slot,
-                            estimated_processed_slot: slot,
-                        }).context("Send slot to channel");
-                        if send_result.is_err() {
-                            warn!("Slot channel receiver is closed - aborting");
-                            bail!("Slot channel receiver is closed - aborting");
-                        }
+            'recv_loop: loop {
+                let next = tokio::time::timeout(Duration::from_secs(30),
+                                                  fused_streams.next()).await;
+                match next {
+                    Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
+                        let mapfilter = map_slot_from_yellowstone_update(*slot_update);
+                        if let Some(slot) = mapfilter {
+                            let send_result = multiplexed_messages_sender.send(SlotNotification {
+                                processed_slot: slot,
+                                estimated_processed_slot: slot,
+                            }).context("Send slot to channel");
+                            if send_result.is_err() {
+                                warn!("Slot channel receiver is closed - aborting");
+                                bail!("Slot channel receiver is closed - aborting");
+                            }
 
-                        trace!("emitted slot #{}@{} from multiplexer",
+                            trace!("emitted slot #{}@{} from multiplexer",
                                 slot, COMMITMENT_CONFIG.commitment);
+                        }
+                    }
+                    Ok(Some(Message::Connecting(attempt))) => {
+                        if attempt > 1 {
+                            warn!("Multiplexed geyser slot stream performs reconnect attempt {}", attempt);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(_elapsed) => {
+                        warn!("Multiplexed geyser slot stream timeout - reconnect");
+                        // throttle
+                        sleep(Duration::from_millis(1500)).await;
+                        break 'recv_loop;
                     }
                 }
-            }
 
-        }
+            } // -- END receiver loop
+        } // -- END reconnect loop
     });
 
     (multiplexed_messages_rx, jh_multiplex_task)
