@@ -16,6 +16,7 @@ use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
 };
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
+use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::stores::{
     block_information_store::{BlockInformation, BlockInformationStore},
@@ -31,7 +32,6 @@ use solana_lite_rpc_core::structures::{
 };
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
-use solana_lite_rpc_history::block_stores::inmemory_block_store::InmemoryBlockStore;
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
@@ -154,7 +154,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         // )?
     } else {
         info!("Creating RPC poll subscription...");
-        create_json_rpc_polling_subscription(rpc_client.clone())?
+        create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?
     };
     let EndpointStreaming {
         // note: blocks_notifier will be dropped at some point
@@ -252,9 +252,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
-    let history = History {
-        block_storage: Arc::new(InmemoryBlockStore::new(1024)),
-    };
+    let history = History::new();
 
     let bridge_service = tokio::spawn(
         LiteBridge::new(

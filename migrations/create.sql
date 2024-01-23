@@ -1,8 +1,9 @@
+-- note: this schema is only used for postgres_logger
 CREATE SCHEMA lite_rpc;
 
 CREATE TABLE lite_rpc.Txs (
   id SERIAL NOT NULL PRIMARY KEY,
-  signature CHAR(88) NOT NULL,
+  signature VARCHAR(88) NOT NULL,
   recent_slot BIGINT NOT NULL,
   forwarded_slot BIGINT NOT NULL,
   forwarded_local_time TIMESTAMP WITH TIME ZONE NOT NULL,

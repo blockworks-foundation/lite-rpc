@@ -10,11 +10,10 @@ use prometheus::{opts, register_int_counter, IntCounter};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
-        RpcBlockConfig, RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper,
-        RpcContextConfig, RpcEncodingConfigWrapper, RpcGetVoteAccountsConfig,
-        RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig,
-        RpcSignatureStatusConfig, RpcSignatureSubscribeConfig, RpcSignaturesForAddressConfig,
-        RpcTransactionLogsConfig, RpcTransactionLogsFilter,
+        RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper, RpcContextConfig,
+        RpcGetVoteAccountsConfig, RpcLeaderScheduleConfig, RpcProgramAccountsConfig,
+        RpcRequestAirdropConfig, RpcSignatureStatusConfig, RpcSignatureSubscribeConfig,
+        RpcSignaturesForAddressConfig, RpcTransactionLogsConfig, RpcTransactionLogsFilter,
     },
     response::{
         Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
@@ -62,6 +61,7 @@ lazy_static::lazy_static! {
 }
 
 /// A bridge between clients and tpu
+#[allow(dead_code)]
 pub struct LiteBridge {
     data_cache: DataCache,
     // should be removed
@@ -133,19 +133,17 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-    async fn get_block(
-        &self,
-        slot: u64,
-        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
-    ) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
-        let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
-        let block = self.history.block_storage.get(slot, config).await;
-        if block.is_ok() {
-            // TO DO Convert to UIConfirmed Block
-            Err(jsonrpsee::core::Error::HttpNotImplemented)
-        } else {
-            Ok(None)
-        }
+    async fn get_block(&self, _slot: u64) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
+        // let block = self.history.block_storage.query_block(slot).await;
+        // if block.is_ok() {
+        //     // TO DO Convert to UIConfirmed Block
+        //     Err(jsonrpsee::core::Error::HttpNotImplemented)
+        // } else {
+        //     Ok(None)
+        // }
+
+        // TODO get_block might deserve different implementation based on whether we serve from "history module" vs. from "send tx module"
+        todo!("get_block: decide where to look")
     }
 
     async fn get_blocks(
@@ -272,7 +270,7 @@ impl LiteRpcServer for LiteBridge {
             .data_cache
             .get_current_epoch(commitment_config)
             .await
-            .into_epoch_info(block_info.block_height, None);
+            .as_epoch_info(block_info.block_height, None);
         Ok(epoch_info)
     }
 

@@ -1,7 +1,7 @@
+use solana_sdk::commitment_config::CommitmentConfig;
 use log::info;
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
-    commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
     transaction::TransactionError,
@@ -27,7 +27,8 @@ pub struct TransactionInfo {
     pub message: String,
 }
 
-#[derive(Default, Debug, Clone)]
+// TODO try to remove Clone
+#[derive(Debug, Clone)]
 pub struct ProducedBlock {
     pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
@@ -50,7 +51,7 @@ impl ProducedBlock {
         }
     }
 
-    /// moving commitment level to finalized
+    /// moving commitment level to confirmed
     pub fn to_confirmed_block(&self) -> Self {
         ProducedBlock {
             commitment_config: CommitmentConfig::confirmed(),
