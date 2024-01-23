@@ -8,6 +8,8 @@ pub struct PrioFeesStats {
     pub by_tx_percentiles: Vec<f32>,
     pub by_cu: Vec<u64>,
     pub by_cu_percentiles: Vec<f32>,
+    pub nonvote_tx_count: u64,
+    pub cu_consumed_total: u64,
 }
 
 #[derive(Clone, Serialize, Debug, Eq, PartialEq, Hash)]

@@ -556,7 +556,7 @@ impl LiteRpcServer for LiteBridge {
                     Ok(PrioFeesUpdateMessage {
                         slot: confirmation_slot,
                         priofees_stats,
-                    }) => {
+                       }) => {
                         let result_message =
                             jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
                                 context: RpcResponseContext {

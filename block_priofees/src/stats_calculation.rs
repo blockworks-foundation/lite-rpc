@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 /// `quantile` function is the same as the median if q=50, the same as the minimum if q=0 and the same as the maximum if q=100.
 
-pub fn calculate_supp_stats(
+pub fn calculate_supp_percentiles(
     // Vec(prioritization_fees, cu_consumed)
     prio_fees_in_block: &Vec<(u64, u64)>,
-) -> PrioFeesStats {
+) -> Percentiles {
     let prio_fees_in_block = if prio_fees_in_block.is_empty() {
         // note: percentile for empty array is undefined
         vec![(0, 0)]
@@ -57,7 +57,7 @@ pub fn calculate_supp_stats(
         })
         .collect_vec();
 
-    PrioFeesStats {
+    Percentiles {
         by_tx: dist_fee_by_index
             .iter()
             .map(|fee_point| fee_point.v)
@@ -77,6 +77,13 @@ pub fn calculate_supp_stats(
     }
 }
 
+pub struct Percentiles {
+    pub by_tx: Vec<u64>,
+    pub by_tx_percentiles: Vec<f32>,
+    pub by_cu: Vec<u64>,
+    pub by_cu_percentiles: Vec<f32>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,7 +91,7 @@ mod tests {
     #[test]
     fn test_calculate_supp_info() {
         let prio_fees_in_block = vec![(2, 2), (4, 4), (5, 5), (3, 3), (1, 1)];
-        let supp_info = calculate_supp_stats(&prio_fees_in_block).by_tx;
+        let supp_info = calculate_supp_percentiles(&prio_fees_in_block).by_tx;
         assert_eq!(supp_info[0], 1);
         assert_eq!(supp_info[10], 3);
         assert_eq!(supp_info[15], 4);
@@ -95,7 +102,7 @@ mod tests {
     #[test]
     fn test_empty_array() {
         let prio_fees_in_block = vec![];
-        let supp_info = calculate_supp_stats(&prio_fees_in_block).by_tx;
+        let supp_info = calculate_supp_percentiles(&prio_fees_in_block).by_tx;
         assert_eq!(supp_info[0], 0);
     }
 
@@ -111,7 +118,7 @@ mod tests {
             (68, 7),
             (72, 8),
         ];
-        let supp_info = calculate_supp_stats(&prio_fees_in_block);
+        let supp_info = calculate_supp_percentiles(&prio_fees_in_block);
         assert_eq!(supp_info.by_tx[5], 43);
         assert_eq!(supp_info.by_tx_percentiles[5], 0.25);
     }
@@ -132,7 +139,7 @@ mod tests {
             (10, 9),
         ];
 
-        let supp_info = calculate_supp_stats(&values);
+        let supp_info = calculate_supp_percentiles(&values);
 
 
         assert_eq!(supp_info.by_tx_percentiles[4], 0.20);
@@ -144,7 +151,7 @@ mod tests {
     #[test]
     fn test_large_list() {
         let prio_fees_in_block: Vec<(u64, u64)> = (0..1000).map(|x| (x, x)).collect();
-        let supp_info = calculate_supp_stats(&prio_fees_in_block);
+        let supp_info = calculate_supp_percentiles(&prio_fees_in_block);
         assert_eq!(supp_info.by_tx[19], 950);
         assert_eq!(supp_info.by_tx_percentiles[19], 0.95);
     }

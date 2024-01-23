@@ -1,5 +1,5 @@
 use crate::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
-use crate::stats_calculation::calculate_supp_stats;
+use crate::stats_calculation::calculate_supp_percentiles;
 use log::{error, info, trace, warn};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
@@ -56,7 +56,7 @@ pub async fn start_block_priofees_task(
                         lock.retain(|slot, _| *slot > slot - SLOTS_TO_RETAIN);
                     }
 
-                    if !block.commitment_config.is_confirmed() {
+                    if !block.commitment_config.is_processed() {
                         continue;
                     }
                     let confirmed_slot = block.slot;
@@ -73,9 +73,25 @@ pub async fn start_block_priofees_task(
                         })
                         .collect::<Vec<(u64, u64)>>();
 
-                    let priofees_stats = calculate_supp_stats(&block_priofees);
+                    let priofees_percentiles = calculate_supp_percentiles(&block_priofees);
+
+                    let nonvote_tx_count = block.transactions.iter().filter(|tx| !tx.is_vote).count() as u64;
+                    let cu_consumed_total = block
+                        .transactions
+                        .iter()
+                        .map(|tx| tx.cu_consumed.unwrap_or_default())
+                        .sum::<u64>();
 
                     trace!("Got prio fees stats for confirmed block {}", confirmed_slot);
+
+                    let priofees_stats = PrioFeesStats {
+                        by_tx: priofees_percentiles.by_tx,
+                        by_tx_percentiles: priofees_percentiles.by_tx_percentiles,
+                        by_cu: priofees_percentiles.by_cu,
+                        by_cu_percentiles: priofees_percentiles.by_cu_percentiles,
+                        nonvote_tx_count,
+                        cu_consumed_total,
+                    };
 
                     {
                         // first do some cleanup
