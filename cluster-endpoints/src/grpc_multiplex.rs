@@ -51,7 +51,7 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
 
 fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    confirmed_block_sender: UnboundedSender<ProducedBlock>,
+    processed_block_sender: UnboundedSender<ProducedBlock>,
 ) -> Vec<AnyhowJoinHandle> {
     let commitment_config = CommitmentConfig::processed();
 
@@ -80,7 +80,7 @@ fn create_grpc_multiplex_processed_block_stream(
                     && (slots_processed.len() < MAX_SIZE / 2
                         || slot > slots_processed.first().cloned().unwrap_or_default())
                 {
-                    confirmed_block_sender
+                    processed_block_sender
                         .send(from_grpc_block_update(block, commitment_config))
                         .context("Issue to send confirmed block")?;
                     slots_processed.insert(slot);

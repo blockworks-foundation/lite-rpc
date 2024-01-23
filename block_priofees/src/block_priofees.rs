@@ -1,4 +1,4 @@
-use crate::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
+use crate::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage, TxAggregateStats};
 use crate::stats_calculation::calculate_supp_percentiles;
 use log::{error, info, trace, warn};
 use solana_lite_rpc_core::types::BlockStream;
@@ -74,11 +74,18 @@ pub async fn start_block_priofees_task(
 
                     let priofees_percentiles = calculate_supp_percentiles(&block_priofees);
 
-                    let nonvote_tx_count = block.transactions.iter().filter(|tx| !tx.is_vote).count() as u64;
-                    let cu_consumed_total = block
-                        .transactions
-                        .iter()
-                        .map(|tx| tx.cu_consumed.unwrap_or_default())
+                    let total_tx_count = block.transactions.len() as u64;
+
+                    let nonvote_tx_count = block.transactions.iter()
+                        .filter(|tx| !tx.is_vote).count() as u64;
+
+                    let total_cu_consumed = block.transactions.iter()
+                        .map(|tx| tx.cu_consumed.unwrap_or(0))
+                        .sum::<u64>();
+
+                    let nonvote_cu_consumed = block.transactions.iter()
+                        .filter(|tx| !tx.is_vote)
+                        .map(|tx| tx.cu_consumed.unwrap_or(0))
                         .sum::<u64>();
 
                     trace!("Got prio fees stats for processed block {}", processed_slot);
@@ -88,8 +95,14 @@ pub async fn start_block_priofees_task(
                         by_tx_percentiles: priofees_percentiles.by_tx_percentiles,
                         by_cu: priofees_percentiles.by_cu,
                         by_cu_percentiles: priofees_percentiles.by_cu_percentiles,
-                        nonvote_tx_count,
-                        cu_consumed_total,
+                        tx_count: TxAggregateStats {
+                            total: total_tx_count,
+                            nonvote: nonvote_tx_count,
+                        },
+                        cu_consumed: TxAggregateStats {
+                            total: total_cu_consumed,
+                            nonvote: nonvote_cu_consumed,
+                        },
                     };
 
                     {

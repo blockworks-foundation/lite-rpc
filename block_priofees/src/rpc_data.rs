@@ -3,13 +3,19 @@ use solana_sdk::clock::Slot;
 use std::fmt::Display;
 
 #[derive(Clone, Serialize, Debug)]
+pub struct TxAggregateStats {
+    pub total: u64,
+    pub nonvote: u64,
+}
+
+#[derive(Clone, Serialize, Debug)]
 pub struct PrioFeesStats {
     pub by_tx: Vec<u64>,
     pub by_tx_percentiles: Vec<f32>,
     pub by_cu: Vec<u64>,
     pub by_cu_percentiles: Vec<f32>,
-    pub nonvote_tx_count: u64,
-    pub cu_consumed_total: u64,
+    pub tx_count: TxAggregateStats,
+    pub cu_consumed: TxAggregateStats,
 }
 
 #[derive(Clone, Serialize, Debug, Eq, PartialEq, Hash)]
