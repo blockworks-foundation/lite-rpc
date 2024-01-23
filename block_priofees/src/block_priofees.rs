@@ -50,16 +50,15 @@ pub async fn start_block_priofees_task(
             let block = block_stream.recv().await;
             match block {
                 Ok(block) => {
-                    {
-                        // first do some cleanup
-                        let mut lock = recent_data.write().await;
-                        lock.retain(|slot, _| *slot > slot - SLOTS_TO_RETAIN);
-                    }
-
                     if !block.commitment_config.is_processed() {
                         continue;
                     }
                     let processed_slot = block.slot;
+                    {
+                        // first do some cleanup
+                        let mut lock = recent_data.write().await;
+                        lock.retain(|slot, _| *slot > processed_slot - SLOTS_TO_RETAIN);
+                    }
 
                     let block_priofees = block
                         .transactions
