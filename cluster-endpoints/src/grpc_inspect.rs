@@ -4,10 +4,12 @@ use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, SystemTime};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
-use tokio::time::sleep;
+use tokio::time::{Instant, sleep};
 
 
 // note: we assume that the invariants hold even right after startup
@@ -181,10 +183,45 @@ pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStre
     })
 }
 
-pub fn debugtask_blockstream_monotonic(
+pub fn debugtask_blockstream_slot_progression(
     mut block_notifier: BlockStream,
     commitment_config: CommitmentConfig,
 ) -> JoinHandle<()> {
+
+    let latest_slot_seen_shared = Arc::new(AtomicU64::new(0));
+    const WARNING_THRESHOLD: Duration = Duration::from_secs(10);
+
+    let latest_slot_seen = latest_slot_seen_shared.clone();
+    tokio::spawn(async move {
+        let mut prev_slot = 0;
+        let mut last_changed_at = Instant::now();
+        loop {
+            let latest_slot = latest_slot_seen.load(std::sync::atomic::Ordering::Relaxed);
+            // startup
+            if prev_slot == 0 {
+                prev_slot = latest_slot;
+                sleep(Duration::from_millis(1000)).await;
+                continue;
+            }
+
+            if latest_slot != prev_slot {
+                last_changed_at = Instant::now();
+                info!("BlockStream for commitment level {} is alive", commitment_config.commitment);
+            } else {
+                let elapsed = last_changed_at.elapsed();
+                if elapsed > WARNING_THRESHOLD {
+                    // note: this will be emitted on each iteration until new data arrives
+                    warn!("no recent blocks on BlockStream for blocks@{} for {} seconds, latest_slot={}",
+                        commitment_config.commitment, elapsed.as_secs(), latest_slot);
+                }
+            }
+            prev_slot = latest_slot;
+            sleep(Duration::from_millis(5000)).await;
+        }
+
+    });
+
+    let last_slot_seen = latest_slot_seen_shared.clone();
     tokio::spawn(async move {
         let mut last_highest_slot_number = 0;
         let mut last_blockhash: Option<String> = None;
@@ -202,6 +239,8 @@ pub fn debugtask_blockstream_monotonic(
                         block.commitment_config.commitment,
                         block.transactions.len()
                     );
+
+                    last_slot_seen.store(block.slot, std::sync::atomic::Ordering::Relaxed);
 
                     if last_highest_slot_number != 0 {
                         if block.parent_slot == last_highest_slot_number {
@@ -256,6 +295,7 @@ pub fn debugtask_blockstream_monotonic(
         info!("Geyser channel debug task for slot progression shutting down.")
     })
 }
+
 
 /// e.g. "2024-01-22 11:49:07.173523000"
 fn format_timestamp(d: &SystemTime) -> String {

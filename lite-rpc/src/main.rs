@@ -10,7 +10,7 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::info;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::grpc_inspect::{debugtask_blockstream_confirmation_sequence, debugtask_blockstream_monotonic};
+use solana_lite_rpc_cluster_endpoints::grpc_inspect::{debugtask_blockstream_confirmation_sequence, debugtask_blockstream_slot_progression};
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
@@ -139,8 +139,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     } = subscriptions;
 
-    debugtask_blockstream_monotonic(blocks_notifier.resubscribe(), CommitmentConfig::confirmed());
-    debugtask_blockstream_monotonic(blocks_notifier.resubscribe(), CommitmentConfig::finalized());
+    // note: not sure if commitment_config=processed works because sources might disagree on the blocks
+    debugtask_blockstream_slot_progression(blocks_notifier.resubscribe(), CommitmentConfig::processed());
+    debugtask_blockstream_slot_progression(blocks_notifier.resubscribe(), CommitmentConfig::confirmed());
+    debugtask_blockstream_slot_progression(blocks_notifier.resubscribe(), CommitmentConfig::finalized());
     debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
 
     let finalized_block =

@@ -179,16 +179,13 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
                 let mut finalized_block_not_yet_processed = HashSet::<String>::new();
 
-                //  start logging errors when we recieve first finalized block
-                let mut startup_completed = false;
                 const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
                 'recv_loop: loop {
                     tokio::select! {
                         processed_block = processed_block_reciever.recv() => {
                             cleanup_without_recv_blocks = 0;
 
-                            // TODO remove expect
-                            let processed_block = processed_block.expect("processed block from stream");
+                            let processed_block = processed_block.expect("processed_block channel must NEVER be closed");
 
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
@@ -235,7 +232,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&finalized_blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
                                 last_finalized_slot = finalized_block.slot;
-                                startup_completed = true;
                                 debug!("got finalized blockmeta {} with blockhash {}",
                                     finalized_block.slot, finalized_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(finalized_block) {
