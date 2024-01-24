@@ -88,7 +88,7 @@ pub struct Percentiles {
     pub by_cu_percentiles: Vec<f32>,
 }
 
-#[warn(dead_code)]
+#[allow(dead_code)]
 impl Percentiles {
     fn get_fees_by_tx(&self, percentile: f32) -> Option<u64> {
         zip(&self.by_tx_percentiles, &self.by_tx)
