@@ -47,7 +47,6 @@ pub fn calculate_supp_percentiles(
         }
     }
 
-    // e.g. (p0, 0), (p5, 100), (p10, 200), ..., (p95, 3000), (p100, 3000)
     let dist_fee_by_cu: Vec<FeePoint> = dist_fee_by_cu
         .into_iter()
         .sorted_by_key(|(p, _)| *p)
@@ -98,6 +97,19 @@ mod tests {
         assert_eq!(supp_info[18], 5);
         assert_eq!(supp_info[20], 5);
     }
+
+    #[test]
+    fn test_calculate_supp_info_by_cu() {
+        // total of 20000 CU where consumed
+        let prio_fees_in_block = vec![(100, 10000), (200, 10000)];
+        let Percentiles { by_cu, by_cu_percentiles, .. } = calculate_supp_percentiles(&prio_fees_in_block);
+        assert_eq!(by_cu_percentiles[10], 0.5);
+        assert_eq!(by_cu[10], 100); // need more than 100 to beat 50% of the CU
+        assert_eq!(by_cu[11], 200); // need more than 200 to beat 55% of the CU
+        assert_eq!(by_cu[20], 200); // need more than 200 to beat 100% of the CU
+
+    }
+
 
     #[test]
     fn test_empty_array() {
