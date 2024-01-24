@@ -166,6 +166,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
                 // by blockhash
                 let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
+                // both streams support backpressure, see log:
+                // grpc_subscription_autoreconnect_tasks: downstream receiver did not pick put message for 500ms - keep waiting
                 let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
                 let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
@@ -179,8 +181,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 //  start logging errors when we recieve first finalized block
                 let mut startup_completed = false;
                 const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
-                // dumb set of all blockhases ever seeh - TEMP logging - remove after a while
-                let mut blockhashes_seen_in_procesed_stream = HashSet::<String>::new();
                 'recv_loop: loop {
                     tokio::select! {
                         processed_block = processed_block_reciever.recv() => {
@@ -188,7 +188,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
                             // TODO remove expect
                             let processed_block = processed_block.expect("processed block from stream");
-                            blockhashes_seen_in_procesed_stream.insert(processed_block.blockhash.clone());
 
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
@@ -232,11 +231,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                     continue 'recv_loop;
                                 }
                             } else if startup_completed {
-                                if blockhashes_seen_in_procesed_stream.contains(&finalized_blockhash) {
-                                    log::error!("finalized block meta received for blockhash {} which was seen but not available in recent blocks store (anymore)", finalized_blockhash);
-                                } else {
-                                    log::error!("finalized block meta received for blockhash {} which was never seen", finalized_blockhash);
-                                }
+                                // this warning is ok for first few blocks when we start lrpc
+                                log::error!("finalized block meta received for blockhash {} which was never seen or already emitted", finalized_blockhash);
                             }
                         },
                         _ = cleanup_tick.tick() => {
