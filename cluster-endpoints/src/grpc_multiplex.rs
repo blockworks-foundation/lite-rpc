@@ -177,6 +177,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let mut cleanup_without_confirmed_recv_blocks_meta: u8 = 0;
                 let mut cleanup_without_finalized_recv_blocks_meta: u8 = 0;
                 let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
+                let mut finalized_block_not_yet_processed = HashSet::<String>::new();
 
                 //  start logging errors when we recieve first finalized block
                 let mut startup_completed = false;
@@ -191,14 +192,24 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
+
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
                                 warn!("produced block channel has no receivers {e:?}");
-                                continue 'recv_loop;
                             }
+                            // pick up out-of-order confirmation meta and send full block
                             if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
+                                debug!("merging confirmed block meta from not-yet-processed list with this processed block for blockhash {}#{}",
+                                    processed_block.slot, processed_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
-                                    warn!("failed to send processed block, channel has no receivers {e:?}");
-                                    continue 'recv_loop;
+                                    warn!("failed to send confirmed block, channel has no receivers {e:?}");
+                                }
+                            }
+                            // pick up out-of-order confirmation meta and send full block
+                            if finalized_block_not_yet_processed.remove(&processed_block.blockhash) {
+                                debug!("merging finalized block meta from not-yet-processed list with this processed block for blockhash {}#{}",
+                                    processed_block.slot, processed_block.blockhash.clone());
+                                if let Err(e) = producedblock_sender.send(processed_block.to_finalized_block()) {
+                                    warn!("failed to send finalized block, channel has no receivers {e:?}");
                                 }
                             }
                             recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
@@ -215,7 +226,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             } else {
                                 confirmed_block_not_yet_processed.insert(confirmed_blockhash.clone());
-                                log::debug!("processed block {} not found - add to wait list for confirmed blocks, size={}", confirmed_blockhash, confirmed_block_not_yet_processed.len());
+                                log::debug!("processed block {} not found - add to not-yet-processed list for confirmed blocks, size={}",
+                                    confirmed_blockhash, confirmed_block_not_yet_processed.len());
                             }
                         },
                         Some(finalized_blockhash) = finalized_blockmeta_stream.next() => {
@@ -230,9 +242,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                     warn!("failed to send finalized block, channel has no receivers {e:?}");
                                     continue 'recv_loop;
                                 }
-                            } else if startup_completed {
-                                // this warning is ok for first few blocks when we start lrpc
-                                log::error!("finalized block meta received for blockhash {} which was never seen or already emitted", finalized_blockhash);
+                            } else {
+                                finalized_block_not_yet_processed.insert(finalized_blockhash.clone());
+                                log::debug!("processed block {} not found - add to not-yet-processed list for finalized blocks, size={}",
+                                    finalized_blockhash, finalized_block_not_yet_processed.len());
                             }
                         },
                         _ = cleanup_tick.tick() => {
@@ -285,7 +298,6 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
     let jh_multiplex_task = tokio::spawn(async move {
         'reconnect_loop: loop {
 
-            let mut tasks: Vec<AbortHandle> = Vec::new();
             let mut channels = vec![];
             for grpc_source in &grpc_sources {
                 // tasks will be shutdown automatically if the channel gets closed
