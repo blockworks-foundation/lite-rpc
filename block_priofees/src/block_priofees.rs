@@ -57,7 +57,7 @@ pub async fn start_block_priofees_task(
                     {
                         // first do some cleanup
                         let mut lock = recent_data.write().await;
-                        lock.retain(|slot, _| *slot > processed_slot - SLOTS_TO_RETAIN);
+                        lock.retain(|slot, _| *slot > processed_slot.saturating_sub(SLOTS_TO_RETAIN));
                     }
 
                     let block_priofees = block
