@@ -177,14 +177,19 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
 
                 //  start logging errors when we recieve first finalized block
-                let mut finalized_block_recieved = false;
+                let mut startup_completed = false;
                 const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
+                // dumb set of all blockhases ever seeh - TEMP logging - remove after a while
+                let mut blockhashes_seen_in_procesed_stream = HashSet::<String>::new();
                 'recv_loop: loop {
                     tokio::select! {
                         processed_block = processed_block_reciever.recv() => {
                             cleanup_without_recv_blocks = 0;
 
+                            // TODO remove expect
                             let processed_block = processed_block.expect("processed block from stream");
+                            blockhashes_seen_in_procesed_stream.insert(processed_block.blockhash.clone());
+
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
@@ -211,7 +216,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             } else {
                                 confirmed_block_not_yet_processed.insert(confirmed_blockhash.clone());
-                                log::debug!("processed block {} not found - add to wait list, size={}", confirmed_blockhash, confirmed_block_not_yet_processed.len());
+                                log::debug!("processed block {} not found - add to wait list for confirmed blocks, size={}", confirmed_blockhash, confirmed_block_not_yet_processed.len());
                             }
                         },
                         Some(finalized_blockhash) = finalized_blockmeta_stream.next() => {
@@ -219,16 +224,19 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&finalized_blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
                                 last_finalized_slot = finalized_block.slot;
-                                finalized_block_recieved = true;
+                                startup_completed = true;
                                 debug!("got finalized blockmeta {} with blockhash {}",
                                     finalized_block.slot, finalized_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(finalized_block) {
                                     warn!("failed to send finalized block, channel has no receivers {e:?}");
                                     continue 'recv_loop;
                                 }
-                            } else if finalized_block_recieved {
-                                // this warning is ok for first few blocks when we start lrpc
-                                log::error!("finalized block meta received for blockhash {} which was never seen or already emitted", finalized_blockhash);
+                            } else if startup_completed {
+                                if blockhashes_seen_in_procesed_stream.contains(&finalized_blockhash) {
+                                    log::error!("finalized block meta received for blockhash {} which was seen but not available in recent blocks store (anymore)", finalized_blockhash);
+                                } else {
+                                    log::error!("finalized block meta received for blockhash {} which was never seen", finalized_blockhash);
+                                }
                             }
                         },
                         _ = cleanup_tick.tick() => {

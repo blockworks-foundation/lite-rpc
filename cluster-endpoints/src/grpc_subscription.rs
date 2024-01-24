@@ -3,7 +3,6 @@ use crate::grpc_multiplex::{
 };
 use crate::{
     endpoint_stremers::EndpointStreaming,
-    rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
 };
 use anyhow::Context;
 use futures::StreamExt;
@@ -39,6 +38,7 @@ use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
     SubscribeUpdateBlock,
 };
+use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{poll_cluster_info, poll_vote_accounts};
 
 pub fn map_block_update(
     block: SubscribeUpdateBlock,
@@ -256,8 +256,8 @@ pub fn create_grpc_subscription(
     let (block_multiplex_channel, jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources);
 
-    let cluster_info_polling =
-        poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
+    let cluster_info_polling = poll_cluster_info(rpc_client.clone(), cluster_info_sx);
+    let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
 
     let streamers = EndpointStreaming {
         blocks_notifier: block_multiplex_channel,
@@ -270,6 +270,7 @@ pub fn create_grpc_subscription(
         jh_multiplex_slotstream,
         jh_multiplex_blockstream,
         cluster_info_polling,
+        vote_accounts_polling,
     ];
     Ok((streamers, endpoint_tasks))
 }
