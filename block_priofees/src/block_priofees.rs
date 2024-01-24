@@ -57,7 +57,9 @@ pub async fn start_block_priofees_task(
                     {
                         // first do some cleanup
                         let mut lock = recent_data.write().await;
-                        lock.retain(|slot, _| *slot > processed_slot.saturating_sub(SLOTS_TO_RETAIN));
+                        lock.retain(|slot, _| {
+                            *slot > processed_slot.saturating_sub(SLOTS_TO_RETAIN)
+                        });
                     }
 
                     let block_priofees = block
@@ -76,14 +78,18 @@ pub async fn start_block_priofees_task(
 
                     let total_tx_count = block.transactions.len() as u64;
 
-                    let nonvote_tx_count = block.transactions.iter()
-                        .filter(|tx| !tx.is_vote).count() as u64;
+                    let nonvote_tx_count =
+                        block.transactions.iter().filter(|tx| !tx.is_vote).count() as u64;
 
-                    let total_cu_consumed = block.transactions.iter()
+                    let total_cu_consumed = block
+                        .transactions
+                        .iter()
                         .map(|tx| tx.cu_consumed.unwrap_or(0))
                         .sum::<u64>();
 
-                    let nonvote_cu_consumed = block.transactions.iter()
+                    let nonvote_cu_consumed = block
+                        .transactions
+                        .iter()
                         .filter(|tx| !tx.is_vote)
                         .map(|tx| tx.cu_consumed.unwrap_or(0))
                         .sum::<u64>();

@@ -1,4 +1,4 @@
-use crate::rpc_data::{FeePoint, PrioFeesStats};
+use crate::rpc_data::FeePoint;
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::iter::zip;
@@ -14,7 +14,11 @@ pub fn calculate_supp_percentiles(
         vec![(0, 0)]
     } else {
         // sort by prioritization fees
-        prio_fees_in_block.iter().sorted_by_key(|(prio, _cu)| prio).cloned().collect_vec()
+        prio_fees_in_block
+            .iter()
+            .sorted_by_key(|(prio, _cu)| prio)
+            .cloned()
+            .collect_vec()
     };
 
     // get stats by transaction
@@ -77,7 +81,6 @@ pub fn calculate_supp_percentiles(
     }
 }
 
-
 pub struct Percentiles {
     pub by_tx: Vec<u64>,
     pub by_tx_percentiles: Vec<f32>,
@@ -87,7 +90,6 @@ pub struct Percentiles {
 
 #[warn(dead_code)]
 impl Percentiles {
-
     fn get_fees_by_tx(&self, percentile: f32) -> Option<u64> {
         zip(&self.by_tx_percentiles, &self.by_tx)
             .find(|(&p, _cu)| p == percentile)
@@ -99,7 +101,6 @@ impl Percentiles {
             .find(|(&p, _cu)| p == percentile)
             .map(|(_p, &cu)| cu)
     }
-
 }
 
 #[cfg(test)]
@@ -121,7 +122,11 @@ mod tests {
     fn test_calculate_supp_info_by_cu() {
         // total of 20000 CU where consumed
         let prio_fees_in_block = vec![(100, 10000), (200, 10000)];
-        let Percentiles { by_cu, by_cu_percentiles, .. } = calculate_supp_percentiles(&prio_fees_in_block);
+        let Percentiles {
+            by_cu,
+            by_cu_percentiles,
+            ..
+        } = calculate_supp_percentiles(&prio_fees_in_block);
         assert_eq!(by_cu_percentiles[10], 0.5);
         assert_eq!(by_cu[10], 100); // need more than 100 to beat 50% of the CU
         assert_eq!(by_cu[11], 200); // need more than 200 to beat 55% of the CU
@@ -178,7 +183,6 @@ mod tests {
 
         assert_eq!(supp_info.by_tx_percentiles[4], 0.20);
         assert_eq!(supp_info.by_tx[5], 5);
-
     }
 
     #[test]
@@ -188,5 +192,4 @@ mod tests {
         assert_eq!(supp_info.by_tx[19], 950);
         assert_eq!(supp_info.by_tx_percentiles[19], 0.95);
     }
-
 }

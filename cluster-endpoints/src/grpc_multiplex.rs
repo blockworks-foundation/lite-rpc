@@ -1,4 +1,6 @@
-use crate::grpc_subscription::{create_block_processing_task, create_slot_stream_task, from_grpc_block_update};
+use crate::grpc_subscription::{
+    create_block_processing_task, create_slot_stream_task, from_grpc_block_update,
+};
 use anyhow::Context;
 use futures::{Stream, StreamExt};
 use geyser_grpc_connector::grpc_subscription_autoreconnect::{

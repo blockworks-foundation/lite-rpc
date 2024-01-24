@@ -1,5 +1,8 @@
 use anyhow::{bail, Context};
+use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_lite_rpc_core::encoding::BinaryEncoding;
+use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 use solana_lite_rpc_core::{
     structures::{
         produced_block::ProducedBlock,
@@ -8,19 +11,22 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{commitment_config::{CommitmentConfig, CommitmentLevel}, compute_budget, slot_history::Slot};
-use solana_transaction_status::{TransactionDetails, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta};
-use std::{sync::Arc, time::Duration};
-use log::info;
 use solana_sdk::borsh0_10::try_from_slice_unchecked;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::program_utils::limited_deserialize;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::vote::instruction::VoteInstruction;
+use solana_sdk::{
+    commitment_config::{CommitmentConfig, CommitmentLevel},
+    compute_budget,
+    slot_history::Slot,
+};
 use solana_transaction_status::option_serializer::OptionSerializer;
+use solana_transaction_status::{
+    TransactionDetails, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta,
+};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast::{Receiver, Sender};
-use solana_lite_rpc_core::encoding::BinaryEncoding;
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 
 pub const NUM_PARALLEL_TASKS_DEFAULT: usize = 16;
 
@@ -188,15 +194,15 @@ pub fn from_ui_block(
         .into_iter()
         .filter_map(|tx| {
             let Some(UiTransactionStatusMeta {
-                         err,
-                         compute_units_consumed,
-                         ..
-                     }) = tx.meta
-                else {
-                    // ignoring transaction
-                    log::info!("Tx with no meta");
-                    return None;
-                };
+                err,
+                compute_units_consumed,
+                ..
+            }) = tx.meta
+            else {
+                // ignoring transaction
+                log::info!("Tx with no meta");
+                return None;
+            };
 
             let Some(tx) = tx.transaction.decode() else {
                 // ignoring transaction
@@ -215,9 +221,9 @@ pub fn from_ui_block(
                     .eq(&compute_budget::id())
                 {
                     if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                                  units,
-                                  additional_fee,
-                              }) = try_from_slice_unchecked(i.data.as_slice())
+                        units,
+                        additional_fee,
+                    }) = try_from_slice_unchecked(i.data.as_slice())
                     {
                         return Some((units, additional_fee));
                     }
@@ -264,9 +270,10 @@ pub fn from_ui_block(
 
             let is_vote_transaction = tx.message.instructions().iter().any(|i| {
                 i.program_id(tx.message.static_account_keys())
-                    .eq(&solana_sdk::vote::program::id()) &&
-                    limited_deserialize::<VoteInstruction>(&i.data)
-                        .map(|vi| vi.is_simple_vote()).unwrap_or(false)
+                    .eq(&solana_sdk::vote::program::id())
+                    && limited_deserialize::<VoteInstruction>(&i.data)
+                        .map(|vi| vi.is_simple_vote())
+                        .unwrap_or(false)
             });
 
             Some(TransactionInfo {
@@ -307,7 +314,6 @@ pub fn from_ui_block(
     }
 }
 
-
 #[inline]
 fn calc_prioritization_fees(units: u32, additional_fee: u32) -> u64 {
     (units as u64 * 1000) / additional_fee as u64
@@ -322,4 +328,3 @@ fn overflow_u32() {
 
     assert_eq!(40_000_000_000, prioritization_fees);
 }
-

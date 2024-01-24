@@ -27,7 +27,11 @@ use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use tokio::net::ToSocketAddrs;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 
-use solana_lite_rpc_core::{stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps}, AnyhowJoinHandle, encoding};
+use solana_lite_rpc_core::{
+    encoding,
+    stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
+    AnyhowJoinHandle,
+};
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
@@ -554,7 +558,7 @@ impl LiteRpcServer for LiteBridge {
                     Ok(PrioFeesUpdateMessage {
                         slot: confirmation_slot,
                         priofees_stats,
-                       }) => {
+                    }) => {
                         let result_message =
                             jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
                                 context: RpcResponseContext {

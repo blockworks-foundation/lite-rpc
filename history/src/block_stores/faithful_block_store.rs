@@ -1,5 +1,6 @@
 use anyhow::bail;
 use log::warn;
+use solana_lite_rpc_cluster_endpoints::rpc_polling;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
@@ -8,7 +9,6 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
-use solana_lite_rpc_cluster_endpoints::rpc_polling;
 
 pub struct FaithfulBlockStore {
     faithful_rpc_client: Arc<RpcClient>, // to fetch legacy blocks from faithful

@@ -1,19 +1,11 @@
-use solana_sdk::commitment_config::CommitmentConfig;
-use log::info;
 use solana_sdk::{
-    borsh0_10::try_from_slice_unchecked,
-    compute_budget::{self, ComputeBudgetInstruction},
     slot_history::Slot,
     transaction::TransactionError,
 };
-use solana_sdk::program_utils::limited_deserialize;
-use solana_sdk::vote::instruction::VoteInstruction;
 use solana_transaction_status::{
-    option_serializer::OptionSerializer, Reward, RewardType, UiConfirmedBlock,
+    Reward, RewardType, UiConfirmedBlock,
     UiTransactionStatusMeta,
 };
-
-use crate::encoding::BinaryEncoding;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
