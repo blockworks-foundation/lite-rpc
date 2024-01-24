@@ -188,6 +188,7 @@ pub fn debugtask_blockstream_monotonic(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut last_highest_slot_number = 0;
+        let mut last_blockhash: Option<String> = None;
 
         'recv_loop: loop {
             match block_notifier.recv().await {
@@ -206,13 +207,13 @@ pub fn debugtask_blockstream_monotonic(
                     if last_highest_slot_number != 0 {
                         if block.parent_slot == last_highest_slot_number {
                             debug!(
-                                "parent slot@{} is correct ({} -> {})",
+                                "parent block@{} is correct ({} -> {})",
                                 commitment_config.commitment, block.slot, block.parent_slot
                             );
                         } else {
                             warn!(
-                                "parent slot@{} not correct ({} -> {})",
-                                commitment_config.commitment, block.slot, block.parent_slot
+                                "parent block@{} not correct ({} -> {}, last_highest_slot_number={})",
+                                commitment_config.commitment, block.slot, block.parent_slot, last_highest_slot_number
                             );
                         }
                     }
@@ -225,6 +226,21 @@ pub fn debugtask_blockstream_monotonic(
                             block.slot, last_highest_slot_number
                         );
                     }
+
+                    if let Some(last_blockhash) = last_blockhash {
+                        if block.previous_blockhash == last_blockhash {
+                            debug!(
+                                "parent blockhash for block {} is correct ({} -> {})",
+                                commitment_config.commitment, block.blockhash, block.previous_blockhash
+                            );
+                        } else {
+                            warn!("parent blockhash for block {} not correct ({} -> {}, last_blockhash={})",
+                                block.slot, block.blockhash, block.previous_blockhash, last_blockhash);
+                        }
+                    }
+                    last_blockhash = Some(block.blockhash.to_string());
+
+
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     // very unlikely to happen
