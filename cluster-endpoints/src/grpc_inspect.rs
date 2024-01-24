@@ -170,15 +170,14 @@ pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStre
                         missed_blocks
                     );
                 }
-                Err(other_err) => {
-                    error!("Error receiving block: {:?}", other_err);
-                    // throttle a bit
-                    sleep(Duration::from_millis(1000)).await;
+                Err(RecvError::Closed) => {
+                    info!("Channel was closed - aborting");
+                    break 'recv_loop;
                 }
             }
 
-            // ...
-        }
+        } // -- END receiver loop
+        info!("Geyser channel debug task for confirmation sequence shutting down.")
     })
 }
 
@@ -254,7 +253,7 @@ pub fn debugtask_blockstream_monotonic(
                 }
             }
         } // -- END receiver loop
-        info!("Geyser channel debug task shutting down.")
+        info!("Geyser channel debug task for slot progression shutting down.")
     })
 }
 
