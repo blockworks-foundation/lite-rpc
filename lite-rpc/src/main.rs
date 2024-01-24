@@ -128,12 +128,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                 })
                 .collect(),
         )?
-
-        // create_grpc_subscription(
-        //     rpc_client.clone(),
-        //     grpc_addr.clone(),
-        //     GRPC_VERSION.to_string(),
-        // )?
     } else {
         info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone())?
