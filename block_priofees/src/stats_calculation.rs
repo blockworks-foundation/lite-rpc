@@ -44,6 +44,7 @@ pub fn calculate_supp_percentiles(
         // write p's as long as agg beats the aggregated cu
         while agg >= (cu_sum as f64 * p as f64 / 100.0) as u64 && p <= 100 {
             dist_fee_by_cu.insert(p, *prio);
+            assert_ne!(p_step, 0, "zero steps might cause infinite loop");
             p += p_step;
         }
     }
@@ -84,6 +85,7 @@ pub struct Percentiles {
     pub by_cu_percentiles: Vec<f32>,
 }
 
+#[warn(dead_code)]
 impl Percentiles {
 
     fn get_fees_by_tx(&self, percentile: f32) -> Option<u64> {
