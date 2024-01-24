@@ -7,7 +7,7 @@ use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     FromYellowstoneExtractor,
 };
-use log::{debug, info, trace, warn};
+use log::{debug, error, info, trace, warn};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -137,7 +137,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
         tokio::sync::broadcast::channel::<ProducedBlock>(1000);
 
     let mut reconnect_attempts = 0;
-    let jh_block_emitter_task = {
+
+    // task MUST not terminate but might be aborted from outside
+    let jh_block_emitter_task =
         tokio::task::spawn(async move {
             // channel must NEVER GET CLOSED
             let (processed_block_sender, mut processed_block_reciever) =
@@ -253,8 +255,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     }
                 } // -- END receiver loop
             } // -- END reconnect loop
-        })
-    };
+            unreachable!("Task is not allowed to terminate");
+        });
 
     (blocks_output_stream, jh_block_emitter_task)
 }
@@ -271,9 +273,11 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
         info!("- connection to {}", grpc_source);
     }
 
+    // multiplexed_messages_sender must not be closed from inside this method
     let (multiplexed_messages_sender, multiplexed_messages_rx) =
         tokio::sync::broadcast::channel(1000);
 
+    // task MUST not terminate but might be aborted from outside
     let jh_multiplex_task = tokio::spawn(async move {
         'reconnect_loop: loop {
 
@@ -327,6 +331,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
 
             } // -- END receiver loop
         } // -- END reconnect loop
+        unreachable!("Task is not allowed to terminate");
     });
 
     (multiplexed_messages_rx, jh_multiplex_task)

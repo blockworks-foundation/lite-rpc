@@ -10,6 +10,7 @@ pub fn poll_vote_accounts_and_cluster_info(
     contact_info_sender: Sender<Vec<RpcContactInfo>>,
     vote_account_sender: Sender<RpcVoteAccountStatus>,
 ) -> AnyhowJoinHandle {
+    // task MUST not terminate but might be aborted from outside
     tokio::spawn(async move {
         loop {
             if let Ok(cluster_nodes) = rpc_client.get_cluster_nodes().await {
@@ -24,5 +25,6 @@ pub fn poll_vote_accounts_and_cluster_info(
             }
             tokio::time::sleep(Duration::from_secs(600)).await;
         }
+        unreachable!("Task is not allowed to terminate");
     })
 }
