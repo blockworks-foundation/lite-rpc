@@ -1,5 +1,4 @@
 use anyhow::{bail, Context};
-use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::structures::produced_block::TransactionInfo;

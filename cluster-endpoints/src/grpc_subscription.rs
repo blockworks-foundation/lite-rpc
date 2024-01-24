@@ -9,7 +9,6 @@ use anyhow::Context;
 use futures::StreamExt;
 use geyser_grpc_connector::grpc_subscription_autoreconnect::GrpcSourceConfig;
 use itertools::Itertools;
-use log::info;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
     encoding::BASE64,

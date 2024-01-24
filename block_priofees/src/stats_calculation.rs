@@ -7,7 +7,7 @@ use std::iter::zip;
 
 pub fn calculate_supp_percentiles(
     // Vec(prioritization_fees, cu_consumed)
-    prio_fees_in_block: &Vec<(u64, u64)>,
+    prio_fees_in_block: &[(u64, u64)],
 ) -> Percentiles {
     let prio_fees_in_block = if prio_fees_in_block.is_empty() {
         // note: percentile for empty array is undefined

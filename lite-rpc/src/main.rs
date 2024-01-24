@@ -200,7 +200,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     );
 
-    let (block_priofees_task, block_priofees_service) =
+    let (_block_priofees_task, block_priofees_service) =
         start_block_priofees_task(blocks_notifier.resubscribe()).await;
 
     drop(blocks_notifier);
