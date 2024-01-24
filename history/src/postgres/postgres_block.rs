@@ -222,6 +222,7 @@ mod tests {
     fn create_tx_info() -> TransactionInfo {
         TransactionInfo {
             signature: "signature".to_string(),
+            is_vote: false,
             err: None,
             cu_requested: None,
             prioritization_fees: None,
