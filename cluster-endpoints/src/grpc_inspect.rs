@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -11,7 +11,7 @@ use tokio::time::sleep;
 
 
 // note: we assume that the invariants hold even right after startup
-pub fn block_debug_confirmation_levels(mut block_notifier: BlockStream) -> JoinHandle<()> {
+pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStream) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut cleanup_before_slot = 0;
         // throttle cleanup
@@ -182,14 +182,14 @@ pub fn block_debug_confirmation_levels(mut block_notifier: BlockStream) -> JoinH
     })
 }
 
-pub fn block_debug_listen(
+pub fn debugtask_blockstream_monotonic(
     mut block_notifier: BlockStream,
     commitment_config: CommitmentConfig,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut last_highest_slot_number = 0;
 
-        loop {
+        'recv_loop: loop {
             match block_notifier.recv().await {
                 Ok(block) => {
                     if block.commitment_config != commitment_config {
@@ -206,13 +206,13 @@ pub fn block_debug_listen(
                     if last_highest_slot_number != 0 {
                         if block.parent_slot == last_highest_slot_number {
                             debug!(
-                                "parent slot is correct ({} -> {})",
-                                block.slot, block.parent_slot
+                                "parent slot@{} is correct ({} -> {})",
+                                commitment_config.commitment, block.slot, block.parent_slot
                             );
                         } else {
                             warn!(
-                                "parent slot not correct ({} -> {})",
-                                block.slot, block.parent_slot
+                                "parent slot@{} not correct ({} -> {})",
+                                commitment_config.commitment, block.slot, block.parent_slot
                             );
                         }
                     }
@@ -221,25 +221,24 @@ pub fn block_debug_listen(
                         last_highest_slot_number = block.slot;
                     } else {
                         // note: ATM this fails very often (using the RPC poller)
-                        warn!(
-                            "Monotonic check failed - block {} is out of order, last highest was {}",
+                        warn!("monotonic check failed - block {} is out of order, last highest was {}",
                             block.slot, last_highest_slot_number
                         );
                     }
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
-                    warn!(
-                        "Could not keep up with producer - missed {} blocks",
+                    // very unlikely to happen
+                    warn!("Could not keep up with producer - missed {} blocks",
                         missed_blocks
                     );
                 }
-                Err(other_err) => {
-                    error!("Error receiving block: {:?}", other_err);
+                Err(RecvError::Closed) => {
+                    info!("Channel was closed - aborting");
+                    break 'recv_loop;
                 }
             }
-
-            // ...
-        }
+        } // -- END receiver loop
+        info!("Geyser channel debug task shutting down.")
     })
 }
 
