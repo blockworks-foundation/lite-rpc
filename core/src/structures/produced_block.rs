@@ -1,11 +1,5 @@
-use solana_sdk::{
-    slot_history::Slot,
-    transaction::TransactionError,
-};
-use solana_transaction_status::{
-    Reward, RewardType, UiConfirmedBlock,
-    UiTransactionStatusMeta,
-};
+use solana_sdk::{slot_history::Slot, transaction::TransactionError};
+use solana_transaction_status::{Reward, RewardType, UiConfirmedBlock, UiTransactionStatusMeta};
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
