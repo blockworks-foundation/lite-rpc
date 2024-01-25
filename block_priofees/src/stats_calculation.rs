@@ -1,6 +1,6 @@
 use crate::rpc_data::FeePoint;
 use itertools::Itertools;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::iter::zip;
 
 /// `quantile` function is the same as the median if q=50, the same as the minimum if q=0 and the same as the maximum if q=100.
@@ -39,22 +39,21 @@ pub fn calculate_supp_percentiles(
 
     // get stats by CU
     let cu_sum: u64 = prio_fees_in_block.iter().map(|x| x.1).sum();
-    let mut dist_fee_by_cu: HashMap<i32, u64> = HashMap::new();
+    let mut dist_fee_by_cu: BTreeMap<u64, u64> = BTreeMap::new();
     let mut agg: u64 = 0;
     let mut p = 0;
     let p_step = 5;
+
     for (prio, cu) in &prio_fees_in_block {
         agg += cu;
-        // write p's as long as agg beats the aggregated cu
-        while agg >= (cu_sum as f64 * p as f64 / 100.0) as u64 && p <= 100 {
-            dist_fee_by_cu.insert(p, *prio);
-            assert_ne!(p_step, 0, "zero steps might cause infinite loop");
+        if agg >= (cu_sum * p) / 100 {
             p += p_step;
+            dist_fee_by_cu.insert(p, *prio);
         }
     }
+
     let dist_fee_by_cu: Vec<FeePoint> = dist_fee_by_cu
         .into_iter()
-        .sorted_by_key(|(p, _)| *p)
         .map(|(p, fees)| FeePoint {
             p: p as u32,
             v: fees,
