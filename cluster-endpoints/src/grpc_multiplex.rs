@@ -101,7 +101,7 @@ fn create_grpc_multiplex_processed_block_stream(
 fn create_grpc_multiplex_block_meta_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     commitment_config: CommitmentConfig,
-) -> impl Stream<Item = String> {
+) -> impl Stream<Item =BlockMeta> {
 
     let mut channels = vec![];
     for grpc_source in grpc_sources {
@@ -114,7 +114,7 @@ fn create_grpc_multiplex_block_meta_stream(
     let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
 
     assert!(commitment_config != CommitmentConfig::processed(), "fastestwins strategy must not be used for processed level");
-    geyser_grpc_connector::grpcmultiplex_fastestwins::create_multiplexed_stream(source_channels, BlockMetaHashExtractor(commitment_config))
+    geyser_grpc_connector::grpcmultiplex_fastestwins::create_multiplexed_stream(source_channels, BlockMetaExtractor(commitment_config))
 }
 
 /// connect to multiple grpc sources to consume processed blocks and block status update
@@ -211,7 +211,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             }
                             recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
                         },
-                        Some(confirmed_blockhash) = confirmed_blockmeta_stream.next() => {
+                        Some(BlockMeta { blockhash: confirmed_blockhash }) = confirmed_blockmeta_stream.next() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
                             if let Some(cached_processed_block) = recent_processed_blocks.get(&confirmed_blockhash) {
                                 let confirmed_block = cached_processed_block.to_confirmed_block();
@@ -227,7 +227,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                     confirmed_blockhash, confirmed_block_not_yet_processed.len());
                             }
                         },
-                        Some(finalized_blockhash) = finalized_blockmeta_stream.next() => {
+                        Some(BlockMeta { blockhash: finalized_blockhash }) = finalized_blockmeta_stream.next() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&finalized_blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
@@ -350,14 +350,20 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
 }
 
 
-struct BlockMetaHashExtractor(CommitmentConfig);
+struct BlockMeta {
+    pub blockhash: String,
+}
 
-impl FromYellowstoneExtractor for BlockMetaHashExtractor {
-    type Target = String;
-    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(u64, String)> {
+struct BlockMetaExtractor(CommitmentConfig);
+
+impl FromYellowstoneExtractor for BlockMetaExtractor {
+    type Target = BlockMeta;
+    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(u64, BlockMeta)> {
         match update.update_oneof {
             Some(UpdateOneof::BlockMeta(block_meta)) => {
-                Some((block_meta.slot, block_meta.blockhash))
+                Some((block_meta.slot, BlockMeta {
+                    blockhash: block_meta.blockhash,
+                }))
             }
             _ => None,
         }
