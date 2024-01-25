@@ -1,6 +1,5 @@
 use crate::rpc_data::FeePoint;
 use itertools::Itertools;
-use std::collections::BTreeMap;
 use std::iter::zip;
 
 /// `quantile` function is the same as the median if q=50, the same as the minimum if q=0 and the same as the maximum if q=100.
@@ -39,26 +38,23 @@ pub fn calculate_supp_percentiles(
 
     // get stats by CU
     let cu_sum: u64 = prio_fees_in_block.iter().map(|x| x.1).sum();
-    let mut dist_fee_by_cu: BTreeMap<u64, u64> = BTreeMap::new();
-    let mut agg: u64 = 0;
-    let mut p = 0;
+    let mut agg: u64 = prio_fees_in_block[0].1;
+    let mut index = 0;
     let p_step = 5;
 
-    for (prio, cu) in &prio_fees_in_block {
-        agg += cu;
-        if agg >= (cu_sum * p) / 100 {
-            p += p_step;
-            dist_fee_by_cu.insert(p, *prio);
-        }
-    }
-
-    let dist_fee_by_cu: Vec<FeePoint> = dist_fee_by_cu
-        .into_iter()
-        .map(|(p, fees)| FeePoint {
-            p: p as u32,
-            v: fees,
-        })
-        .collect_vec();
+    let dist_fee_by_cu = (0..=100)
+        .step_by(p_step)
+        .map(|p| {
+            if agg < (cu_sum * p) / 100 {
+                index += 1;
+                agg += prio_fees_in_block[index].1;
+            }
+            let (prio, _) = prio_fees_in_block[index];
+            FeePoint {
+                p: p as u32,
+                v: prio
+            }
+        }).collect_vec();
 
     Percentiles {
         by_tx: dist_fee_by_index
