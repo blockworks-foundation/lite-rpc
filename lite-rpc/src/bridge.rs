@@ -1,24 +1,12 @@
-use crate::{
-    configs::{IsBlockHashValidConfig, SendTransactionConfig},
-    jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
-    rpc::LiteRpcServer,
-};
-use solana_sdk::epoch_info::EpochInfo;
 use std::collections::HashMap;
-
-use solana_lite_rpc_services::{
-    transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
-};
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::Context;
-use jsonrpsee::{core::SubscriptionResult, server::ServerBuilder, PendingSubscriptionSink};
-use prometheus::{opts, register_int_counter, IntCounter};
-use solana_lite_rpc_core::{
-    encoding,
-    stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
-    AnyhowJoinHandle,
+use jsonrpsee::{
+    core::SubscriptionResult, server::ServerBuilder, DisconnectError, PendingSubscriptionSink,
 };
-use solana_lite_rpc_history::history::History;
+use log::{debug, error, warn};
+use prometheus::{opts, register_int_counter, IntCounter};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
@@ -33,10 +21,29 @@ use solana_rpc_client_api::{
         RpcVoteAccountStatus,
     },
 };
+use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
-use std::{str::FromStr, sync::Arc};
 use tokio::net::ToSocketAddrs;
+use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
+
+use solana_lite_rpc_core::{
+    encoding,
+    stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
+    AnyhowJoinHandle,
+};
+use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_services::{
+    transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
+};
+
+use crate::{
+    configs::{IsBlockHashValidConfig, SendTransactionConfig},
+    jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
+    rpc::LiteRpcServer,
+};
+use solana_lite_rpc_block_priofees::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
+use solana_lite_rpc_block_priofees::PrioFeesService;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -53,6 +60,8 @@ lazy_static::lazy_static! {
     register_int_counter!(opts!("literpc_rpc_airdrop", "RPC call to request airdrop")).unwrap();
     static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
     register_int_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
+    static ref RPC_BLOCK_PRIOFEES_SUBSCRIBE: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_block_priofees_subscribe", "RPC call to subscribe to block prio fees")).unwrap();
 }
 
 /// A bridge between clients and tpu
@@ -63,6 +72,7 @@ pub struct LiteBridge {
     rpc_client: Arc<RpcClient>,
     transaction_service: TransactionService,
     history: History,
+    prio_fees_service: PrioFeesService,
 }
 
 impl LiteBridge {
@@ -71,12 +81,14 @@ impl LiteBridge {
         data_cache: DataCache,
         transaction_service: TransactionService,
         history: History,
+        prio_fees_service: PrioFeesService,
     ) -> Self {
         Self {
             rpc_client,
             data_cache,
             transaction_service,
             history,
+            prio_fees_service,
         }
     }
 
@@ -509,5 +521,80 @@ impl LiteRpcServer for LiteBridge {
         _config: Option<RpcGetVoteAccountsConfig>,
     ) -> crate::rpc::Result<RpcVoteAccountStatus> {
         todo!()
+    }
+
+    async fn get_latest_block_priofees(&self) -> crate::rpc::Result<RpcResponse<PrioFeesStats>> {
+        match self.prio_fees_service.get_latest_priofees().await {
+            Some((confirmation_slot, priofees)) => {
+                return Ok(RpcResponse {
+                    context: RpcResponseContext {
+                        slot: confirmation_slot,
+                        api_version: None,
+                    },
+                    value: priofees,
+                });
+            }
+            None => {
+                return Err(jsonrpsee::core::Error::Custom(
+                    "No latest priofees stats available found".to_string(),
+                ));
+            }
+        }
+    }
+
+    // use websocket-tungstenite-retry->examples/consume_literpc_priofees.rs to test
+    async fn latest_block_priofees_subscribe(
+        &self,
+        pending: PendingSubscriptionSink,
+    ) -> SubscriptionResult {
+        let sink = pending.accept().await?;
+
+        let mut block_fees_stream = self.prio_fees_service.block_fees_stream.subscribe();
+        tokio::spawn(async move {
+            RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
+
+            'recv_loop: loop {
+                match block_fees_stream.recv().await {
+                    Ok(PrioFeesUpdateMessage {
+                        slot: confirmation_slot,
+                        priofees_stats,
+                    }) => {
+                        let result_message =
+                            jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
+                                context: RpcResponseContext {
+                                    slot: confirmation_slot,
+                                    api_version: None,
+                                },
+                                value: priofees_stats,
+                            });
+
+                        match sink.send(result_message.unwrap()).await {
+                            Ok(()) => {
+                                // success
+                                continue 'recv_loop;
+                            }
+                            Err(DisconnectError(_subscription_message)) => {
+                                debug!("Stopping subscription task on disconnect");
+                                return;
+                            }
+                        };
+                    }
+                    Err(Lagged(lagged)) => {
+                        // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
+                        warn!(
+                            "subscriber laggs some({}) priofees update messages - continue",
+                            lagged
+                        );
+                        continue 'recv_loop;
+                    }
+                    Err(Closed) => {
+                        error!("failed to receive block, sender closed - aborting");
+                        return;
+                    }
+                }
+            }
+        });
+
+        Ok(())
     }
 }

@@ -1,5 +1,6 @@
 use anyhow::bail;
 use log::warn;
+use solana_lite_rpc_cluster_endpoints::rpc_polling;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcBlockConfig;
@@ -41,7 +42,7 @@ impl FaithfulBlockStore {
             .get_block_with_config(slot, faithful_config)
             .await
         {
-            Ok(block) => Ok(ProducedBlock::from_ui_block(
+            Ok(block) => Ok(rpc_polling::poll_blocks::from_ui_block(
                 block,
                 slot,
                 CommitmentConfig::finalized(),

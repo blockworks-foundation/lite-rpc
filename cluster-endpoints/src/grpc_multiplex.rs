@@ -1,5 +1,5 @@
 use crate::grpc_subscription::{
-    create_block_processing_task, create_slot_stream_task, map_block_update,
+    create_block_processing_task, create_slot_stream_task, from_grpc_block_update,
 };
 use anyhow::Context;
 use futures::{Stream, StreamExt};
@@ -29,7 +29,7 @@ impl FromYellowstoneExtractor for BlockExtractor {
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
             Some(UpdateOneof::Block(update_block_message)) => {
-                let block = map_block_update(update_block_message, self.0);
+                let block = from_grpc_block_update(update_block_message, self.0);
                 Some((block.slot, block))
             }
             _ => None,
@@ -53,7 +53,7 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
 
 fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    confirmed_block_sender: UnboundedSender<ProducedBlock>,
+    processed_block_sender: UnboundedSender<ProducedBlock>,
 ) -> Vec<AnyhowJoinHandle> {
     let commitment_config = CommitmentConfig::processed();
 
@@ -82,8 +82,8 @@ fn create_grpc_multiplex_processed_block_stream(
                     && (slots_processed.len() < MAX_SIZE / 2
                         || slot > slots_processed.first().cloned().unwrap_or_default())
                 {
-                    confirmed_block_sender
-                        .send(map_block_update(block, commitment_config))
+                    processed_block_sender
+                        .send(from_grpc_block_update(block, commitment_config))
                         .context("Issue to send confirmed block")?;
                     slots_processed.insert(slot);
                     if slots_processed.len() > MAX_SIZE {

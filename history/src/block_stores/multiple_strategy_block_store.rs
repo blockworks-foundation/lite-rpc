@@ -26,7 +26,6 @@ pub struct BlockStorageData {
 
 impl Deref for BlockStorageData {
     type Target = ProducedBlock;
-
     fn deref(&self) -> &Self::Target {
         &self.block
     }

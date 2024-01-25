@@ -2518,6 +2518,7 @@ dependencies = [
  "quinn",
  "serde",
  "serde_json",
+ "solana-lite-rpc-block-priofees",
  "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
  "solana-lite-rpc-history",
@@ -4279,6 +4280,24 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 2.0.48",
+]
+
+[[package]]
+name = "solana-lite-rpc-block-priofees"
+version = "0.2.3"
+dependencies = [
+ "dashmap 5.5.3",
+ "itertools 0.10.5",
+ "jsonrpsee",
+ "lazy_static",
+ "log",
+ "prometheus",
+ "serde",
+ "serde_json",
+ "solana-lite-rpc-core",
+ "solana-sdk",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

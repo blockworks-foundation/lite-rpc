@@ -8,7 +8,7 @@ use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
-use log::info;
+use log::{debug, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
@@ -41,6 +41,8 @@ use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceConfig};
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
+
+use solana_lite_rpc_block_priofees::start_block_priofees_task;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
@@ -50,17 +52,32 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
+use tokio::time::{timeout, Instant};
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    while let Ok(block) = block_stream.recv().await {
-        if block.commitment_config == commitment_config {
-            return block;
+    let started = Instant::now();
+    loop {
+        match timeout(Duration::from_millis(500), block_stream.recv()).await {
+            Ok(Ok(block)) => {
+                if block.commitment_config == commitment_config {
+                    return block;
+                }
+            }
+            Err(_elapsed) => {
+                debug!(
+                    "waiting for latest block ({}) ... {:.02}ms",
+                    commitment_config.commitment,
+                    started.elapsed().as_secs_f32() * 1000.0
+                );
+            }
+            Ok(Err(_error)) => {
+                panic!("Did not recv blocks");
+            }
         }
     }
-    panic!("Did  not recv blocks");
 }
 
 pub async fn start_postgres(
@@ -140,12 +157,14 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?
     };
     let EndpointStreaming {
+        // note: blocks_notifier will be dropped at some point
         blocks_notifier,
         cluster_info_notifier,
         slot_notifier,
         vote_account_notifier,
     } = subscriptions;
 
+    info!("Waiting for first finalized block...");
     let finalized_block =
         get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
     info!("Got finalized block: {:?}", finalized_block.slot);
@@ -180,6 +199,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         cluster_info_notifier,
         vote_account_notifier,
     );
+
+    let (_block_priofees_task, block_priofees_service) =
+        start_block_priofees_task(blocks_notifier.resubscribe()).await;
+
     drop(blocks_notifier);
 
     let (notification_channel, postgres) = start_postgres(postgres).await?;
@@ -237,6 +260,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             data_cache.clone(),
             transaction_service,
             history,
+            block_priofees_service,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
@@ -250,6 +274,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         res = bridge_service => {
             anyhow::bail!("Server {res:?}")
         }
+        // allow it to fail
+        // res = block_priofees_task => {
+        //     anyhow::bail!("Prio Fees Service {res:?}")
+        // }
         res = postgres => {
             anyhow::bail!("Postgres service {res:?}");
         }

@@ -1,6 +1,7 @@
 use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
 use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::proc_macros::rpc;
+use solana_lite_rpc_block_priofees::rpc_data::PrioFeesStats;
 use solana_rpc_client_api::config::{
     RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper, RpcContextConfig,
     RpcGetVoteAccountsConfig, RpcLeaderScheduleConfig, RpcProgramAccountsConfig,
@@ -229,4 +230,16 @@ pub trait LiteRpc {
         &self,
         config: Option<RpcGetVoteAccountsConfig>,
     ) -> crate::rpc::Result<RpcVoteAccountStatus>;
+
+    // ***********************
+    // expose prio fees distribution per block
+    // (this is special method not available in solana rpc)
+    // ***********************
+
+    #[method(name = "getLatestBlockPrioFees")]
+    async fn get_latest_block_priofees(&self) -> crate::rpc::Result<RpcResponse<PrioFeesStats>>;
+
+    /// subscribe to prio fees distribution per block; uses confirmation level "confirmed"
+    #[subscription(name = "blockPrioritizationFeesSubscribe" => "blockPrioritizationFeesNotification", unsubscribe="blockPrioritizationFeesUnsubscribe", item=PrioFeesStats)]
+    async fn latest_block_priofees_subscribe(&self) -> SubscriptionResult;
 }
