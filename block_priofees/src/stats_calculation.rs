@@ -52,9 +52,10 @@ pub fn calculate_supp_percentiles(
             let (prio, _) = prio_fees_in_block[index];
             FeePoint {
                 p: p as u32,
-                v: prio
+                v: prio,
             }
-        }).collect_vec();
+        })
+        .collect_vec();
 
     Percentiles {
         by_tx: dist_fee_by_index
