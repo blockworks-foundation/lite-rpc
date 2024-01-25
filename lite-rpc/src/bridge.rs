@@ -287,6 +287,18 @@ impl LiteRpcServer for LiteBridge {
             .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status))
             .collect();
 
+        for tx_sig in sigs {
+            match self.data_cache.txs.get(&tx_sig) {
+                None => {
+                    log::warn!("signature not found: {tx_sig}");
+
+                }
+                Some(found) => {
+                    log::warn!("signature status for {} - status={:?}", tx_sig, found.status);
+                }
+            };
+        }
+
         Ok(RpcResponse {
             context: RpcResponseContext {
                 slot: self
