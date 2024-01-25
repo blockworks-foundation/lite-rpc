@@ -10,10 +10,15 @@ pub struct TxAggregateStats {
 
 #[derive(Clone, Serialize, Debug)]
 pub struct PrioFeesStats {
+    // the arrays are same size and ordered monotonically
     pub by_tx: Vec<u64>,
     pub by_tx_percentiles: Vec<f32>,
+
+    // the arrays are same size and ordered monotonically
     pub by_cu: Vec<u64>,
     pub by_cu_percentiles: Vec<f32>,
+
+    // per block stats
     pub tx_count: TxAggregateStats,
     pub cu_consumed: TxAggregateStats,
 }
