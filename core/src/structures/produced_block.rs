@@ -1,4 +1,5 @@
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
 use solana_transaction_status::Reward;
 
@@ -12,6 +13,8 @@ pub struct TransactionInfo {
     pub cu_consumed: Option<u64>,
     pub recent_blockhash: String,
     pub message: String,
+    pub writable_accounts: Vec<Pubkey>,
+    pub readable_accounts: Vec<Pubkey>,
 }
 
 // TODO try to remove Clone

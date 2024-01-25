@@ -229,6 +229,8 @@ mod tests {
             cu_consumed: None,
             recent_blockhash: "recent_blockhash".to_string(),
             message: "message".to_string(),
+            writable_accounts: vec![],
+            readable_accounts: vec![],
         }
     }
 }

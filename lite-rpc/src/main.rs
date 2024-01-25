@@ -35,6 +35,7 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
+use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
@@ -42,7 +43,7 @@ use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceCon
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
-use solana_lite_rpc_block_priofees::start_block_priofees_task;
+use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
@@ -200,8 +201,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     );
 
-    let (_block_priofees_task, block_priofees_service) =
-        start_block_priofees_task(blocks_notifier.resubscribe()).await;
+    let (block_priofees_task, block_priofees_service) =
+        start_block_priofees_task(blocks_notifier.resubscribe(), 100);
+
+    let (account_priofees_task, account_priofees_service) =
+        AccountPrioService::start_account_priofees_task(blocks_notifier.resubscribe(), 100);
 
     drop(blocks_notifier);
 
@@ -261,6 +265,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             transaction_service,
             history,
             block_priofees_service,
+            account_priofees_service,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
@@ -286,6 +291,12 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         }
         res = futures::future::select_all(cluster_endpoint_tasks) => {
             anyhow::bail!("cluster endpoint failure {res:?}")
+        }
+        res = block_priofees_task => {
+            anyhow::bail!("block prioritization fees task failed {res:?}")
+        }
+        res = account_priofees_task => {
+            anyhow::bail!("account prioritization fees task failed {res:?}")
         }
     }
 }

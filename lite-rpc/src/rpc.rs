@@ -1,7 +1,8 @@
 use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
 use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::proc_macros::rpc;
-use solana_lite_rpc_block_priofees::rpc_data::PrioFeesStats;
+use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
+use solana_lite_rpc_prioritization_fees::rpc_data::{AccountPrioFeesStats, PrioFeesStats};
 use solana_rpc_client_api::config::{
     RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper, RpcContextConfig,
     RpcGetVoteAccountsConfig, RpcLeaderScheduleConfig, RpcProgramAccountsConfig,
@@ -237,9 +238,22 @@ pub trait LiteRpc {
     // ***********************
 
     #[method(name = "getLatestBlockPrioFees")]
-    async fn get_latest_block_priofees(&self) -> crate::rpc::Result<RpcResponse<PrioFeesStats>>;
+    async fn get_latest_block_priofees(
+        &self,
+        method: Option<PrioritizationFeeCalculationMethod>,
+    ) -> crate::rpc::Result<RpcResponse<PrioFeesStats>>;
 
     /// subscribe to prio fees distribution per block; uses confirmation level "confirmed"
     #[subscription(name = "blockPrioritizationFeesSubscribe" => "blockPrioritizationFeesNotification", unsubscribe="blockPrioritizationFeesUnsubscribe", item=PrioFeesStats)]
     async fn latest_block_priofees_subscribe(&self) -> SubscriptionResult;
+
+    #[method(name = "getLatestAccountsPrioFees")]
+    async fn get_latest_account_priofees(
+        &self,
+        account: String,
+        method: Option<PrioritizationFeeCalculationMethod>,
+    ) -> crate::rpc::Result<RpcResponse<AccountPrioFeesStats>>;
+
+    #[subscription(name = "accountPrioritizationFeesSubscribe" => "accountPrioritizationFeesNotification", unsubscribe="accountPrioritizationFeesUnsubscribe", item=AccountPrioFeesStats)]
+    async fn latest_account_priofees_subscribe(&self, account: String) -> SubscriptionResult;
 }

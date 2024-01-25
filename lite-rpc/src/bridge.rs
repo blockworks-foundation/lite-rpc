@@ -7,6 +7,8 @@ use jsonrpsee::{
 };
 use log::{debug, error, warn};
 use prometheus::{opts, register_int_counter, IntCounter};
+use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
+use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
@@ -42,8 +44,10 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
-use solana_lite_rpc_block_priofees::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
-use solana_lite_rpc_block_priofees::PrioFeesService;
+use solana_lite_rpc_prioritization_fees::rpc_data::{
+    AccountPrioFeesStats, PrioFeesStats, PrioFeesUpdateMessage,
+};
+use solana_lite_rpc_prioritization_fees::PrioFeesService;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -73,6 +77,7 @@ pub struct LiteBridge {
     transaction_service: TransactionService,
     history: History,
     prio_fees_service: PrioFeesService,
+    account_priofees_service: AccountPrioService,
 }
 
 impl LiteBridge {
@@ -82,6 +87,7 @@ impl LiteBridge {
         transaction_service: TransactionService,
         history: History,
         prio_fees_service: PrioFeesService,
+        account_priofees_service: AccountPrioService,
     ) -> Self {
         Self {
             rpc_client,
@@ -89,6 +95,7 @@ impl LiteBridge {
             transaction_service,
             history,
             prio_fees_service,
+            account_priofees_service,
         }
     }
 
@@ -523,22 +530,33 @@ impl LiteRpcServer for LiteBridge {
         todo!()
     }
 
-    async fn get_latest_block_priofees(&self) -> crate::rpc::Result<RpcResponse<PrioFeesStats>> {
-        match self.prio_fees_service.get_latest_priofees().await {
-            Some((confirmation_slot, priofees)) => {
-                return Ok(RpcResponse {
-                    context: RpcResponseContext {
-                        slot: confirmation_slot,
-                        api_version: None,
-                    },
-                    value: priofees,
-                });
+    async fn get_latest_block_priofees(
+        &self,
+        method: Option<PrioritizationFeeCalculationMethod>,
+    ) -> crate::rpc::Result<RpcResponse<PrioFeesStats>> {
+        let method = method.unwrap_or_default();
+        let res = match method {
+            PrioritizationFeeCalculationMethod::Latest => {
+                self.prio_fees_service.get_latest_priofees().await
             }
-            None => {
-                return Err(jsonrpsee::core::Error::Custom(
-                    "No latest priofees stats available found".to_string(),
-                ));
+            PrioritizationFeeCalculationMethod::Last(nb) => {
+                self.prio_fees_service
+                    .get_last_n_priofees_aggregate(nb)
+                    .await
             }
+        };
+
+        match res {
+            Some((confirmation_slot, priofees)) => Ok(RpcResponse {
+                context: RpcResponseContext {
+                    slot: confirmation_slot,
+                    api_version: None,
+                },
+                value: priofees,
+            }),
+            None => Err(jsonrpsee::core::Error::Custom(
+                "No latest priofees stats available found".to_string(),
+            )),
         }
     }
 
@@ -596,5 +614,42 @@ impl LiteRpcServer for LiteBridge {
         });
 
         Ok(())
+    }
+
+    async fn get_latest_account_priofees(
+        &self,
+        account: String,
+        method: Option<PrioritizationFeeCalculationMethod>,
+    ) -> crate::rpc::Result<RpcResponse<AccountPrioFeesStats>> {
+        if let Ok(account) = Pubkey::from_str(&account) {
+            let method = method.unwrap_or_default();
+            let (slot, value) = match method {
+                PrioritizationFeeCalculationMethod::Latest => {
+                    self.account_priofees_service.get_latest_stats(&account)
+                }
+                PrioritizationFeeCalculationMethod::Last(nb) => {
+                    self.account_priofees_service.get_n_last_stats(&account, nb)
+                }
+            };
+            Ok(RpcResponse {
+                context: RpcResponseContext {
+                    slot,
+                    api_version: None,
+                },
+                value,
+            })
+        } else {
+            Err(jsonrpsee::core::Error::Custom(
+                "Invalid account".to_string(),
+            ))
+        }
+    }
+
+    async fn latest_account_priofees_subscribe(
+        &self,
+        _pending: PendingSubscriptionSink,
+        _account: String,
+    ) -> SubscriptionResult {
+        todo!()
     }
 }

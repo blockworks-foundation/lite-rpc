@@ -26,14 +26,14 @@ pub struct PrioFeesStats {
 #[derive(Clone, Serialize, Debug, Eq, PartialEq, Hash)]
 pub struct FeePoint {
     // percentile
-    pub p: u32,
+    pub percentile: u32,
     // value of fees in lamports
-    pub v: u64,
+    pub fees: u64,
 }
 
 impl Display for FeePoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(p{}, {})", self.p, self.v)
+        write!(f, "(p{}, {})", self.percentile, self.fees)
     }
 }
 
@@ -41,4 +41,10 @@ impl Display for FeePoint {
 pub struct PrioFeesUpdateMessage {
     pub slot: Slot,
     pub priofees_stats: PrioFeesStats,
+}
+
+#[derive(Clone, Serialize, Debug)]
+pub struct AccountPrioFeesStats {
+    pub write_stats: PrioFeesStats,
+    pub all_stats: PrioFeesStats,
 }
