@@ -4,6 +4,7 @@ use solana_sdk::hash::Hash;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 use std::sync::{atomic::AtomicU64, Arc};
+use log::error;
 use tokio::sync::RwLock;
 
 use crate::{
@@ -48,9 +49,12 @@ impl DataCache {
             .get_latest_block_info(CommitmentConfig::finalized())
             .await;
         self.block_information_store.clean().await;
-        self.txs.clean(block_info.block_height);
 
-        self.tx_subs.clean(ttl_duration);
+        error!("DISABLE CLEAN - block_height={}", block_info.block_height);
+        // FIXME
+        // self.txs.clean(block_info.block_height);
+
+        // self.tx_subs.clean(ttl_duration);
     }
 
     pub async fn check_if_confirmed_or_expired_blockheight(
