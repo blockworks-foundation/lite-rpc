@@ -4336,6 +4336,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tracing",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
