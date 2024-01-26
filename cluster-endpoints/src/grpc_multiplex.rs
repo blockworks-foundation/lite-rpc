@@ -219,8 +219,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             // timebased restart
                             if
                                 cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV
-                                && cleanup_without_recv_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV
-                                && cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
+                                || cleanup_without_recv_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV
+                                || cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
                                 log::error!("block or block meta stream stopped restaring blocks");
                                 break;
                             }
