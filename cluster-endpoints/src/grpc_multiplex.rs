@@ -21,6 +21,7 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use tracing::{debug_span, instrument, trace_span, warn_span};
 
 struct BlockExtractor(CommitmentConfig);
 
@@ -41,6 +42,7 @@ struct BlockMetaHashExtractor(CommitmentConfig);
 
 impl FromYellowstoneExtractor for BlockMetaHashExtractor {
     type Target = String;
+    #[tracing::instrument(skip_all)]
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(u64, String)> {
         match update.update_oneof {
             Some(UpdateOneof::BlockMeta(block_meta)) => {
@@ -75,6 +77,7 @@ fn create_grpc_multiplex_processed_block_stream(
             let block_message = futures::stream::select_all(streams.clone()).next().await;
             const MAX_SIZE: usize = 1024;
             if let Some(block) = block_message {
+                debug_span!("grpc_multiplex_processed_block_stream", ?block.slot);
                 let slot = block.slot;
                 // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                 // it means that the slot is too old to process
@@ -169,6 +172,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     tokio::select! {
                         processed_block = processed_block_reciever.recv() => {
                             cleanup_without_recv_blocks = 0;
+
 
                             let processed_block = processed_block.expect("processed block from stream");
                             trace!("got processed block {} with blockhash {}",
