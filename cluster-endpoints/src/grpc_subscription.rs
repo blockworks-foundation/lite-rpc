@@ -263,7 +263,7 @@ pub fn create_block_processing_task(
         loop {
             let mut blocks_subs = HashMap::new();
             blocks_subs.insert(
-                "client".to_string(),
+                "block_client".to_string(),
                 SubscribeRequestFilterBlocks {
                     account_include: Default::default(),
                     include_transactions: Some(true),
