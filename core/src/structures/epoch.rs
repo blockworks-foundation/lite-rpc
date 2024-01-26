@@ -4,6 +4,7 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::sysvar::epoch_schedule::EpochSchedule;
+use std::fmt::Display;
 use std::sync::Arc;
 
 #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord)]
@@ -14,8 +15,11 @@ pub struct Epoch {
     pub absolute_slot: Slot,
 }
 
+#[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Eq, Ord, Hash)]
+pub struct EpochRef(u64);
+
 impl Epoch {
-    pub fn into_epoch_info(&self, block_height: u64, transaction_count: Option<u64>) -> EpochInfo {
+    pub fn as_epoch_info(&self, block_height: u64, transaction_count: Option<u64>) -> EpochInfo {
         EpochInfo {
             epoch: self.epoch,
             slot_index: self.slot_index,
@@ -24,6 +28,32 @@ impl Epoch {
             block_height,
             transaction_count,
         }
+    }
+}
+
+impl Display for EpochRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_epoch())
+    }
+}
+
+impl From<Epoch> for EpochRef {
+    fn from(epoch: Epoch) -> Self {
+        Self(epoch.epoch)
+    }
+}
+
+impl EpochRef {
+    pub fn new(epoch: u64) -> Self {
+        Self(epoch)
+    }
+
+    pub fn get_epoch(&self) -> u64 {
+        self.0
+    }
+
+    pub fn get_next_epoch(&self) -> Self {
+        Self(self.0 + 1)
     }
 }
 

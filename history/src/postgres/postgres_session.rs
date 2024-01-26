@@ -5,7 +5,10 @@ use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
-use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket};
+use tokio_postgres::{
+    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, CopyInSink, Error, NoTls, Row,
+    Socket,
+};
 
 use super::postgres_config::{PostgresSessionConfig, PostgresSessionSslConfig};
 
@@ -38,8 +41,15 @@ pub struct PostgresSession {
 }
 
 impl PostgresSession {
+    pub async fn new_from_env() -> anyhow::Result<Self> {
+        let pg_session_config = PostgresSessionConfig::new_from_env()
+            .expect("failed to start Postgres Client")
+            .expect("Postgres not enabled (use PG_ENABLED)");
+        PostgresSession::new(pg_session_config).await
+    }
+
     pub async fn new(
-        PostgresSessionConfig { pg_config, ssl }: &PostgresSessionConfig,
+        PostgresSessionConfig { pg_config, ssl }: PostgresSessionConfig,
     ) -> anyhow::Result<Self> {
         let pg_config = pg_config.parse::<tokio_postgres::Config>()?;
 
@@ -94,7 +104,7 @@ impl PostgresSession {
                 log::error!("Connection to Postgres broke {err:?}");
                 return;
             }
-            unreachable!("Postgres thread returned")
+            log::debug!("Postgres thread shutting down");
         });
 
         Ok(client)
@@ -125,12 +135,97 @@ impl PostgresSession {
         }
     }
 
+    pub fn values_vecvec(args: usize, rows: usize, types: &[&str]) -> String {
+        let mut query = String::new();
+
+        Self::multiline_query(&mut query, args, rows, types);
+
+        query
+    }
+
+    // workaround: produces ((a,b,c)) while (a,b,c) would suffice
+    pub fn values_vec(args: usize, types: &[&str]) -> String {
+        let mut query = String::new();
+
+        Self::multiline_query(&mut query, args, 1, types);
+
+        query
+    }
+
     pub async fn execute(
         &self,
-        statement: &String,
+        statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
         self.client.execute(statement, params).await
+    }
+
+    pub async fn execute_simple(&self, statement: &str) -> Result<(), Error> {
+        self.client.batch_execute(statement).await
+    }
+
+    pub async fn execute_prepared_batch(
+        &self,
+        statement: &str,
+        params: &Vec<Vec<&(dyn ToSql + Sync)>>,
+    ) -> Result<u64, Error> {
+        let prepared_stmt = self.client.prepare(statement).await?;
+        let mut total_inserted = 0;
+        for row in params {
+            let result = self.client.execute(&prepared_stmt, row).await;
+            total_inserted += result?;
+        }
+        Ok(total_inserted)
+    }
+
+    // TODO provide an optimized version using "COPY IN" instead of "INSERT INTO" (https://trello.com/c/69MlQU6u)
+    // pub async fn execute_copyin(...)
+
+    pub async fn execute_prepared(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, tokio_postgres::error::Error> {
+        let prepared_stmt = self.client.prepare(statement).await?;
+        self.client.execute(&prepared_stmt, params).await
+    }
+
+    pub async fn execute_and_return(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        self.client.query_opt(statement, params).await
+    }
+
+    pub async fn query_opt(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        self.client.query_opt(statement, params).await
+    }
+
+    pub async fn query_one(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Row, Error> {
+        self.client.query_one(statement, params).await
+    }
+
+    pub async fn query_list(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<Row>, Error> {
+        self.client.query(statement, params).await
+    }
+
+    pub async fn copy_in(&self, statement: &str) -> Result<CopyInSink<bytes::Bytes>, Error> {
+        // BinaryCopyInWriter
+        // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
+        self.client.copy_in(statement).await
     }
 }
 
@@ -142,7 +237,7 @@ pub struct PostgresSessionCache {
 
 impl PostgresSessionCache {
     pub async fn new(config: PostgresSessionConfig) -> anyhow::Result<Self> {
-        let session = PostgresSession::new(&config).await?;
+        let session = PostgresSession::new(config.clone()).await?;
         Ok(Self {
             session: Arc::new(RwLock::new(session)),
             config,
@@ -153,11 +248,58 @@ impl PostgresSessionCache {
         let session = self.session.read().await;
         if session.client.is_closed() {
             drop(session);
-            let session = PostgresSession::new(&self.config).await?;
+            let session = PostgresSession::new(self.config.clone()).await?;
             *self.session.write().await = session.clone();
             Ok(session)
         } else {
             Ok(session.clone())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PostgresWriteSession {
+    session: Arc<RwLock<PostgresSession>>,
+    pub pg_session_config: PostgresSessionConfig,
+}
+
+impl PostgresWriteSession {
+    pub async fn new_from_env() -> anyhow::Result<Self> {
+        let pg_session_config = PostgresSessionConfig::new_from_env()
+            .expect("failed to start Postgres Client")
+            .expect("Postgres not enabled (use PG_ENABLED)");
+        Self::new(pg_session_config).await
+    }
+
+    pub async fn new(pg_session_config: PostgresSessionConfig) -> anyhow::Result<Self> {
+        let session = PostgresSession::new(pg_session_config.clone()).await?;
+
+        let statement = r#"
+                SET SESSION application_name='postgres-blockstore-write-session';
+                -- default: 64MB
+                SET SESSION maintenance_work_mem = '256MB';
+            "#;
+
+        session.execute_simple(statement).await.unwrap();
+
+        Ok(Self {
+            session: Arc::new(RwLock::new(session)),
+            pg_session_config,
+        })
+    }
+
+    pub async fn get_write_session(&self) -> PostgresSession {
+        let session = self.session.read().await;
+
+        if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
+            let session = PostgresSession::new(self.pg_session_config.clone())
+                .await
+                .expect("should have created new postgres session");
+            let mut lock = self.session.write().await;
+            *lock = session.clone();
+            session
+        } else {
+            session.clone()
         }
     }
 }
@@ -171,9 +313,27 @@ fn multiline_query_test() {
 }
 
 #[test]
+fn value_query_test() {
+    let values = PostgresSession::values_vecvec(3, 2, &[]);
+    assert_eq!(values, "($1,$2,$3),($4,$5,$6)");
+}
+
+#[test]
 fn multiline_query_test_types() {
     let mut query = String::new();
 
     PostgresSession::multiline_query(&mut query, 3, 2, &["text", "int", "int"]);
     assert_eq!(query, "(($1)::text,($2)::int,($3)::int),($4,$5,$6)");
+}
+
+#[test]
+fn value_vecvec_test_types() {
+    let values = PostgresSession::values_vecvec(3, 2, &["text", "int", "int"]);
+    assert_eq!(values, "(($1)::text,($2)::int,($3)::int),($4,$5,$6)");
+}
+
+#[test]
+fn value_vec_test_types() {
+    let values = PostgresSession::values_vec(3, &["text", "int", "int"]);
+    assert_eq!(values, "(($1)::text,($2)::int,($3)::int)");
 }

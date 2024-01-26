@@ -1,5 +1,7 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_lite_rpc_core::encoding::BinaryEncoding;
+use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 use solana_lite_rpc_core::{
     structures::{
         produced_block::ProducedBlock,
@@ -8,13 +10,24 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_rpc_client_api::config::RpcBlockConfig;
+use solana_sdk::borsh0_10::try_from_slice_unchecked;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::program_utils::limited_deserialize;
+use solana_sdk::reward_type::RewardType;
+use solana_sdk::vote::instruction::VoteInstruction;
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
+    compute_budget,
     slot_history::Slot,
 };
-use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
+use solana_transaction_status::option_serializer::OptionSerializer;
+use solana_transaction_status::{
+    TransactionDetails, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta,
+};
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast::{Receiver, Sender};
+
+pub const NUM_PARALLEL_TASKS_DEFAULT: usize = 16;
 
 pub async fn process_block(
     rpc_client: &RpcClient,
@@ -35,13 +48,14 @@ pub async fn process_block(
         .await;
     block
         .ok()
-        .map(|block| ProducedBlock::from_ui_block(block, slot, commitment_config))
+        .map(|block| from_ui_block(block, slot, commitment_config))
 }
 
 pub fn poll_block(
     rpc_client: Arc<RpcClient>,
     block_notification_sender: Sender<ProducedBlock>,
     slot_notification: Receiver<SlotNotification>,
+    num_parallel_tasks: usize,
 ) -> Vec<AnyhowJoinHandle> {
     let mut tasks: Vec<AnyhowJoinHandle> = vec![];
 
@@ -50,7 +64,7 @@ pub fn poll_block(
     let (block_schedule_queue_sx, block_schedule_queue_rx) =
         async_channel::unbounded::<(Slot, CommitmentConfig)>();
 
-    for _i in 0..16 {
+    for _i in 0..num_parallel_tasks {
         let block_notification_sender = block_notification_sender.clone();
         let rpc_client = rpc_client.clone();
         let block_schedule_queue_rx = block_schedule_queue_rx.clone();
@@ -159,4 +173,157 @@ pub fn poll_block(
     tasks.push(slot_poller);
 
     tasks
+}
+
+/// rpc version of ProducedBlock mapping
+pub fn from_ui_block(
+    block: UiConfirmedBlock,
+    slot: Slot,
+    commitment_config: CommitmentConfig,
+) -> ProducedBlock {
+    let block_height = block.block_height.unwrap_or_default();
+    let txs = block.transactions.unwrap_or_default();
+
+    let blockhash = block.blockhash;
+    let previous_blockhash = block.previous_blockhash;
+    let parent_slot = block.parent_slot;
+    let rewards = block.rewards.clone();
+
+    let txs = txs
+        .into_iter()
+        .filter_map(|tx| {
+            let Some(UiTransactionStatusMeta {
+                err,
+                compute_units_consumed,
+                ..
+            }) = tx.meta
+            else {
+                // ignoring transaction
+                log::info!("Tx with no meta");
+                return None;
+            };
+
+            let Some(tx) = tx.transaction.decode() else {
+                // ignoring transaction
+                log::info!("Tx could not be decoded");
+                return None;
+            };
+
+            let signature = tx.signatures[0].to_string();
+            let cu_consumed = match compute_units_consumed {
+                OptionSerializer::Some(cu_consumed) => Some(cu_consumed),
+                _ => None,
+            };
+
+            let legacy_compute_budget = tx.message.instructions().iter().find_map(|i| {
+                if i.program_id(tx.message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
+                        units,
+                        additional_fee,
+                    }) = try_from_slice_unchecked(i.data.as_slice())
+                    {
+                        return Some((units, additional_fee));
+                    }
+                }
+                None
+            });
+
+            let mut cu_requested = tx.message.instructions().iter().find_map(|i| {
+                if i.program_id(tx.message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
+                        try_from_slice_unchecked(i.data.as_slice())
+                    {
+                        return Some(limit);
+                    }
+                }
+                None
+            });
+
+            let mut prioritization_fees = tx.message.instructions().iter().find_map(|i| {
+                if i.program_id(tx.message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
+                        try_from_slice_unchecked(i.data.as_slice())
+                    {
+                        return Some(price);
+                    }
+                }
+
+                None
+            });
+
+            if let Some((units, additional_fee)) = legacy_compute_budget {
+                cu_requested = Some(units);
+                if additional_fee > 0 {
+                    prioritization_fees = Some(calc_prioritization_fees(units, additional_fee))
+                }
+            };
+
+            let blockhash = tx.message.recent_blockhash().to_string();
+            let message = BinaryEncoding::Base64.encode(tx.message.serialize());
+
+            let is_vote_transaction = tx.message.instructions().iter().any(|i| {
+                i.program_id(tx.message.static_account_keys())
+                    .eq(&solana_sdk::vote::program::id())
+                    && limited_deserialize::<VoteInstruction>(&i.data)
+                        .map(|vi| vi.is_simple_vote())
+                        .unwrap_or(false)
+            });
+
+            Some(TransactionInfo {
+                signature,
+                is_vote: is_vote_transaction,
+                err,
+                cu_requested,
+                prioritization_fees,
+                cu_consumed,
+                recent_blockhash: blockhash,
+                message,
+            })
+        })
+        .collect();
+
+    let leader_id = if let Some(rewards) = block.rewards {
+        rewards
+            .iter()
+            .find(|reward| Some(RewardType::Fee) == reward.reward_type)
+            .map(|leader_reward| leader_reward.pubkey.clone())
+    } else {
+        None
+    };
+
+    let block_time = block.block_time.unwrap_or(0) as u64;
+
+    ProducedBlock {
+        transactions: txs,
+        block_height,
+        leader_id,
+        blockhash,
+        previous_blockhash,
+        parent_slot,
+        block_time,
+        slot,
+        commitment_config,
+        rewards,
+    }
+}
+
+#[inline]
+fn calc_prioritization_fees(units: u32, additional_fee: u32) -> u64 {
+    (units as u64 * 1000) / additional_fee as u64
+}
+
+#[test]
+fn overflow_u32() {
+    // value high enough to overflow u32 if multiplied by 1000
+    let units: u32 = 4_000_000_000;
+    let additional_fee: u32 = 100;
+    let prioritization_fees: u64 = calc_prioritization_fees(units, additional_fee);
+
+    assert_eq!(40_000_000_000, prioritization_fees);
 }

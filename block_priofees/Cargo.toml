@@ -1,0 +1,20 @@
+[package]
+name = "solana-lite-rpc-block-priofees"
+version = "0.2.3"
+edition = "2021"
+description = "Expose priority fees stats per block via RPC and WebSocket"
+
+[dependencies]
+solana-lite-rpc-core = {workspace = true}
+
+solana-sdk = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+itertools = { workspace = true }
+dashmap = { workspace = true }
+jsonrpsee = { workspace = true }
+tracing-subscriber = { workspace = true }
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
+tokio = { version = "1.28.2", features = ["full"]}

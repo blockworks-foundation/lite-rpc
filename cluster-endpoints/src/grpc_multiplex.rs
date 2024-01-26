@@ -1,5 +1,5 @@
 use crate::grpc_subscription::{
-    create_block_processing_task, create_slot_stream_task, map_block_update,
+    create_block_processing_task, create_slot_stream_task, from_grpc_block_update,
 };
 use anyhow::Context;
 use futures::{Stream, StreamExt};
@@ -29,7 +29,7 @@ impl FromYellowstoneExtractor for BlockExtractor {
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
             Some(UpdateOneof::Block(update_block_message)) => {
-                let block = map_block_update(update_block_message, self.0);
+                let block = from_grpc_block_update(update_block_message, self.0);
                 Some((block.slot, block))
             }
             _ => None,
@@ -51,9 +51,9 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
     }
 }
 
-fn create_grpc_multiplex_block_stream(
+fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    confirmed_block_sender: UnboundedSender<ProducedBlock>,
+    processed_block_sender: UnboundedSender<ProducedBlock>,
 ) -> Vec<AnyhowJoinHandle> {
     let commitment_config = CommitmentConfig::processed();
 
@@ -82,8 +82,8 @@ fn create_grpc_multiplex_block_stream(
                     && (slots_processed.len() < MAX_SIZE / 2
                         || slot > slots_processed.first().cloned().unwrap_or_default())
                 {
-                    confirmed_block_sender
-                        .send(map_block_update(block, commitment_config))
+                    processed_block_sender
+                        .send(from_grpc_block_update(block, commitment_config))
                         .context("Issue to send confirmed block")?;
                     slots_processed.insert(slot);
                     if slots_processed.len() > MAX_SIZE {
@@ -112,7 +112,8 @@ fn create_grpc_multiplex_block_meta_stream(
     create_multiplexed_stream(streams, BlockMetaHashExtractor(commitment_config))
 }
 
-/// connect to multiple grpc sources to consume confirmed blocks and block status update
+/// connect to multiple grpc sources to consume processed (full) blocks and block meta for commitment level confirmed and finalized
+/// will emit blocks for commitment level processed, confirmed and finalized OR only processed block never gets confirmed
 pub fn create_grpc_multiplex_blocks_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
 ) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
@@ -134,8 +135,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let (processed_block_sender, mut processed_block_reciever) =
                     tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
 
-                let confirmed_blocks_tasks =
-                    create_grpc_multiplex_block_stream(&grpc_sources, processed_block_sender);
+                let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
+                    &grpc_sources,
+                    processed_block_sender,
+                );
 
                 let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
                     &grpc_sources,
@@ -151,16 +154,17 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
                 let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
-                let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
                 let mut last_finalized_slot: Slot = 0;
-                let mut cleanup_without_recv_blocks: u8 = 0;
-                let mut cleanup_without_confirmed_recv_blocks_meta: u8 = 0;
-                let mut cleanup_without_finalized_recv_blocks_meta: u8 = 0;
+                let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
+                const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u32 = 12; // 12*5 = 60s without recving data
+                const CLEANUP_SLOTS_BEHIND_FINALIZED: u64 = 100;
+                let mut cleanup_without_recv_blocks: u32 = 0;
+                let mut cleanup_without_confirmed_recv_blocks_meta: u32 = 0;
+                let mut cleanup_without_finalized_recv_blocks_meta: u32 = 0;
                 let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
 
                 //  start logging errors when we recieve first finalized block
-                let mut finalized_block_recieved = false;
-                const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
+                let mut startup_completed = false;
                 loop {
                     tokio::select! {
                         processed_block = processed_block_reciever.recv() => {
@@ -171,12 +175,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 processed_block.slot, processed_block.blockhash.clone());
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
                                 warn!("produced block channel has no receivers {e:?}");
-                                continue
                             }
                             if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
                                 if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
                                     warn!("produced block channel has no receivers {e:?}");
-                                    continue
                                 }
                             }
                             recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
@@ -189,8 +191,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 debug!("got confirmed blockmeta {} with blockhash {}",
                                     confirmed_block.slot, confirmed_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(confirmed_block) {
-                                    warn!("Finalized block channel has no receivers {e:?}");
-                                    continue;
+                                    warn!("Confirmed block channel has no receivers {e:?}");
                                 }
                             } else {
                                 confirmed_block_not_yet_processed.insert(blockhash.clone());
@@ -203,22 +204,23 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
                                 last_finalized_slot = finalized_block.slot;
-                                finalized_block_recieved = true;
+                                startup_completed = true;
                                 debug!("got finalized blockmeta {} with blockhash {}",
                                     finalized_block.slot, finalized_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(finalized_block) {
                                     warn!("Finalized block channel has no receivers {e:?}");
-                                    continue;
                                 }
-                            } else if finalized_block_recieved {
+                            } else if startup_completed {
                                 // this warning is ok for first few blocks when we start lrpc
                                 log::error!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
                             }
                         },
                         _ = cleanup_tick.tick() => {
-                            if cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
-                                cleanup_without_recv_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
-                                cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
+                            // timebased restart
+                            if
+                                cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV
+                                && cleanup_without_recv_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV
+                                && cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
                                 log::error!("block or block meta stream stopped restaring blocks");
                                 break;
                             }
@@ -227,17 +229,17 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             cleanup_without_confirmed_recv_blocks_meta += 1;
                             let size_before = recent_processed_blocks.len();
                             recent_processed_blocks.retain(|_blockhash, block| {
-                                last_finalized_slot == 0 || block.slot > last_finalized_slot - 100
+                                last_finalized_slot == 0 || block.slot > last_finalized_slot - CLEANUP_SLOTS_BEHIND_FINALIZED
                             });
                             let cnt_cleaned = size_before - recent_processed_blocks.len();
                             if cnt_cleaned > 0 {
-                                debug!("cleaned {} confirmed blocks from cache", cnt_cleaned);
+                                debug!("cleaned {} processed blocks from cache", cnt_cleaned);
                             }
                         }
                     }
                 }
                 // abort all the tasks
-                confirmed_blocks_tasks.iter().for_each(|task| task.abort());
+                processed_blocks_tasks.iter().for_each(|task| task.abort());
             }
         })
     };
