@@ -22,6 +22,11 @@ impl PostgresSessionConfig {
             return Ok(None);
         }
 
+        let enable_pg = env::var("PG_ENABLED").context("PG_ENABLED")?;
+        if enable_pg != *"true" {
+            return Ok(None);
+        }
+
         let env_pg_config = env::var("PG_CONFIG").context("PG_CONFIG not found")?;
 
         let ssl_config = if env_pg_config
