@@ -53,6 +53,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -356,4 +357,20 @@ fn obfuscate_rpcurl(rpc_addr: &str) -> String {
         return rpc_addr.replacen(char::is_numeric, "X", 99);
     }
     rpc_addr.to_string()
+}
+
+fn setup_tracing_subscriber() {
+    let enable_instrument_tracing =
+        std::env::var("ENABLE_INSTRUMENT_TRACING")
+            .unwrap_or("false".to_string())
+            .parse::<bool>()
+            .expect("flag must be true or false");
+
+    if enable_instrument_tracing {
+        tracing_subscriber::fmt::fmt()
+            .with_span_events(FmtSpan::CLOSE)
+            .init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
 }
