@@ -590,6 +590,7 @@ dependencies = [
  "solana-transaction-status",
  "spl-memo 4.0.0",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 

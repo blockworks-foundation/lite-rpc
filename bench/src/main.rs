@@ -20,7 +20,8 @@ use tokio::{
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO).init();
 
     let Args {
         metrics_file_name,
