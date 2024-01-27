@@ -156,22 +156,33 @@ impl BenchHelper {
                 })
                 .collect_vec();
 
-            let mut statuses = rpc_client
-                .get_signature_statuses(&sigs)
-                .await?
-                .value
-                .into_iter();
+            // batch 100
+            let mut results_iter = results.iter_mut().enumerate();
 
-            // Assumptions:
-            // 1. sigs and results are in the same order
+            for _ in 0..(sigs.len() as f64 / 100.0).ceil() as usize {
+                let sigs = sigs
+                    .iter()
+                    .take(100)
+                    .map(|sig| sig.to_owned())
+                    .collect_vec();
 
-            let mut sigs = sigs.iter();
+                let statuses = rpc_client.get_signature_statuses(&sigs).await?.value;
+                let mut statuses = statuses.into_iter();
 
-            results.iter_mut().enumerate().for_each(|(index, result)| {
-                if let Ok(None) = result {
-                    *result = Ok(statuses.next().unwrap());
+                let mut sigs = sigs.into_iter();
 
+                for (index, result) in results_iter.by_ref() {
+                    let Ok(None) = result else {
+                        continue;
+                    };
+
+                    let Some(status) = statuses.next() else {
+                        break;
+                    };
+
+                    *result = Ok(status);
                     let sig = sigs.next().unwrap();
+
                     let pb = &progress_bars[index];
 
                     pb.inc(1);
@@ -198,7 +209,7 @@ impl BenchHelper {
                         _ => unreachable!(),
                     }
                 }
-            });
+            }
 
             if results.iter().all(|result| match result {
                 Err(_) => true,
