@@ -28,10 +28,22 @@ impl Strategies {
         let mut csv_writer = csv::Writer::from_path(metrics_file_name).unwrap();
 
         match self {
-            Strategies::Tc1(tc1) => csv_writer.serialize(tc1.execute().await?)?,
-            Strategies::Tc2(tc2) => csv_writer.serialize(tc2.execute().await?)?,
-            Strategies::Tc3(tc3) => csv_writer.serialize(tc3.execute().await?)?,
-            Strategies::Tc4(tc4) => csv_writer.serialize(tc4.execute().await?)?,
+            Strategies::Tc1(tc1) => {
+                let result = tc1.execute().await?;
+                Tc1::write_csv(&mut csv_writer, &result)?;
+            },
+            Strategies::Tc2(tc2) => {
+                let result = tc2.execute().await?;
+                Tc2::write_csv(&mut csv_writer, &result)?;
+            },
+            Strategies::Tc3(tc3) => {
+                let result = tc3.execute().await?;
+                Tc3::write_csv(&mut csv_writer, &result)?;
+            },
+            Strategies::Tc4(tc4) => {
+                let result = tc4.execute().await?;
+                Tc4::write_csv(&mut csv_writer, &result)?;
+            },
         }
 
         csv_writer.flush()?;
