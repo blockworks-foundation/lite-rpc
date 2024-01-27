@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::fs::File;
 use std::time::Duration;
+use csv::Writer;
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
@@ -9,6 +11,7 @@ use crate::helpers::BenchHelper;
 
 use super::Strategy;
 use crate::cli::{LiteRpcArgs, RpcArgs};
+use crate::strategies::tc1::{Tc1, Tc1Result};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Tc2Result {
@@ -173,5 +176,11 @@ impl Strategy for Tc2 {
             bulk: self.bulk,
             retries: self.retries,
         })
+    }
+}
+
+impl Tc2 {
+    pub fn write_csv(csv_writer: &mut Writer<File>, result: &Tc2Result) -> anyhow::Result<()> {
+        Ok(())
     }
 }

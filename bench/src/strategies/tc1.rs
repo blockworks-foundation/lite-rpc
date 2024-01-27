@@ -1,4 +1,6 @@
+use std::fs::File;
 use anyhow::Context;
+use csv::Writer;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
@@ -85,5 +87,15 @@ impl Strategy for Tc1 {
             rpc_slot: rpc_slot?,
             lite_rpc_slot: lite_rpc_slot?,
         })
+    }
+}
+
+impl Tc1 {
+    pub fn write_csv(csv_writer: &mut Writer<File>, result: &Tc1Result) -> anyhow::Result<()> {
+        csv_writer.write_record(&[
+            result.rpc_slot.to_string(),
+            result.lite_rpc_slot.to_string(),
+        ])?;
+        Ok(())
     }
 }

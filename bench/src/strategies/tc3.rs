@@ -1,11 +1,14 @@
+use std::fs::File;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use csv::Writer;
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
 use crate::{cli::RpcArgs, helpers::BenchHelper};
+use crate::strategies::tc1::{Tc1, Tc1Result};
 
 use super::Strategy;
 
@@ -70,5 +73,11 @@ impl Strategy for Tc3 {
             failed: failed.load(Ordering::Relaxed),
             success: success.load(Ordering::Relaxed),
         })
+    }
+}
+
+impl Tc3 {
+    pub fn write_csv(csv_writer: &mut Writer<File>, result: &Tc3Result) -> anyhow::Result<()> {
+        Ok(())
     }
 }

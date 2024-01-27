@@ -1,6 +1,14 @@
+use std::fs::File;
+use csv::Writer;
 use crate::cli::RpcArgs;
+use crate::strategies::tc1::{Tc1, Tc1Result};
 
 use super::Strategy;
+
+#[derive(Debug, serde::Serialize)]
+pub struct Tc4Result {
+    // TODO
+}
 
 ///- send txs on LiteRPC broadcast channel and consume them using the Solana quic-streamer
 /// - see quic_proxy_tpu_integrationtest.rs (note: not only about proxy)
@@ -14,9 +22,15 @@ pub struct Tc4 {
 
 #[async_trait::async_trait]
 impl Strategy for Tc4 {
-    type Output = serde_json::Value;
+    type Output = Tc4Result;
 
     async fn execute(&self) -> anyhow::Result<Self::Output> {
         todo!()
+    }
+}
+
+impl Tc4 {
+    pub fn write_csv(csv_writer: &mut Writer<File>, result: &Tc4Result) -> anyhow::Result<()> {
+        Ok(())
     }
 }
