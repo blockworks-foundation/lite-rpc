@@ -13,16 +13,21 @@ pub struct Args {
 }
 
 #[derive(clap::Args, Debug)]
-pub struct RpcArgs {
-    /// RPC endpoint
-    #[arg(short = 'r', long, default_value_t = String::from("http://0.0.0.0:8899"))]
-    pub rpc_addr: String,
+pub struct CreateTxArgs {
     /// path to the payer keypair
     #[arg(short = 'p', long, default_value_t = USER_KEYPAIR_PATH.to_string())]
     pub payer: String,
     /// choose between small (179 bytes) and large (1186 bytes) transactions
     #[arg(short = 't', long, value_enum, default_value_t = TxSize::Small)]
     pub tx_size: TxSize,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct RpcArgs {
+    /// RPC endpoint
+    #[arg(short = 'r', long, default_value_t = String::from("http://0.0.0.0:8899"))]
+    pub rpc_addr: String,
+
 }
 
 #[derive(clap::Args, Debug)]

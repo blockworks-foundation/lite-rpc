@@ -12,7 +12,7 @@ use solana_sdk::signature::Signer;
 use crate::helpers::BenchHelper;
 
 use super::Strategy;
-use crate::cli::{LiteRpcArgs, RpcArgs};
+use crate::cli::{CreateTxArgs, LiteRpcArgs, RpcArgs};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Tc2Result {
@@ -48,6 +48,9 @@ pub struct Tc2 {
     retries: usize,
 
     #[command(flatten)]
+    create_tx_args: CreateTxArgs,
+
+    #[command(flatten)]
     rpc_args: RpcArgs,
 
     #[command(flatten)]
@@ -59,7 +62,7 @@ impl Tc2 {
         let hash = rpc.get_latest_blockhash().await?;
         let mut rng = BenchHelper::create_rng(None);
         let txs =
-            BenchHelper::generate_txs(self.bulk, payer, hash, &mut rng, self.rpc_args.tx_size);
+            BenchHelper::generate_txs(self.bulk, payer, hash, &mut rng, self.create_tx_args.tx_size);
 
         let instant = tokio::time::Instant::now();
 
@@ -147,7 +150,7 @@ impl Strategy for Tc2 {
         info!("Lite RPC: {}", self.lite_rpc_args.lite_rpc_addr);
         info!("RPC: {}", self.rpc_args.rpc_addr);
 
-        let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
+        let payer = BenchHelper::get_payer(&self.create_tx_args.payer).await?;
         info!("Payer: {}", payer.pubkey().to_string());
 
         let mut use_lite_rpc = true;
