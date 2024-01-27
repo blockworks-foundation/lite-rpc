@@ -115,8 +115,6 @@ impl BenchHelper {
             progress_bars[index]
                 .set_message(format!("{url_slice} {} Sending...", tx.get_signature()));
 
-            //log::info!("{url} Sending transaction {}", tx.get_signature());
-
             rpc_client.send_transaction(tx)
         }))
         .await;
@@ -152,8 +150,6 @@ impl BenchHelper {
                             "{url_slice} Waiting for {commitment_config:?} of {sig}",
                         ));
 
-                        //log::info!("{url} Waiting for {commitment_config:?} of {}", sig);
-
                         Some(sig)
                     }
                     _ => None,
@@ -166,11 +162,18 @@ impl BenchHelper {
                 .value
                 .into_iter();
 
+            // Assumptions:
+            // 1. sigs and results are in the same order
+
+            let mut sigs = sigs.iter();
+
             results.iter_mut().enumerate().for_each(|(index, result)| {
                 if let Ok(None) = result {
                     *result = Ok(statuses.next().unwrap());
-                    let sig = &sigs[index];
+
+                    let sig = sigs.next().unwrap();
                     let pb = &progress_bars[index];
+
                     pb.inc(1);
 
                     match result {

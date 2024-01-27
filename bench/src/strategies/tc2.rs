@@ -9,7 +9,7 @@ use solana_transaction_status::TransactionConfirmationStatus;
 use crate::helpers::BenchHelper;
 
 use super::Strategy;
-use crate::cli::{LiteRpcArgs, RpcArgs};
+use crate::cli::RpcArgs;
 
 #[derive(Debug, serde::Serialize, Clone)]
 pub struct RpcStat {
@@ -35,9 +35,6 @@ pub struct Tc2 {
 
     #[command(flatten)]
     rpc_args: RpcArgs,
-
-    #[command(flatten)]
-    lite_rpc_args: LiteRpcArgs,
 }
 
 impl Tc2 {
@@ -136,39 +133,23 @@ impl Tc2 {
 #[async_trait::async_trait]
 impl Strategy for Tc2 {
     async fn execute(&self) -> anyhow::Result<Vec<serde_json::Value>> {
-        let lite_rpc = RpcClient::new(self.lite_rpc_args.lite_rpc_addr.clone());
         let rpc = RpcClient::new(self.rpc_args.rpc_addr.clone());
 
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
 
         let multi_progress_bar = MultiProgress::new();
 
-        let mut use_lite_rpc = true;
-
         let mut rpc_results = Vec::with_capacity(self.runs);
-        let mut lite_rpc_results = Vec::with_capacity(self.runs);
 
-        for _ in 0..(self.runs * 2) {
-            let (rpc, list) = if use_lite_rpc {
-                (&lite_rpc, &mut lite_rpc_results)
-            } else {
-                (&rpc, &mut rpc_results)
-            };
+        for _ in 0..self.runs {
+            let stat = self
+                .send_bulk_txs(&rpc, &payer, &multi_progress_bar)
+                .await?;
 
-            let stat = self.send_bulk_txs(rpc, &payer, &multi_progress_bar).await?;
-            list.push(stat);
-
-            use_lite_rpc = !use_lite_rpc;
+            rpc_results.push(stat);
         }
 
-        let rpc_results = Self::get_results(rpc_results);
-        let lite_rpc_results = Self::get_results(lite_rpc_results);
-
-        let mut results = rpc_results;
-
-        results.extend(lite_rpc_results);
-
-        let results = results
+        let results = Self::get_results(rpc_results)
             .into_iter()
             .map(|r| serde_json::to_value(r).unwrap())
             .collect::<Vec<_>>();
