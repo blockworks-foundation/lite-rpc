@@ -4,11 +4,12 @@ use std::sync::{
     Arc,
 };
 use csv::Writer;
+use log::info;
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::signature::Signer;
 
 use crate::{cli::RpcArgs, helpers::BenchHelper};
-use crate::strategies::tc1::{Tc1, Tc1Result};
 
 use super::Strategy;
 
@@ -34,7 +35,10 @@ impl Strategy for Tc3 {
 
     async fn execute(&self) -> anyhow::Result<Self::Output> {
         let rpc = Arc::new(RpcClient::new(self.rpc_cli_options.rpc_addr.clone()));
+        info!("RPC: {}", self.rpc_cli_options.rpc_addr);
+
         let payer = Arc::new(BenchHelper::get_payer(&self.rpc_cli_options.payer).await?);
+        info!("Payer: {}", payer.pubkey().to_string());
 
         let mut txs = 0;
         let failed = Arc::new(AtomicUsize::new(0));
