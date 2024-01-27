@@ -12,8 +12,14 @@ use super::Strategy;
 use crate::cli::RpcArgs;
 
 #[derive(Debug, serde::Serialize, Clone)]
+pub enum RpcStatMode {
+    Mode,
+    Avg,
+}
+
+#[derive(Debug, serde::Serialize, Clone)]
 pub struct RpcStat {
-    rpc: String,
+    mode: RpcStatMode,
     time_ns: u128,
     mode_slot: u64,
     confirmed: u64,
@@ -91,7 +97,7 @@ impl Tc2 {
             .unwrap_or_default();
 
         Ok(RpcStat {
-            rpc: rpc.url().to_string(),
+            mode: RpcStatMode::Mode,
             time_ns: time.as_nanos(),
             mode_slot,
             confirmed,
@@ -112,7 +118,7 @@ impl Tc2 {
             avg.failed += stat.failed;
         }
 
-        avg.rpc = "avg".to_string();
+        avg.mode = RpcStatMode::Avg;
         avg.time_ns /= len as u128;
         avg.confirmed /= len as u64;
         avg.unconfirmed /= len as u64;
