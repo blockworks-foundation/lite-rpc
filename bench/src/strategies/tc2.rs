@@ -16,9 +16,7 @@ use crate::cli::{CreateTxArgs, LiteRpcArgs, RpcArgs};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Tc2Result {
-    lite_rpc: Vec<RpcStat>,
     rpc: Vec<RpcStat>,
-    avg_lite_rpc: RpcStat,
     avg_rpc: RpcStat,
     runs: usize,
     bulk: usize,
@@ -52,9 +50,6 @@ pub struct Tc2 {
 
     #[command(flatten)]
     rpc_args: RpcArgs,
-
-    #[command(flatten)]
-    lite_rpc_args: LiteRpcArgs,
 }
 
 impl Tc2 {
@@ -145,39 +140,24 @@ impl Strategy for Tc2 {
     type Output = Tc2Result;
 
     async fn execute(&self) -> anyhow::Result<Self::Output> {
-        let lite_rpc = RpcClient::new(self.lite_rpc_args.lite_rpc_addr.clone());
-        let rpc = RpcClient::new(self.rpc_args.rpc_addr.clone());
-        info!("Lite RPC: {}", self.lite_rpc_args.lite_rpc_addr);
+        let rpc_client = RpcClient::new(self.rpc_args.rpc_addr.clone());
         info!("RPC: {}", self.rpc_args.rpc_addr);
 
         let payer = BenchHelper::get_payer(&self.create_tx_args.payer).await?;
         info!("Payer: {}", payer.pubkey().to_string());
 
-        let mut use_lite_rpc = true;
-
         let mut rpc_results = Vec::with_capacity(self.runs);
-        let mut lite_rpc_results = Vec::with_capacity(self.runs);
 
         for _ in 0..self.runs {
-            let (rpc, list) = if use_lite_rpc {
-                (&lite_rpc, &mut lite_rpc_results)
-            } else {
-                (&rpc, &mut rpc_results)
-            };
+            let stat = self.send_bulk_txs(&rpc_client, &payer).await?;
+            rpc_results.push(stat);
 
-            let stat = self.send_bulk_txs(rpc, &payer).await?;
-            list.push(stat);
-
-            use_lite_rpc = !use_lite_rpc;
         }
 
-        let avg_lite_rpc = Self::get_stats_avg(&lite_rpc_results);
         let avg_rpc = Self::get_stats_avg(&rpc_results);
 
         Ok(Tc2Result {
-            lite_rpc: lite_rpc_results,
             rpc: rpc_results,
-            avg_lite_rpc,
             avg_rpc,
             runs: self.runs,
             bulk: self.bulk,
