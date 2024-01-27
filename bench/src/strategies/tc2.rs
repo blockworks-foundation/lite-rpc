@@ -2,16 +2,17 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::time::Duration;
 use csv::Writer;
+use log::info;
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+use solana_sdk::signature::Signer;
 
 use crate::helpers::BenchHelper;
 
 use super::Strategy;
 use crate::cli::{LiteRpcArgs, RpcArgs};
-use crate::strategies::tc1::{Tc1, Tc1Result};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Tc2Result {
@@ -143,8 +144,11 @@ impl Strategy for Tc2 {
     async fn execute(&self) -> anyhow::Result<Self::Output> {
         let lite_rpc = RpcClient::new(self.lite_rpc_args.lite_rpc_addr.clone());
         let rpc = RpcClient::new(self.rpc_args.rpc_addr.clone());
+        info!("Lite RPC: {}", self.lite_rpc_args.lite_rpc_addr);
+        info!("RPC: {}", self.rpc_args.rpc_addr);
 
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
+        info!("Payer: {}", payer.pubkey().to_string());
 
         let mut use_lite_rpc = true;
 

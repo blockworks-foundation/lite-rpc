@@ -1,9 +1,11 @@
 use std::fs::File;
 use anyhow::Context;
 use csv::Writer;
+use log::info;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+use solana_sdk::signature::Signer;
 
 use crate::helpers::{BenchHelper, Rng8};
 
@@ -71,9 +73,12 @@ impl Strategy for Tc1 {
     async fn execute(&self) -> anyhow::Result<Self::Output> {
         let lite_rpc = RpcClient::new(self.lite_rpc_args.lite_rpc_addr.clone());
         let rpc = RpcClient::new(self.rpc_args.rpc_addr.clone());
+        info!("Lite RPC: {}", self.lite_rpc_args.lite_rpc_addr);
+        info!("RPC: {}", self.rpc_args.rpc_addr);
 
         let mut rng = BenchHelper::create_rng(None);
         let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
+        info!("Payer: {}", payer.pubkey().to_string());
 
         let rpc_tx = self.create_tx(&rpc, &payer, &mut rng).await?;
         let lite_rpc_tx = self.create_tx(&lite_rpc, &payer, &mut rng).await?;
