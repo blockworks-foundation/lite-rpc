@@ -92,6 +92,7 @@ impl Strategy for Tc1 {
 
 impl Tc1 {
     pub fn write_csv(csv_writer: &mut Writer<File>, result: &Tc1Result) -> anyhow::Result<()> {
+        // TODO check mapping
         csv_writer.write_record(&[
             result.rpc_slot.to_string(),
             result.lite_rpc_slot.to_string(),
