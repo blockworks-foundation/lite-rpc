@@ -1,3 +1,6 @@
+use log::info;
+use serde::Serialize;
+use crate::strategies::tc4::Tc4Result;
 use self::tc1::Tc1;
 use self::tc2::Tc2;
 use self::tc3::Tc3;
@@ -31,18 +34,22 @@ impl Strategies {
             Strategies::Tc1(tc1) => {
                 let result = tc1.execute().await?;
                 Tc1::write_csv(&mut csv_writer, &result)?;
+                Strategies::print_results(&result);
             },
             Strategies::Tc2(tc2) => {
                 let result = tc2.execute().await?;
                 Tc2::write_csv(&mut csv_writer, &result)?;
+                Strategies::print_results(&result);
             },
             Strategies::Tc3(tc3) => {
                 let result = tc3.execute().await?;
                 Tc3::write_csv(&mut csv_writer, &result)?;
+                Strategies::print_results(&result);
             },
             Strategies::Tc4(tc4) => {
                 let result = tc4.execute().await?;
                 Tc4::write_csv(&mut csv_writer, &result)?;
+                Strategies::print_results(&result);
             },
         }
 
@@ -50,4 +57,10 @@ impl Strategies {
 
         Ok(())
     }
+
+    fn print_results(result: &impl Serialize)  {
+        info!("{}", serde_json::to_string_pretty(result).unwrap());
+    }
 }
+
+

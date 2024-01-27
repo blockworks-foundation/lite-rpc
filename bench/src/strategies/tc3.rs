@@ -78,6 +78,7 @@ impl Strategy for Tc3 {
 
 impl Tc3 {
     pub fn write_csv(csv_writer: &mut Writer<File>, result: &Tc3Result) -> anyhow::Result<()> {
+        // TODO
         Ok(())
     }
 }
