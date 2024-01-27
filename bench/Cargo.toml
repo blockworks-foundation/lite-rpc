@@ -8,6 +8,7 @@ solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-transaction-status = { workspace = true }
 log = { workspace = true }
+tracing = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
