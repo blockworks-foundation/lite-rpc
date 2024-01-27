@@ -17,7 +17,7 @@ pub struct Tc4Result {
 #[derive(clap::Args, Debug)]
 pub struct Tc4 {
     #[command(flatten)]
-    common: RpcArgs,
+    foobar: RpcArgs,
 }
 
 #[async_trait::async_trait]

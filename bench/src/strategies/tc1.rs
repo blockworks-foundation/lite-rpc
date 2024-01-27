@@ -10,7 +10,7 @@ use solana_sdk::signature::Signer;
 use crate::helpers::{BenchHelper, Rng8};
 
 use super::Strategy;
-use crate::cli::{LiteRpcArgs, RpcArgs};
+use crate::cli::{CreateTxArgs, LiteRpcArgs, RpcArgs};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Tc1Result {
@@ -21,6 +21,9 @@ pub struct Tc1Result {
 /// send 2 txs (one via LiteRPC, one via Solana RPC) and compare confirmation slot (=slot distance)
 #[derive(clap::Args, Debug)]
 pub struct Tc1 {
+    #[command(flatten)]
+    create_tx_args: CreateTxArgs,
+
     #[command(flatten)]
     rpc_args: RpcArgs,
 
@@ -41,7 +44,7 @@ impl Tc1 {
             payer,
             hash,
             rng,
-            self.rpc_args.tx_size,
+            self.create_tx_args.tx_size,
         ))
     }
 
@@ -77,7 +80,7 @@ impl Strategy for Tc1 {
         info!("RPC: {}", self.rpc_args.rpc_addr);
 
         let mut rng = BenchHelper::create_rng(None);
-        let payer = BenchHelper::get_payer(&self.rpc_args.payer).await?;
+        let payer = BenchHelper::get_payer(&self.create_tx_args.payer).await?;
         info!("Payer: {}", payer.pubkey().to_string());
 
         let rpc_tx = self.create_tx(&rpc, &payer, &mut rng).await?;

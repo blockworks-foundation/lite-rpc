@@ -10,6 +10,7 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signer;
 
 use crate::{cli::RpcArgs, helpers::BenchHelper};
+use crate::cli::CreateTxArgs;
 
 use super::Strategy;
 
@@ -24,7 +25,11 @@ pub struct Tc3Result {
 #[derive(clap::Args, Debug)]
 pub struct Tc3 {
     #[command(flatten)]
+    create_tx_args: CreateTxArgs,
+
+    #[command(flatten)]
     rpc_cli_options: RpcArgs,
+
     #[arg(short = 't', long, default_value_t = 3000)]
     time_ms: u128,
 }
@@ -37,7 +42,7 @@ impl Strategy for Tc3 {
         let rpc = Arc::new(RpcClient::new(self.rpc_cli_options.rpc_addr.clone()));
         info!("RPC: {}", self.rpc_cli_options.rpc_addr);
 
-        let payer = Arc::new(BenchHelper::get_payer(&self.rpc_cli_options.payer).await?);
+        let payer = Arc::new(BenchHelper::get_payer(&self.create_tx_args.payer).await?);
         info!("Payer: {}", payer.pubkey().to_string());
 
         let mut txs = 0;
