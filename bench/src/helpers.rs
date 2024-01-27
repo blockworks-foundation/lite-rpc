@@ -18,6 +18,8 @@ use solana_sdk::{
 use solana_transaction_status::TransactionStatus;
 use std::path::Path;
 use std::{str::FromStr, time::Duration};
+use log::{debug, warn};
+use tokio::join;
 use tokio::time::Instant;
 
 use crate::tx_size::TxSize;
@@ -77,10 +79,28 @@ impl BenchHelper {
         commitment_config: CommitmentConfig,
         tries: Option<usize>,
     ) -> anyhow::Result<Vec<anyhow::Result<Option<TransactionStatus>>>> {
-        let sigs = join_all(txs.iter().map(|tx| rpc_client.send_transaction(tx))).await;
 
-        let mut results = sigs
-            .iter()
+        let started_at = Instant::now();
+        let sigs_or_fails = join_all(
+            txs.iter()
+                .map(|tx| rpc_client.send_transaction(tx))
+        ).await;
+
+        debug!("sent {} transactions in {:.02}ms", txs.len(), started_at.elapsed().as_secs_f32() * 1000.0);
+
+        let num_sent_ok = sigs_or_fails.iter().filter(|sig_or_fail| sig_or_fail.is_ok()).count();
+        let num_sent_failed = sigs_or_fails.iter().filter(|sig_or_fail| sig_or_fail.is_err()).count();
+
+        debug!("{} transactions sent successfully", num_sent_ok);
+        debug!("{} transactions failed to send", num_sent_failed);
+
+
+        if num_sent_failed > 0 {
+            warn!("Some transactions failed to send: {} out of {}", num_sent_failed, txs.len());
+            bail!("Failed to send all transactions");
+        }
+
+        let mut results = sigs_or_fails.iter()
             .map(|sig| {
                 let Err(err) = sig else {
                     return Ok(None);
@@ -96,7 +116,7 @@ impl BenchHelper {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, result)| match result {
-                    Ok(None) => Some(sigs[index].as_ref().unwrap().to_owned()),
+                    Ok(None) => Some(sigs_or_fails[index].as_ref().unwrap().to_owned()),
                     _ => None,
                 })
                 .collect_vec();
