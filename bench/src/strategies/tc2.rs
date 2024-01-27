@@ -172,3 +172,19 @@ impl Tc2 {
         Ok(())
     }
 }
+
+// TODO
+#[test]
+pub fn serialize_duration() {
+    let json_string = serde_json::to_string(&RpcStat {
+        time: Duration::from_secs(1),
+        mode_slot: 1,
+        confirmed: 1,
+        unconfirmed: 1,
+        failed: 1,
+    }).unwrap();
+
+    assert_eq!(json_string, "{\"time\":\"1s\",\"mode_slot\":1,\"confirmed\":1,\"unconfirmed\":1,\"failed\":1}");
+
+}
+
