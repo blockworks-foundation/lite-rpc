@@ -173,7 +173,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
                 let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
                 let mut last_finalized_slot: Slot = 0;
-                let mut cleanup_without_recv_blocks: u8 = 0;
+                let mut cleanup_without_recv_full_blocks: u8 = 0;
                 let mut cleanup_without_confirmed_recv_blocks_meta: u8 = 0;
                 let mut cleanup_without_finalized_recv_blocks_meta: u8 = 0;
                 let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
@@ -183,7 +183,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 'recv_loop: loop {
                     tokio::select! {
                         processed_block = processed_block_reciever.recv() => {
-                            cleanup_without_recv_blocks = 0;
+                            cleanup_without_recv_full_blocks = 0;
 
                             let processed_block = processed_block.expect("processed_block channel must NEVER be closed");
 
@@ -240,22 +240,24 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             } else {
                                 finalized_block_not_yet_processed.insert(finalized_blockhash.clone());
-                                log::debug!("processed block {} not found - add to not-yet-processed list for finalized blocks, size={}",
+                                debug!("processed block {} not found - add to not-yet-processed list for finalized blocks, size={}",
                                     finalized_blockhash, finalized_block_not_yet_processed.len());
+                                error!("finalized block meta {} received without respective full block!", finalized_blockhash);
                             }
                         },
                         _ = cleanup_tick.tick() => {
-                            if cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
-                                cleanup_without_recv_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
-                                cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
-                                log::error!("block or block meta geyser stream stopped - restarting multiplexer");
+                            if cleanup_without_recv_full_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
+                                cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
+                                cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
+                                log::error!("block or block meta geyser stream stopped - restarting multiplexer ({}-{}-{})",
+                                cleanup_without_recv_full_blocks, cleanup_without_confirmed_recv_blocks_meta, cleanup_without_finalized_recv_blocks_meta,);
                                 // throttle a bit
                                 sleep(Duration::from_millis(1500)).await;
                                 break 'recv_loop;
                             }
-                            cleanup_without_recv_blocks += 1;
-                            cleanup_without_finalized_recv_blocks_meta += 1;
+                            cleanup_without_recv_full_blocks += 1;
                             cleanup_without_confirmed_recv_blocks_meta += 1;
+                            cleanup_without_finalized_recv_blocks_meta += 1;
                             let size_before = recent_processed_blocks.len();
                             recent_processed_blocks.retain(|_blockhash, block| {
                                 last_finalized_slot == 0 || block.slot > last_finalized_slot - 100
@@ -306,7 +308,6 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
             let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
             let mut fused_streams = source_channels.merge();
 
-            // TODO handle cases
             'recv_loop: loop {
                 let next = tokio::time::timeout(Duration::from_secs(30),
                                                   fused_streams.next()).await;
