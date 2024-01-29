@@ -19,7 +19,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use solana_sdk::signature::{Signature, Signer};
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::time::Instant;
-use crate::batch_optionals::BatchOptionals;
+use crate::batch_results::BatchOptionals;
 
 use crate::helpers::BenchHelper;
 
@@ -32,7 +32,6 @@ pub struct Tc2Result {
     avg_rpc: RpcStat,
     runs: usize,
     bulk: usize,
-    retries: usize,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -53,9 +52,6 @@ pub struct Tc2 {
     /// number of times to send the bulk
     #[arg(short = 'R', long, default_value_t = 5)]
     runs: usize,
-    /// confirmation retries
-    #[arg(short = 'c', long, default_value_t = 5)]
-    retries: usize,
 
     #[command(flatten)]
     create_tx_args: CreateTxArgs,
@@ -77,8 +73,6 @@ impl Tc2 {
             send_and_confirm_bulk_transactions(
                 rpc,
                 &txs,
-                CommitmentConfig::confirmed(),
-                Some(self.retries),
             ).await?;
 
         let time = instant.elapsed();
@@ -185,7 +179,6 @@ impl Strategy for Tc2 {
             avg_rpc,
             runs: self.runs,
             bulk: self.bulk,
-            retries: self.retries,
         })
     }
 }
@@ -209,8 +202,6 @@ enum ConfirmationResponseFromRpc {
 async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
     txs: &[impl SerializableTransaction],
-    commitment_config: CommitmentConfig,
-    tries: Option<usize>,
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
 
     let started_at = Instant::now();
@@ -243,7 +234,8 @@ async fn send_and_confirm_bulk_transactions(
     let mut result_status_map: HashMap<Signature, ConfirmationResponseFromRpc> = HashMap::new();
 
     let started_at = Instant::now();
-    'pooling_loop: for i in 1..=10 {
+    'pooling_loop: for i in 1..=100 {
+        let iteration_ends_at = started_at + Duration::from_millis(i * 200);
         let tx_batch = pending_status_map.iter().cloned().collect_vec();
         debug!("Request status for batch of {} transactions in iteration {}", tx_batch.len(), i);
         let batch_responses = rpc_client.get_signature_statuses(tx_batch.as_slice()).await?;
@@ -277,7 +269,7 @@ async fn send_and_confirm_bulk_transactions(
         }
 
         // avg 2 samples per slot
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep_until(iteration_ends_at).await;
     } // -- END polling loop
 
 
