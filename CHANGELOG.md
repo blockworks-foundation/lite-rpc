@@ -10,6 +10,16 @@ The minor version will be incremented upon a breaking change and the patch versi
 
 ### Features:
 
+## [0.2.4] - 2024-01-29
+
+commit : a44923c33414f16fa0f378fb99c22b46de00ef74
+
+- prio : Adding prioritization fees library [PR](https://github.com/blockworks-foundation/lite-rpc/pull/274)
+- cluster-endpoints : GRPC optimizations [PR](multiples)
+- quic : Fixing MTU bug [PR](https://github.com/blockworks-foundation/lite-rpc/pull/293)
+- cluster-endpoints : Adding GRPC multiplexing [PR](https://github.com/blockworks-foundation/lite-rpc/pull/255)
+- stake-vote : Calculating stake votes and leader schedule in lite-rpc [PR](https://github.com/blockworks-foundation/lite-rpc/pull/244) 
+
 ## [0.2.3] - 2023-09-23
 
 commit : 3cdab51676a4b1bfb5b41739a383e30cd8a1c73c
@@ -68,3 +78,5 @@ Initial release.
 - lite-rpc: The lite rpc binary
 - cluster-endpoints : Cluster endpoints library.
 - proxy : Lite-rpc QUIC proxy to act as a forwarder
+- prio : Prioritization fees libarary
+- stake-vote : Stake vote library
