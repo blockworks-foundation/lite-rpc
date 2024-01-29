@@ -1,6 +1,6 @@
 [package]
 name = "solana-lite-rpc-block-priofees"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 description = "Expose priority fees stats per block via RPC and WebSocket"
 
