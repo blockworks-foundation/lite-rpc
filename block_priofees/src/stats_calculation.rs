@@ -26,7 +26,7 @@ pub fn calculate_supp_percentiles(
         .map(|p| {
             let prio_fee = {
                 let index = prio_fees_in_block.len() * p / 100;
-                let cap_index = index.min(prio_fees_in_block.len() - 1);
+                let cap_index = index.min(prio_fees_in_block.len().saturating_sub(1));
                 prio_fees_in_block[cap_index].0
             };
             FeePoint {

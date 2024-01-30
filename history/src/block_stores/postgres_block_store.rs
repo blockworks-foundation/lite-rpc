@@ -362,7 +362,7 @@ fn build_assign_permissions_statements(epoch: EpochRef) -> String {
 }
 
 fn div_ceil(a: usize, b: usize) -> usize {
-    (a + b - 1) / b
+    (a.saturating_add(b).saturating_sub(1)).saturating_div(b)
 }
 
 impl PostgresBlockStore {

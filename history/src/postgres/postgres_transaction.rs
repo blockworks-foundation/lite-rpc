@@ -125,7 +125,7 @@ impl PostgresTransaction {
 
         if inserted < tx_count {
             warn!("Some ({}) transactions already existed and where not updated of {} total in schema {schema}",
-                transactions.len() - inserted, transactions.len(), schema = schema);
+                transactions.len().saturating_sub(inserted), transactions.len(), schema = schema);
         }
 
         trace!(
