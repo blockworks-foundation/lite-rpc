@@ -19,7 +19,6 @@ use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use solana_sdk::signature::{Signature, Signer};
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::time::Instant;
-use crate::batch_results::BatchOptionals;
 
 use crate::helpers::BenchHelper;
 
