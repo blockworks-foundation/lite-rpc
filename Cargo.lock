@@ -589,6 +589,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-rpc-client",
+ "solana-rpc-client-api",
  "solana-sdk",
  "solana-transaction-status",
  "spl-memo 4.0.0",
