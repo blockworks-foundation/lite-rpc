@@ -3,7 +3,7 @@ name = "solana-lite-rpc-blockstore"
 version = "0.2.4"
 edition = "2021"
 description = "Store and proved blocks in PostgreSQL DB and via Yellowstone Faithful"
-rust-version = "1.70.0"
+rust-version = "1.73.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
