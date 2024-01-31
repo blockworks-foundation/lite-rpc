@@ -79,8 +79,8 @@ impl Tc2 {
 
         for (tx_sig, confirmation) in &tx_and_confirmations_from_rpc {
             match confirmation {
-                ConfirmationResponseFromRpc::Success(_slot, level, elapsed) => {
-                    debug!("Signature {} confirmed with level {:?} after {:.02}ms", tx_sig, level, elapsed.as_secs_f32() * 1000.0);
+                ConfirmationResponseFromRpc::Success(slots_elapsed, level, elapsed) => {
+                    debug!("Signature {} confirmed with level {:?} after {:.02}ms, {} slots", tx_sig, level, elapsed.as_secs_f32() * 1000.0, slots_elapsed);
                 }
                 ConfirmationResponseFromRpc::Timeout(elapsed) => {
                     debug!("Signature {} not confirmed after {:.02}ms", tx_sig, elapsed.as_secs_f32() * 1000.0);
@@ -209,6 +209,7 @@ impl Tc2 {
 #[derive(Clone)]
 enum ConfirmationResponseFromRpc {
     SendError(Arc<ErrorKind>),
+    // elapsed slot: current slot (confirmed) at beginning til the slot where transaction showed up with status CONFIRMED
     Success(Slot, TransactionConfirmationStatus, Duration),
     Timeout(Duration),
 }
@@ -220,6 +221,7 @@ async fn send_and_confirm_bulk_transactions(
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
 
     let started_at = Instant::now();
+    let send_slot = rpc_client.get_slot_with_commitment(CommitmentConfig::confirmed()).await?;
 
     let batch_sigs_or_fails = join_all(
         txs.iter()
@@ -275,7 +277,7 @@ async fn send_and_confirm_bulk_transactions(
                     // status is confirmed or finalized
                     pending_status_set.remove(&tx_sig);
                     let prev_value = result_status_map.insert(
-                        tx_sig, ConfirmationResponseFromRpc::Success(tx_status.slot, tx_status.confirmation_status(), elapsed));
+                        tx_sig, ConfirmationResponseFromRpc::Success(tx_status.slot - send_slot, tx_status.confirmation_status(), elapsed));
                     assert!(prev_value.is_none(), "Must not override existing value");
             }
                 None => {
