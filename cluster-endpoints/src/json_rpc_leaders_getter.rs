@@ -47,12 +47,15 @@ impl JsonRpcLeaderGetter {
         if last_slot_needed >= first_slot_to_fetch {
             let leaders = self
                 .rpc_client
-                .get_slot_leaders(first_slot_to_fetch, last_slot_needed - first_slot_to_fetch)
+                .get_slot_leaders(
+                    first_slot_to_fetch,
+                    last_slot_needed.saturating_sub(first_slot_to_fetch),
+                )
                 .await
                 .context("failed to get slot leaders")?;
 
             for leader_slot in first_slot_to_fetch..last_slot_needed {
-                let current_leader = (leader_slot - first_slot_to_fetch) as usize;
+                let current_leader = (leader_slot.saturating_sub(first_slot_to_fetch)) as usize;
                 let pubkey = leaders[current_leader];
                 leader_queue.push_back(LeaderData {
                     leader_slot,
@@ -71,7 +74,7 @@ impl LeaderFetcherInterface for JsonRpcLeaderGetter {
         from: solana_sdk::slot_history::Slot,
         to: solana_sdk::slot_history::Slot,
     ) -> anyhow::Result<Vec<LeaderData>> {
-        if to <= from || to - from > self.leaders_to_cache_count {
+        if to <= from || to.saturating_sub(from) > self.leaders_to_cache_count {
             bail!("invalid arguments for get_slot_leaders");
         }
         let schedule = self.leader_schedule.read().await;

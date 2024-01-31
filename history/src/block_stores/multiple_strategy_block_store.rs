@@ -1,141 +1,145 @@
-// A mixed block store,
-// Stores confirmed blocks in memory
-// Finalized blocks in long term storage of your choice
-// Fetches legacy blocks from faithful
-
-use crate::block_stores::inmemory_block_store::InmemoryBlockStore;
-use anyhow::{bail, Result};
-use async_trait::async_trait;
-use solana_lite_rpc_core::{
-    commitment_utils::Commitment,
-    structures::produced_block::ProducedBlock,
-    traits::block_storage_interface::{BlockStorageImpl, BlockStorageInterface, BLOCK_NOT_FOUND},
-};
+use crate::block_stores::faithful_block_store::FaithfulBlockStore;
+use crate::block_stores::postgres_block_store::PostgresBlockStore;
+use anyhow::{bail, Context, Result};
+use log::{debug, trace};
+use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
-use std::{
-    ops::Range,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-};
+use solana_sdk::slot_history::Slot;
+use std::ops::{Deref, RangeInclusive};
+use std::sync::Arc;
 
+#[derive(Debug, Clone)]
+pub enum BlockSource {
+    // serve two epochs from postgres
+    RecentEpochDatabase,
+    // serve epochs older than two from faithful service
+    FaithfulArchive,
+}
+
+#[derive(Debug, Clone)]
+pub struct BlockStorageData {
+    // note: commitment_config is the actual commitment level
+    pub block: ProducedBlock,
+    // meta data
+    pub result_source: BlockSource,
+}
+
+impl Deref for BlockStorageData {
+    type Target = ProducedBlock;
+    fn deref(&self) -> &Self::Target {
+        &self.block
+    }
+}
+
+// you might need to add a read-cache instead
 pub struct MultipleStrategyBlockStorage {
-    inmemory_for_storage: InmemoryBlockStore, // for confirmed blocks
-    persistent_block_storage: BlockStorageImpl, // for persistent block storage
-    faithful_rpc_client: Option<Arc<RpcClient>>, // to fetch legacy blocks from faithful
-    last_confirmed_slot: Arc<AtomicU64>,
+    persistent_block_storage: PostgresBlockStore, // for persistent block storage
+    // note supported ATM
+    faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful
+                                                        // last_confirmed_slot: Arc<AtomicU64>,
 }
 
 impl MultipleStrategyBlockStorage {
     pub fn new(
-        persistent_block_storage: BlockStorageImpl,
-        faithful_rpc_client: Option<Arc<RpcClient>>,
-        number_of_slots_in_memory: usize,
+        persistent_block_storage: PostgresBlockStore,
+        _faithful_rpc_client: Option<Arc<RpcClient>>,
     ) -> Self {
         Self {
-            inmemory_for_storage: InmemoryBlockStore::new(number_of_slots_in_memory),
             persistent_block_storage,
-            faithful_rpc_client,
-            last_confirmed_slot: Arc::new(AtomicU64::new(0)),
+            // faithful not used ATM
+            faithful_block_storage: None,
+            // faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
         }
     }
 
-    pub async fn get_in_memory_block(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
-        self.inmemory_for_storage
-            .get(
-                slot,
-                RpcBlockConfig {
-                    encoding: None,
-                    transaction_details: None,
-                    rewards: None,
-                    commitment: None,
-                    max_supported_transaction_version: None,
-                },
-            )
-            .await
-    }
-}
+    // we need to build the slots from right to left
+    pub async fn get_slot_range(&self) -> RangeInclusive<Slot> {
+        // merge them
+        let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
+        trace!("Persistent storage range: {:?}", persistent_storage_range);
 
-#[async_trait]
-impl BlockStorageInterface for MultipleStrategyBlockStorage {
-    async fn save(&self, block: ProducedBlock) -> Result<()> {
-        let slot = block.slot;
-        let commitment = Commitment::from(block.commitment_config);
-        match commitment {
-            Commitment::Confirmed | Commitment::Processed => {
-                self.inmemory_for_storage.save(block).await?;
+        let mut lower = *persistent_storage_range.start();
+
+        if let Some(faithful_block_storage) = &self.faithful_block_storage {
+            let faithful_storage_range = faithful_block_storage.get_slot_range();
+            trace!("Faithful storage range: {:?}", faithful_storage_range);
+            if lower.saturating_sub(*faithful_storage_range.end()) <= 1 {
+                // move the lower bound to the left
+                lower = lower.min(*faithful_storage_range.start());
             }
-            Commitment::Finalized => {
-                let block_in_mem = self.get_in_memory_block(block.slot).await;
-                match block_in_mem {
-                    Ok(block_in_mem) => {
-                        // check if inmemory blockhash is same as finalized, update it if they are not
-                        // we can have two machines with same identity publishing two different blocks on same slot
-                        if block_in_mem.blockhash != block.blockhash {
-                            self.inmemory_for_storage.save(block.clone()).await?;
-                        }
-                    }
-                    Err(_) => self.inmemory_for_storage.save(block.clone()).await?,
-                }
-                self.persistent_block_storage.save(block).await?;
-            }
-        };
-        if slot > self.last_confirmed_slot.load(Ordering::Relaxed) {
-            self.last_confirmed_slot.store(slot, Ordering::Relaxed);
         }
-        Ok(())
+
+        let merged = RangeInclusive::new(lower, *persistent_storage_range.end());
+        trace!("Merged range from database + faithful: {:?}", merged);
+
+        merged
     }
 
-    async fn get(
+    // lookup confirmed or finalized block from either our blockstore or faithful
+    // TODO find better method name
+    pub async fn query_block(
         &self,
         slot: solana_sdk::slot_history::Slot,
-        config: RpcBlockConfig,
-    ) -> Result<ProducedBlock> {
-        let last_confirmed_slot = self.last_confirmed_slot.load(Ordering::Relaxed);
-        if slot > last_confirmed_slot {
-            bail!(BLOCK_NOT_FOUND);
-        } else {
-            let range = self.inmemory_for_storage.get_slot_range().await;
-            if range.contains(&slot) {
-                let block = self.inmemory_for_storage.get(slot, config).await;
-                if block.is_ok() {
-                    return block;
-                }
-            }
-            // TODO: Define what data is expected that is definetly not in persistant block storage like data after epoch - 1
-            // check persistant block
-            let persistent_block_range = self.persistent_block_storage.get_slot_range().await;
-            if persistent_block_range.contains(&slot) {
-                self.persistent_block_storage.get(slot, config).await
-            } else if let Some(faithful_rpc_client) = self.faithful_rpc_client.clone() {
-                match faithful_rpc_client
-                    .get_block_with_config(slot, config)
+    ) -> Result<BlockStorageData> {
+        // TODO this check is optional and might be moved to the caller
+        // if slot > last_confirmed_slot {
+        //     bail!(format!(
+        //         "Block {} not found (last_confirmed_slot={})",
+        //         slot, last_confirmed_slot
+        //     ));
+        // }
+
+        // TODO: use a smarter strategy to decide about the cutoff
+        // current strategy:
+        // 1. check if requested slot is in min-max range served from Postgres
+        // 2.1. if yes; fetch from Postgres
+        // 2.2. if not: try to fetch from faithful
+
+        match self.persistent_block_storage.is_block_in_range(slot).await {
+            true => {
+                debug!(
+                    "Assume block {} to be available in persistent block-storage",
+                    slot,
+                );
+                let lookup = self
+                    .persistent_block_storage
+                    .query(slot)
                     .await
-                {
-                    Ok(block) => Ok(ProducedBlock::from_ui_block(
-                        block,
-                        slot,
-                        CommitmentConfig::finalized(),
-                    )),
-                    Err(_) => bail!(BLOCK_NOT_FOUND),
-                }
-            } else {
-                bail!(BLOCK_NOT_FOUND);
+                    .context(format!("block {} not found although it was in range", slot));
+
+                return lookup.map(|b| BlockStorageData {
+                    block: b,
+                    result_source: BlockSource::RecentEpochDatabase,
+                });
+            }
+            false => {
+                debug!(
+                    "Block {} not found in persistent block-storage - continue",
+                    slot
+                );
             }
         }
-    }
 
-    async fn get_slot_range(&self) -> Range<Slot> {
-        let in_memory = self.inmemory_for_storage.get_slot_range().await;
-        // if faithful is available we assume that we have all the blocks
-        if self.faithful_rpc_client.is_some() {
-            0..in_memory.end
+        if let Some(faithful_block_storage) = &self.faithful_block_storage {
+            match faithful_block_storage.get_block(slot).await {
+                Ok(block) => {
+                    debug!(
+                        "Lookup for block {} successful in faithful block-storage",
+                        slot
+                    );
+
+                    Ok(BlockStorageData {
+                        block,
+                        result_source: BlockSource::FaithfulArchive,
+                    })
+                }
+                Err(_) => {
+                    debug!("Block {} not found in faithful storage - giving up", slot);
+                    bail!(format!("Block {} not found in faithful", slot));
+                }
+            }
         } else {
-            let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
-            persistent_storage_range.start..in_memory.end
+            bail!(format!("Block {} not found - faithful not available", slot));
         }
     }
 }

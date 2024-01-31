@@ -56,7 +56,7 @@ impl RpcRequestData {
         //avoid clone on the first request
         if let Some(mut pending_rpc_request) = self.pending_rpc_request.take() {
             if pending_rpc_request.len() > 1 {
-                for return_channel in pending_rpc_request.drain(0..pending_rpc_request.len() - 1) {
+                for return_channel in pending_rpc_request.drain(0..pending_rpc_request.len().saturating_sub(1)) {
                     if return_channel.send(rpc_vote_accounts.clone()).is_err() {
                         log::error!("Vote accounts RPC channel send closed.");
                     }

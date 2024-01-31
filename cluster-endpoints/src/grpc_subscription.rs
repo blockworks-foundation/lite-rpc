@@ -14,6 +14,8 @@ use solana_lite_rpc_core::{
     structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
 };
+use solana_sdk::program_utils::limited_deserialize;
+use solana_sdk::vote::instruction::VoteInstruction;
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
@@ -40,7 +42,8 @@ use yellowstone_grpc_proto::prelude::{
 };
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{poll_cluster_info, poll_vote_accounts};
 
-pub fn map_block_update(
+/// grpc version of ProducedBlock mapping
+pub fn from_grpc_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
@@ -182,8 +185,17 @@ pub fn map_block_update(
                 })
                 .or(legacy_prioritization_fees);
 
+            let is_vote_transaction = message.instructions().iter().any(|i| {
+                i.program_id(message.static_account_keys())
+                    .eq(&solana_sdk::vote::program::id())
+                    && limited_deserialize::<VoteInstruction>(&i.data)
+                        .map(|vi| vi.is_simple_vote())
+                        .unwrap_or(false)
+            });
+
             Some(TransactionInfo {
                 signature: signature.to_string(),
+                is_vote: is_vote_transaction,
                 err,
                 cu_requested,
                 prioritization_fees,
@@ -240,6 +252,131 @@ pub fn map_block_update(
         slot: block.slot,
         rewards,
     }
+}
+
+pub fn create_block_processing_task(
+    grpc_addr: String,
+    grpc_x_token: Option<String>,
+    block_sx: async_channel::Sender<SubscribeUpdateBlock>,
+    commitment_level: CommitmentLevel,
+) -> AnyhowJoinHandle {
+    tokio::spawn(async move {
+        loop {
+            let mut blocks_subs = HashMap::new();
+            blocks_subs.insert(
+                "client".to_string(),
+                SubscribeRequestFilterBlocks {
+                    account_include: Default::default(),
+                    include_transactions: Some(true),
+                    include_accounts: Some(false),
+                    include_entries: Some(false),
+                },
+            );
+
+            // connect to grpc
+            let mut client =
+                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
+            let mut stream = client
+                .subscribe_once(
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    blocks_subs,
+                    Default::default(),
+                    Some(commitment_level),
+                    Default::default(),
+                    None,
+                )
+                .await?;
+
+            while let Some(message) = stream.next().await {
+                let message = message?;
+
+                let Some(update) = message.update_oneof else {
+                    continue;
+                };
+
+                match update {
+                    UpdateOneof::Block(block) => {
+                        block_sx
+                            .send(block)
+                            .await
+                            .context("Problem sending on block channel")?;
+                    }
+                    UpdateOneof::Ping(_) => {
+                        log::trace!("GRPC Ping");
+                    }
+                    _ => {
+                        log::trace!("unknown GRPC notification");
+                    }
+                };
+            }
+            log::error!("Grpc block subscription broken (resubscribing)");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    })
+}
+
+pub fn create_slot_stream_task(
+    grpc_addr: String,
+    grpc_x_token: Option<String>,
+    slot_sx: async_channel::Sender<SubscribeUpdateSlot>,
+    commitment_level: CommitmentLevel,
+) -> AnyhowJoinHandle {
+    tokio::spawn(async move {
+        loop {
+            let mut slots = HashMap::new();
+            slots.insert(
+                "client_slot".to_string(),
+                SubscribeRequestFilterSlots {
+                    filter_by_commitment: Some(true),
+                },
+            );
+
+            // connect to grpc
+            let mut client =
+                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
+            let mut stream = client
+                .subscribe_once(
+                    slots,
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    Some(commitment_level),
+                    Default::default(),
+                    None,
+                )
+                .await?;
+
+            while let Some(message) = stream.next().await {
+                let message = message?;
+
+                let Some(update) = message.update_oneof else {
+                    continue;
+                };
+
+                match update {
+                    UpdateOneof::Slot(slot) => {
+                        slot_sx
+                            .send(slot)
+                            .await
+                            .context("Problem sending on block channel")?;
+                    }
+                    UpdateOneof::Ping(_) => {
+                        log::trace!("GRPC Ping");
+                    }
+                    _ => {
+                        log::trace!("unknown GRPC notification");
+                    }
+                };
+            }
+            log::error!("Grpc block subscription broken (resubscribing)");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    })
 }
 
 pub fn create_grpc_subscription(

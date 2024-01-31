@@ -1,6 +1,6 @@
 [package]
 name = "solana-lite-rpc-history"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 description = "History implementations used by solana lite rpc"
 rust-version = "1.70.0"
@@ -14,17 +14,30 @@ solana-rpc-client = { workspace = true }
 
 dashmap = {workspace = true}
 async-trait = { workspace = true }
-tokio = "1.*"
+tokio = { version = "1.28.2", features = ["full", "fs"]}
+tokio-util = "0.7"
 
 solana-lite-rpc-core = {workspace = true}
+solana-lite-rpc-cluster-endpoints = {workspace = true}
 solana-rpc-client-api = {workspace = true}
 native-tls = { workspace = true }
 postgres-native-tls = { workspace = true }
 anyhow = { workspace = true }
 log = {workspace = true}
+tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 chrono = {workspace = true}
+serde = { workspace = true }
+serde_json = { workspace = true }
+jsonrpsee = { workspace = true }
 bincode = {workspace = true}
 base64 = {workspace = true}
 itertools = {workspace = true}
+rangetools = {workspace = true}
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
-serde = { workspace = true }
+futures = {workspace = true}
+futures-util = {workspace = true}
+bytes = "1.5.0"
+rand = "0.8.5"
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true }

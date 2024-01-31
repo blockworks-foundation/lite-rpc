@@ -66,7 +66,7 @@ impl LeaderFetcherInterface for GrpcLeaderGetter {
             );
         }
 
-        let limit = to - from;
+        let limit = to.saturating_sub(from);
 
         let schedule = leader_schedule_data
             .get_slot_leaders(from, limit, self.epoch_data.get_epoch_schedule())

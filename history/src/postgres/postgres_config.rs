@@ -22,6 +22,11 @@ impl PostgresSessionConfig {
             return Ok(None);
         }
 
+        let enable_pg = env::var("PG_ENABLED").context("PG_ENABLED")?;
+        if enable_pg != *"true" {
+            return Ok(None);
+        }
+
         let env_pg_config = env::var("PG_CONFIG").context("PG_CONFIG not found")?;
 
         let ssl_config = if env_pg_config
@@ -48,5 +53,27 @@ impl PostgresSessionConfig {
             pg_config: env_pg_config,
             ssl: ssl_config,
         }))
+    }
+}
+
+impl PostgresSessionConfig {
+    pub fn new_for_tests() -> PostgresSessionConfig {
+        assert!(
+            env::var("PG_CONFIG").is_err(),
+            "note that ENV variables are ignored!"
+        );
+
+        // see localdev_integrationtest.sql how to setup the database
+        PostgresSessionConfig {
+            pg_config: r#"
+            host=localhost
+            dbname=literpc_integrationtest_localdev
+            user=literpc_integrationtest
+            password=youknowme
+            sslmode=disable
+            "#
+            .to_string(),
+            ssl: None,
+        }
     }
 }

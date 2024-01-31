@@ -1,11 +1,8 @@
 use dashmap::DashMap;
 use log::info;
 
-use solana_sdk::{
-    clock::MAX_RECENT_BLOCKHASHES,
-    commitment_config::{CommitmentConfig, CommitmentLevel},
-    slot_history::Slot,
-};
+use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_sdk::{clock::MAX_RECENT_BLOCKHASHES, slot_history::Slot};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

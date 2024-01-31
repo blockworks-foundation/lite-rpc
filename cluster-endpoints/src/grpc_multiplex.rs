@@ -1,6 +1,3 @@
-use crate::grpc_subscription::{
-    map_block_update,
-};
 use anyhow::{bail, Context};
 use futures::{Stream, StreamExt};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
@@ -27,6 +24,7 @@ use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate};
+use crate::grpc_subscription::from_grpc_block_update;
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
@@ -383,7 +381,7 @@ fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
 fn map_block_from_yellowstone_update(update: SubscribeUpdate, commitment_config: CommitmentConfig) -> Option<(Slot, ProducedBlock)> {
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
-            let block = map_block_update(update_block_message, commitment_config);
+            let block = from_grpc_block_update(update_block_message, commitment_config);
             Some((block.slot, block))
         }
         _ => None,
