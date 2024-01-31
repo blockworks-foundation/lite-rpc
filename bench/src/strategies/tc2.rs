@@ -9,7 +9,7 @@ use csv::Writer;
 use futures::future::join_all;
 use futures::TryFutureExt;
 use itertools::Itertools;
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client::rpc_client::SerializableTransaction;
@@ -35,7 +35,7 @@ pub struct Tc2Result {
 
 #[derive(Debug, serde::Serialize)]
 pub struct RpcStat {
-    time: Duration,
+    confirmation_time: Duration,
     mode_slot: u64,
     confirmed: u64,
     unconfirmed: u64,
@@ -66,7 +66,7 @@ impl Tc2 {
         let txs =
             BenchHelper::generate_txs(self.bulk, payer, hash, &mut rng, self.create_tx_args.tx_size);
 
-        let instant = tokio::time::Instant::now();
+        let started_at = tokio::time::Instant::now();
 
         let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
             send_and_confirm_bulk_transactions(
@@ -74,7 +74,23 @@ impl Tc2 {
                 &txs,
             ).await?;
 
-        let time = instant.elapsed();
+        let elapsed_total = started_at.elapsed();
+
+
+        for (tx_sig, confirmation) in &tx_and_confirmations_from_rpc {
+            match confirmation {
+                ConfirmationResponseFromRpc::Success(_slot, level, elapsed) => {
+                    debug!("Signature {} confirmed with level {:?} after {:.02}ms", tx_sig, level, elapsed.as_secs_f32() * 1000.0);
+                }
+                ConfirmationResponseFromRpc::Timeout(elapsed) => {
+                    debug!("Signature {} not confirmed after {:.02}ms", tx_sig, elapsed.as_secs_f32() * 1000.0);
+                }
+                ConfirmationResponseFromRpc::SendError(_) => {
+                    unreachable!()
+                }
+            }
+
+        }
 
         let (mut confirmed, mut unconfirmed, mut failed) = (0, 0, 0);
         let mut slot_hz: HashMap<Slot, u64> = Default::default();
@@ -118,7 +134,7 @@ impl Tc2 {
             .unwrap_or_default();
 
         Ok(RpcStat {
-            time,
+            confirmation_time: elapsed_total,
             mode_slot,
             confirmed,
             unconfirmed,
@@ -130,7 +146,7 @@ impl Tc2 {
         let len = stats.len();
 
         let mut avg = RpcStat {
-            time: Duration::default(),
+            confirmation_time: Duration::default(),
             mode_slot: 0,
             confirmed: 0,
             unconfirmed: 0,
@@ -138,13 +154,13 @@ impl Tc2 {
         };
 
         for stat in stats {
-            avg.time += stat.time;
+            avg.confirmation_time += stat.confirmation_time;
             avg.confirmed += stat.confirmed;
             avg.unconfirmed += stat.unconfirmed;
             avg.failed += stat.failed;
         }
 
-        avg.time /= len as u32;
+        avg.confirmation_time /= len as u32;
         avg.confirmed /= len as u64;
         avg.unconfirmed /= len as u64;
         avg.failed /= len as u64;
@@ -210,87 +226,88 @@ async fn send_and_confirm_bulk_transactions(
             .map(|tx| rpc_client.send_transaction(tx).map_err(|e| e.kind))
     ).await;
 
-    debug!("sent {} transactions in {:.02}ms", txs.len(), started_at.elapsed().as_secs_f32() * 1000.0);
-
     let num_sent_ok = batch_sigs_or_fails.iter().filter(|sig_or_fail| sig_or_fail.is_ok()).count();
     let num_sent_failed = batch_sigs_or_fails.iter().filter(|sig_or_fail| sig_or_fail.is_err()).count();
 
-    debug!("{} transactions sent successfully", num_sent_ok);
-    debug!("{} transactions failed to send", num_sent_failed);
-
+    for (i, tx_sig) in txs.iter().enumerate() {
+        let tx_sent = batch_sigs_or_fails[i].is_ok();
+        if tx_sent {
+            debug!("- tx_sent {}", tx_sig.get_signature());
+        } else {
+            debug!("- tx_fail {}", tx_sig.get_signature());
+        }
+    }
+    debug!("{} transactions sent successfully in {:.02}ms", num_sent_ok, started_at.elapsed().as_secs_f32() * 1000.0);
+    debug!("{} transactions failed to send in {:.02}ms", num_sent_failed, started_at.elapsed().as_secs_f32() * 1000.0);
 
     if num_sent_failed > 0 {
         warn!("Some transactions failed to send: {} out of {}", num_sent_failed, txs.len());
         bail!("Failed to send all transactions");
     }
 
-    // TODO use iter api
-    let mut pending_status_map: HashSet<Signature> = HashSet::new();
+    let mut pending_status_set: HashSet<Signature> = HashSet::new();
     batch_sigs_or_fails.iter().filter(|sig_or_fail| sig_or_fail.is_ok()).for_each(|sig_or_fail| {
-        pending_status_map.insert(sig_or_fail.as_ref().unwrap().to_owned());
+        pending_status_set.insert(sig_or_fail.as_ref().unwrap().to_owned());
     });
-
     let mut result_status_map: HashMap<Signature, ConfirmationResponseFromRpc> = HashMap::new();
 
+    // items get moved from pending_status_set to result_status_map
+
     let started_at = Instant::now();
-    'pooling_loop: for i in 1..=100 {
-        let iteration_ends_at = started_at + Duration::from_millis(i * 200);
-        let tx_batch = pending_status_map.iter().cloned().collect_vec();
-        debug!("Request status for batch of remaining {} transactions in iteration {}", tx_batch.len(), i);
+    let mut iteration = 1;
+    'pooling_loop: loop {
+        let iteration_ends_at = started_at + Duration::from_millis(iteration * 200);
+        assert_eq!(pending_status_set.len() + result_status_map.len(), num_sent_ok, "Items must move between pending+result");
+        let tx_batch = pending_status_set.iter().cloned().collect_vec();
+        debug!("Request status for batch of remaining {} transactions in iteration {}", tx_batch.len(), iteration);
         let batch_responses = rpc_client.get_signature_statuses(tx_batch.as_slice()).await?;
         let elapsed = started_at.elapsed();
 
         for (tx_sig, status_response) in zip(tx_batch, batch_responses.value) {
             match status_response {
                 Some(tx_status) => {
-                    debug!("Some signature status {:?} received for {} after {:.02}ms",
+                    trace!("Some signature status {:?} received for {} after {:.02}ms",
                     tx_status.confirmation_status, tx_sig,
                     elapsed.as_secs_f32() * 1000.0);
                     if !tx_status.satisfies_commitment(CommitmentConfig::confirmed()) {
                         continue 'pooling_loop;
                     }
                     // status is confirmed or finalized
-                    pending_status_map.remove(&tx_sig);
+                    pending_status_set.remove(&tx_sig);
                     let prev_value = result_status_map.insert(
                         tx_sig, ConfirmationResponseFromRpc::Success(tx_status.slot, tx_status.confirmation_status(), elapsed));
                     assert!(prev_value.is_none(), "Must not override existing value");
             }
                 None => {
                     // None: not yet processed by the cluster
-                    debug!("No signature status was received for {} after {:.02}ms - continue waiting",
+                    trace!("No signature status was received for {} after {:.02}ms - continue waiting",
                     tx_sig, elapsed.as_secs_f32() * 1000.0);
                 }
             }
         }
 
-        if pending_status_map.is_empty() {
-            debug!("All transactions confirmed after {} iterations", i);
+        if pending_status_set.is_empty() {
+            debug!("All transactions confirmed after {} iterations", iteration);
             break 'pooling_loop;
         }
+
+        if iteration == 100 {
+            debug!("Timeout waiting for transactions to confirmed after {} iterations - giving up on {}", iteration, pending_status_set.len());
+            break 'pooling_loop;
+        }
+        iteration += 1;
 
         // avg 2 samples per slot
         tokio::time::sleep_until(iteration_ends_at).await;
     } // -- END polling loop
 
+    let total_time_elapsed_polling = started_at.elapsed();
 
-    for tx_sig in pending_status_map.clone() {
-        pending_status_map.remove(&tx_sig);
+    // all transactions which remain in pending list are considered timed out
+    for tx_sig in pending_status_set.clone() {
+        pending_status_set.remove(&tx_sig);
         result_status_map.insert(
-            tx_sig, ConfirmationResponseFromRpc::Timeout (started_at.elapsed()));
-    }
-    for (tx_sig, confirmation) in &result_status_map {
-        match confirmation {
-            ConfirmationResponseFromRpc::Success(_slot, level, elapsed) => {
-                debug!("Signature {} confirmed with level {:?} after {:.02}ms", tx_sig, level, elapsed.as_secs_f32() * 1000.0);
-            }
-            ConfirmationResponseFromRpc::Timeout(elapsed) => {
-                debug!("Signature {} not confirmed after {:.02}ms", tx_sig, elapsed.as_secs_f32() * 1000.0);
-            }
-            ConfirmationResponseFromRpc::SendError(_) => {
-                unreachable!()
-            }
-        }
-
+            tx_sig, ConfirmationResponseFromRpc::Timeout (total_time_elapsed_polling));
     }
 
     let result_as_vec = batch_sigs_or_fails.into_iter().enumerate()
