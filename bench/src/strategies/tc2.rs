@@ -17,6 +17,7 @@ use solana_rpc_client_api::client_error::ErrorKind;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use solana_sdk::signature::{Signature, Signer};
+use solana_sdk::transaction::Transaction;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::time::Instant;
 
@@ -217,7 +218,7 @@ enum ConfirmationResponseFromRpc {
 
 async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
-    txs: &[impl SerializableTransaction],
+    txs: &[Transaction],
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
 
     let started_at = Instant::now();

@@ -19,6 +19,7 @@ use solana_transaction_status::TransactionStatus;
 use std::path::Path;
 use std::{str::FromStr, time::Duration};
 use log::{debug, warn};
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use tokio::join;
 use tokio::time::Instant;
 
@@ -151,11 +152,10 @@ impl BenchHelper {
     }
 
     pub fn create_transaction(funded_payer: &Keypair, blockhash: Hash) -> Transaction {
-        let to_pubkey = Pubkey::new_unique();
+        let to_pubkey = funded_payer.pubkey();
 
-        // transfer instruction
         let instruction =
-            system_instruction::transfer(&funded_payer.pubkey(), &to_pubkey, 1_000_000);
+            system_instruction::transfer(&funded_payer.pubkey(), &to_pubkey, 5000);
 
         let message = Message::new(&[instruction], Some(&funded_payer.pubkey()));
 
@@ -210,8 +210,14 @@ impl BenchHelper {
     pub fn create_memo_tx_small(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
         let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
 
+        // TODO make configurable
+        // 3 -> 6 slots
+        // 1 -> 31 slots
+        let cu_budget: Instruction = ComputeBudgetInstruction::set_compute_unit_price(3);
+        // Program consumed: 12775 of 13700 compute units
+        let priority_fees: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(14000);
         let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
-        let message = Message::new(&[instruction], Some(&payer.pubkey()));
+        let message = Message::new(&[cu_budget, priority_fees, instruction], Some(&payer.pubkey()));
         Transaction::new(&[payer], message, blockhash)
     }
 
