@@ -206,7 +206,7 @@ pub fn debugtask_blockstream_slot_progression(
 
             if latest_slot != prev_slot {
                 last_changed_at = Instant::now();
-                info!("BlockStream for commitment level {} is alive", commitment_config.commitment);
+                debug!("BlockStream for commitment level {} is alive", commitment_config.commitment);
             } else {
                 let elapsed = last_changed_at.elapsed();
                 if elapsed > WARNING_THRESHOLD {

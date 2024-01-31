@@ -157,8 +157,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     } = subscriptions;
 
-    // note: not sure if commitment_config=processed works because sources might disagree on the blocks
-    debugtask_blockstream_slot_progression(blocks_notifier.resubscribe(), CommitmentConfig::processed());
+    // note: check failes for commitment_config processed because sources might disagree on the blocks
     debugtask_blockstream_slot_progression(blocks_notifier.resubscribe(), CommitmentConfig::confirmed());
     debugtask_blockstream_slot_progression(blocks_notifier.resubscribe(), CommitmentConfig::finalized());
     debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
