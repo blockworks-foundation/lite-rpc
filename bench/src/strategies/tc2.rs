@@ -81,7 +81,7 @@ impl Tc2 {
 
         for (tx_sig, result_from_rpc) in tx_and_confirmations_from_rpc {
             match result_from_rpc {
-                ConfirmationResponseFromRpc::Confirmed(slot, _, _) => {
+                ConfirmationResponseFromRpc::Success(slot, _, _) => {
                     confirmed += 1;
                     *slot_hz.entry(slot).or_default() += 1;
                 }
@@ -193,7 +193,7 @@ impl Tc2 {
 #[derive(Clone)]
 enum ConfirmationResponseFromRpc {
     SendError(Arc<ErrorKind>),
-    Confirmed(Slot, TransactionConfirmationStatus, Duration),
+    Success(Slot, TransactionConfirmationStatus, Duration),
     Timeout(Duration),
 }
 
@@ -236,27 +236,28 @@ async fn send_and_confirm_bulk_transactions(
     'pooling_loop: for i in 1..=100 {
         let iteration_ends_at = started_at + Duration::from_millis(i * 200);
         let tx_batch = pending_status_map.iter().cloned().collect_vec();
-        debug!("Request status for batch of {} transactions in iteration {}", tx_batch.len(), i);
+        debug!("Request status for batch of remaining {} transactions in iteration {}", tx_batch.len(), i);
         let batch_responses = rpc_client.get_signature_statuses(tx_batch.as_slice()).await?;
         let elapsed = started_at.elapsed();
 
         for (tx_sig, status_response) in zip(tx_batch, batch_responses.value) {
             match status_response {
                 Some(tx_status) => {
-                    debug!("Signature status {:?} received for {} after {:.02}ms",
-                    tx_status.confirmations, tx_sig,
+                    debug!("Some signature status {:?} received for {} after {:.02}ms",
+                    tx_status.confirmation_status, tx_sig,
                     elapsed.as_secs_f32() * 1000.0);
                     if !tx_status.satisfies_commitment(CommitmentConfig::confirmed()) {
                         continue 'pooling_loop;
                     }
+                    // status is confirmed or finalized
                     pending_status_map.remove(&tx_sig);
                     let prev_value = result_status_map.insert(
-                        tx_sig, ConfirmationResponseFromRpc::Confirmed(tx_status.slot, tx_status.confirmation_status(), elapsed));
+                        tx_sig, ConfirmationResponseFromRpc::Success(tx_status.slot, tx_status.confirmation_status(), elapsed));
                     assert!(prev_value.is_none(), "Must not override existing value");
             }
                 None => {
                     // None: not yet processed by the cluster
-                    debug!("Signature status not received for {} after {:.02}ms - continue waiting",
+                    debug!("No signature status was received for {} after {:.02}ms - continue waiting",
                     tx_sig, elapsed.as_secs_f32() * 1000.0);
                 }
             }
@@ -279,7 +280,7 @@ async fn send_and_confirm_bulk_transactions(
     }
     for (tx_sig, confirmation) in &result_status_map {
         match confirmation {
-            ConfirmationResponseFromRpc::Confirmed(_slot, level, elapsed) => {
+            ConfirmationResponseFromRpc::Success(_slot, level, elapsed) => {
                 debug!("Signature {} confirmed with level {:?} after {:.02}ms", tx_sig, level, elapsed.as_secs_f32() * 1000.0);
             }
             ConfirmationResponseFromRpc::Timeout(elapsed) => {
