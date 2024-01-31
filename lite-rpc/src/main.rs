@@ -10,7 +10,9 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::{debug, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::grpc_inspect::{debugtask_blockstream_confirmation_sequence, debugtask_blockstream_slot_progression};
+use solana_lite_rpc_cluster_endpoints::grpc_inspect::{
+    debugtask_blockstream_confirmation_sequence, debugtask_blockstream_slot_progression,
+};
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
@@ -41,6 +43,9 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
 use solana_lite_rpc_block_priofees::start_block_priofees_task;
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
@@ -51,7 +56,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
-use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig};
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -134,6 +138,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             connect_timeout: Duration::from_secs(5),
             request_timeout: Duration::from_secs(5),
             subscribe_timeout: Duration::from_secs(5),
+            receive_timeout: Duration::from_secs(5),
         };
 
         create_grpc_subscription(
@@ -158,8 +163,14 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     } = subscriptions;
 
     // note: check failes for commitment_config processed because sources might disagree on the blocks
-    debugtask_blockstream_slot_progression(blocks_notifier.resubscribe(), CommitmentConfig::confirmed());
-    debugtask_blockstream_slot_progression(blocks_notifier.resubscribe(), CommitmentConfig::finalized());
+    debugtask_blockstream_slot_progression(
+        blocks_notifier.resubscribe(),
+        CommitmentConfig::confirmed(),
+    );
+    debugtask_blockstream_slot_progression(
+        blocks_notifier.resubscribe(),
+        CommitmentConfig::finalized(),
+    );
     debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
 
     info!("Waiting for first finalized block...");

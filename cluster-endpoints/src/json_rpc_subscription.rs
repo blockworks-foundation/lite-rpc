@@ -1,14 +1,14 @@
+use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
+    poll_cluster_info, poll_vote_accounts,
+};
 use crate::{
     endpoint_stremers::EndpointStreaming,
-    rpc_polling::{
-        poll_blocks::poll_block, poll_slots::poll_slots,
-    },
+    rpc_polling::{poll_blocks::poll_block, poll_slots::poll_slots},
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::sync::Arc;
-use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{poll_cluster_info, poll_vote_accounts};
 
 pub fn create_json_rpc_polling_subscription(
     rpc_client: Arc<RpcClient>,

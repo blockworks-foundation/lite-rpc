@@ -4,16 +4,17 @@ use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::task::JoinHandle;
-use tokio::time::{Instant, sleep};
-
+use tokio::time::{sleep, Instant};
 
 // note: we assume that the invariants hold even right after startup
-pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStream) -> JoinHandle<()> {
+pub fn debugtask_blockstream_confirmation_sequence(
+    mut block_notifier: BlockStream,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut cleanup_before_slot = 0;
         // throttle cleanup
@@ -39,7 +40,8 @@ pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStre
                     );
 
                     if block.commitment_config.is_processed() {
-                        let prev_value = saw_processed_at.insert(blockhash.clone(), (slot, SystemTime::now()));
+                        let prev_value =
+                            saw_processed_at.insert(blockhash.clone(), (slot, SystemTime::now()));
                         match prev_value {
                             None => {
                                 // okey
@@ -48,12 +50,15 @@ pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStre
                                 // this is actually fatal
                                 error!(
                                     "should not see same processed slot twice ({}) - saw at {:?}",
-                                    blockhash, format_timestamp(&prev.1));
+                                    blockhash,
+                                    format_timestamp(&prev.1)
+                                );
                             }
                         }
                     }
                     if block.commitment_config.is_confirmed() {
-                        let prev_value = saw_confirmed_at.insert(blockhash.clone(), (slot, SystemTime::now()));
+                        let prev_value =
+                            saw_confirmed_at.insert(blockhash.clone(), (slot, SystemTime::now()));
                         match prev_value {
                             None => {
                                 // okey
@@ -62,13 +67,15 @@ pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStre
                                 // this is actually fatal
                                 error!(
                                     "should not see same confirmed slot twice ({}) - saw at {:?}",
-                                    blockhash, format_timestamp(&prev.1)
+                                    blockhash,
+                                    format_timestamp(&prev.1)
                                 );
                             }
                         }
                     }
                     if block.commitment_config.is_finalized() {
-                        let prev_value = saw_finalized_at.insert(blockhash.clone(), (slot, SystemTime::now()));
+                        let prev_value =
+                            saw_finalized_at.insert(blockhash.clone(), (slot, SystemTime::now()));
                         match prev_value {
                             None => {
                                 // okey
@@ -77,7 +84,8 @@ pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStre
                                 // this is actually fatal
                                 error!(
                                     "should not see same finalized slot twice ({}) - saw at {:?}",
-                                    slot, format_timestamp(&prev.1)
+                                    slot,
+                                    format_timestamp(&prev.1)
                                 );
                             }
                         }
@@ -152,9 +160,12 @@ pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStre
                         slots_since_last_cleanup += 1;
                     } else {
                         // perform cleanup, THEN update cleanup_before_slot
-                        saw_processed_at.retain(|_blockhash, (slot, _instant)| *slot >= cleanup_before_slot);
-                        saw_confirmed_at.retain(|_blockhash, (slot, _instant)| *slot >= cleanup_before_slot);
-                        saw_finalized_at.retain(|_blockhash, (slot, _instant)| *slot >= cleanup_before_slot);
+                        saw_processed_at
+                            .retain(|_blockhash, (slot, _instant)| *slot >= cleanup_before_slot);
+                        saw_confirmed_at
+                            .retain(|_blockhash, (slot, _instant)| *slot >= cleanup_before_slot);
+                        saw_finalized_at
+                            .retain(|_blockhash, (slot, _instant)| *slot >= cleanup_before_slot);
                         cleanup_before_slot = slot - 200;
                         debug!("move cleanup point to {}", cleanup_before_slot);
                         debug!(
@@ -177,7 +188,6 @@ pub fn debugtask_blockstream_confirmation_sequence(mut block_notifier: BlockStre
                     break 'recv_loop;
                 }
             }
-
         } // -- END receiver loop
         info!("Geyser channel debug task for confirmation sequence shutting down.")
     })
@@ -187,7 +197,6 @@ pub fn debugtask_blockstream_slot_progression(
     mut block_notifier: BlockStream,
     commitment_config: CommitmentConfig,
 ) -> JoinHandle<()> {
-
     let latest_slot_seen_shared = Arc::new(AtomicU64::new(0));
     const WARNING_THRESHOLD: Duration = Duration::from_secs(10);
 
@@ -206,7 +215,10 @@ pub fn debugtask_blockstream_slot_progression(
 
             if latest_slot != prev_slot {
                 last_changed_at = Instant::now();
-                debug!("BlockStream for commitment level {} is alive", commitment_config.commitment);
+                debug!(
+                    "BlockStream for commitment level {} is alive",
+                    commitment_config.commitment
+                );
             } else {
                 let elapsed = last_changed_at.elapsed();
                 if elapsed > WARNING_THRESHOLD {
@@ -218,7 +230,6 @@ pub fn debugtask_blockstream_slot_progression(
             prev_slot = latest_slot;
             sleep(Duration::from_millis(5000)).await;
         }
-
     });
 
     let last_slot_seen = latest_slot_seen_shared.clone();
@@ -269,7 +280,9 @@ pub fn debugtask_blockstream_slot_progression(
                         if block.previous_blockhash == last_blockhash {
                             debug!(
                                 "parent blockhash for block {} is correct ({} -> {})",
-                                commitment_config.commitment, block.blockhash, block.previous_blockhash
+                                commitment_config.commitment,
+                                block.blockhash,
+                                block.previous_blockhash
                             );
                         } else {
                             warn!("parent blockhash for block {} not correct ({} -> {}, last_blockhash={})",
@@ -277,12 +290,11 @@ pub fn debugtask_blockstream_slot_progression(
                         }
                     }
                     last_blockhash = Some(block.blockhash.to_string());
-
-
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     // very unlikely to happen
-                    warn!("Could not keep up with producer - missed {} blocks",
+                    warn!(
+                        "Could not keep up with producer - missed {} blocks",
                         missed_blocks
                     );
                 }
@@ -295,7 +307,6 @@ pub fn debugtask_blockstream_slot_progression(
         info!("Geyser channel debug task for slot progression shutting down.")
     })
 }
-
 
 /// e.g. "2024-01-22 11:49:07.173523000"
 fn format_timestamp(d: &SystemTime) -> String {

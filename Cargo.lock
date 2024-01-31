@@ -1766,8 +1766,7 @@ dependencies = [
 
 [[package]]
 name = "geyser-grpc-connector"
-version = "0.50.1+yellowstone.1.12"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=groovie/autoconnect-task-deploy02#1b9926fc1b019f152f423c26837e8d2627cd4318"
+version = "0.10.1+yellowstone.1.12"
 dependencies = [
  "anyhow",
  "async-stream",

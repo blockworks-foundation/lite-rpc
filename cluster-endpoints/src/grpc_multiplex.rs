@@ -1,10 +1,12 @@
+use crate::grpc_subscription::from_grpc_block_update;
 use anyhow::{bail, Context};
 use futures::{Stream, StreamExt};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::{
-    FromYellowstoneExtractor,
-};
+use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
+use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig, Message};
+use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
+use merge_streams::MergeStreams;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -12,19 +14,13 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
-use geyser_grpc_connector::{Message, GeyserFilter, GrpcSourceConfig};
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
-use itertools::Itertools;
-use merge_streams::MergeStreams;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
-use tokio::time::error::Elapsed;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{SubscribeRequest, SubscribeRequestFilterSlots, SubscribeUpdate};
-use crate::grpc_subscription::from_grpc_block_update;
+use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
@@ -39,30 +35,31 @@ fn create_grpc_multiplex_processed_block_stream(
     let mut channels = vec![];
     for grpc_source in grpc_sources {
         // tasks will be shutdown automatically if the channel gets closed
-        let (_jh_geyser_task, message_channel) =
-            create_geyser_autoconnection_task(grpc_source.clone(),
-              GeyserFilter(commitment_config).blocks_and_txs());
+        let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+            grpc_source.clone(),
+            GeyserFilter(commitment_config).blocks_and_txs(),
+        );
         channels.push(message_channel)
     }
 
     let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
     let mut fused_streams = source_channels.merge();
 
-    let jh_merging_streams =
-        tokio::task::spawn(async move {
+    let jh_merging_streams = tokio::task::spawn(async move {
         let mut slots_processed = BTreeSet::<u64>::new();
         loop {
             const MAX_SIZE: usize = 1024;
             match fused_streams.next().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
-                    let mapfilter = map_block_from_yellowstone_update(*subscribe_update, commitment_config);
+                    let mapfilter =
+                        map_block_from_yellowstone_update(*subscribe_update, commitment_config);
                     if let Some((slot, produced_block)) = mapfilter {
                         let commitment_level_block = produced_block.commitment_config.commitment;
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
                         if !slots_processed.contains(&slot)
                             && (slots_processed.len() < MAX_SIZE / 2
-                            || slot > slots_processed.first().cloned().unwrap_or_default())
+                                || slot > slots_processed.first().cloned().unwrap_or_default())
                         {
                             let send_result = block_sender
                                 .send(produced_block)
@@ -72,7 +69,11 @@ fn create_grpc_multiplex_processed_block_stream(
                                 return;
                             }
 
-                            trace!("emitted block #{}@{} from multiplexer", slot, commitment_level_block);
+                            trace!(
+                                "emitted block #{}@{} from multiplexer",
+                                slot,
+                                commitment_level_block
+                            );
 
                             slots_processed.insert(slot);
                             if slots_processed.len() > MAX_SIZE {
@@ -83,7 +84,10 @@ fn create_grpc_multiplex_processed_block_stream(
                 }
                 Some(Message::Connecting(attempt)) => {
                     if attempt > 1 {
-                        warn!("Multiplexed geyser stream performs reconnect attempt {}", attempt);
+                        warn!(
+                            "Multiplexed geyser stream performs reconnect attempt {}",
+                            attempt
+                        );
                     }
                 }
                 None => {
@@ -99,20 +103,26 @@ fn create_grpc_multiplex_processed_block_stream(
 fn create_grpc_multiplex_block_meta_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     commitment_config: CommitmentConfig,
-) -> impl Stream<Item =BlockMeta> {
-
+) -> impl Stream<Item = BlockMeta> {
     let mut channels = vec![];
     for grpc_source in grpc_sources {
-        let (_jh_geyser_task, message_channel) =
-            create_geyser_autoconnection_task(grpc_source.clone(),
-                      GeyserFilter(commitment_config).blocks_meta());
+        let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+            grpc_source.clone(),
+            GeyserFilter(commitment_config).blocks_meta(),
+        );
         channels.push(message_channel)
     }
 
     let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
 
-    assert!(commitment_config != CommitmentConfig::processed(), "fastestwins strategy must not be used for processed level");
-    geyser_grpc_connector::grpcmultiplex_fastestwins::create_multiplexed_stream(source_channels, BlockMetaExtractor(commitment_config))
+    assert!(
+        commitment_config != CommitmentConfig::processed(),
+        "fastestwins strategy must not be used for processed level"
+    );
+    geyser_grpc_connector::grpcmultiplex_fastestwins::create_multiplexed_stream(
+        source_channels,
+        BlockMetaExtractor(commitment_config),
+    )
 }
 
 /// connect to multiple grpc sources to consume processed blocks and block status update
@@ -137,139 +147,145 @@ pub fn create_grpc_multiplex_blocks_subscription(
     let mut reconnect_attempts = 0;
 
     // task MUST not terminate but might be aborted from outside
-    let jh_block_emitter_task =
-        tokio::task::spawn(async move {
-            // channel must NEVER GET CLOSED
-            let (processed_block_sender, mut processed_block_reciever) =
-                tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
+    let jh_block_emitter_task = tokio::task::spawn(async move {
+        // channel must NEVER GET CLOSED
+        let (processed_block_sender, mut processed_block_reciever) =
+            tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
 
-            'reconnect_loop: loop {
-                let processed_block_sender = processed_block_sender.clone();
-                reconnect_attempts += 1;
-                if reconnect_attempts > 1 {
-                    warn!("Multiplexed geyser stream performs reconnect attempt {}", reconnect_attempts);
-                }
-
-                let processed_blocks_tasks =
-                    create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
-
-                let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
-                    &grpc_sources,
-                    CommitmentConfig::confirmed(),
+        'reconnect_loop: loop {
+            let processed_block_sender = processed_block_sender.clone();
+            reconnect_attempts += 1;
+            if reconnect_attempts > 1 {
+                warn!(
+                    "Multiplexed geyser stream performs reconnect attempt {}",
+                    reconnect_attempts
                 );
-                let finalized_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
-                    &grpc_sources,
-                    CommitmentConfig::finalized(),
-                );
+            }
 
-                // by blockhash
-                let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
-                // both streams support backpressure, see log:
-                // grpc_subscription_autoreconnect_tasks: downstream receiver did not pick put message for 500ms - keep waiting
-                let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
-                let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
+            let _processed_blocks_tasks =
+                create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
 
-                let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
-                let mut last_finalized_slot: Slot = 0;
-                let mut cleanup_without_recv_full_blocks: u8 = 0;
-                let mut cleanup_without_confirmed_recv_blocks_meta: u8 = 0;
-                let mut cleanup_without_finalized_recv_blocks_meta: u8 = 0;
-                let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
-                let mut finalized_block_not_yet_processed = HashSet::<String>::new();
+            let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
+                &grpc_sources,
+                CommitmentConfig::confirmed(),
+            );
+            let finalized_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
+                &grpc_sources,
+                CommitmentConfig::finalized(),
+            );
 
-                const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
-                'recv_loop: loop {
-                    tokio::select! {
-                        processed_block = processed_block_reciever.recv() => {
-                            cleanup_without_recv_full_blocks = 0;
+            // by blockhash
+            let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
+            // both streams support backpressure, see log:
+            // grpc_subscription_autoreconnect_tasks: downstream receiver did not pick put message for 500ms - keep waiting
+            let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
+            let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
-                            let processed_block = processed_block.expect("processed_block channel must NEVER be closed");
+            let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
+            let mut last_finalized_slot: Slot = 0;
+            let mut cleanup_without_recv_full_blocks: u8 = 0;
+            let mut cleanup_without_confirmed_recv_blocks_meta: u8 = 0;
+            let mut cleanup_without_finalized_recv_blocks_meta: u8 = 0;
+            let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
+            let mut finalized_block_not_yet_processed = HashSet::<String>::new();
 
-                            trace!("got processed block {} with blockhash {}",
+            let mut startup_slots = 0;
+            const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
+            'recv_loop: loop {
+                tokio::select! {
+                    processed_block = processed_block_reciever.recv() => {
+                        cleanup_without_recv_full_blocks = 0;
+
+                        let processed_block = processed_block.expect("processed_block channel must NEVER be closed");
+                        startup_slots += 1;
+
+                        trace!("got processed block {} with blockhash {}",
+                            processed_block.slot, processed_block.blockhash.clone());
+
+                        if let Err(e) = producedblock_sender.send(processed_block.clone()) {
+                            warn!("produced block channel has no receivers {e:?}");
+                        }
+                        // pick up out-of-order confirmation meta and send full block
+                        if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
+                            debug!("merging confirmed block meta from not-yet-processed list with this processed block for blockhash {}#{}",
                                 processed_block.slot, processed_block.blockhash.clone());
-
-                            if let Err(e) = producedblock_sender.send(processed_block.clone()) {
-                                warn!("produced block channel has no receivers {e:?}");
-                            }
-                            // pick up out-of-order confirmation meta and send full block
-                            if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
-                                debug!("merging confirmed block meta from not-yet-processed list with this processed block for blockhash {}#{}",
-                                    processed_block.slot, processed_block.blockhash.clone());
-                                if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
-                                    warn!("failed to send confirmed block, channel has no receivers {e:?}");
-                                }
-                            }
-                            // pick up out-of-order confirmation meta and send full block
-                            if finalized_block_not_yet_processed.remove(&processed_block.blockhash) {
-                                debug!("merging finalized block meta from not-yet-processed list with this processed block for blockhash {}#{}",
-                                    processed_block.slot, processed_block.blockhash.clone());
-                                if let Err(e) = producedblock_sender.send(processed_block.to_finalized_block()) {
-                                    warn!("failed to send finalized block, channel has no receivers {e:?}");
-                                }
-                            }
-                            recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
-                        },
-                        Some(BlockMeta { blockhash: confirmed_blockhash }) = confirmed_blockmeta_stream.next() => {
-                            cleanup_without_confirmed_recv_blocks_meta = 0;
-                            if let Some(cached_processed_block) = recent_processed_blocks.get(&confirmed_blockhash) {
-                                let confirmed_block = cached_processed_block.to_confirmed_block();
-                                debug!("got confirmed blockmeta {} with blockhash {}",
-                                    confirmed_block.slot, confirmed_block.blockhash.clone());
-                                if let Err(e) = producedblock_sender.send(confirmed_block) {
-                                    warn!("failed to send confirmed block, channel has no receivers {e:?}");
-                                    continue 'recv_loop;
-                                }
-                            } else {
-                                confirmed_block_not_yet_processed.insert(confirmed_blockhash.clone());
-                                log::debug!("processed block {} not found - add to not-yet-processed list for confirmed blocks, size={}",
-                                    confirmed_blockhash, confirmed_block_not_yet_processed.len());
-                            }
-                        },
-                        Some(BlockMeta { blockhash: finalized_blockhash }) = finalized_blockmeta_stream.next() => {
-                            cleanup_without_finalized_recv_blocks_meta = 0;
-                            if let Some(cached_processed_block) = recent_processed_blocks.remove(&finalized_blockhash) {
-                                let finalized_block = cached_processed_block.to_finalized_block();
-                                last_finalized_slot = finalized_block.slot;
-                                debug!("got finalized blockmeta {} with blockhash {}",
-                                    finalized_block.slot, finalized_block.blockhash.clone());
-                                if let Err(e) = producedblock_sender.send(finalized_block) {
-                                    warn!("failed to send finalized block, channel has no receivers {e:?}");
-                                    continue 'recv_loop;
-                                }
-                            } else {
-                                finalized_block_not_yet_processed.insert(finalized_blockhash.clone());
-                                debug!("processed block {} not found - add to not-yet-processed list for finalized blocks, size={}",
-                                    finalized_blockhash, finalized_block_not_yet_processed.len());
-                                error!("finalized block meta {} received without respective full block!", finalized_blockhash);
-                            }
-                        },
-                        _ = cleanup_tick.tick() => {
-                            if cleanup_without_recv_full_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
-                                cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
-                                cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
-                                log::error!("block or block meta geyser stream stopped - restarting multiplexer ({}-{}-{})",
-                                cleanup_without_recv_full_blocks, cleanup_without_confirmed_recv_blocks_meta, cleanup_without_finalized_recv_blocks_meta,);
-                                // throttle a bit
-                                sleep(Duration::from_millis(1500)).await;
-                                break 'recv_loop;
-                            }
-                            cleanup_without_recv_full_blocks += 1;
-                            cleanup_without_confirmed_recv_blocks_meta += 1;
-                            cleanup_without_finalized_recv_blocks_meta += 1;
-                            let size_before = recent_processed_blocks.len();
-                            recent_processed_blocks.retain(|_blockhash, block| {
-                                last_finalized_slot == 0 || block.slot > last_finalized_slot - 100
-                            });
-                            let cnt_cleaned = size_before - recent_processed_blocks.len();
-                            if cnt_cleaned > 0 {
-                                debug!("cleaned {} processed blocks from cache", cnt_cleaned);
+                            if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
+                                warn!("failed to send confirmed block, channel has no receivers {e:?}");
                             }
                         }
+                        // pick up out-of-order confirmation meta and send full block
+                        if finalized_block_not_yet_processed.remove(&processed_block.blockhash) {
+                            debug!("merging finalized block meta from not-yet-processed list with this processed block for blockhash {}#{}",
+                                processed_block.slot, processed_block.blockhash.clone());
+                            if let Err(e) = producedblock_sender.send(processed_block.to_finalized_block()) {
+                                warn!("failed to send finalized block, channel has no receivers {e:?}");
+                            }
+                        }
+                        recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
+                    },
+                    Some(BlockMeta { blockhash: confirmed_blockhash }) = confirmed_blockmeta_stream.next() => {
+                        cleanup_without_confirmed_recv_blocks_meta = 0;
+                        if let Some(cached_processed_block) = recent_processed_blocks.get(&confirmed_blockhash) {
+                            let confirmed_block = cached_processed_block.to_confirmed_block();
+                            debug!("got confirmed blockmeta {} with blockhash {}",
+                                confirmed_block.slot, confirmed_block.blockhash.clone());
+                            if let Err(e) = producedblock_sender.send(confirmed_block) {
+                                warn!("failed to send confirmed block, channel has no receivers {e:?}");
+                                continue 'recv_loop;
+                            }
+                        } else {
+                            confirmed_block_not_yet_processed.insert(confirmed_blockhash.clone());
+                            log::debug!("processed block {} not found - add to not-yet-processed list for confirmed blocks, size={}",
+                                confirmed_blockhash, confirmed_block_not_yet_processed.len());
+                        }
+                    },
+                    Some(BlockMeta { blockhash: finalized_blockhash }) = finalized_blockmeta_stream.next() => {
+                        cleanup_without_finalized_recv_blocks_meta = 0;
+                        if let Some(cached_processed_block) = recent_processed_blocks.remove(&finalized_blockhash) {
+                            let finalized_block = cached_processed_block.to_finalized_block();
+                            last_finalized_slot = finalized_block.slot;
+                            debug!("got finalized blockmeta {} with blockhash {}",
+                                finalized_block.slot, finalized_block.blockhash.clone());
+                            if let Err(e) = producedblock_sender.send(finalized_block) {
+                                warn!("failed to send finalized block, channel has no receivers {e:?}");
+                                continue 'recv_loop;
+                            }
+                        } else {
+                            finalized_block_not_yet_processed.insert(finalized_blockhash.clone());
+                            debug!("processed block {} not found - add to not-yet-processed list for finalized blocks, size={}",
+                                finalized_blockhash, finalized_block_not_yet_processed.len());
+                            if startup_slots > 40 {
+                                error!("finalized block meta {} received without respective full block!", finalized_blockhash);
+                            }
+                        }
+                    },
+                    _ = cleanup_tick.tick() => {
+                        if cleanup_without_recv_full_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
+                            cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
+                            cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
+                            log::error!("block or block meta geyser stream stopped - restarting multiplexer ({}-{}-{})",
+                            cleanup_without_recv_full_blocks, cleanup_without_confirmed_recv_blocks_meta, cleanup_without_finalized_recv_blocks_meta,);
+                            // throttle a bit
+                            sleep(Duration::from_millis(1500)).await;
+                            break 'recv_loop;
+                        }
+                        cleanup_without_recv_full_blocks += 1;
+                        cleanup_without_confirmed_recv_blocks_meta += 1;
+                        cleanup_without_finalized_recv_blocks_meta += 1;
+                        let size_before = recent_processed_blocks.len();
+                        recent_processed_blocks.retain(|_blockhash, block| {
+                            last_finalized_slot == 0 || block.slot > last_finalized_slot - 100
+                        });
+                        let cnt_cleaned = size_before - recent_processed_blocks.len();
+                        if cnt_cleaned > 0 {
+                            debug!("cleaned {} processed blocks from cache", cnt_cleaned);
+                        }
                     }
-                } // -- END receiver loop
-            } // -- END reconnect loop
-            unreachable!("Task is not allowed to terminate");
-        });
+                }
+            } // -- END receiver loop
+        } // -- END reconnect loop
+        unreachable!("Task is not allowed to terminate");
+    });
 
     (blocks_output_stream, jh_block_emitter_task)
 }
@@ -293,13 +309,13 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
     // task MUST not terminate but might be aborted from outside
     let jh_multiplex_task = tokio::spawn(async move {
         'reconnect_loop: loop {
-
             let mut channels = vec![];
             for grpc_source in &grpc_sources {
                 // tasks will be shutdown automatically if the channel gets closed
-                let (_jh_geyser_task, message_channel) =
-                    create_geyser_autoconnection_task(grpc_source.clone(),
-                          GeyserFilter(COMMITMENT_CONFIG).slots());
+                let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+                    grpc_source.clone(),
+                    GeyserFilter(COMMITMENT_CONFIG).slots(),
+                );
                 channels.push(message_channel)
             }
 
@@ -307,28 +323,36 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
             let mut fused_streams = source_channels.merge();
 
             'recv_loop: loop {
-                let next = tokio::time::timeout(Duration::from_secs(30),
-                                                  fused_streams.next()).await;
+                let next =
+                    tokio::time::timeout(Duration::from_secs(30), fused_streams.next()).await;
                 match next {
                     Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
-                            let send_result = multiplexed_messages_sender.send(SlotNotification {
-                                processed_slot: slot,
-                                estimated_processed_slot: slot,
-                            }).context("Send slot to channel");
+                            let send_result = multiplexed_messages_sender
+                                .send(SlotNotification {
+                                    processed_slot: slot,
+                                    estimated_processed_slot: slot,
+                                })
+                                .context("Send slot to channel");
                             if send_result.is_err() {
                                 warn!("Slot channel receiver is closed - aborting");
                                 bail!("Slot channel receiver is closed - aborting");
                             }
 
-                            trace!("emitted slot #{}@{} from multiplexer",
-                                slot, COMMITMENT_CONFIG.commitment);
+                            trace!(
+                                "emitted slot #{}@{} from multiplexer",
+                                slot,
+                                COMMITMENT_CONFIG.commitment
+                            );
                         }
                     }
                     Ok(Some(Message::Connecting(attempt))) => {
                         if attempt > 1 {
-                            warn!("Multiplexed geyser slot stream performs reconnect attempt {}", attempt);
+                            warn!(
+                                "Multiplexed geyser slot stream performs reconnect attempt {}",
+                                attempt
+                            );
                         }
                     }
                     Ok(None) => {}
@@ -339,7 +363,6 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                         break 'recv_loop;
                     }
                 }
-
             } // -- END receiver loop
         } // -- END reconnect loop
         unreachable!("Task is not allowed to terminate");
@@ -347,7 +370,6 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
 
     (multiplexed_messages_rx, jh_multiplex_task)
 }
-
 
 struct BlockMeta {
     pub blockhash: String,
@@ -359,11 +381,12 @@ impl FromYellowstoneExtractor for BlockMetaExtractor {
     type Target = BlockMeta;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(u64, BlockMeta)> {
         match update.update_oneof {
-            Some(UpdateOneof::BlockMeta(block_meta)) => {
-                Some((block_meta.slot, BlockMeta {
+            Some(UpdateOneof::BlockMeta(block_meta)) => Some((
+                block_meta.slot,
+                BlockMeta {
                     blockhash: block_meta.blockhash,
-                }))
-            }
+                },
+            )),
             _ => None,
         }
     }
@@ -371,14 +394,15 @@ impl FromYellowstoneExtractor for BlockMetaExtractor {
 
 fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
     match update.update_oneof {
-        Some(UpdateOneof::Slot(update_slot_message)) => {
-            Some(update_slot_message.slot)
-        }
+        Some(UpdateOneof::Slot(update_slot_message)) => Some(update_slot_message.slot),
         _ => None,
     }
 }
 
-fn map_block_from_yellowstone_update(update: SubscribeUpdate, commitment_config: CommitmentConfig) -> Option<(Slot, ProducedBlock)> {
+fn map_block_from_yellowstone_update(
+    update: SubscribeUpdate,
+    commitment_config: CommitmentConfig,
+) -> Option<(Slot, ProducedBlock)> {
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
             let block = from_grpc_block_update(update_block_message, commitment_config);
@@ -387,4 +411,3 @@ fn map_block_from_yellowstone_update(update: SubscribeUpdate, commitment_config:
         _ => None,
     }
 }
-
