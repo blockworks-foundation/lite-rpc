@@ -37,7 +37,7 @@ pub struct Tc2Result {
 
 #[derive(Debug, serde::Serialize)]
 pub struct RpcStat {
-    confirmation_time: Duration,
+    confirmation_time: f32,
     mode_slot: u64,
     confirmed: u64,
     unconfirmed: u64,
@@ -77,7 +77,6 @@ impl Tc2 {
             ).await?;
 
         let elapsed_total = started_at.elapsed();
-
 
         for (tx_sig, confirmation) in &tx_and_confirmations_from_rpc {
             match confirmation {
@@ -136,7 +135,7 @@ impl Tc2 {
             .unwrap_or_default();
 
         Ok(RpcStat {
-            confirmation_time: elapsed_total,
+            confirmation_time: elapsed_total.as_secs_f32(),
             mode_slot,
             confirmed,
             unconfirmed,
@@ -148,7 +147,7 @@ impl Tc2 {
         let len = stats.len();
 
         let mut avg = RpcStat {
-            confirmation_time: Duration::default(),
+            confirmation_time: 0.0,
             mode_slot: 0,
             confirmed: 0,
             unconfirmed: 0,
@@ -162,7 +161,7 @@ impl Tc2 {
             avg.failed += stat.failed;
         }
 
-        avg.confirmation_time /= len as u32;
+        avg.confirmation_time /= len as f32;
         avg.confirmed /= len as u64;
         avg.unconfirmed /= len as u64;
         avg.failed /= len as u64;
@@ -362,20 +361,3 @@ async fn poll_next_slot_start(rpc_client: &RpcClient) -> Result<Slot, Error> {
     };
     Ok(send_slot)
 }
-
-
-// TODO
-#[test]
-pub fn serialize_duration() {
-    let json_string = serde_json::to_string(&RpcStat {
-        time: Duration::from_secs(1),
-        mode_slot: 1,
-        confirmed: 1,
-        unconfirmed: 1,
-        failed: 1,
-    }).unwrap();
-
-    assert_eq!(json_string, "{\"time\":\"1s\",\"mode_slot\":1,\"confirmed\":1,\"unconfirmed\":1,\"failed\":1}");
-
-}
-
