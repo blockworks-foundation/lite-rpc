@@ -1,4 +1,4 @@
-use crate::rpc_data::FeePoint;
+use crate::{prioritization_fee_data::PrioFeesData, rpc_data::FeePoint};
 use itertools::Itertools;
 use std::iter::zip;
 
@@ -6,16 +6,16 @@ use std::iter::zip;
 
 pub fn calculate_supp_percentiles(
     // Vec(prioritization_fees, cu_consumed)
-    prio_fees_in_block: &[(u64, u64)],
+    prio_fees_in_block: &[PrioFeesData],
 ) -> Percentiles {
     let prio_fees_in_block = if prio_fees_in_block.is_empty() {
         // note: percentile for empty array is undefined
-        vec![(0, 0)]
+        vec![PrioFeesData::default()]
     } else {
         // sort by prioritization fees
         prio_fees_in_block
             .iter()
-            .sorted_by_key(|(prio, _cu)| prio)
+            .sorted_by_key(|data| data.priority)
             .cloned()
             .collect_vec()
     };
@@ -26,33 +26,33 @@ pub fn calculate_supp_percentiles(
         .map(|p| {
             let prio_fee = {
                 let index = prio_fees_in_block.len() * p / 100;
-                let cap_index = index.min(prio_fees_in_block.len().saturating_sub(1));
-                prio_fees_in_block[cap_index].0
+                let cap_index = index.min(prio_fees_in_block.len() - 1);
+                prio_fees_in_block[cap_index].priority
             };
             FeePoint {
-                p: p as u32,
-                v: prio_fee,
+                percentile: p as u32,
+                fees: prio_fee,
             }
         })
         .collect_vec();
 
     // get stats by CU
-    let cu_sum: u64 = prio_fees_in_block.iter().map(|x| x.1).sum();
-    let mut agg: u64 = prio_fees_in_block[0].1;
+    let cu_sum: u64 = prio_fees_in_block.iter().map(|x| x.cu_consumed).sum();
+    let mut agg: u64 = prio_fees_in_block[0].cu_consumed;
     let mut index = 0;
     let p_step = 5;
 
     let dist_fee_by_cu = (0..=100)
         .step_by(p_step)
-        .map(|p| {
-            while agg < (cu_sum * p) / 100 {
+        .map(|percentile| {
+            while agg < (cu_sum * percentile) / 100 {
                 index += 1;
-                agg += prio_fees_in_block[index].1;
+                agg += prio_fees_in_block[index].cu_consumed;
             }
-            let (prio, _) = prio_fees_in_block[index];
+            let priority = prio_fees_in_block[index].priority;
             FeePoint {
-                p: p as u32,
-                v: prio,
+                percentile: percentile as u32,
+                fees: priority,
             }
         })
         .collect_vec();
@@ -60,19 +60,19 @@ pub fn calculate_supp_percentiles(
     Percentiles {
         by_tx: dist_fee_by_index
             .iter()
-            .map(|fee_point| fee_point.v)
+            .map(|fee_point| fee_point.fees)
             .collect_vec(),
         by_tx_percentiles: dist_fee_by_index
             .iter()
-            .map(|fee_point| fee_point.p as f32 / 100.0)
+            .map(|fee_point| fee_point.percentile as f32 / 100.0)
             .collect_vec(),
         by_cu: dist_fee_by_cu
             .iter()
-            .map(|fee_point| fee_point.v)
+            .map(|fee_point| fee_point.fees)
             .collect_vec(),
         by_cu_percentiles: dist_fee_by_cu
             .iter()
-            .map(|fee_point| fee_point.p as f32 / 100.0)
+            .map(|fee_point| fee_point.percentile as f32 / 100.0)
             .collect_vec(),
     }
 }
@@ -105,7 +105,13 @@ mod tests {
 
     #[test]
     fn test_calculate_supp_info() {
-        let prio_fees_in_block = vec![(2, 2), (4, 4), (5, 5), (3, 3), (1, 1)];
+        let prio_fees_in_block = vec![
+            PrioFeesData::from((2, 2)),
+            PrioFeesData::from((4, 4)),
+            PrioFeesData::from((5, 5)),
+            PrioFeesData::from((3, 3)),
+            PrioFeesData::from((1, 1)),
+        ];
         let supp_info = calculate_supp_percentiles(&prio_fees_in_block).by_tx;
         assert_eq!(supp_info[0], 1);
         assert_eq!(supp_info[10], 3);
@@ -117,7 +123,10 @@ mod tests {
     #[test]
     fn test_calculate_supp_info_by_cu() {
         // total of 20000 CU where consumed
-        let prio_fees_in_block = vec![(100, 10000), (200, 10000)];
+        let prio_fees_in_block = vec![
+            PrioFeesData::from((100, 10000)),
+            PrioFeesData::from((200, 10000)),
+        ];
         let Percentiles {
             by_cu,
             by_cu_percentiles,
@@ -137,7 +146,7 @@ mod tests {
     }
     #[test]
     fn test_zeros() {
-        let prio_fees_in_block = vec![(0, 0), (0, 0)];
+        let prio_fees_in_block = vec![PrioFeesData::from((0, 0)), PrioFeesData::from((0, 0))];
         let supp_info = calculate_supp_percentiles(&prio_fees_in_block).by_cu;
         assert_eq!(supp_info[0], 0);
     }
@@ -145,14 +154,14 @@ mod tests {
     #[test]
     fn test_statisticshowto() {
         let prio_fees_in_block = vec![
-            (30, 1),
-            (33, 2),
-            (43, 3),
-            (53, 4),
-            (56, 5),
-            (67, 6),
-            (68, 7),
-            (72, 8),
+            PrioFeesData::from((30, 1)),
+            PrioFeesData::from((33, 2)),
+            PrioFeesData::from((43, 3)),
+            PrioFeesData::from((53, 4)),
+            PrioFeesData::from((56, 5)),
+            PrioFeesData::from((67, 6)),
+            PrioFeesData::from((68, 7)),
+            PrioFeesData::from((72, 8)),
         ];
         let supp_info = calculate_supp_percentiles(&prio_fees_in_block);
         assert_eq!(supp_info.by_tx[5], 43);
@@ -166,15 +175,15 @@ mod tests {
         // Messwerte: 3 – 5 – 5 – 6 – 7 – 7 – 8 – 10 – 10
         // In diesem Fall lautet es also 5.
         let values = vec![
-            (3, 1),
-            (5, 2),
-            (5, 3),
-            (6, 4),
-            (7, 5),
-            (7, 6),
-            (8, 7),
-            (10, 8),
-            (10, 9),
+            PrioFeesData::from((3, 1)),
+            PrioFeesData::from((5, 2)),
+            PrioFeesData::from((5, 3)),
+            PrioFeesData::from((6, 4)),
+            PrioFeesData::from((7, 5)),
+            PrioFeesData::from((7, 6)),
+            PrioFeesData::from((8, 7)),
+            PrioFeesData::from((10, 8)),
+            PrioFeesData::from((10, 9)),
         ];
 
         let supp_info = calculate_supp_percentiles(&values);
@@ -189,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_large_list() {
-        let prio_fees_in_block: Vec<(u64, u64)> = (0..1000).map(|x| (x, x)).collect();
+        let prio_fees_in_block = (0..1000).map(|x| PrioFeesData::from((x, x))).collect_vec();
         let supp_info = calculate_supp_percentiles(&prio_fees_in_block);
         assert_eq!(supp_info.by_tx[19], 950);
         assert_eq!(supp_info.by_tx_percentiles[19], 0.95);

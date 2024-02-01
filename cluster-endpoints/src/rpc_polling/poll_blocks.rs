@@ -275,6 +275,17 @@ pub fn from_ui_block(
                         .unwrap_or(false)
             });
 
+            let accounts = tx.message.static_account_keys();
+            let mut readable_accounts = vec![];
+            let mut writable_accounts = vec![];
+            for (index, account) in accounts.iter().enumerate() {
+                if tx.message.is_maybe_writable(index) {
+                    writable_accounts.push(*account);
+                } else {
+                    readable_accounts.push(*account);
+                }
+            }
+
             Some(TransactionInfo {
                 signature,
                 is_vote: is_vote_transaction,
@@ -284,6 +295,8 @@ pub fn from_ui_block(
                 cu_consumed,
                 recent_blockhash: blockhash,
                 message,
+                readable_accounts,
+                writable_accounts,
             })
         })
         .collect();

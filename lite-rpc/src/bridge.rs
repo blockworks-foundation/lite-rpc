@@ -2,11 +2,14 @@ use std::collections::HashMap;
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Context;
+use jsonrpsee::core::StringError;
 use jsonrpsee::{
     core::SubscriptionResult, server::ServerBuilder, DisconnectError, PendingSubscriptionSink,
 };
 use log::{debug, error, warn};
 use prometheus::{opts, register_int_counter, IntCounter};
+use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
+use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{
@@ -42,8 +45,10 @@ use crate::{
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc::LiteRpcServer,
 };
-use solana_lite_rpc_block_priofees::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
-use solana_lite_rpc_block_priofees::PrioFeesService;
+use solana_lite_rpc_prioritization_fees::rpc_data::{
+    AccountPrioFeesStats, AccountPrioFeesUpdateMessage, PrioFeesStats, PrioFeesUpdateMessage,
+};
+use solana_lite_rpc_prioritization_fees::PrioFeesService;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -62,6 +67,8 @@ lazy_static::lazy_static! {
     register_int_counter!(opts!("literpc_rpc_signature_subscribe", "RPC call to subscribe to signature")).unwrap();
     static ref RPC_BLOCK_PRIOFEES_SUBSCRIBE: IntCounter =
     register_int_counter!(opts!("literpc_rpc_block_priofees_subscribe", "RPC call to subscribe to block prio fees")).unwrap();
+    static ref RPC_ACCOUNT_PRIOFEES_SUBSCRIBE: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_account_priofees_subscribe", "RPC call to subscribe to account prio fees")).unwrap();
 }
 
 /// A bridge between clients and tpu
@@ -73,6 +80,7 @@ pub struct LiteBridge {
     transaction_service: TransactionService,
     history: History,
     prio_fees_service: PrioFeesService,
+    account_priofees_service: AccountPrioService,
 }
 
 impl LiteBridge {
@@ -82,6 +90,7 @@ impl LiteBridge {
         transaction_service: TransactionService,
         history: History,
         prio_fees_service: PrioFeesService,
+        account_priofees_service: AccountPrioService,
     ) -> Self {
         Self {
             rpc_client,
@@ -89,6 +98,7 @@ impl LiteBridge {
             transaction_service,
             history,
             prio_fees_service,
+            account_priofees_service,
         }
     }
 
@@ -523,22 +533,38 @@ impl LiteRpcServer for LiteBridge {
         todo!()
     }
 
-    async fn get_latest_block_priofees(&self) -> crate::rpc::Result<RpcResponse<PrioFeesStats>> {
-        match self.prio_fees_service.get_latest_priofees().await {
-            Some((confirmation_slot, priofees)) => {
-                return Ok(RpcResponse {
-                    context: RpcResponseContext {
-                        slot: confirmation_slot,
-                        api_version: None,
-                    },
-                    value: priofees,
-                });
+    async fn get_latest_block_priofees(
+        &self,
+        method: Option<PrioritizationFeeCalculationMethod>,
+    ) -> crate::rpc::Result<RpcResponse<PrioFeesStats>> {
+        let method = method.unwrap_or_default();
+        let res = match method {
+            PrioritizationFeeCalculationMethod::Latest => {
+                self.prio_fees_service.get_latest_priofees().await
             }
-            None => {
+            PrioritizationFeeCalculationMethod::LastNBlocks(nb) => {
+                self.prio_fees_service
+                    .get_last_n_priofees_aggregate(nb)
+                    .await
+            }
+            _ => {
                 return Err(jsonrpsee::core::Error::Custom(
-                    "No latest priofees stats available found".to_string(),
-                ));
+                    "Invalid calculation method".to_string(),
+                ))
             }
+        };
+
+        match res {
+            Some((confirmation_slot, priofees)) => Ok(RpcResponse {
+                context: RpcResponseContext {
+                    slot: confirmation_slot,
+                    api_version: None,
+                },
+                value: priofees,
+            }),
+            None => Err(jsonrpsee::core::Error::Custom(
+                "No latest priofees stats available found".to_string(),
+            )),
         }
     }
 
@@ -578,6 +604,103 @@ impl LiteRpcServer for LiteBridge {
                                 return;
                             }
                         };
+                    }
+                    Err(Lagged(lagged)) => {
+                        // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
+                        warn!(
+                            "subscriber laggs some({}) priofees update messages - continue",
+                            lagged
+                        );
+                        continue 'recv_loop;
+                    }
+                    Err(Closed) => {
+                        error!("failed to receive block, sender closed - aborting");
+                        return;
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    async fn get_latest_account_priofees(
+        &self,
+        account: String,
+        method: Option<PrioritizationFeeCalculationMethod>,
+    ) -> crate::rpc::Result<RpcResponse<AccountPrioFeesStats>> {
+        if let Ok(account) = Pubkey::from_str(&account) {
+            let method = method.unwrap_or_default();
+            let (slot, value) = match method {
+                PrioritizationFeeCalculationMethod::Latest => {
+                    self.account_priofees_service.get_latest_stats(&account)
+                }
+                PrioritizationFeeCalculationMethod::LastNBlocks(nb) => {
+                    self.account_priofees_service.get_n_last_stats(&account, nb)
+                }
+                _ => {
+                    return Err(jsonrpsee::core::Error::Custom(
+                        "Invalid calculation method".to_string(),
+                    ))
+                }
+            };
+            Ok(RpcResponse {
+                context: RpcResponseContext {
+                    slot,
+                    api_version: None,
+                },
+                value,
+            })
+        } else {
+            Err(jsonrpsee::core::Error::Custom(
+                "Invalid account".to_string(),
+            ))
+        }
+    }
+
+    async fn latest_account_priofees_subscribe(
+        &self,
+        pending: PendingSubscriptionSink,
+        account: String,
+    ) -> SubscriptionResult {
+        let Ok(account) = Pubkey::from_str(&account) else {
+            return Err(StringError::from("Invalid account".to_string()));
+        };
+        let sink = pending.accept().await?;
+        let mut account_fees_stream = self
+            .account_priofees_service
+            .priofees_update_sender
+            .subscribe();
+        tokio::spawn(async move {
+            RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
+
+            'recv_loop: loop {
+                match account_fees_stream.recv().await {
+                    Ok(AccountPrioFeesUpdateMessage {
+                        slot,
+                        accounts_data,
+                    }) => {
+                        if let Some(account_data) = accounts_data.get(&account) {
+                            let result_message =
+                                jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
+                                    context: RpcResponseContext {
+                                        slot,
+                                        api_version: None,
+                                    },
+                                    value: account_data,
+                                });
+
+                            match sink.send(result_message.unwrap()).await {
+                                Ok(()) => {
+                                    // success
+                                    continue 'recv_loop;
+                                }
+                                Err(DisconnectError(_subscription_message)) => {
+                                    debug!("Stopping subscription task on disconnect");
+                                    return;
+                                }
+                            };
+                        }
                     }
                     Err(Lagged(lagged)) => {
                         // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging

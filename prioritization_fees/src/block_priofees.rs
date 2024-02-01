@@ -1,5 +1,5 @@
-use crate::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage, TxAggregateStats};
-use crate::stats_calculation::calculate_supp_percentiles;
+use crate::prioritization_fee_data::{BlockPrioData, PrioFeesData};
+use crate::rpc_data::{PrioFeesStats, PrioFeesUpdateMessage};
 use log::{error, info, trace, warn};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
@@ -10,14 +10,11 @@ use tokio::sync::broadcast::Sender;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-// note: ATM only the latest slot (highest key) is used
-const SLOTS_TO_RETAIN: u64 = 100;
-
 /// put everything required to serve sync data calls here
 #[derive(Clone)]
 pub struct PrioFeeStore {
     // store priofees stats for recently processed blocks up to CLEANUP_SLOTS_AFTER
-    recent: Arc<RwLock<BTreeMap<Slot, PrioFeesStats>>>,
+    recent: Arc<RwLock<BTreeMap<Slot, BlockPrioData>>>,
 }
 
 pub struct PrioFeesService {
@@ -29,13 +26,33 @@ pub struct PrioFeesService {
 impl PrioFeesService {
     pub async fn get_latest_priofees(&self) -> Option<(Slot, PrioFeesStats)> {
         let lock = self.block_fees_store.recent.read().await;
-        let latest_in_store = lock.last_key_value();
-        latest_in_store.map(|x| (*x.0, x.1.clone()))
+        lock.last_key_value()
+            .map(|(slot, value)| (*slot, value.calculate_stats()))
+    }
+
+    pub async fn get_last_n_priofees_aggregate(&self, nb: usize) -> Option<(Slot, PrioFeesStats)> {
+        let lock = self.block_fees_store.recent.read().await;
+        let last_slot = match lock.last_key_value().map(|x| *x.0) {
+            Some(slot) => slot,
+            None => {
+                return None;
+            }
+        };
+
+        let prio_fees = lock
+            .iter()
+            .rev()
+            .take(nb)
+            .map(|x| x.1)
+            .fold(BlockPrioData::default(), |acc, x| acc.add(x))
+            .calculate_stats();
+        Some((last_slot, prio_fees))
     }
 }
 
-pub async fn start_block_priofees_task(
+pub fn start_block_priofees_task(
     mut block_stream: BlockStream,
+    slots_to_retain: u64,
 ) -> (JoinHandle<()>, PrioFeesService) {
     let recent_data = Arc::new(RwLock::new(BTreeMap::new()));
     let store = PrioFeeStore {
@@ -54,31 +71,20 @@ pub async fn start_block_priofees_task(
                         continue;
                     }
                     let processed_slot = block.slot;
-                    {
-                        // first do some cleanup
-                        let mut lock = recent_data.write().await;
-                        lock.retain(|slot, _| {
-                            *slot > processed_slot.saturating_sub(SLOTS_TO_RETAIN)
-                        });
-                    }
 
-                    let block_priofees = block
+                    let tx_prioritization = block
                         .transactions
                         .iter()
                         .filter(|tx| !tx.is_vote)
-                        .map(|tx| {
-                            (
-                                tx.prioritization_fees.unwrap_or_default(),
-                                tx.cu_consumed.unwrap_or_default(),
-                            )
+                        .map(|tx| PrioFeesData {
+                            priority: tx.prioritization_fees.unwrap_or_default(),
+                            cu_consumed: tx.cu_consumed.unwrap_or_default(),
                         })
-                        .collect::<Vec<(u64, u64)>>();
+                        .collect::<Vec<PrioFeesData>>();
 
-                    let priofees_percentiles = calculate_supp_percentiles(&block_priofees);
+                    let nb_total_tx = block.transactions.len() as u64;
 
-                    let total_tx_count = block.transactions.len() as u64;
-
-                    let nonvote_tx_count =
+                    let nb_non_vote_tx =
                         block.transactions.iter().filter(|tx| !tx.is_vote).count() as u64;
 
                     let total_cu_consumed = block
@@ -87,34 +93,30 @@ pub async fn start_block_priofees_task(
                         .map(|tx| tx.cu_consumed.unwrap_or(0))
                         .sum::<u64>();
 
-                    let nonvote_cu_consumed = block
+                    let non_vote_cu_consumed = block
                         .transactions
                         .iter()
                         .filter(|tx| !tx.is_vote)
                         .map(|tx| tx.cu_consumed.unwrap_or(0))
                         .sum::<u64>();
 
-                    trace!("Got prio fees stats for processed block {}", processed_slot);
-
-                    let priofees_stats = PrioFeesStats {
-                        by_tx: priofees_percentiles.by_tx,
-                        by_tx_percentiles: priofees_percentiles.by_tx_percentiles,
-                        by_cu: priofees_percentiles.by_cu,
-                        by_cu_percentiles: priofees_percentiles.by_cu_percentiles,
-                        tx_count: TxAggregateStats {
-                            total: total_tx_count,
-                            nonvote: nonvote_tx_count,
-                        },
-                        cu_consumed: TxAggregateStats {
-                            total: total_cu_consumed,
-                            nonvote: nonvote_cu_consumed,
-                        },
+                    let block_prio_data = BlockPrioData {
+                        transaction_data: tx_prioritization,
+                        nb_non_vote_tx,
+                        nb_total_tx,
+                        non_vote_cu_consumed,
+                        total_cu_consumed,
                     };
 
+                    trace!("Got prio fees stats for processed block {}", processed_slot);
+                    let priofees_stats = block_prio_data.calculate_stats();
                     {
                         // first do some cleanup
                         let mut lock = recent_data.write().await;
-                        lock.insert(processed_slot, priofees_stats.clone());
+                        lock.insert(processed_slot, block_prio_data);
+                        lock.retain(|slot, _| {
+                            *slot > processed_slot.saturating_sub(slots_to_retain)
+                        });
                     }
                     let msg = PrioFeesUpdateMessage {
                         slot: processed_slot,

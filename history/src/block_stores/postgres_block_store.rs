@@ -558,6 +558,8 @@ mod tests {
             cu_consumed: Some(32000),
             recent_blockhash: "recent_blockhash".to_string(),
             message: "some message".to_string(),
+            writable_accounts: vec![],
+            readable_accounts: vec![],
         }
     }
 }

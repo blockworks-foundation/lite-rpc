@@ -2518,10 +2518,10 @@ dependencies = [
  "quinn",
  "serde",
  "serde_json",
- "solana-lite-rpc-block-priofees",
  "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
  "solana-lite-rpc-history",
+ "solana-lite-rpc-prioritization-fees",
  "solana-lite-rpc-services",
  "solana-rpc-client",
  "solana-rpc-client-api",
@@ -4283,24 +4283,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-lite-rpc-block-priofees"
-version = "0.2.4"
-dependencies = [
- "dashmap 5.5.3",
- "itertools 0.10.5",
- "jsonrpsee",
- "lazy_static",
- "log",
- "prometheus",
- "serde",
- "serde_json",
- "solana-lite-rpc-core",
- "solana-sdk",
- "tokio",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "solana-lite-rpc-cluster-endpoints"
 version = "0.2.4"
 dependencies = [
@@ -4404,6 +4386,24 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-util",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "solana-lite-rpc-prioritization-fees"
+version = "0.2.4"
+dependencies = [
+ "dashmap 5.5.3",
+ "itertools 0.10.5",
+ "jsonrpsee",
+ "lazy_static",
+ "log",
+ "prometheus",
+ "serde",
+ "serde_json",
+ "solana-lite-rpc-core",
+ "solana-sdk",
+ "tokio",
  "tracing-subscriber",
 ]
 
