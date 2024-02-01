@@ -222,6 +222,7 @@ async fn send_and_confirm_bulk_transactions(
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
 
     let started_at = Instant::now();
+    // TODO time the start into slot
     let send_slot = rpc_client.get_slot_with_commitment(CommitmentConfig::confirmed()).await?;
 
     let batch_sigs_or_fails = join_all(
@@ -263,6 +264,7 @@ async fn send_and_confirm_bulk_transactions(
         assert_eq!(pending_status_set.len() + result_status_map.len(), num_sent_ok, "Items must move between pending+result");
         let tx_batch = pending_status_set.iter().cloned().collect_vec();
         debug!("Request status for batch of remaining {} transactions in iteration {}", tx_batch.len(), iteration);
+        // TODO warn if get_status api calles are slow
         let batch_responses = rpc_client.get_signature_statuses(tx_batch.as_slice()).await?;
         let elapsed = started_at.elapsed();
 
