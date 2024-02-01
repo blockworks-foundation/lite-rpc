@@ -247,7 +247,7 @@ pub trait LiteRpc {
     #[subscription(name = "blockPrioritizationFeesSubscribe" => "blockPrioritizationFeesNotification", unsubscribe="blockPrioritizationFeesUnsubscribe", item=PrioFeesStats)]
     async fn latest_block_priofees_subscribe(&self) -> SubscriptionResult;
 
-    #[method(name = "getLatestAccountsPrioFees")]
+    #[method(name = "getLatestAccountPrioFees")]
     async fn get_latest_account_priofees(
         &self,
         account: String,

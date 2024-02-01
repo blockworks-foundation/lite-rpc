@@ -20,7 +20,7 @@ impl From<(u64, u64)> for PrioFeesData {
 
 #[derive(Default, Clone)]
 pub struct BlockPrioData {
-    pub tx_prioritization: Vec<PrioFeesData>,
+    pub transaction_data: Vec<PrioFeesData>,
     pub nb_non_vote_tx: u64,
     pub nb_total_tx: u64,
     pub non_vote_cu_consumed: u64,
@@ -29,7 +29,7 @@ pub struct BlockPrioData {
 
 impl BlockPrioData {
     pub fn calculate_stats(&self) -> PrioFeesStats {
-        let priofees_percentiles = calculate_supp_percentiles(&self.tx_prioritization);
+        let priofees_percentiles = calculate_supp_percentiles(&self.transaction_data);
 
         PrioFeesStats {
             by_tx: priofees_percentiles.by_tx,
@@ -49,11 +49,8 @@ impl BlockPrioData {
 
     pub fn add(&self, rhs: &BlockPrioData) -> BlockPrioData {
         Self {
-            tx_prioritization: [
-                self.tx_prioritization.clone(),
-                rhs.tx_prioritization.clone(),
-            ]
-            .concat(),
+            transaction_data: [self.transaction_data.clone(), rhs.transaction_data.clone()]
+                .concat(),
             nb_non_vote_tx: self.nb_non_vote_tx + rhs.nb_non_vote_tx,
             nb_total_tx: self.nb_total_tx + rhs.nb_total_tx,
             non_vote_cu_consumed: self.non_vote_cu_consumed + rhs.non_vote_cu_consumed,

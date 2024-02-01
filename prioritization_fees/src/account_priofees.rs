@@ -6,7 +6,7 @@ use std::{
 use dashmap::{mapref::multiple::RefMutMulti, DashMap};
 use itertools::Itertools;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_sdk::pubkey::Pubkey;
+use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 
 use crate::{
     prioritization_fee_data::{BlockPrioData, PrioFeesData},
@@ -90,7 +90,7 @@ impl AccountPrioStore {
             let tx_count = data.len() as u64;
             let cu_consumed = data.iter().map(|x| x.cu_consumed).sum();
             BlockPrioData {
-                tx_prioritization: data.clone(),
+                transaction_data: data.clone(),
                 nb_non_vote_tx: tx_count,
                 nb_total_tx: tx_count,
                 non_vote_cu_consumed: cu_consumed,
@@ -143,12 +143,12 @@ impl AccountPrioStore {
         }
 
         // cleanup old data
-        let last_slot = produced_block
+        let min_slot_to_retain = produced_block
             .slot
             .saturating_sub(self.number_of_slots_to_save as u64);
         let cleanup_functor = |mut iter: RefMutMulti<'_, Pubkey, AccountPrio>| {
             while let Some((k, _)) = iter.stats_by_slot.first_key_value() {
-                if *k > last_slot {
+                if *k > min_slot_to_retain {
                     break;
                 }
                 iter.stats_by_slot.pop_first();
@@ -186,7 +186,7 @@ impl AccountPrioStore {
         }
     }
 
-    pub fn get_latest_stats(&self, account: &Pubkey) -> (u64, AccountPrioFeesStats) {
+    pub fn get_latest_stats(&self, account: &Pubkey) -> (Slot, AccountPrioFeesStats) {
         let all = self
             .account_by_prio_fees_all
             .get(account)
@@ -216,7 +216,7 @@ impl AccountPrioStore {
         )
     }
 
-    pub fn get_n_last_stats(&self, account: &Pubkey, nb: usize) -> (u64, AccountPrioFeesStats) {
+    pub fn get_n_last_stats(&self, account: &Pubkey, nb: usize) -> (Slot, AccountPrioFeesStats) {
         let functor = |account_prio: &AccountPrio| {
             account_prio
                 .stats_by_slot

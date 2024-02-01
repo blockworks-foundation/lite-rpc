@@ -101,7 +101,7 @@ pub fn start_block_priofees_task(
                         .sum::<u64>();
 
                     let block_prio_data = BlockPrioData {
-                        tx_prioritization,
+                        transaction_data: tx_prioritization,
                         nb_non_vote_tx,
                         nb_total_tx,
                         non_vote_cu_consumed,

@@ -542,11 +542,11 @@ impl LiteRpcServer for LiteBridge {
             PrioritizationFeeCalculationMethod::Latest => {
                 self.prio_fees_service.get_latest_priofees().await
             }
-            PrioritizationFeeCalculationMethod::Last(nb) => {
+            PrioritizationFeeCalculationMethod::LastNBlocks(nb) => {
                 self.prio_fees_service
                     .get_last_n_priofees_aggregate(nb)
                     .await
-            },
+            }
             _ => {
                 return Err(jsonrpsee::core::Error::Custom(
                     "Invalid calculation method".to_string(),
@@ -635,9 +635,9 @@ impl LiteRpcServer for LiteBridge {
                 PrioritizationFeeCalculationMethod::Latest => {
                     self.account_priofees_service.get_latest_stats(&account)
                 }
-                PrioritizationFeeCalculationMethod::Last(nb) => {
+                PrioritizationFeeCalculationMethod::LastNBlocks(nb) => {
                     self.account_priofees_service.get_n_last_stats(&account, nb)
-                },
+                }
                 _ => {
                     return Err(jsonrpsee::core::Error::Custom(
                         "Invalid calculation method".to_string(),
