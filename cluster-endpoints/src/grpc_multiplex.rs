@@ -212,7 +212,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             } else if startup_completed {
                                 // this warning is ok for first few blocks when we start lrpc
-                                log::error!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
+                                log::warn!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
                             }
                         },
                         _ = cleanup_tick.tick() => {
