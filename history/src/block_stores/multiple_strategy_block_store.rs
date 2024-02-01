@@ -63,7 +63,7 @@ impl MultipleStrategyBlockStorage {
         if let Some(faithful_block_storage) = &self.faithful_block_storage {
             let faithful_storage_range = faithful_block_storage.get_slot_range();
             trace!("Faithful storage range: {:?}", faithful_storage_range);
-            if lower - faithful_storage_range.end() <= 1 {
+            if lower.saturating_sub(*faithful_storage_range.end()) <= 1 {
                 // move the lower bound to the left
                 lower = lower.min(*faithful_storage_range.start());
             }

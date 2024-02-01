@@ -57,10 +57,10 @@ pub async fn main() -> anyhow::Result<()> {
 
         // ATM we are 4000 slots behind ...
         // TODO reduce 4000 to 0
-        let slot = 234332620; // literpc3 - local
-                              // let slot = 231541684;
+        let slot: u64 = 234332620; // literpc3 - local
+                                   // let slot = 231541684;
         let delta = 50 + rand::random::<u64>() % 100;
-        let query_slot = slot - delta;
+        let query_slot = slot.saturating_sub(delta);
         info!("query slot (-{}): {}", delta, query_slot);
 
         let (epoch_cache, _) = &epoch_data;

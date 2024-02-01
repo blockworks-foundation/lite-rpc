@@ -26,7 +26,7 @@ pub fn calculate_supp_percentiles(
         .map(|p| {
             let prio_fee = {
                 let index = prio_fees_in_block.len() * p / 100;
-                let cap_index = index.min(prio_fees_in_block.len() - 1);
+                let cap_index = index.min(prio_fees_in_block.len().saturating_sub(1));
                 prio_fees_in_block[cap_index].0
             };
             FeePoint {
@@ -45,7 +45,7 @@ pub fn calculate_supp_percentiles(
     let dist_fee_by_cu = (0..=100)
         .step_by(p_step)
         .map(|p| {
-            if agg < (cu_sum * p) / 100 {
+            while agg < (cu_sum * p) / 100 {
                 index += 1;
                 agg += prio_fees_in_block[index].1;
             }
@@ -157,6 +157,8 @@ mod tests {
         let supp_info = calculate_supp_percentiles(&prio_fees_in_block);
         assert_eq!(supp_info.by_tx[5], 43);
         assert_eq!(supp_info.by_tx_percentiles[5], 0.25);
+        assert_eq!(supp_info.by_cu_percentiles[20], 1.0);
+        assert_eq!(supp_info.by_cu[20], 72);
     }
 
     #[test]
@@ -179,6 +181,10 @@ mod tests {
 
         assert_eq!(supp_info.by_tx_percentiles[4], 0.20);
         assert_eq!(supp_info.by_tx[5], 5);
+        assert_eq!(supp_info.by_cu_percentiles[19], 0.95);
+        assert_eq!(supp_info.by_cu_percentiles[20], 1.0);
+        assert_eq!(supp_info.by_cu[19], 10);
+        assert_eq!(supp_info.by_cu[20], 10);
     }
 
     #[test]

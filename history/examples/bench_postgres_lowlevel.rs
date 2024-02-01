@@ -117,7 +117,10 @@ pub async fn main() {
 
     let row_count_after = count_rows(session.client.clone()).await;
     info!("total: {}", row_count_after);
-    info!("inserted: {}", row_count_after - row_count_before);
+    info!(
+        "inserted: {}",
+        row_count_after.saturating_sub(row_count_before)
+    );
 }
 
 async fn count_rows(client: Arc<tokio_postgres::Client>) -> i64 {

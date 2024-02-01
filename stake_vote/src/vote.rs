@@ -119,7 +119,7 @@ impl VoteStore {
                 if epoch_credits.len() > MAX_RPC_VOTE_ACCOUNT_INFO_EPOCH_CREDITS_HISTORY {
                     epoch_credits
                         .iter()
-                        .skip(epoch_credits.len() - MAX_RPC_VOTE_ACCOUNT_INFO_EPOCH_CREDITS_HISTORY)
+                        .skip(epoch_credits.len().saturating_sub(MAX_RPC_VOTE_ACCOUNT_INFO_EPOCH_CREDITS_HISTORY))
                         .cloned()
                         .collect()
                 } else {
@@ -260,7 +260,7 @@ pub fn get_rpc_vote_accounts_info(
         })
         .partition(|vote_account_info| {
             if current_slot >= delinquent_validator_slot_distance {
-                vote_account_info.last_vote > current_slot - delinquent_validator_slot_distance
+                vote_account_info.last_vote > current_slot.saturating_sub(delinquent_validator_slot_distance)
             } else {
                 vote_account_info.last_vote > 0
             }

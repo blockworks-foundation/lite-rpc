@@ -229,9 +229,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             cleanup_without_confirmed_recv_blocks_meta += 1;
                             let size_before = recent_processed_blocks.len();
                             recent_processed_blocks.retain(|_blockhash, block| {
-                                last_finalized_slot == 0 || block.slot > last_finalized_slot - CLEANUP_SLOTS_BEHIND_FINALIZED
+                                last_finalized_slot == 0 || block.slot > last_finalized_slot.saturating_sub(CLEANUP_SLOTS_BEHIND_FINALIZED)
                             });
-                            let cnt_cleaned = size_before - recent_processed_blocks.len();
+                            let cnt_cleaned = size_before.saturating_sub(recent_processed_blocks.len());
                             if cnt_cleaned > 0 {
                                 debug!("cleaned {} processed blocks from cache", cnt_cleaned);
                             }
