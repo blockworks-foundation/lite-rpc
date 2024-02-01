@@ -36,10 +36,7 @@ impl AccountPrioService {
                             }
 
                             let account_fee_message = account_store.update(&block);
-                            if priofees_update_sender.send(account_fee_message).is_err() {
-                                log::error!("account prioritization fee sender broken");
-                                break 'recv_loop;
-                            }
+                            let _ = priofees_update_sender.send(account_fee_message);
                         }
                         Err(Lagged(_lagged)) => {
                             log::warn!(

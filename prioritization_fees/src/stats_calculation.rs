@@ -44,8 +44,8 @@ pub fn calculate_supp_percentiles(
 
     let dist_fee_by_cu = (0..=100)
         .step_by(p_step)
-        .map(|p| {
-            while agg < (cu_sum * p) / 100 {
+        .map(|percentile| {
+            while agg < (cu_sum * percentile) / 100 {
                 index += 1;
                 agg += prio_fees_in_block[index].cu_consumed;
             }
