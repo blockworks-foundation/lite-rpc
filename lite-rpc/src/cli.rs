@@ -13,7 +13,7 @@ use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     /// config.json
-    #[arg(short='c', long)]
+    #[arg(short = 'c', long)]
     pub config: Option<String>,
 }
 
