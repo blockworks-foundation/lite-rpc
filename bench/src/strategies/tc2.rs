@@ -3,6 +3,7 @@ use std::fs::File;
 use std::iter::zip;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::thread::sleep;
 use std::time::Duration;
 use anyhow::{bail, Error};
 use csv::Writer;
@@ -221,14 +222,18 @@ async fn send_and_confirm_bulk_transactions(
     txs: &[Transaction],
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
 
-    let started_at = Instant::now();
-    // TODO time the start into slot
-    let send_slot = rpc_client.get_slot_with_commitment(CommitmentConfig::confirmed()).await?;
+    let send_slot = poll_next_slot_start(rpc_client).await?;
 
+    let started_at = Instant::now();
     let batch_sigs_or_fails = join_all(
         txs.iter()
             .map(|tx| rpc_client.send_transaction(tx).map_err(|e| e.kind))
     ).await;
+
+    let after_send_slot = rpc_client.get_slot_with_commitment(CommitmentConfig::confirmed()).await?;
+
+    // optimal value is "0"
+    info!("slots passed while sending: {}", after_send_slot - send_slot);
 
     let num_sent_ok = batch_sigs_or_fails.iter().filter(|sig_or_fail| sig_or_fail.is_ok()).count();
     let num_sent_failed = batch_sigs_or_fails.iter().filter(|sig_or_fail| sig_or_fail.is_err()).count();
@@ -333,6 +338,30 @@ async fn send_and_confirm_bulk_transactions(
     Ok(result_as_vec)
 }
 
+async fn poll_next_slot_start(rpc_client: &RpcClient) -> Result<Slot, Error> {
+    let started_at = Instant::now();
+    let mut last_slot: Option<Slot> = None;
+    let mut i = 1;
+    // try to catch slot start
+    let send_slot = loop {
+        if i > 500 {
+            bail!("Timeout waiting for slot change");
+        }
+
+        let iteration_ends_at = started_at + Duration::from_millis(i * 30);
+        let slot = rpc_client.get_slot_with_commitment(CommitmentConfig::confirmed()).await?;
+        trace!("polling slot {}", slot);
+        if let Some(last_slot) = last_slot {
+            if last_slot + 1 == slot {
+                break slot;
+            }
+        }
+        last_slot = Some(slot);
+        tokio::time::sleep_until(iteration_ends_at).await;
+        i += 1;
+    };
+    Ok(send_slot)
+}
 
 
 // TODO
