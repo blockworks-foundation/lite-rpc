@@ -207,8 +207,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let (account_priofees_task, account_priofees_service) =
         AccountPrioService::start_account_priofees_task(blocks_notifier.resubscribe(), 100);
 
-    drop(blocks_notifier);
-
     let (notification_channel, postgres) = start_postgres(postgres).await?;
 
     let tpu_config = TpuServiceConfig {
@@ -249,7 +247,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE,
         notification_channel.clone(),
         maximum_retries_per_tx,
-        slot_notifier.resubscribe(),
+        slot_notifier,
     );
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
@@ -264,7 +262,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             history,
             block_priofees_service,
             account_priofees_service,
-            slot_notifier,
+            blocks_notifier,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );

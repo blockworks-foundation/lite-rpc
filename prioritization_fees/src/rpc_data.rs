@@ -25,24 +25,13 @@ pub struct PrioFeesStats {
 
 impl PrioFeesStats {
     pub fn get_percentile(&self, percentile: f32) -> Option<(u64, u64)> {
-        let index_tx = self
-            .by_tx_percentiles
-            .iter()
-            .enumerate()
-            .find(|(_, v)| **v == percentile)
-            .map(|(ix, _)| ix);
-        let index_cu = self
-            .by_cu_percentiles
-            .iter()
-            .enumerate()
-            .find(|(_, v)| **v == percentile)
-            .map(|(ix, _)| ix);
-        if let Some(index_tx) = index_tx {
-            if let Some(index_cu) = index_cu {
-                return Some((self.by_tx[index_tx], self.by_cu[index_cu]));
-            }
+        let index_tx = self.by_tx_percentiles.iter().position(|x| *x == percentile);
+        let index_cu = self.by_cu_percentiles.iter().position(|x| *x == percentile);
+        if let (Some(index_tx), Some(index_cu)) = (index_tx, index_cu) {
+            Some((self.by_tx[index_tx], self.by_cu[index_cu]))
+        } else {
+            None
         }
-        None
     }
 }
 

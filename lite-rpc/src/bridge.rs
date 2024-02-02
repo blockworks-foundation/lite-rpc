@@ -9,10 +9,11 @@ use jsonrpsee::{
 };
 use log::{debug, error, warn};
 use prometheus::{opts, register_int_counter, IntCounter};
-use solana_lite_rpc_core::types::SlotStream;
+use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::response::SlotInfo;
 use solana_rpc_client_api::{
     config::{
         RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper, RpcContextConfig,
@@ -83,7 +84,7 @@ pub struct LiteBridge {
     history: History,
     prio_fees_service: PrioFeesService,
     account_priofees_service: AccountPrioService,
-    slot_stream: SlotStream,
+    block_stream: BlockStream,
 }
 
 impl LiteBridge {
@@ -94,7 +95,7 @@ impl LiteBridge {
         history: History,
         prio_fees_service: PrioFeesService,
         account_priofees_service: AccountPrioService,
-        slot_stream: SlotStream,
+        block_stream: BlockStream,
     ) -> Self {
         Self {
             rpc_client,
@@ -103,7 +104,7 @@ impl LiteBridge {
             history,
             prio_fees_service,
             account_priofees_service,
-            slot_stream,
+            block_stream,
         }
     }
 
@@ -206,10 +207,9 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_block_height(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<u64> {
-        let commitment_config = config
-            .map(|x| x.commitment)
-            .unwrap_or_default()
-            .unwrap_or(CommitmentConfig::finalized());
+        let commitment_config = config.map_or(CommitmentConfig::finalized(), |x| {
+            x.commitment.unwrap_or_default()
+        });
         let block_info = self
             .data_cache
             .block_information_store
@@ -355,29 +355,40 @@ impl LiteRpcServer for LiteBridge {
         pubkey_strs: Vec<String>,
     ) -> crate::rpc::Result<Vec<RpcPrioritizationFee>> {
         // This method will get the latest global and account prioritization fee stats and then send the maximum p75
+        const PERCENTILE: f32 = 0.75;
         let accounts = pubkey_strs
             .iter()
             .filter_map(|pubkey| Pubkey::from_str(pubkey).ok())
             .collect_vec();
+        if accounts.len() != pubkey_strs.len() {
+            // if lengths do not match it means some of the accounts are invalid
+            return Err(jsonrpsee::core::Error::Custom(
+                "Some accounts are invalid".to_string(),
+            ));
+        }
 
         let global_prio_fees = self.prio_fees_service.get_latest_priofees().await;
         let max_p75 = global_prio_fees
             .map(|(_, fees)| {
-                let fees = fees.get_percentile(0.75).unwrap_or_default();
+                let fees = fees.get_percentile(PERCENTILE).unwrap_or_default();
                 std::cmp::max(fees.0, fees.1)
             })
             .unwrap_or_default();
 
-        let mut ret: Vec<RpcPrioritizationFee> = vec![];
-        for account in accounts {
-            let (slot, stats) = self.account_priofees_service.get_latest_stats(&account);
-            let stat = stats.all_stats.get_percentile(0.75).unwrap_or_default();
-            let pfee = RpcPrioritizationFee {
-                slot,
-                prioritization_fee: std::cmp::max(max_p75, std::cmp::max(stat.0, stat.1)),
-            };
-            ret.push(pfee);
-        }
+        let ret: Vec<RpcPrioritizationFee> = accounts
+            .iter()
+            .map(|account| {
+                let (slot, stats) = self.account_priofees_service.get_latest_stats(account);
+                let stat = stats
+                    .all_stats
+                    .get_percentile(PERCENTILE)
+                    .unwrap_or_default();
+                RpcPrioritizationFee {
+                    slot,
+                    prioritization_fee: std::cmp::max(max_p75, std::cmp::max(stat.0, stat.1)),
+                }
+            })
+            .collect_vec();
 
         Ok(ret)
     }
@@ -496,26 +507,31 @@ impl LiteRpcServer for LiteBridge {
 
     async fn slot_subscribe(&self, pending: PendingSubscriptionSink) -> SubscriptionResult {
         let sink = pending.accept().await?;
-        let mut slot_stream = self.slot_stream.resubscribe();
+        let mut block_stream = self.block_stream.resubscribe();
         tokio::spawn(async move {
-            let mut last_processed_slot = 0;
             loop {
-                match slot_stream.recv().await {
-                    Ok(notification) => {
-                        if last_processed_slot <= notification.processed_slot {
+                match block_stream.recv().await {
+                    Ok(produced_block) => {
+                        if !produced_block.commitment_config.is_processed() {
                             continue;
                         }
-                        if sink
-                            .send(jsonrpsee::SubscriptionMessage::from(
-                                notification.processed_slot.to_string(),
-                            ))
-                            .await
-                            .is_err()
-                        {
-                            // channel closed
-                            break;
-                        }
-                        last_processed_slot = notification.processed_slot;
+                        let slot_info = SlotInfo {
+                            slot: produced_block.slot,
+                            parent: produced_block.parent_slot,
+                            root: 0,
+                        };
+                        let result_message = jsonrpsee::SubscriptionMessage::from_json(&slot_info);
+
+                        match sink.send(result_message.unwrap()).await {
+                            Ok(()) => {
+                                // success
+                                continue;
+                            }
+                            Err(DisconnectError(_subscription_message)) => {
+                                debug!("Stopping subscription task on disconnect");
+                                return;
+                            }
+                        };
                     }
                     Err(e) => match e {
                         Closed => {
