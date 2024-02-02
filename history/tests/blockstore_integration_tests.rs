@@ -11,7 +11,7 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{HashMap, HashSet};
-use std::process;
+use std::{env, process};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
@@ -19,6 +19,9 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
+use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription};
+use solana_lite_rpc_cluster_endpoints::grpc_subscription::from_grpc_block_update;
+use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 
 // force ordered stream of blocks
 const NUM_PARALLEL_TASKS: usize = 1;
@@ -39,14 +42,40 @@ async fn storage_test() {
 
     let rpc_client = Arc::new(RpcClient::new(rpc_url));
 
-    let (subscriptions, _cluster_endpoint_tasks) =
-        create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS).unwrap();
+    let grpc_addr = env::var("GRPC_ADDR").expect("need grpc url for green");
+    let grpc_x_token = env::var("GRPC_X_TOKEN").ok();
 
-    let EndpointStreaming {
-        blocks_notifier,
-        slot_notifier,
-        ..
-    } = subscriptions;
+    info!(
+        "Using grpc source on {} ({})",
+        grpc_addr,
+        grpc_x_token.is_some()
+    );
+
+
+    let timeouts = GrpcConnectionTimeouts {
+        connect_timeout: Duration::from_secs(5),
+        request_timeout: Duration::from_secs(5),
+        subscribe_timeout: Duration::from_secs(5),
+    };
+
+    let grpc_config = GrpcSourceConfig::new(grpc_addr, grpc_x_token, None, timeouts.clone());
+    let grpc_sources = vec![grpc_config];
+
+    let (slot_notifier, _jh_multiplex_slotstream) =
+        create_grpc_multiplex_slots_subscription(grpc_sources.clone());
+
+    let (blocks_notifier, _jh_multiplex_blockstream) =
+        create_grpc_multiplex_blocks_subscription(grpc_sources);
+
+    //
+    // let (subscriptions, _cluster_endpoint_tasks) =
+    //     create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS).unwrap();
+    //
+    // let EndpointStreaming {
+    //     blocks_notifier,
+    //     slot_notifier,
+    //     ..
+    // } = subscriptions;
 
     let (epoch_cache, _) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
@@ -62,7 +91,7 @@ async fn storage_test() {
 
     let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
-    let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
+    let jh3 = spawn_client_to_blockstorage(block_storage.clone(), slot_notifier.resubscribe());
     drop(blocks_notifier);
 
     info!("Run tests for some time ...");
@@ -134,8 +163,9 @@ fn storage_listen(
                 Ok(block) => {
                     let started = Instant::now();
                     debug!(
-                        "Received block: {} with {} txs",
+                        "Storage task received block: {}@{} with {} txs",
                         block.slot,
+                        block.commitment_config.commitment,
                         block.transactions.len()
                     );
 
@@ -210,7 +240,7 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
             match block_notifier.recv().await {
                 Ok(block) => {
                     debug!(
-                        "Saw block: {} @ {} with {} txs",
+                        "Saw block: {}@{} with {} txs",
                         block.slot,
                         block.commitment_config.commitment,
                         block.transactions.len()
@@ -246,127 +276,26 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
     })
 }
 
-/// inspect stream of blocks and check that the commitment transition from confirmed to finalized is correct
-fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHandle<()> {
+
+fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut slot_notifier: SlotStream) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let mut block_notifier = block_notifier;
-
-        let mut confirmed_blocks_by_slot = HashMap::<Slot, BlockDebugDetails>::new();
-        let mut finalized_blocks = HashSet::<Slot>::new();
-
-        let mut warmup_cutoff: Slot = 0;
-        let mut warmup_first_confirmed: Slot = 0;
-
+        // note: no startup deloy
         loop {
-            match block_notifier.recv().await {
-                Ok(block) => {
-                    if warmup_cutoff > 0 {
-                        if block.slot < warmup_cutoff {
-                            continue;
-                        }
-
-                        // check semantics and log/panic
-                        inspect_this_block(
-                            &mut confirmed_blocks_by_slot,
-                            &mut finalized_blocks,
-                            &block,
-                        );
-                    } else {
-                        trace!("Warming up {} ...", block.slot);
-
-                        if warmup_first_confirmed == 0
-                            && block.commitment_config == CommitmentConfig::confirmed()
-                        {
-                            warmup_first_confirmed = block.slot;
-                        }
-
-                        if block.commitment_config == CommitmentConfig::finalized()
-                            && block.slot >= warmup_first_confirmed
-                        {
-                            warmup_cutoff = block.slot + 32;
-                            debug!("Warming done (slot {})", warmup_cutoff);
-                        }
-                    }
-                } // -- Ok
-                Err(RecvError::Lagged(missed_blocks)) => {
-                    warn!(
-                        "Could not keep up with producer - missed {} blocks",
-                        missed_blocks
-                    );
+            match slot_notifier.recv().await {
+                Ok(SlotNotification{ processed_slot, .. }) => {
+                    // we cannot expect the most recent data
+                    let slot = processed_slot - 35;
+                    let query_result = block_storage.query(processed_slot).await;
+                    info!("Query result for slot {}: {:?}", processed_slot, query_result);
                 }
-                Err(other_err) => {
-                    panic!("Error receiving block: {:?}", other_err);
+                Err(_err) => {
+                    warn!("Aborting client");
+                    break;
                 }
             }
-
-            // ...
+            sleep(Duration::from_secs(1)).await;
         }
     })
-}
-
-fn inspect_this_block(
-    confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDetails>,
-    finalized_blocks: &mut HashSet<Slot>,
-    block: &ProducedBlock,
-) {
-    if block.commitment_config == CommitmentConfig::confirmed() {
-        let prev_block = confirmed_blocks_by_slot.insert(
-            block.slot,
-            BlockDebugDetails {
-                blockhash: block.blockhash.clone(),
-                block: block.clone(),
-            },
-        );
-        // Assumption I: we never see the same confirmed block twice
-        assert!(prev_block.is_none(), "Must not see a confirmed block twice");
-    } else if block.commitment_config == CommitmentConfig::finalized() {
-        let finalized_block = &block;
-        let finalized_block_existed = finalized_blocks.insert(finalized_block.slot);
-        // Assumption II: we never see the same finalized block twice
-        assert!(
-            finalized_block_existed,
-            "Finalized block {} must NOT have been seen before",
-            finalized_block.slot
-        );
-        let prev_block = confirmed_blocks_by_slot.get(&block.slot);
-        match prev_block {
-            Some(prev_block) => {
-                info!(
-                    "Got finalized block {} with blockhash {} - prev confirmed was {}",
-                    finalized_block.slot, finalized_block.blockhash, prev_block.blockhash
-                );
-                // TODO is that correct?
-                // Assumption III: confirmed and finalized block can be matched by slot and have the same blockhash
-                assert_eq!(
-                    finalized_block.blockhash, prev_block.blockhash,
-                    "Must see the same blockhash for confirmed and finalized block"
-                );
-
-                debug!(
-                    "confirmed: {:?}",
-                    to_string_without_transactions(&prev_block.block)
-                );
-                debug!(
-                    "finalized: {:?}",
-                    to_string_without_transactions(finalized_block)
-                );
-
-                // Assumption IV: block details do not change between confirmed and finalized
-                assert_eq!(
-                    // normalized and compare
-                    to_string_without_transactions(&prev_block.block)
-                        .replace("commitment_config=confirmed", "commitment_config=IGNORE"),
-                    to_string_without_transactions(finalized_block)
-                        .replace("commitment_config=finalized", "commitment_config=IGNORE"),
-                    "block tostring mismatch"
-                )
-            }
-            None => {
-                // note at startup we might see some orphan finalized blocks before we see matching pairs of confirmed-finalized blocks
-                warn!("Must see a confirmed block before it is finalized (slot {}) - could be a warmup issue", finalized_block.slot);
-            }
-        }
-    }
 }
 
 fn to_string_without_transactions(produced_block: &ProducedBlock) -> String {
