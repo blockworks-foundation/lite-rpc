@@ -14,12 +14,14 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter::LevelFilter;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
+use solana_lite_rpc_core::stores::block_information_store::BlockInformation;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlock, TransactionInfo};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
 use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
 use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 #[tokio::test]
 async fn storage_test() {
@@ -33,7 +35,7 @@ async fn storage_test() {
 
     let rpc_client = Arc::new(RpcClient::new(rpc_url));
 
-    let (subscriptions, cluster_endpoint_tasks) = create_json_rpc_polling_subscription(rpc_client.clone()).unwrap();
+    let (subscriptions, cluster_endpoint_tasks) = create_json_rpc_polling_subscription(rpc_client.clone(), 1).unwrap();
 
     let EndpointStreaming {
         blocks_notifier,
@@ -44,7 +46,8 @@ async fn storage_test() {
 
     let (epoch_schedule_cache, epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
-    let block_storage = Arc::new(PostgresBlockStore::new(epoch_schedule_cache).await);
+    let pg_session_config = PostgresSessionConfig::new_for_tests();
+    let block_storage = Arc::new(PostgresBlockStore::new(epoch_schedule_cache, pg_session_config).await);
 
     let jh1 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
@@ -62,7 +65,7 @@ async fn storage_test() {
 }
 
 
-fn storage_listen(block_notifier: BlockStream, block_storage: Arc<dyn BlockStorageInterface>) -> JoinHandle<()> {
+fn storage_listen(block_notifier: BlockStream, block_storage: Arc<PostgresBlockStore>) -> JoinHandle<()> {
     let block_cache_jh = tokio::spawn(async move {
         let mut block_notifier = block_notifier;
         loop {
@@ -85,7 +88,8 @@ fn storage_listen(block_notifier: BlockStream, block_storage: Arc<dyn BlockStora
 
 
                     let started = Instant::now();
-                    block_storage.save(&produced_block).await.unwrap();
+                    block_storage.write_block(&produced_block).await.unwrap();
+                    // .add_block(BlockInformation::from_block(&block))
                     debug!("Saving block to postgres took {:.2}ms", started.elapsed().as_secs_f64() * 1000.0);
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
@@ -160,12 +164,15 @@ fn create_test_block() -> ProducedBlock {
 fn create_test_tx(signature: Signature) -> TransactionInfo {
     TransactionInfo {
         signature: signature.to_string(),
+        is_vote: false,
         err: None,
         cu_requested: Some(40000),
         prioritization_fees: Some(5000),
         cu_consumed: Some(32000),
         recent_blockhash: "recent_blockhash".to_string(),
         message: "some message".to_string(),
+        writable_accounts: vec![],
+        readable_accounts: vec![],
     }
 }
 
