@@ -88,7 +88,7 @@ pub async fn main() -> anyhow::Result<()> {
 async fn query_database(postgres_session: PostgresSession, epoch: EpochRef, slot: Slot) {
     let statement = format!(
         r#"
-                SELECT min(slot),max(slot) FROM {schema}.transactions WHERE slot = {slot}
+                SELECT min(slot),max(slot) FROM {schema}.transactions_todo WHERE slot = {slot}
             "#,
         schema = PostgresEpoch::build_schema_name(epoch),
         slot = slot,

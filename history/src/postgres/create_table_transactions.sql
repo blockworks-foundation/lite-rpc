@@ -1,14 +1,21 @@
--- parameter 'schema' is something like 'rpc2a_epoch_592'
-CREATE TABLE IF NOT EXISTS {schema}.transactions(
-    signature VARCHAR(88) NOT NULL,
-    slot BIGINT NOT NULL,
-    err TEXT,
-    cu_requested BIGINT,
-    prioritization_fees BIGINT,
-    cu_consumed BIGINT,
-    recent_blockhash TEXT NOT NULL,
-    message TEXT NOT NULL,
-    CONSTRAINT pk_transaction_sig PRIMARY KEY(signature)
-    ) WITH (FILLFACTOR=90);
-CREATE INDEX idx_slot ON {schema}.transactions USING btree (slot) WITH (FILLFACTOR=90);
-CLUSTER {schema}.transactions USING idx_slot;
+-- lookup table; maps signatures to generated int8 transaction ids
+-- no updates or deletes, only INSERTs
+CREATE TABLE {rpc2_schema}.transaction_ids(
+    transaction_id bigserial PRIMARY KEY WITH (FILLFACTOR=90),
+    signature text,
+    UNIQUE(signature)
+) WITH (FILLFACTOR=100);
+
+-- parameter 'rpc2_schema' is something like 'rpc2a_epoch_592'
+CREATE TABLE IF NOT EXISTS {rpc2_schema}.transaction_blockdata(
+    -- transaction_id must exist in the transaction_ids table
+    transaction_id bigint PRIMARY KEY WITH (FILLFACTOR=90),
+    slot bigint NOT NULL,
+    err text,
+    cu_requested bigint,
+    prioritization_fees bigint,
+    cu_consumed bigint,
+    recent_blockhash text NOT NULL,
+    message text NOT NULL
+) WITH (FILLFACTOR=90);
+CREATE INDEX idx_slot ON {rpc2_schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);

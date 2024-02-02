@@ -1,10 +1,11 @@
 use crate::postgres::postgres_epoch::PostgresEpoch;
 use bytes::Bytes;
 use futures_util::pin_mut;
-use log::{trace, warn};
+use log::{debug, trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
+use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
@@ -44,7 +45,7 @@ impl PostgresTransaction {
     pub fn build_create_table_statement(epoch: EpochRef) -> String {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(include_str!("create_table_transactions.sql"),
-            schema = schema
+            rpc2_schema = schema
         )
     }
 
@@ -53,108 +54,54 @@ impl PostgresTransaction {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
             r#"
-                ALTER TABLE {schema}.transactions
+                ALTER TABLE {schema}.transaction_blockdata
                 ADD CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {schema}.blocks (slot);
             "#,
             schema = schema
         )
     }
 
-    // this version uses INSERT statements
-    pub async fn save_transaction_insert(
-        postgres_session: PostgresSession,
-        epoch: EpochRef,
-        slot: Slot,
-        transactions: &[Self],
-    ) -> anyhow::Result<()> {
-        const NB_ARGUMENTS: usize = 8;
-        let tx_count = transactions.len();
-        let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS * tx_count);
-
-        for tx in transactions.iter() {
-            let PostgresTransaction {
-                signature,
-                slot,
-                err,
-                cu_requested,
-                prioritization_fees,
-                cu_consumed,
-                recent_blockhash,
-                message,
-            } = tx;
-
-            args.push(signature);
-            args.push(slot);
-            args.push(err);
-            args.push(cu_requested);
-            args.push(prioritization_fees);
-            args.push(cu_consumed);
-            args.push(recent_blockhash);
-            args.push(message);
-        }
-
-        let values = PostgresSession::values_vecvec(NB_ARGUMENTS, tx_count, &[]);
-        let schema = PostgresEpoch::build_schema_name(epoch);
-        let statement = format!(
-            r#"
-                INSERT INTO {schema}.transactions
-                (signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message)
-                VALUES {}
-                ON CONFLICT DO NOTHING
-            "#,
-            values,
-            schema = schema,
-        );
-
-        let inserted = postgres_session.execute_prepared(&statement, &args).await? as usize;
-
-        if inserted < tx_count {
-            warn!("Some ({}) transactions already existed and where not updated of {} total in schema {schema}",
-                transactions.len().saturating_sub(inserted), transactions.len(), schema = schema);
-        }
-
-        trace!(
-            "Inserted {} transactions chunk into epoch schema {} for block {}",
-            inserted,
-            schema,
-            slot
-        );
-
-        Ok(())
-    }
-
-    // this version uses "COPY IN"
     pub async fn save_transaction_copyin(
         postgres_session: PostgresSession,
         epoch: EpochRef,
         transactions: &[Self],
     ) -> anyhow::Result<bool> {
         let schema = PostgresEpoch::build_schema_name(epoch);
+
+        let instant = Instant::now();
+        // let temp_table = self.get_new_temp_table();
+        postgres_session
+            .execute_multiple(
+                format!(
+                    r#"CREATE TEMP TABLE IF NOT EXISTS transaction_raw_blockdata(
+                        signature text,
+                        slot bigint,
+                        err text,
+                        cu_requested bigint,
+                        prioritization_fees bigint,
+                        cu_consumed bigint,
+                        recent_blockhash text,
+                        message text
+                    );
+                    TRUNCATE transaction_raw_blockdata;
+                    "#
+                )
+                    .as_str(),
+            )
+            .await?;
+
         let statement = format!(
             r#"
-                COPY {schema}.transactions(
-                    signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
-                ) FROM STDIN BINARY
-            "#,
-            schema = schema,
+            COPY transaction_raw_blockdata(
+                signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+            ) FROM STDIN BINARY
+        "#,
         );
-
-        // BinaryCopyInWriter
-        // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
-        let sink: CopyInSink<Bytes> = postgres_session.copy_in(&statement).await.unwrap();
-
+        let started_at = Instant::now();
+        let sink: CopyInSink<bytes::Bytes> = postgres_session.copy_in(statement.as_str()).await?;
         let writer = BinaryCopyInWriter::new(
             sink,
-            &[
-                Type::TEXT,
-                Type::INT8,
-                Type::TEXT,
-                Type::INT8,
-                Type::INT8,
-                Type::INT8,
-                Type::TEXT,
-                Type::TEXT,
-            ],
+            &[Type::TEXT, Type::INT8, Type::TEXT, Type::INT8, Type::INT8, Type::INT8, Type::TEXT, Type::TEXT],
         );
         pin_mut!(writer);
 
@@ -186,7 +133,23 @@ impl PostgresTransaction {
                 .unwrap();
         }
 
-        writer.finish().await.unwrap();
+        let num_rows = writer.finish().await?;
+        debug!(
+            "inserted {} accounts for transaction into temp table in {}ms",
+            num_rows,
+            started_at.elapsed().as_millis()
+        );
+
+        let statement = format!(
+            r#"
+                SELECT
+                    ( select transaction_id from {schema}.transaction_ids tx_lkup where tx_lkup.signature = new_amt_data.signature ),
+                    slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                FROM transaction_raw_blockdata AS new_amt_data
+        "#,
+        );
+        let started_at = Instant::now();
+        let rows = postgres_session.execute(statement.as_str(), &[]).await?;
 
         Ok(true)
     }
@@ -199,7 +162,7 @@ impl PostgresTransaction {
         let statement = format!(
             r#"
                 SELECT signature, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
-                FROM {schema}.transactions
+                FROM {schema}.transactions_todo
                 WHERE slot = {}
             "#,
             slot,

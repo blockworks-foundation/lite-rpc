@@ -1,7 +1,7 @@
 use log::{debug, error, info, trace, warn};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
-use solana_lite_rpc_core::structures::epoch::EpochCache;
+use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::types::{BlockStream, SlotStream};
@@ -51,6 +51,9 @@ async fn storage_test() {
     let (epoch_cache, _) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_cache, pg_session_config).await);
+    let current_epoch = rpc_client.get_epoch_info().await.unwrap().epoch;
+    block_storage.drop_epoch_schema(EpochRef::new(current_epoch)).await.unwrap();
+    block_storage.drop_epoch_schema(EpochRef::new(current_epoch).get_next_epoch()).await.unwrap();
 
     let (jh1_1, first_init) =
         storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());

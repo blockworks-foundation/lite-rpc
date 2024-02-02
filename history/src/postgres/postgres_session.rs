@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use log::debug;
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
@@ -152,6 +153,24 @@ impl PostgresSession {
         query
     }
 
+
+
+    pub async fn clear_session(&self) {
+        // see https://www.postgresql.org/docs/current/sql-discard.html
+        // CLOSE ALL -> drop potental cursors
+        // RESET ALL -> we do not want (would reset work_mem)
+        // DEALLOCATE -> would drop prepared statements which we do not use ATM
+        // DISCARD PLANS -> we want to keep the plans
+        // DISCARD SEQUENCES -> we want to keep the sequences
+        self.client
+            .batch_execute(r#"
+               DISCARD TEMP;
+                CLOSE ALL;"#)
+            .await
+            .unwrap();
+        debug!("Clear postgres session");
+    }
+
     pub async fn execute(
         &self,
         statement: &str,
@@ -161,7 +180,7 @@ impl PostgresSession {
     }
 
     // execute statements seperated by semicolon
-    pub async fn execute_simple(&self, statement: &str) -> Result<(), Error> {
+    pub async fn execute_multiple(&self, statement: &str) -> Result<(), Error> {
         self.client.batch_execute(statement).await
     }
 
@@ -281,7 +300,7 @@ impl PostgresWriteSession {
                 SET SESSION maintenance_work_mem = '256MB';
             "#;
 
-        session.execute_simple(statement).await.unwrap();
+        session.execute_multiple(statement).await.unwrap();
 
         Ok(Self {
             session: Arc::new(RwLock::new(session)),

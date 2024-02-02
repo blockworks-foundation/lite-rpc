@@ -9,6 +9,7 @@ use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::slot_history::Slot;
+use tokio_postgres::Error;
 use tokio_postgres::error::SqlState;
 
 use crate::postgres::postgres_config::PostgresSessionConfig;
@@ -96,7 +97,7 @@ impl PostgresBlockStore {
 
         let statement = PostgresEpoch::build_create_schema_statement(epoch);
         // note: requires GRANT CREATE ON DATABASE xyz
-        let result_create_schema = session.execute_simple(&statement).await;
+        let result_create_schema = session.execute_multiple(&statement).await;
         if let Err(err) = result_create_schema {
             if err
                 .code()
@@ -117,28 +118,28 @@ impl PostgresBlockStore {
         // set permissions for new schema
         let statement = build_assign_permissions_statements(epoch);
         session
-            .execute_simple(&statement)
+            .execute_multiple(&statement)
             .await
             .context("Set postgres permissions for new schema")?;
 
         // Create blocks table
         let statement = PostgresBlock::build_create_table_statement(epoch);
         session
-            .execute_simple(&statement)
+            .execute_multiple(&statement)
             .await
             .context("create blocks table for new epoch")?;
 
         // create transaction table
         let statement = PostgresTransaction::build_create_table_statement(epoch);
         session
-            .execute_simple(&statement)
+            .execute_multiple(&statement)
             .await
             .context("create transaction table for new epoch")?;
 
         // add foreign key constraint between transactions and blocks
         let statement = PostgresTransaction::build_foreign_key_statement(epoch);
         session
-            .execute_simple(&statement)
+            .execute_multiple(&statement)
             .await
             .context("create foreign key constraint between transactions and blocks")?;
 
@@ -317,7 +318,7 @@ impl PostgresBlockStore {
 
         tokio::spawn(async move {
             write_session_single
-                .execute_simple(&statement)
+                .execute_multiple(&statement)
                 .await
                 .unwrap();
             let elapsed = started.elapsed();
@@ -346,6 +347,26 @@ impl PostgresBlockStore {
         let created_next = self.start_new_epoch_if_necessary(next_epoch).await?;
         Ok(created_current || created_next)
     }
+
+    // used for testing only ATM
+    pub async fn drop_epoch_schema(&self, epoch: EpochRef) -> anyhow::Result<()> {
+        // create schema for new epoch
+        let schema_name = PostgresEpoch::build_schema_name(epoch);
+        let session = self.get_session().await;
+
+        let statement = PostgresEpoch::build_drop_schema_statement(epoch);
+        let result_drop_schema = session.execute_multiple(&statement).await;
+        match result_drop_schema {
+            Ok(_) => {
+                warn!("Dropped schema {}", schema_name);
+                Ok(())
+            }
+            Err(e) => {
+                bail!("Error dropping schema {}", schema_name)
+            }
+        }
+    }
+
 }
 
 fn build_assign_permissions_statements(epoch: EpochRef) -> String {
