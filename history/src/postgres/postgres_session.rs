@@ -160,6 +160,7 @@ impl PostgresSession {
         self.client.execute(statement, params).await
     }
 
+    // execute statements seperated by semicolon
     pub async fn execute_simple(&self, statement: &str) -> Result<(), Error> {
         self.client.batch_execute(statement).await
     }

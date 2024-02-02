@@ -43,22 +43,7 @@ impl PostgresTransaction {
 
     pub fn build_create_table_statement(epoch: EpochRef) -> String {
         let schema = PostgresEpoch::build_schema_name(epoch);
-        format!(
-            r#"
-                CREATE TABLE IF NOT EXISTS {schema}.transactions (
-                    signature VARCHAR(88) NOT NULL,
-                    slot BIGINT NOT NULL,
-                    err TEXT,
-                    cu_requested BIGINT,
-                    prioritization_fees BIGINT,
-                    cu_consumed BIGINT,
-                    recent_blockhash TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    CONSTRAINT pk_transaction_sig PRIMARY KEY(signature)
-                  ) WITH (FILLFACTOR=90);
-                  CREATE INDEX idx_slot ON {schema}.transactions USING btree (slot) WITH (FILLFACTOR=90);
-                  CLUSTER {schema}.transactions USING idx_slot;
-            "#,
+        format!(include_str!("create_table_transactions.sql"),
             schema = schema
         )
     }
