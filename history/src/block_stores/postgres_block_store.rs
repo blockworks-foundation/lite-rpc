@@ -165,7 +165,7 @@ impl PostgresBlockStore {
     }
 
     pub async fn query_block(&self, slot: Slot) -> Result<ProducedBlock> {
-        let started = Instant::now();
+        let started_at = Instant::now();
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
 
         let statement = PostgresBlock::build_query_statement(epoch, slot);
@@ -185,9 +185,23 @@ impl PostgresBlockStore {
             self.get_session().await.query_list(&statement, &[]).await.unwrap();
 
         warn!("transaction_rows: {} - print first 10", transaction_rows.len());
-        for tx_row in transaction_rows.iter().take(10) {
-            warn!("tx -> {}", tx_row.get::<_, String>("signature"));
-        }
+
+        let tx_infos = transaction_rows.iter()
+            .map(|tx_row| {
+                let postgres_transaction = PostgresTransaction {
+                    slot: slot as i64,
+                    signature: tx_row.get("signature"),
+                    err: tx_row.get("err"),
+                    cu_requested: tx_row.get("cu_requested"),
+                    prioritization_fees: tx_row.get("prioritization_fees"),
+                    cu_consumed: tx_row.get("cu_consumed"),
+                    recent_blockhash: tx_row.get("recent_blockhash"),
+                    message: tx_row.get("message"),
+                };
+
+                let transaction_info = postgres_transaction.into_transaction_info();
+                transaction_info
+            }).collect_vec();
 
 
         let row = block_row.unwrap();
@@ -215,9 +229,10 @@ impl PostgresBlockStore {
             leader_id,
         };
 
+
         let produced_block = postgres_block.into_produced_block(
-            // TODO what to do
-            vec![],
+            tx_infos,
+            // FIXME
             CommitmentConfig::confirmed(),
         );
 
@@ -225,7 +240,7 @@ impl PostgresBlockStore {
             "Querying produced block {} from postgres in epoch schema {} took {:.2}ms: {}/{}",
             produced_block.slot,
             epoch_schema,
-            started.elapsed().as_secs_f64() * 1000.0,
+            started_at.elapsed().as_secs_f64() * 1000.0,
             produced_block.blockhash,
             produced_block.commitment_config.commitment
         );
@@ -247,7 +262,7 @@ impl PostgresBlockStore {
         Ok(())
     }
 
-    pub async fn write_block(&self, block: &ProducedBlock) -> Result<()> {
+    pub async fn save_block(&self, block: &ProducedBlock) -> Result<()> {
         self.progress_block_commitment_level(block).await?;
 
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
@@ -556,7 +571,7 @@ mod tests {
             PostgresBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await;
 
         postgres_block_store
-            .write_block(&create_test_block())
+            .save_block(&create_test_block())
             .await
             .unwrap();
     }

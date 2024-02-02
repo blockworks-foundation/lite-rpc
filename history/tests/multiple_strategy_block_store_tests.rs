@@ -46,12 +46,12 @@ async fn test_in_multiple_stategy_block_store() {
     persistent_store.prepare_epoch_schema(1200).await.unwrap();
 
     persistent_store
-        .write_block(&create_test_block(1200, CommitmentConfig::confirmed()))
+        .save_block(&create_test_block(1200, CommitmentConfig::confirmed()))
         .await
         .unwrap();
     // span range of slots between those two
     persistent_store
-        .write_block(&create_test_block(1289, CommitmentConfig::confirmed()))
+        .save_block(&create_test_block(1289, CommitmentConfig::confirmed()))
         .await
         .unwrap();
 

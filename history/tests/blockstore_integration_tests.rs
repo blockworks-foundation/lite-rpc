@@ -93,8 +93,9 @@ async fn storage_test() {
     let jh3 = spawn_client_to_blockstorage(block_storage.clone(), blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
-    info!("Run tests for some time ...");
-    sleep(Duration::from_secs(20)).await;
+    let seconds_to_run = env::var("SECONDS_TO_RUN").map(|s| s.parse::<u64>().expect("a number")).unwrap_or(20);
+    info!("Run tests for some time ({} seconds) ...", seconds_to_run);
+    sleep(Duration::from_secs(seconds_to_run)).await;
 
     jh1_1.abort();
     jh1_2.abort();
@@ -183,7 +184,7 @@ fn storage_listen(
 
                     // avoid backpressure here!
 
-                    block_storage.write_block(&block).await.unwrap();
+                    block_storage.save_block(&block).await.unwrap();
 
                     // we should be faster than 150ms here
                     let elapsed = started.elapsed();
@@ -296,6 +297,12 @@ fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut bloc
                     match block_storage.query_block(query_slot).await {
                         Ok(pb) => {
                             info!("Query result for slot {}: {}", query_slot, to_string_without_transactions(&pb));
+                            for tx in pb.transactions.iter().take(10) {
+                                info!("  - tx: {:?}", tx);
+                            }
+                            if pb.transactions.len() > 10 {
+                                info!("  - ... and {} more", pb.transactions.len() - 10);
+                            }
                         }
                         Err(err) => {
                             info!("Query did not return produced block: {}", err);

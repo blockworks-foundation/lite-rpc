@@ -5,6 +5,7 @@ use log::{debug, trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
+use solana_sdk::transaction::{TransactionError, VersionedTransaction};
 use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
@@ -15,6 +16,7 @@ use super::postgres_session::PostgresSession;
 #[derive(Debug)]
 pub struct PostgresTransaction {
     pub signature: String,
+    // TODO clarify
     pub slot: i64,
     pub err: Option<String>,
     pub cu_requested: Option<i64>,
@@ -23,6 +25,7 @@ pub struct PostgresTransaction {
     pub recent_blockhash: String,
     pub message: String,
 }
+
 
 impl PostgresTransaction {
     pub fn new(value: &TransactionInfo, slot: Slot) -> Self {
@@ -39,6 +42,26 @@ impl PostgresTransaction {
             recent_blockhash: value.recent_blockhash.clone(),
             message: value.message.clone(),
             slot: slot as i64,
+        }
+    }
+
+    pub fn into_transaction_info(&self) -> TransactionInfo {
+        TransactionInfo {
+            signature: self.signature.clone(),
+            err: self
+                .err
+                .as_ref()
+                .map(|x| BASE64.deserialize::<TransactionError>(x).ok())
+                .flatten(),
+            cu_requested: self.cu_requested.map(|x| x as u32),
+            prioritization_fees: self.prioritization_fees.map(|x| x as u64),
+            cu_consumed: self.cu_consumed.map(|x| x as u64),
+            recent_blockhash: self.recent_blockhash.clone(),
+            message: self.message.clone(),
+            // TODO readable_accounts etc.
+            readable_accounts: vec![],
+            writable_accounts: vec![],
+            is_vote: false,
         }
     }
 
