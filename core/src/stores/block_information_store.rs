@@ -16,6 +16,7 @@ pub struct BlockInformation {
     pub cleanup_slot: Slot,
     pub blockhash: String,
     pub commitment_config: CommitmentConfig,
+    pub block_time: u64,
 }
 
 impl BlockInformation {
@@ -27,6 +28,7 @@ impl BlockInformation {
             cleanup_slot: block.block_height + 1000,
             blockhash: block.blockhash.clone(),
             commitment_config: block.commitment_config,
+            block_time: block.block_time,
         }
     }
 }
@@ -163,5 +165,15 @@ impl BlockInformationStore {
             ),
             None => (false, latest_block.slot),
         }
+    }
+
+    pub fn get_block_info_by_slot(&self, slot: u64) -> Option<BlockInformation> {
+        self.blocks.iter().find_map(|iter| {
+            if iter.slot == slot {
+                Some(iter.value().clone())
+            } else {
+                None
+            }
+        })
     }
 }

@@ -3,6 +3,7 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::Context;
 use jsonrpsee::core::StringError;
+use itertools::Itertools;
 use jsonrpsee::{
     core::SubscriptionResult, server::ServerBuilder, DisconnectError, PendingSubscriptionSink,
 };
@@ -178,7 +179,7 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_cluster_nodes(&self) -> crate::rpc::Result<Vec<RpcContactInfo>> {
-        todo!()
+        Ok(self.data_cache.cluster_info.cluster_nodes.iter().map(|v| v.value().as_ref().clone()).collect_vec())
     }
 
     async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
@@ -194,12 +195,18 @@ impl LiteRpcServer for LiteBridge {
         Ok(slot)
     }
 
-    async fn get_block_height(&self, _config: Option<RpcContextConfig>) -> crate::rpc::Result<u64> {
-        todo!()
+    async fn get_block_height(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<u64> {
+        let commitment_config = config.map(|x| x.commitment).unwrap_or_default().unwrap_or(CommitmentConfig::finalized());
+        let block_info = self.data_cache.block_information_store.get_latest_block(commitment_config).await;
+        Ok(block_info.block_height)
     }
 
-    async fn get_block_time(&self, _block: u64) -> crate::rpc::Result<u64> {
-        todo!()
+    async fn get_block_time(&self, slot: u64) -> crate::rpc::Result<u64> {
+        let block_info = self.data_cache.block_information_store.get_block_info_by_slot(slot);
+        match block_info {
+            Some(info) => Ok(info.block_time),
+            None => Err(jsonrpsee::core::Error::Custom("Unable to find block information in LiteRPC cache".to_string())),
+        }
     }
 
     async fn get_first_available_block(&self) -> crate::rpc::Result<u64> {
@@ -323,9 +330,21 @@ impl LiteRpcServer for LiteBridge {
 
     async fn get_recent_prioritization_fees(
         &self,
-        _pubkey_strs: Option<Vec<String>>,
+        pubkey_strs: Option<Vec<String>>,
     ) -> crate::rpc::Result<Vec<RpcPrioritizationFee>> {
-        todo!()
+        // This method will get the latest global and account prioritization fee stats and then send the maximum p75
+        let accounts = pubkey_strs.map(|pubkeys| pubkeys.iter().filter_map(|pubkey| Pubkey::from_str(&pubkey).ok()).collect_vec()).unwrap_or_default();
+
+        let global_prio_fees = self.prio_fees_service.get_latest_priofees().await;
+        let mut max_p75 = global_prio_fees.map(|(_, fees)| {
+            let fees = fees.get_percentile(0.75).unwrap_or_default();
+            std::cmp::max(fees.0, fees.1)
+        }).unwrap_or_default();
+
+        for account in accounts {
+            
+        }
+        max_p75
     }
 
     async fn send_transaction(
