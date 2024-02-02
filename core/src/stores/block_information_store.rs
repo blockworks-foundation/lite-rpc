@@ -16,6 +16,7 @@ pub struct BlockInformation {
     pub cleanup_slot: Slot,
     pub blockhash: String,
     pub commitment_config: CommitmentConfig,
+    pub block_time: u64,
 }
 
 impl BlockInformation {
@@ -27,12 +28,18 @@ impl BlockInformation {
             cleanup_slot: block.block_height + 1000,
             blockhash: block.blockhash.clone(),
             commitment_config: block.commitment_config,
+            block_time: block.block_time,
         }
     }
 }
 
+/// - Block Information Store
+/// This structure will store block information till where finalized block is still in range of last valid block hash.
+/// So 300 blocks for last valid blockhash and 32 slots between confirmed and finalized.
+/// So it should not store more than 400 blocks information.
 #[derive(Clone)]
 pub struct BlockInformationStore {
+    // maps Block Hash -> Block information
     blocks: Arc<DashMap<String, BlockInformation>>,
     latest_confirmed_block: Arc<RwLock<BlockInformation>>,
     latest_finalized_block: Arc<RwLock<BlockInformation>>,
@@ -163,5 +170,16 @@ impl BlockInformationStore {
             ),
             None => (false, latest_block.slot),
         }
+    }
+
+    pub fn get_block_info_by_slot(&self, slot: u64) -> Option<BlockInformation> {
+        self.blocks.iter().find_map(|iter| {
+            // should be fine for now, may be could be optimized in future if necessary
+            if iter.slot == slot {
+                Some(iter.value().clone())
+            } else {
+                None
+            }
+        })
     }
 }
