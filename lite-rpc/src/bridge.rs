@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Context;
-use jsonrpsee::core::StringError;
 use itertools::Itertools;
+use jsonrpsee::core::StringError;
 use jsonrpsee::{
     core::SubscriptionResult, server::ServerBuilder, DisconnectError, PendingSubscriptionSink,
 };
 use log::{debug, error, warn};
 use prometheus::{opts, register_int_counter, IntCounter};
+use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -82,6 +83,7 @@ pub struct LiteBridge {
     history: History,
     prio_fees_service: PrioFeesService,
     account_priofees_service: AccountPrioService,
+    slot_stream: SlotStream,
 }
 
 impl LiteBridge {
@@ -92,6 +94,7 @@ impl LiteBridge {
         history: History,
         prio_fees_service: PrioFeesService,
         account_priofees_service: AccountPrioService,
+        slot_stream: SlotStream,
     ) -> Self {
         Self {
             rpc_client,
@@ -100,6 +103,7 @@ impl LiteBridge {
             history,
             prio_fees_service,
             account_priofees_service,
+            slot_stream,
         }
     }
 
@@ -179,7 +183,13 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_cluster_nodes(&self) -> crate::rpc::Result<Vec<RpcContactInfo>> {
-        Ok(self.data_cache.cluster_info.cluster_nodes.iter().map(|v| v.value().as_ref().clone()).collect_vec())
+        Ok(self
+            .data_cache
+            .cluster_info
+            .cluster_nodes
+            .iter()
+            .map(|v| v.value().as_ref().clone())
+            .collect_vec())
     }
 
     async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
@@ -196,16 +206,28 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_block_height(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<u64> {
-        let commitment_config = config.map(|x| x.commitment).unwrap_or_default().unwrap_or(CommitmentConfig::finalized());
-        let block_info = self.data_cache.block_information_store.get_latest_block(commitment_config).await;
+        let commitment_config = config
+            .map(|x| x.commitment)
+            .unwrap_or_default()
+            .unwrap_or(CommitmentConfig::finalized());
+        let block_info = self
+            .data_cache
+            .block_information_store
+            .get_latest_block(commitment_config)
+            .await;
         Ok(block_info.block_height)
     }
 
     async fn get_block_time(&self, slot: u64) -> crate::rpc::Result<u64> {
-        let block_info = self.data_cache.block_information_store.get_block_info_by_slot(slot);
+        let block_info = self
+            .data_cache
+            .block_information_store
+            .get_block_info_by_slot(slot);
         match block_info {
             Some(info) => Ok(info.block_time),
-            None => Err(jsonrpsee::core::Error::Custom("Unable to find block information in LiteRPC cache".to_string())),
+            None => Err(jsonrpsee::core::Error::Custom(
+                "Unable to find block information in LiteRPC cache".to_string(),
+            )),
         }
     }
 
@@ -330,21 +352,34 @@ impl LiteRpcServer for LiteBridge {
 
     async fn get_recent_prioritization_fees(
         &self,
-        pubkey_strs: Option<Vec<String>>,
+        pubkey_strs: Vec<String>,
     ) -> crate::rpc::Result<Vec<RpcPrioritizationFee>> {
         // This method will get the latest global and account prioritization fee stats and then send the maximum p75
-        let accounts = pubkey_strs.map(|pubkeys| pubkeys.iter().filter_map(|pubkey| Pubkey::from_str(&pubkey).ok()).collect_vec()).unwrap_or_default();
+        let accounts = pubkey_strs
+            .iter()
+            .filter_map(|pubkey| Pubkey::from_str(pubkey).ok())
+            .collect_vec();
 
         let global_prio_fees = self.prio_fees_service.get_latest_priofees().await;
-        let mut max_p75 = global_prio_fees.map(|(_, fees)| {
-            let fees = fees.get_percentile(0.75).unwrap_or_default();
-            std::cmp::max(fees.0, fees.1)
-        }).unwrap_or_default();
+        let max_p75 = global_prio_fees
+            .map(|(_, fees)| {
+                let fees = fees.get_percentile(0.75).unwrap_or_default();
+                std::cmp::max(fees.0, fees.1)
+            })
+            .unwrap_or_default();
 
+        let mut ret: Vec<RpcPrioritizationFee> = vec![];
         for account in accounts {
-            
+            let (slot, stats) = self.account_priofees_service.get_latest_stats(&account);
+            let stat = stats.all_stats.get_percentile(0.75).unwrap_or_default();
+            let pfee = RpcPrioritizationFee {
+                slot,
+                prioritization_fee: std::cmp::max(max_p75, std::cmp::max(stat.0, stat.1)),
+            };
+            ret.push(pfee);
         }
-        max_p75
+
+        Ok(ret)
     }
 
     async fn send_transaction(
@@ -459,8 +494,42 @@ impl LiteRpcServer for LiteBridge {
         todo!()
     }
 
-    async fn slot_subscribe(&self, _pending: PendingSubscriptionSink) -> SubscriptionResult {
-        todo!()
+    async fn slot_subscribe(&self, pending: PendingSubscriptionSink) -> SubscriptionResult {
+        let sink = pending.accept().await?;
+        let mut slot_stream = self.slot_stream.resubscribe();
+        tokio::spawn(async move {
+            let mut last_processed_slot = 0;
+            loop {
+                match slot_stream.recv().await {
+                    Ok(notification) => {
+                        if last_processed_slot <= notification.processed_slot {
+                            continue;
+                        }
+                        if sink
+                            .send(jsonrpsee::SubscriptionMessage::from(
+                                notification.processed_slot.to_string(),
+                            ))
+                            .await
+                            .is_err()
+                        {
+                            // channel closed
+                            break;
+                        }
+                        last_processed_slot = notification.processed_slot;
+                    }
+                    Err(e) => match e {
+                        Closed => {
+                            break;
+                        }
+                        Lagged(_) => {
+                            log::error!("Slot subscription stream lagged");
+                            continue;
+                        }
+                    },
+                }
+            }
+        });
+        Ok(())
     }
 
     async fn block_subscribe(

@@ -123,7 +123,7 @@ pub trait LiteRpc {
     #[method(name = "getRecentPrioritizationFees")]
     async fn get_recent_prioritization_fees(
         &self,
-        pubkey_strs: Option<Vec<String>>,
+        pubkey_strs: Vec<String>,
     ) -> Result<Vec<RpcPrioritizationFee>>;
 
     // ***********************

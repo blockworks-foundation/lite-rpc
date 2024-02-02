@@ -252,8 +252,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         slot_notifier.resubscribe(),
     );
 
-    drop(slot_notifier);
-
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
     let history = History::new();
@@ -266,9 +264,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             history,
             block_priofees_service,
             account_priofees_service,
+            slot_notifier,
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
+
     tokio::select! {
         res = tx_service_jh => {
             anyhow::bail!("Tx Services {res:?}")
