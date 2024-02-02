@@ -33,7 +33,7 @@ async fn storage_test() {
         .init();
     configure_panic_hook();
 
-    let pg_session_config = PostgresSessionConfig::new_from_env().unwrap().unwrap();
+    let pg_session_config = PostgresSessionConfig::new_for_tests();
 
     let rpc_url = std::env::var("RPC_URL").expect("env var RPC_URL is mandatory");
 
