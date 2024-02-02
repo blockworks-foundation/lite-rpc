@@ -103,7 +103,7 @@ impl MultipleStrategyBlockStorage {
                 );
                 let lookup = self
                     .persistent_block_storage
-                    .query(slot)
+                    .query_block(slot)
                     .await
                     .context(format!("block {} not found although it was in range", slot));
 

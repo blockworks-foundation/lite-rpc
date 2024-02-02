@@ -295,7 +295,7 @@ fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut bloc
                     let confirmed_slot = slot;
                     // we cannot expect the most recent data
                     let query_slot = confirmed_slot - 3;
-                    match block_storage.query(query_slot).await {
+                    match block_storage.query_block(query_slot).await {
                         Ok(pb) => {
                             info!("Query result for slot {}: {}", query_slot, to_string_without_transactions(&pb));
                         }

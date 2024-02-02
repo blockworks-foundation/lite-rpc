@@ -164,21 +164,31 @@ impl PostgresBlockStore {
             .is_some()
     }
 
-    pub async fn query(&self, slot: Slot) -> Result<ProducedBlock> {
+    pub async fn query_block(&self, slot: Slot) -> Result<ProducedBlock> {
         let started = Instant::now();
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
 
-        let query = PostgresBlock::build_query_statement(epoch, slot);
+        let statement = PostgresBlock::build_query_statement(epoch, slot);
         let block_row = self
             .get_session()
             .await
-            .query_opt(&query, &[])
+            .query_opt(&statement, &[])
             .await
             .unwrap();
 
         if block_row.is_none() {
             bail!("Block {} in epoch {} not found in postgres", slot, epoch);
         }
+
+        let statement = PostgresTransaction::build_query_statement(epoch, slot);
+        let transaction_rows =
+            self.get_session().await.query_list(&statement, &[]).await.unwrap();
+
+        warn!("transaction_rows: {} - print first 10", transaction_rows.len());
+        for tx_row in transaction_rows.iter().take(10) {
+            warn!("tx -> {}", tx_row.get::<_, String>("signature"));
+        }
+
 
         let row = block_row.unwrap();
         // meta data
@@ -278,12 +288,12 @@ impl PostgresBlockStore {
         );
         for (i, chunk) in chunks.iter().enumerate() {
             let session = self.write_sessions[i].get_write_session().await.clone();
-            let future = PostgresTransaction::save_transaction_copyin(session, epoch.into(), chunk);
+            let future = PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
             queries_fut.push(future);
         }
-        let all_results: Vec<Result<bool>> = futures_util::future::join_all(queries_fut).await;
+        let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;
         for result in all_results {
-            result.unwrap();
+            result.expect("Save query must succeed");
         }
 
         let elapsed_txs_insert = started_txs.elapsed();

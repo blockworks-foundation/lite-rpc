@@ -45,7 +45,7 @@ impl PostgresTransaction {
     pub fn build_create_table_statement(epoch: EpochRef) -> String {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(include_str!("create_table_transactions.sql"),
-            rpc2_schema = schema
+            schema = schema
         )
     }
 
@@ -61,47 +61,47 @@ impl PostgresTransaction {
         )
     }
 
-    pub async fn save_transaction_copyin(
+    pub async fn save_transactions_from_block(
         postgres_session: PostgresSession,
         epoch: EpochRef,
         transactions: &[Self],
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
 
-        let instant = Instant::now();
-        // let temp_table = self.get_new_temp_table();
-        postgres_session
-            .execute_multiple(
-                format!(
-                    r#"CREATE TEMP TABLE IF NOT EXISTS transaction_raw_blockdata(
-                        signature text,
-                        slot bigint,
-                        err text,
-                        cu_requested bigint,
-                        prioritization_fees bigint,
-                        cu_consumed bigint,
-                        recent_blockhash text,
-                        message text
-                    );
-                    TRUNCATE transaction_raw_blockdata;
-                    "#
-                )
-                    .as_str(),
-            )
-            .await?;
+        let statmement = r#"
+            CREATE TEMP TABLE IF NOT EXISTS transaction_raw_blockdata(
+                signature text,
+                slot bigint,
+                err text,
+                cu_requested bigint,
+                prioritization_fees bigint,
+                cu_consumed bigint,
+                recent_blockhash text,
+                message text
+            );
+            TRUNCATE transaction_raw_blockdata;
+        "#;
+        postgres_session.execute_multiple(statmement).await?;
 
-        let statement = format!(
-            r#"
+        let statement = r#"
             COPY transaction_raw_blockdata(
                 signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
             ) FROM STDIN BINARY
-        "#,
-        );
+        "#;
         let started_at = Instant::now();
-        let sink: CopyInSink<bytes::Bytes> = postgres_session.copy_in(statement.as_str()).await?;
+        let sink: CopyInSink<bytes::Bytes> = postgres_session.copy_in(statement).await?;
         let writer = BinaryCopyInWriter::new(
             sink,
-            &[Type::TEXT, Type::INT8, Type::TEXT, Type::INT8, Type::INT8, Type::INT8, Type::TEXT, Type::TEXT],
+            &[
+                Type::TEXT,
+                Type::INT8,
+                Type::TEXT,
+                Type::INT8,
+                Type::INT8,
+                Type::INT8,
+                Type::TEXT,
+                Type::TEXT
+            ],
         );
         pin_mut!(writer);
 
@@ -129,46 +129,66 @@ impl PostgresTransaction {
                     &recent_blockhash,
                     &message,
                 ])
-                .await
-                .unwrap();
+                .await?;
         }
 
         let num_rows = writer.finish().await?;
         debug!(
-            "inserted {} accounts for transaction into temp table in {}ms",
+            "inserted {} raw transaction data rows into temp table in {}ms",
             num_rows,
             started_at.elapsed().as_millis()
         );
 
         let statement = format!(
             r#"
-                SELECT
-                    ( select transaction_id from {schema}.transaction_ids tx_lkup where tx_lkup.signature = new_amt_data.signature ),
-                    slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
-                FROM transaction_raw_blockdata AS new_amt_data
-        "#,
+            INSERT INTO {schema}.transaction_ids(signature)
+            SELECT signature from transaction_raw_blockdata
+            ON CONFLICT DO NOTHING
+            "#,
         );
         let started_at = Instant::now();
-        let rows = postgres_session.execute(statement.as_str(), &[]).await?;
+        let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
+        debug!(
+            "inserted {} signatures into transaction_ids table in {}ms",
+            num_rows,
+            started_at.elapsed().as_millis()
+        );
 
-        Ok(true)
-    }
-
-    pub async fn get(
-        postgres_session: PostgresSession,
-        schema: &String,
-        slot: Slot,
-    ) -> Vec<TransactionInfo> {
         let statement = format!(
             r#"
-                SELECT signature, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
-                FROM {schema}.transactions_todo
+                INSERT INTO {schema}.transaction_blockdata
+                SELECT
+                    ( SELECT transaction_id FROM {schema}.transaction_ids tx_lkup WHERE tx_lkup.signature = transaction_raw_blockdata.signature ),
+                    slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                FROM transaction_raw_blockdata
+        "#,
+            schema = schema,
+        );
+        let started_at = Instant::now();
+        let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
+        debug!(
+            "inserted {} rows into transaction block table in {}ms",
+            num_rows,
+            started_at.elapsed().as_millis()
+        );
+
+        Ok(())
+    }
+
+    pub fn build_query_statement(
+        epoch: EpochRef,
+        slot: Slot,
+    ) -> String {
+        format!(
+            r#"
+                SELECT
+                    (SELECT signature FROM {schema}.transaction_ids tx_ids WHERE tx_ids.transaction_id = transaction_blockdata.transaction_id),
+                    err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                FROM {schema}.transaction_blockdata
                 WHERE slot = {}
             "#,
             slot,
-            schema = schema
-        );
-        let _ = postgres_session.client.query(&statement, &[]).await;
-        todo!()
+            schema = PostgresEpoch::build_schema_name(epoch),
+        )
     }
 }
