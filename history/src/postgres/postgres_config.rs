@@ -60,7 +60,7 @@ impl PostgresSessionConfig {
     pub fn new_for_tests() -> PostgresSessionConfig {
         assert!(
             env::var("PG_CONFIG").is_err(),
-            "note that ENV variables are ignored!"
+            "MUST NOT provide PG_CONFIG environment variables as they are ignored!"
         );
 
         // see localdev_integrationtest.sql how to setup the database

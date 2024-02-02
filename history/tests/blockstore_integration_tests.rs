@@ -37,7 +37,15 @@ async fn storage_test() {
         .init();
     configure_panic_hook();
 
-    let pg_session_config = PostgresSessionConfig::new_for_tests();
+    let no_pgconfig = env::var("PG_CONFIG").is_err();
+
+    let pg_session_config = if no_pgconfig {
+        info!("No PG_CONFIG env - use hartcoded defaults for integration test");
+        PostgresSessionConfig::new_for_tests()
+    } else {
+        info!("PG_CONFIG env defined");
+        PostgresSessionConfig::new_from_env().unwrap().unwrap()
+    };
 
     let rpc_url = std::env::var("RPC_URL").expect("env var RPC_URL is mandatory");
 
@@ -67,16 +75,6 @@ async fn storage_test() {
 
     let (blocks_notifier, _jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources);
-
-    //
-    // let (subscriptions, _cluster_endpoint_tasks) =
-    //     create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS).unwrap();
-    //
-    // let EndpointStreaming {
-    //     blocks_notifier,
-    //     slot_notifier,
-    //     ..
-    // } = subscriptions;
 
     let (epoch_cache, _) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
