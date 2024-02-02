@@ -242,7 +242,7 @@ impl PostgresBlockStore {
 
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
-        trace!("Saving block {} to postgres storage...", block.slot);
+        trace!("Saving block {}@{} to postgres storage...", block.slot, block.commitment_config.commitment);
         let slot = block.slot;
         let transactions = block
             .transactions
@@ -289,8 +289,8 @@ impl PostgresBlockStore {
         let elapsed_txs_insert = started_txs.elapsed();
 
         debug!(
-            "Saving block {} to postgres took {:.2}ms for block and {:.2}ms for {} transactions ({}x{} chunks)",
-            slot,
+            "Saving block {}@{} to postgres took {:.2}ms for block and {:.2}ms for {} transactions ({}x{} chunks)",
+            slot, block.commitment_config.commitment,
             elapsed_block_insert.as_secs_f64() * 1000.0,
             elapsed_txs_insert.as_secs_f64() * 1000.0,
             transactions.len(),
@@ -397,12 +397,13 @@ impl PostgresBlockStore {
             .iter()
             .map(|range| range.start())
             .min()
-            .expect("non-empty result");
+            // TODO decide what todo
+            .expect("non-empty result - TODO");
         let slot_max = rows_minmax
             .iter()
             .map(|range| range.end())
             .max()
-            .expect("non-empty result");
+            .expect("non-empty result - TODO");
 
         RangeInclusive::new(*slot_min, *slot_max)
     }

@@ -15,6 +15,7 @@ use std::{env, process};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
@@ -91,7 +92,7 @@ async fn storage_test() {
 
     let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
-    let jh3 = spawn_client_to_blockstorage(block_storage.clone(), slot_notifier.resubscribe());
+    let jh3 = spawn_client_to_blockstorage(block_storage.clone(), blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
     info!("Run tests for some time ...");
@@ -161,6 +162,10 @@ fn storage_listen(
         loop {
             match block_notifier.recv().await {
                 Ok(block) => {
+                    if block.commitment_config != CommitmentConfig::confirmed() {
+                        debug!("Skip block {}@{} due to commitment level", block.slot, block.commitment_config.commitment);
+                        continue;
+                    }
                     let started = Instant::now();
                     debug!(
                         "Storage task received block: {}@{} with {} txs",
@@ -185,7 +190,8 @@ fn storage_listen(
                     // we should be faster than 150ms here
                     let elapsed = started.elapsed();
                     debug!(
-                        "Successfully stored block to postgres which took {:.2}ms - remaining {} queue elements",
+                        "Successfully stored block {} to postgres which took {:.2}ms - remaining {} queue elements",
+                        block.slot,
                         elapsed.as_secs_f64() * 1000.0, block_notifier.len()
                     );
                     if elapsed > Duration::from_millis(150) {
@@ -277,16 +283,22 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
 }
 
 
-fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut slot_notifier: SlotStream) -> JoinHandle<()> {
+fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut blocks_notifier: Receiver<ProducedBlock>) -> JoinHandle<()> {
     tokio::spawn(async move {
         // note: no startup deloy
         loop {
-            match slot_notifier.recv().await {
-                Ok(SlotNotification{ processed_slot, .. }) => {
+            match blocks_notifier.recv().await {
+                Ok(ProducedBlock { slot, commitment_config, .. }) => {
+                    if commitment_config != CommitmentConfig::confirmed() {
+                        continue;
+                    }
+                    let confirmed_slot = slot;
                     // we cannot expect the most recent data
-                    let slot = processed_slot - 35;
-                    let query_result = block_storage.query(processed_slot).await;
-                    info!("Query result for slot {}: {:?}", processed_slot, query_result);
+                    let query_slot = confirmed_slot;
+                    let query_result = block_storage.query(query_slot).await;
+                    info!("Query result for slot {}: {:?}", query_slot, query_result);
+                    // Query result for slot 245710738
+                    // Inserting block 245710741 to schema rpc2a_epoch_581 postgres took 1.52ms
                 }
                 Err(_err) => {
                     warn!("Aborting client");

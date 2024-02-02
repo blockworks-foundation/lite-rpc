@@ -159,10 +159,8 @@ impl PostgresBlock {
                 let prev_max_slot = row.get::<&str, Option<i64>>("prev_max_slot");
                 // None -> no previous rows
                 debug!(
-                    "Inserted block {} with prev highest slot being {}, parent={}",
+                    "Inserted block {}",
                     self.slot,
-                    prev_max_slot.unwrap_or(-1),
-                    self.parent_slot
                 );
                 if let Some(prev_max_slot) = prev_max_slot {
                     if prev_max_slot > self.slot {
