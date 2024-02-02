@@ -294,9 +294,15 @@ fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut bloc
                     }
                     let confirmed_slot = slot;
                     // we cannot expect the most recent data
-                    let query_slot = confirmed_slot;
-                    let query_result = block_storage.query(query_slot).await;
-                    info!("Query result for slot {}: {:?}", query_slot, query_result);
+                    let query_slot = confirmed_slot - 3;
+                    match block_storage.query(query_slot).await {
+                        Ok(pb) => {
+                            info!("Query result for slot {}: {}", query_slot, to_string_without_transactions(&pb));
+                        }
+                        Err(err) => {
+                            info!("Query did not return produced block: {}", err);
+                        }
+                    }
                     // Query result for slot 245710738
                     // Inserting block 245710741 to schema rpc2a_epoch_581 postgres took 1.52ms
                 }
