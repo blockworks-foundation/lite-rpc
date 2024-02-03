@@ -298,7 +298,7 @@ fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut bloc
                         Ok(pb) => {
                             info!("Query result for slot {}: {}", query_slot, to_string_without_transactions(&pb));
                             for tx in pb.transactions.iter().take(10) {
-                                info!("  - tx: {:?}", tx);
+                                info!("  - tx: {}", tx.signature);
                             }
                             if pb.transactions.len() > 10 {
                                 info!("  - ... and {} more", pb.transactions.len() - 10);

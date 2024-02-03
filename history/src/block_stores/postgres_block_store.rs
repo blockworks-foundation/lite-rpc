@@ -313,7 +313,7 @@ impl PostgresBlockStore {
 
         let elapsed_txs_insert = started_txs.elapsed();
 
-        debug!(
+        info!(
             "Saving block {}@{} to postgres took {:.2}ms for block and {:.2}ms for {} transactions ({}x{} chunks)",
             slot, block.commitment_config.commitment,
             elapsed_block_insert.as_secs_f64() * 1000.0,
