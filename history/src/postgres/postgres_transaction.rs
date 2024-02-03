@@ -95,12 +95,13 @@ impl PostgresTransaction {
             CREATE TEMP TABLE IF NOT EXISTS transaction_raw_blockdata(
                 signature text,
                 slot bigint,
-                err text,
                 cu_requested bigint,
                 prioritization_fees bigint,
                 cu_consumed bigint,
-                recent_blockhash text,
-                message text
+                recent_blockhash text STORAGE PLAIN,
+                err text STORAGE PLAIN,
+                message text STORAGE PLAIN
+                -- model_transaction_blockdata
             );
             TRUNCATE transaction_raw_blockdata;
         "#;
@@ -108,7 +109,15 @@ impl PostgresTransaction {
 
         let statement = r#"
             COPY transaction_raw_blockdata(
-                signature, slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                signature,
+                slot,
+                cu_requested,
+                prioritization_fees,
+                cu_consumed,
+                recent_blockhash,
+                err,
+                message
+                -- model_transaction_blockdata
             ) FROM STDIN BINARY
         "#;
         let started_at = Instant::now();
@@ -118,12 +127,13 @@ impl PostgresTransaction {
             &[
                 Type::TEXT,
                 Type::INT8,
+                Type::INT8,
+                Type::INT8,
+                Type::INT8,
                 Type::TEXT,
-                Type::INT8,
-                Type::INT8,
-                Type::INT8,
                 Type::TEXT,
                 Type::TEXT
+                // model_transaction_blockdata
             ],
         );
         pin_mut!(writer);
@@ -132,12 +142,13 @@ impl PostgresTransaction {
             let PostgresTransaction {
                 signature,
                 slot,
-                err,
                 cu_requested,
                 prioritization_fees,
                 cu_consumed,
+                err,
                 recent_blockhash,
                 message,
+                // model_transaction_blockdata
             } = tx;
 
             writer
@@ -145,12 +156,13 @@ impl PostgresTransaction {
                 .write(&[
                     &signature,
                     &slot,
-                    &err,
                     &cu_requested,
                     &prioritization_fees,
                     &cu_consumed,
+                    &err,
                     &recent_blockhash,
                     &message,
+                    // model_transaction_blockdata
                 ])
                 .await?;
         }
@@ -182,7 +194,14 @@ impl PostgresTransaction {
                 INSERT INTO {schema}.transaction_blockdata
                 SELECT
                     ( SELECT transaction_id FROM {schema}.transaction_ids tx_lkup WHERE tx_lkup.signature = transaction_raw_blockdata.signature ),
-                    slot, err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                    slot,
+                    cu_requested,
+                    prioritization_fees,
+                    cu_consumed,
+                    err,
+                    recent_blockhash,
+                    message
+                    -- model_transaction_blockdata
                 FROM transaction_raw_blockdata
         "#,
             schema = schema,
@@ -206,7 +225,13 @@ impl PostgresTransaction {
             r#"
                 SELECT
                     (SELECT signature FROM {schema}.transaction_ids tx_ids WHERE tx_ids.transaction_id = transaction_blockdata.transaction_id),
-                    err, cu_requested, prioritization_fees, cu_consumed, recent_blockhash, message
+                    cu_requested,
+                    prioritization_fees,
+                    cu_consumed,
+                    err,
+                    recent_blockhash,
+                    message
+                    -- model_transaction_blockdata
                 FROM {schema}.transaction_blockdata
                 WHERE slot = {}
             "#,
