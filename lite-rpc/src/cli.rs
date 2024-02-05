@@ -175,7 +175,7 @@ impl Config {
             .map(Some)
             .unwrap_or(config.grpc_x_token4);
 
-        config.max_number_of_connection = env::var("MAX_NB_OF_CONNECTIONS")
+        config.max_number_of_connection = env::var("MAX_NB_OF_CONNECTIONS_WITH_LEADERS")
             .map(|x| x.parse().ok())
             .unwrap_or(config.max_number_of_connection);
 
