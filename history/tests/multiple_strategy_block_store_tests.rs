@@ -2,13 +2,13 @@ use solana_lite_rpc_core::structures::epoch::EpochCache;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::BlockStorageData;
 use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
-use solana_lite_rpc_history::block_stores::postgres::postgres_block_store::PostgresBlockStore;
+use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_history::block_stores::postgres::PostgresSessionConfig;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use solana_transaction_status::Reward;
-use solana_lite_rpc_history::block_stores::postgres::postgres_query_block_store::PostgresQueryBlockStore;
+use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_read_access::PostgresQueryBlockStore;
 
 pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
     ProducedBlock {

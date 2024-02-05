@@ -21,8 +21,8 @@ use tracing_subscriber::EnvFilter;
 use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription};
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::from_grpc_block_update;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
-use solana_lite_rpc_history::block_stores::postgres::postgres_block_store::PostgresBlockStore;
-use solana_lite_rpc_history::block_stores::postgres::postgres_query_block_store::PostgresQueryBlockStore;
+use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
+use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_read_access::PostgresQueryBlockStore;
 use solana_lite_rpc_history::block_stores::postgres::PostgresSessionConfig;
 
 // force ordered stream of blocks
