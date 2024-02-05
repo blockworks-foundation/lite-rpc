@@ -7,7 +7,7 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
 use std::ops::{Deref, RangeInclusive};
 use std::sync::Arc;
-use crate::block_stores::postgres::postgres_block_store_read_access::PostgresQueryBlockStore;
+use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {

@@ -9,8 +9,7 @@ use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::slot_history::Slot;
-use tokio_postgres::Error;
-use tokio_postgres::error::SqlState;
+use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
 
 use super::postgres_config::*;
 use super::postgres_epoch::*;
@@ -18,12 +17,13 @@ use super::postgres_transaction::*;
 use super::postgres_block::*;
 use super::postgres_session::*;
 
+const PARALLEL_READ_SESSIONS: usize = 4;
+
 
 #[derive(Clone)]
 pub struct PostgresQueryBlockStore {
     session_cache: PostgresSessionCache,
-    // use this session only for the write path!
-    write_sessions: Vec<PostgresWriteSession>,
+    read_sessions: Vec<PostgresSession>,
     epoch_schedule: EpochCache,
     // postgres_data: Arc<RwLock<PostgresData>>,
 }
@@ -33,26 +33,25 @@ impl PostgresQueryBlockStore {
         let session_cache = PostgresSessionCache::new(pg_session_config.clone())
             .await
             .unwrap();
-        let mut write_sessions = Vec::new();
-        for _i in 0..2 {
-            write_sessions.push(
-                PostgresWriteSession::new(pg_session_config.clone())
+        let mut read_sessions = Vec::new();
+        for _i in 0..PARALLEL_READ_SESSIONS {
+            read_sessions.push(
+                PostgresSession::new(pg_session_config.clone())
                     .await
                     .unwrap(),
             );
         }
         assert!(
-            !write_sessions.is_empty(),
-            "must have at least one write session"
+            !read_sessions.is_empty(),
+            "must have at least one read session"
         );
 
-        // Self::check_role(&session_cache).await;
+        Self::check_query_role(&session_cache).await;
 
         Self {
             session_cache,
-            write_sessions,
+            read_sessions,
             epoch_schedule,
-            // postgres_data,
         }
     }
 
@@ -156,6 +155,28 @@ impl PostgresQueryBlockStore {
 
         Ok(produced_block)
     }
+
+    async fn check_query_role(session_cache: &PostgresSessionCache) {
+        let role = LITERPC_QUERY_ROLE;
+        let statement = format!("SELECT 1 FROM pg_roles WHERE rolname='{role}'");
+        let count = session_cache
+            .get_session()
+            .await
+            .expect("must get session")
+            .execute(&statement, &[])
+            .await
+            .expect("must execute query to check for role");
+
+        if count == 0 {
+            panic!(
+                "Missing mandatory postgres query role '{}' for Lite RPC - see permissions.sql",
+                role
+            );
+        } else {
+            info!("Self check - found postgres role '{}'", role);
+        }
+    }
+
 
 }
 

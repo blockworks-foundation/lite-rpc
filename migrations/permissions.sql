@@ -15,3 +15,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA lite_rpc GRANT SELECT ON TABLES TO r_literpc;
 
 -- required for block persistence (dynamic schemata - one per epoch)
 GRANT CONNECT, CREATE ON DATABASE my_literpc_database TO r_literpc; -- TODO adjust database name
+
+-- query path
+CREATE ROLE ro_literpc;
+GRANT ro_literpc TO literpc_app;
+
+GRANT CONNECT ON DATABASE literpc_integrationtest TO ro_literpc; -- TODO adjust database name

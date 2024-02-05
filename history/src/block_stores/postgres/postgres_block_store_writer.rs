@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::ops::RangeInclusive;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
@@ -11,6 +9,7 @@ use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::slot_history::Slot;
 use tokio_postgres::Error;
 use tokio_postgres::error::SqlState;
+use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 
 use super::postgres_config::*;
 use super::postgres_epoch::*;
@@ -18,16 +17,9 @@ use super::postgres_transaction::*;
 use super::postgres_block::*;
 use super::postgres_session::*;
 
-const LITERPC_ROLE: &str = "r_literpc";
 const PARALLEL_WRITE_SESSIONS: usize = 4;
 const MIN_WRITE_CHUNK_SIZE: usize = 500;
 
-#[derive(Default, Clone, Copy)]
-pub struct PostgresData {
-    // from_slot: Slot,
-    // to_slot: Slot,
-    // current_epoch: Epoch,
-}
 
 #[derive(Clone)]
 pub struct PostgresBlockStore {
@@ -35,7 +27,6 @@ pub struct PostgresBlockStore {
     // use this session only for the write path!
     write_sessions: Vec<PostgresWriteSession>,
     epoch_schedule: EpochCache,
-    // postgres_data: Arc<RwLock<PostgresData>>,
 }
 
 impl PostgresBlockStore {
@@ -56,17 +47,16 @@ impl PostgresBlockStore {
             "must have at least one write session"
         );
 
-        Self::check_role(&session_cache).await;
+        Self::check_write_role(&session_cache).await;
 
         Self {
             session_cache,
             write_sessions,
             epoch_schedule,
-            // postgres_data,
         }
     }
 
-    async fn check_role(session_cache: &PostgresSessionCache) {
+    async fn check_write_role(session_cache: &PostgresSessionCache) {
         let role = LITERPC_ROLE;
         let statement = format!("SELECT 1 FROM pg_roles WHERE rolname='{role}'");
         let count = session_cache
@@ -79,11 +69,11 @@ impl PostgresBlockStore {
 
         if count == 0 {
             panic!(
-                "Missing mandatory postgres role '{}' for Lite RPC - see permissions.sql",
+                "Missing mandatory postgres write/ownership role '{}' for Lite RPC - see permissions.sql",
                 role
             );
         } else {
-            info!("Self check - found postgres role '{}'", role);
+            info!("Self check - found postgres write role/ownership '{}'", role);
         }
     }
 
@@ -299,15 +289,18 @@ impl PostgresBlockStore {
 }
 
 fn build_assign_permissions_statements(epoch: EpochRef) -> String {
-    let role = LITERPC_ROLE;
     let schema = PostgresEpoch::build_schema_name(epoch);
-
     format!(
         r#"
             GRANT USAGE ON SCHEMA {schema} TO {role};
             GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role};
             ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT ALL ON TABLES TO {role};
-        "#
+
+            GRANT USAGE ON SCHEMA {schema} TO {query_role};
+            ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT SELECT ON TABLES TO {query_role};
+        "#,
+        role = LITERPC_ROLE,
+        query_role = LITERPC_QUERY_ROLE,
     )
 }
 

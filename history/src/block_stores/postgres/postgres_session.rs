@@ -13,29 +13,6 @@ use tokio_postgres::{
 
 use super::postgres_config::{PostgresSessionConfig, PostgresSessionSslConfig};
 
-const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
-
-pub trait SchemaSize {
-    const DEFAULT_SIZE: usize = 0;
-    const MAX_SIZE: usize = 0;
-}
-
-pub const fn get_max_safe_inserts<T: SchemaSize>() -> usize {
-    if T::DEFAULT_SIZE == 0 {
-        panic!("DEFAULT_SIZE can't be 0. SchemaSize impl should override the DEFAULT_SIZE const");
-    }
-
-    MAX_QUERY_SIZE / T::DEFAULT_SIZE
-}
-
-pub const fn get_max_safe_updates<T: SchemaSize>() -> usize {
-    if T::MAX_SIZE == 0 {
-        panic!("MAX_SIZE can't be 0. SchemaSize impl should override the MAX_SIZE const");
-    }
-
-    MAX_QUERY_SIZE / T::MAX_SIZE
-}
-
 #[derive(Clone)]
 pub struct PostgresSession {
     pub client: Arc<Client>,
@@ -153,8 +130,6 @@ impl PostgresSession {
         query
     }
 
-
-
     pub async fn clear_session(&self) {
         // see https://www.postgresql.org/docs/current/sql-discard.html
         // CLOSE ALL -> drop potental cursors
@@ -197,9 +172,6 @@ impl PostgresSession {
         }
         Ok(total_inserted)
     }
-
-    // TODO provide an optimized version using "COPY IN" instead of "INSERT INTO" (https://trello.com/c/69MlQU6u)
-    // pub async fn execute_copyin(...)
 
     pub async fn execute_prepared(
         &self,

@@ -8,7 +8,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use solana_transaction_status::Reward;
-use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_read_access::PostgresQueryBlockStore;
+use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 
 pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
     ProducedBlock {
