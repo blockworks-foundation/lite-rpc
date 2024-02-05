@@ -7,7 +7,7 @@ use lite_rpc::bridge::LiteBridge;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
-use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
+use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
 use log::{debug, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
@@ -206,8 +206,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let (account_priofees_task, account_priofees_service) =
         AccountPrioService::start_account_priofees_task(blocks_notifier.resubscribe(), 100);
 
-    drop(blocks_notifier);
-
     let (notification_channel, postgres) = start_postgres(postgres).await?;
 
     let tpu_config = TpuServiceConfig {
@@ -217,7 +215,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             connection_timeout: Duration::from_secs(1),
             connection_retry_count: 10,
             finalize_timeout: Duration::from_millis(1000),
-            max_number_of_connections: 8,
+            max_number_of_connections: args
+                .max_number_of_connection
+                .unwrap_or(MAX_NB_OF_CONNECTIONS_WITH_LEADERS),
             unistream_timeout: Duration::from_millis(500),
             write_timeout: Duration::from_secs(1),
             number_of_transactions_per_unistream: 1,
@@ -251,8 +251,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         slot_notifier.resubscribe(),
     );
 
-    drop(slot_notifier);
-
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
     let history = History::new();
@@ -265,9 +263,13 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             history,
             block_priofees_service,
             account_priofees_service,
+            blocks_notifier.resubscribe(),
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
+    drop(slot_notifier);
+    drop(blocks_notifier);
+
     tokio::select! {
         res = tx_service_jh => {
             anyhow::bail!("Tx Services {res:?}")

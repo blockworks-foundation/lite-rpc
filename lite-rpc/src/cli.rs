@@ -67,6 +67,8 @@ pub struct Config {
     /// postgres config
     #[serde(default)]
     pub postgres: Option<postgres_logger::PostgresSessionConfig>,
+
+    pub max_number_of_connection: Option<usize>,
 }
 
 impl Config {
@@ -172,6 +174,10 @@ impl Config {
         config.grpc_x_token4 = env::var("GRPC_X_TOKEN4")
             .map(Some)
             .unwrap_or(config.grpc_x_token4);
+
+        config.max_number_of_connection = env::var("MAX_NB_OF_CONNECTIONS_WITH_LEADERS")
+            .map(|x| x.parse().ok())
+            .unwrap_or(config.max_number_of_connection);
 
         config.postgres =
             postgres_logger::PostgresSessionConfig::new_from_env()?.or(config.postgres);
