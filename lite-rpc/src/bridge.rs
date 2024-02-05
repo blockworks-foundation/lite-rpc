@@ -38,7 +38,7 @@ use solana_lite_rpc_core::{
     stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
     AnyhowJoinHandle,
 };
-use solana_lite_rpc_history::history::History;
+use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };

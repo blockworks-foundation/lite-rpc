@@ -1,8 +1,8 @@
 [package]
-name = "solana-lite-rpc-history"
+name = "solana-lite-rpc-blockstore"
 version = "0.2.4"
 edition = "2021"
-description = "History implementations used by solana lite rpc"
+description = "Store and proved blocks in PostgreSQL DB and via Yellowstone Faithful"
 rust-version = "1.70.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"

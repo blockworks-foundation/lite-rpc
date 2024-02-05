@@ -68,7 +68,7 @@ rustls = { version = "0.21.7", default-features = false, features = ["quic"] }
 solana-lite-rpc-services = {path = "services", version="0.2.4"}
 solana-lite-rpc-core = {path = "core", version="0.2.4"}
 solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.4"}
-solana-lite-rpc-history = {path = "blockstore", version="0.2.4"}
+solana-lite-rpc-blockstore = {path = "blockstore", version="0.2.4"}
 solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.4"}
 solana-lite-rpc-prioritization-fees = {path = "prioritization_fees", version="0.2.4"}
 
