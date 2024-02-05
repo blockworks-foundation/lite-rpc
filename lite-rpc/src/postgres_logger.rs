@@ -10,9 +10,9 @@ use solana_lite_rpc_core::{
     },
     AnyhowJoinHandle,
 };
-use solana_lite_rpc_history::postgres::postgres_session::{PostgresSession, PostgresSessionCache};
 use std::time::Duration;
 use tokio_postgres::types::ToSql;
+
 
 lazy_static::lazy_static! {
     pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();
@@ -20,6 +20,7 @@ lazy_static::lazy_static! {
 }
 
 use std::convert::From;
+use crate::postgres_session::{PostgresSession, PostgresSessionCache};
 
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 

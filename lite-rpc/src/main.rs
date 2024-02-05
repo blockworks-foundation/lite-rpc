@@ -33,8 +33,6 @@ use solana_lite_rpc_core::structures::{
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_history::history::History;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
-use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
@@ -54,6 +52,8 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
+use lite_rpc::postgres_config::PostgresSessionConfig;
+use lite_rpc::postgres_session::PostgresSessionCache;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,

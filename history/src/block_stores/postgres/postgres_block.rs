@@ -1,4 +1,3 @@
-use crate::postgres::postgres_epoch::PostgresEpoch;
 use log::{debug, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
@@ -8,7 +7,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::Reward;
 use std::time::Instant;
 use tokio_postgres::types::ToSql;
-
+use super::postgres_epoch::PostgresEpoch;
 use super::postgres_session::PostgresSession;
 
 #[derive(Debug)]

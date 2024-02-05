@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
+use crate::postgres_config::PostgresSessionConfig;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]

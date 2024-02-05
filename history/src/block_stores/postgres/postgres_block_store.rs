@@ -12,13 +12,11 @@ use solana_sdk::slot_history::Slot;
 use tokio_postgres::Error;
 use tokio_postgres::error::SqlState;
 
-use crate::postgres::postgres_config::PostgresSessionConfig;
-use crate::postgres::postgres_epoch::{PostgresEpoch, EPOCH_SCHEMA_PREFIX};
-use crate::postgres::postgres_session::{PostgresSession, PostgresWriteSession};
-use crate::postgres::{
-    postgres_block::PostgresBlock, postgres_session::PostgresSessionCache,
-    postgres_transaction::PostgresTransaction,
-};
+use super::postgres_config::*;
+use super::postgres_epoch::*;
+use super::postgres_transaction::*;
+use super::postgres_block::*;
+use super::postgres_session::*;
 
 const LITERPC_ROLE: &str = "r_literpc";
 const PARALLEL_WRITE_SESSIONS: usize = 4;

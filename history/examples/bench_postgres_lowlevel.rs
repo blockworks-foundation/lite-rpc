@@ -1,8 +1,8 @@
 use bytes::Bytes;
 use futures_util::pin_mut;
 use log::info;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
-use solana_lite_rpc_history::postgres::postgres_session::PostgresWriteSession;
+use solana_lite_rpc_history::block_stores::postgres::postgres_config::PostgresSessionConfig;
+use solana_lite_rpc_history::block_stores::postgres::postgres_session::PostgresWriteSession;
 use solana_sdk::blake3::Hash;
 use solana_sdk::signature::Signature;
 use std::sync::Arc;

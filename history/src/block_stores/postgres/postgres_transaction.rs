@@ -1,4 +1,3 @@
-use crate::postgres::postgres_epoch::PostgresEpoch;
 use bytes::Bytes;
 use futures_util::pin_mut;
 use log::{debug, trace, warn};
@@ -11,7 +10,8 @@ use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
 
-use super::postgres_session::PostgresSession;
+use super::postgres_epoch::*;
+use super::postgres_session::*;
 
 #[derive(Debug)]
 pub struct PostgresTransaction {

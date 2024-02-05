@@ -1,5 +1,5 @@
-use crate::block_stores::faithful_block_store::FaithfulBlockStore;
-use crate::block_stores::postgres_block_store::PostgresBlockStore;
+use crate::block_stores::faithful::faithful_block_store::FaithfulBlockStore;
+use crate::block_stores::postgres::postgres_block_store::PostgresBlockStore;
 use anyhow::{bail, Context, Result};
 use log::{debug, trace};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
