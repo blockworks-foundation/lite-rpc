@@ -41,3 +41,6 @@ pub const GRPC_VERSION: &str = "1.16.1";
 // cache transactions of 1000 slots by default
 #[from_env]
 pub const NB_SLOTS_TRANSACTIONS_TO_CACHE: u64 = 1000;
+
+#[from_env]
+pub const MAX_NB_OF_CONNECTIONS_WITH_LEADERS: usize = 8;
