@@ -1,7 +1,11 @@
-pub mod postgres_config;
-
-pub mod postgres_block;
-pub mod postgres_epoch;
-pub mod postgres_transaction;
 pub mod postgres_block_store;
-pub mod postgres_session;
+pub use postgres_config::PostgresSessionConfig;
+pub use postgres_session::PostgresSession;
+pub use postgres_session::PostgresWriteSession;
+pub use postgres_epoch::PostgresEpoch;
+
+mod postgres_session;
+mod postgres_config;
+mod postgres_block;
+mod postgres_epoch;
+mod postgres_transaction;
