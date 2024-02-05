@@ -1,5 +1,5 @@
-use crate::block_stores::faithful_block_store::FaithfulBlockStore;
-use crate::block_stores::postgres_block_store::PostgresBlockStore;
+use crate::block_stores::faithful_history::faithful_block_store::FaithfulBlockStore;
+use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use anyhow::{bail, Context, Result};
 use log::{debug, trace};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 pub enum BlockSource {
     // serve two epochs from postgres
     RecentEpochDatabase,
-    // serve epochs older than two from faithful service
+    // serve epochs older than two from faithful_history service
     FaithfulArchive,
 }
 
@@ -33,20 +33,20 @@ impl Deref for BlockStorageData {
 
 // you might need to add a read-cache instead
 pub struct MultipleStrategyBlockStorage {
-    persistent_block_storage: PostgresBlockStore, // for persistent block storage
+    block_storage_query: PostgresQueryBlockStore,
     // note supported ATM
-    faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful
+    faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful_history
                                                         // last_confirmed_slot: Arc<AtomicU64>,
 }
 
 impl MultipleStrategyBlockStorage {
     pub fn new(
-        persistent_block_storage: PostgresBlockStore,
+        block_storage_query: PostgresQueryBlockStore,
         _faithful_rpc_client: Option<Arc<RpcClient>>,
     ) -> Self {
         Self {
-            persistent_block_storage,
-            // faithful not used ATM
+            block_storage_query,
+            // faithful_history not used ATM
             faithful_block_storage: None,
             // faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
         }
@@ -55,7 +55,7 @@ impl MultipleStrategyBlockStorage {
     // we need to build the slots from right to left
     pub async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         // merge them
-        let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
+        let persistent_storage_range = self.block_storage_query.get_slot_range().await;
         trace!("Persistent storage range: {:?}", persistent_storage_range);
 
         let mut lower = *persistent_storage_range.start();
@@ -70,12 +70,15 @@ impl MultipleStrategyBlockStorage {
         }
 
         let merged = RangeInclusive::new(lower, *persistent_storage_range.end());
-        trace!("Merged range from database + faithful: {:?}", merged);
+        trace!(
+            "Merged range from database + faithful_history: {:?}",
+            merged
+        );
 
         merged
     }
 
-    // lookup confirmed or finalized block from either our blockstore or faithful
+    // lookup confirmed or finalized block from either our blockstore or faithful_history
     // TODO find better method name
     pub async fn query_block(
         &self,
@@ -93,17 +96,17 @@ impl MultipleStrategyBlockStorage {
         // current strategy:
         // 1. check if requested slot is in min-max range served from Postgres
         // 2.1. if yes; fetch from Postgres
-        // 2.2. if not: try to fetch from faithful
+        // 2.2. if not: try to fetch from faithful_history
 
-        match self.persistent_block_storage.is_block_in_range(slot).await {
+        match self.block_storage_query.is_block_in_range(slot).await {
             true => {
                 debug!(
                     "Assume block {} to be available in persistent block-storage",
                     slot,
                 );
                 let lookup = self
-                    .persistent_block_storage
-                    .query(slot)
+                    .block_storage_query
+                    .query_block(slot)
                     .await
                     .context(format!("block {} not found although it was in range", slot));
 
@@ -124,7 +127,7 @@ impl MultipleStrategyBlockStorage {
             match faithful_block_storage.get_block(slot).await {
                 Ok(block) => {
                     debug!(
-                        "Lookup for block {} successful in faithful block-storage",
+                        "Lookup for block {} successful in faithful_history block-storage",
                         slot
                     );
 
@@ -134,12 +137,18 @@ impl MultipleStrategyBlockStorage {
                     })
                 }
                 Err(_) => {
-                    debug!("Block {} not found in faithful storage - giving up", slot);
-                    bail!(format!("Block {} not found in faithful", slot));
+                    debug!(
+                        "Block {} not found in faithful_history storage - giving up",
+                        slot
+                    );
+                    bail!(format!("Block {} not found in faithful_history", slot));
                 }
             }
         } else {
-            bail!(format!("Block {} not found - faithful not available", slot));
+            bail!(format!(
+                "Block {} not found - faithful_history not available",
+                slot
+            ));
         }
     }
 }

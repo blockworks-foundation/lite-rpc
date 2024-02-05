@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
+use log::debug;
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
@@ -11,29 +12,6 @@ use tokio_postgres::{
 };
 
 use super::postgres_config::{PostgresSessionConfig, PostgresSessionSslConfig};
-
-const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
-
-pub trait SchemaSize {
-    const DEFAULT_SIZE: usize = 0;
-    const MAX_SIZE: usize = 0;
-}
-
-pub const fn get_max_safe_inserts<T: SchemaSize>() -> usize {
-    if T::DEFAULT_SIZE == 0 {
-        panic!("DEFAULT_SIZE can't be 0. SchemaSize impl should override the DEFAULT_SIZE const");
-    }
-
-    MAX_QUERY_SIZE / T::DEFAULT_SIZE
-}
-
-pub const fn get_max_safe_updates<T: SchemaSize>() -> usize {
-    if T::MAX_SIZE == 0 {
-        panic!("MAX_SIZE can't be 0. SchemaSize impl should override the MAX_SIZE const");
-    }
-
-    MAX_QUERY_SIZE / T::MAX_SIZE
-}
 
 #[derive(Clone)]
 pub struct PostgresSession {
@@ -152,6 +130,24 @@ impl PostgresSession {
         query
     }
 
+    pub async fn clear_session(&self) {
+        // see https://www.postgresql.org/docs/current/sql-discard.html
+        // CLOSE ALL -> drop potental cursors
+        // RESET ALL -> we do not want (would reset work_mem)
+        // DEALLOCATE -> would drop prepared statements which we do not use ATM
+        // DISCARD PLANS -> we want to keep the plans
+        // DISCARD SEQUENCES -> we want to keep the sequences
+        self.client
+            .batch_execute(
+                r#"
+               DISCARD TEMP;
+                CLOSE ALL;"#,
+            )
+            .await
+            .unwrap();
+        debug!("Clear postgres session");
+    }
+
     pub async fn execute(
         &self,
         statement: &str,
@@ -160,7 +156,8 @@ impl PostgresSession {
         self.client.execute(statement, params).await
     }
 
-    pub async fn execute_simple(&self, statement: &str) -> Result<(), Error> {
+    // execute statements seperated by semicolon
+    pub async fn execute_multiple(&self, statement: &str) -> Result<(), Error> {
         self.client.batch_execute(statement).await
     }
 
@@ -177,9 +174,6 @@ impl PostgresSession {
         }
         Ok(total_inserted)
     }
-
-    // TODO provide an optimized version using "COPY IN" instead of "INSERT INTO" (https://trello.com/c/69MlQU6u)
-    // pub async fn execute_copyin(...)
 
     pub async fn execute_prepared(
         &self,
@@ -280,7 +274,7 @@ impl PostgresWriteSession {
                 SET SESSION maintenance_work_mem = '256MB';
             "#;
 
-        session.execute_simple(statement).await.unwrap();
+        session.execute_multiple(statement).await.unwrap();
 
         Ok(Self {
             session: Arc::new(RwLock::new(session)),

@@ -11,7 +11,7 @@ pub struct ScheduleEpochData {
     pub last_slot_in_epoch: u64,
     pub current_confirmed_slot: u64,
     pub new_rate_activation_epoch: Option<solana_sdk::clock::Epoch>,
-    //to start  a new epoch and schedule, the new stake history
+    //to start  a new epoch and schedule, the new stake blockstore
     //Must be notified  and the end  epoch slot notfied.
     //these field store each event.
     //If they're defined  an new epoch and  leader schedule can append.

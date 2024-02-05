@@ -33,12 +33,12 @@ use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use tokio::net::ToSocketAddrs;
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 
+use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_core::{
     encoding,
     stores::{block_information_store::BlockInformation, data_cache::DataCache, tx_store::TxProps},
     AnyhowJoinHandle,
 };
-use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
@@ -154,7 +154,7 @@ impl LiteBridge {
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
     async fn get_block(&self, _slot: u64) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
-        // let block = self.history.block_storage.query_block(slot).await;
+        // let block = self.blockstore.block_storage.query_block(slot).await;
         // if block.is_ok() {
         //     // TO DO Convert to UIConfirmed Block
         //     Err(jsonrpsee::core::Error::HttpNotImplemented)
@@ -162,7 +162,7 @@ impl LiteRpcServer for LiteBridge {
         //     Ok(None)
         // }
 
-        // TODO get_block might deserve different implementation based on whether we serve from "history module" vs. from "send tx module"
+        // TODO get_block might deserve different implementation based on whether we serve from "blockstore module" vs. from "send tx module"
         todo!("get_block: decide where to look")
     }
 

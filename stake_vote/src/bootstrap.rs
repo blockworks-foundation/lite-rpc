@@ -293,7 +293,7 @@ fn process_bootstrap_event(
             let stake_history = crate::account::read_historystake_from_account(&history.data);
             if stake_history.is_none() {
                 return BootsrapProcessResult::Error(
-                    "Bootstrap error, can't read stake history from account data.".to_string(),
+                    "Bootstrap error, can't read stake blockstore from account data.".to_string(),
                 );
             }
 

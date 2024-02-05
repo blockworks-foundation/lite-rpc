@@ -1,3 +1,9 @@
+mod postgres_config;
+mod postgres_session;
+
+pub use crate::postgres_logger::postgres_config::PostgresSessionConfig;
+pub use crate::postgres_logger::postgres_session::{PostgresSession, PostgresSessionCache};
+
 use anyhow::bail;
 use chrono::{DateTime, Utc};
 use futures::join;
@@ -10,7 +16,6 @@ use solana_lite_rpc_core::{
     },
     AnyhowJoinHandle,
 };
-use solana_lite_rpc_history::postgres::postgres_session::{PostgresSession, PostgresSessionCache};
 use std::time::Duration;
 use tokio_postgres::types::ToSql;
 
@@ -248,7 +253,7 @@ impl PostgresLogger {
                                     tx_batch.append(&mut tx)
                                 }
                                 NotificationMsg::BlockNotificationMsg(_) => {
-                                    // ignore block storage as it has been moved to persistant history.
+                                    // ignore block storage as it has been moved to persistant blockstore.
                                     continue;
                                 }
                                 NotificationMsg::UpdateTransactionMsg(update) => {

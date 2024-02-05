@@ -1,5 +1,6 @@
 use std::env;
 
+use crate::postgres_logger;
 use crate::{
     DEFAULT_FANOUT_SIZE, DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
     DEFAULT_WS_ADDR, MAX_RETRIES,
@@ -7,7 +8,6 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -66,7 +66,7 @@ pub struct Config {
 
     /// postgres config
     #[serde(default)]
-    pub postgres: Option<PostgresSessionConfig>,
+    pub postgres: Option<postgres_logger::PostgresSessionConfig>,
 
     pub max_number_of_connection: Option<usize>,
 }
@@ -179,7 +179,8 @@ impl Config {
             .map(|x| x.parse().ok())
             .unwrap_or(config.max_number_of_connection);
 
-        config.postgres = PostgresSessionConfig::new_from_env()?.or(config.postgres);
+        config.postgres =
+            postgres_logger::PostgresSessionConfig::new_from_env()?.or(config.postgres);
 
         Ok(config)
     }

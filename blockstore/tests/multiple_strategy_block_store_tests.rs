@@ -1,9 +1,10 @@
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::BlockStorageData;
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
+use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::BlockStorageData;
-use solana_lite_rpc_history::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
-use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
@@ -37,21 +38,23 @@ async fn test_in_multiple_stategy_block_store() {
 
     let pg_session_config = PostgresSessionConfig::new_from_env().unwrap().unwrap();
     let epoch_cache = EpochCache::new_for_tests();
-    let persistent_store = PostgresBlockStore::new(epoch_cache.clone(), pg_session_config).await;
+    let persistent_store =
+        PostgresBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await;
+    let block_storage_query = PostgresQueryBlockStore::new(epoch_cache, pg_session_config).await;
     let multi_store = MultipleStrategyBlockStorage::new(
-        persistent_store.clone(),
+        block_storage_query.clone(),
         None, // not supported
     );
 
     persistent_store.prepare_epoch_schema(1200).await.unwrap();
 
     persistent_store
-        .write_block(&create_test_block(1200, CommitmentConfig::confirmed()))
+        .save_block(&create_test_block(1200, CommitmentConfig::confirmed()))
         .await
         .unwrap();
     // span range of slots between those two
     persistent_store
-        .write_block(&create_test_block(1289, CommitmentConfig::confirmed()))
+        .save_block(&create_test_block(1289, CommitmentConfig::confirmed()))
         .await
         .unwrap();
 

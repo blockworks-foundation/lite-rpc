@@ -1,56 +1,93 @@
-use log::{debug, error, info, trace, warn};
-use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
-use solana_lite_rpc_core::structures::epoch::EpochCache;
+use log::{debug, error, info, warn};
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
+use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
+use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{
+    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription,
+};
+use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
+use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::types::{BlockStream, SlotStream};
-use solana_lite_rpc_history::block_stores::postgres_block_store::PostgresBlockStore;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
-use std::collections::{HashMap, HashSet};
-use std::process;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{env, process};
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
-// force ordered stream of blocks
-const NUM_PARALLEL_TASKS: usize = 1;
-
 const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 #[ignore = "need to enable postgres"]
 #[tokio::test]
 async fn storage_test() {
-    // RUST_LOG=info,storage_integration_tests=debug,solana_lite_rpc_history=trace
+    // RUST_LOG=info,storage_integration_tests=debug,solana_lite_rpc_blockstore=trace
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
     configure_panic_hook();
 
-    let pg_session_config = PostgresSessionConfig::new_from_env().unwrap().unwrap();
+    let no_pgconfig = env::var("PG_CONFIG").is_err();
+
+    let pg_session_config = if no_pgconfig {
+        info!("No PG_CONFIG env - use hartcoded defaults for integration test");
+        PostgresSessionConfig::new_for_tests()
+    } else {
+        info!("PG_CONFIG env defined");
+        PostgresSessionConfig::new_from_env().unwrap().unwrap()
+    };
 
     let rpc_url = std::env::var("RPC_URL").expect("env var RPC_URL is mandatory");
 
     let rpc_client = Arc::new(RpcClient::new(rpc_url));
 
-    let (subscriptions, _cluster_endpoint_tasks) =
-        create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS).unwrap();
+    let grpc_addr = env::var("GRPC_ADDR").expect("need grpc url for green");
+    let grpc_x_token = env::var("GRPC_X_TOKEN").ok();
 
-    let EndpointStreaming {
-        blocks_notifier,
-        slot_notifier,
-        ..
-    } = subscriptions;
+    info!(
+        "Using grpc source on {} ({})",
+        grpc_addr,
+        grpc_x_token.is_some()
+    );
+
+    let timeouts = GrpcConnectionTimeouts {
+        connect_timeout: Duration::from_secs(5),
+        request_timeout: Duration::from_secs(5),
+        subscribe_timeout: Duration::from_secs(5),
+    };
+
+    let grpc_config = GrpcSourceConfig::new(grpc_addr, grpc_x_token, None, timeouts.clone());
+    let grpc_sources = vec![grpc_config];
+
+    let (slot_notifier, _jh_multiplex_slotstream) =
+        create_grpc_multiplex_slots_subscription(grpc_sources.clone());
+
+    let (blocks_notifier, _jh_multiplex_blockstream) =
+        create_grpc_multiplex_blocks_subscription(grpc_sources);
 
     let (epoch_cache, _) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
+    let block_storage_query = Arc::new(
+        PostgresQueryBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await,
+    );
+
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_cache, pg_session_config).await);
+    let current_epoch = rpc_client.get_epoch_info().await.unwrap().epoch;
+    block_storage
+        .drop_epoch_schema(EpochRef::new(current_epoch))
+        .await
+        .unwrap();
+    block_storage
+        .drop_epoch_schema(EpochRef::new(current_epoch).get_next_epoch())
+        .await
+        .unwrap();
 
     let (jh1_1, first_init) =
         storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());
@@ -59,11 +96,15 @@ async fn storage_test() {
 
     let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
-    let jh3 = block_stream_assert_commitment_order(blocks_notifier.resubscribe());
+    let jh3 =
+        spawn_client_to_blockstorage(block_storage_query.clone(), blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
-    info!("Run tests for some time ...");
-    sleep(Duration::from_secs(20)).await;
+    let seconds_to_run = env::var("SECONDS_TO_RUN")
+        .map(|s| s.parse::<u64>().expect("a number"))
+        .unwrap_or(20);
+    info!("Run tests for some time ({} seconds) ...", seconds_to_run);
+    sleep(Duration::from_secs(seconds_to_run)).await;
 
     jh1_1.abort();
     jh1_2.abort();
@@ -129,10 +170,18 @@ fn storage_listen(
         loop {
             match block_notifier.recv().await {
                 Ok(block) => {
+                    if block.commitment_config != CommitmentConfig::confirmed() {
+                        debug!(
+                            "Skip block {}@{} due to commitment level",
+                            block.slot, block.commitment_config.commitment
+                        );
+                        continue;
+                    }
                     let started = Instant::now();
                     debug!(
-                        "Received block: {} with {} txs",
+                        "Storage task received block: {}@{} with {} txs",
                         block.slot,
+                        block.commitment_config.commitment,
                         block.transactions.len()
                     );
 
@@ -147,12 +196,13 @@ fn storage_listen(
 
                     // avoid backpressure here!
 
-                    block_storage.write_block(&block).await.unwrap();
+                    block_storage.save_block(&block).await.unwrap();
 
                     // we should be faster than 150ms here
                     let elapsed = started.elapsed();
                     debug!(
-                        "Successfully stored block to postgres which took {:.2}ms - remaining {} queue elements",
+                        "Successfully stored block {} to postgres which took {:.2}ms - remaining {} queue elements",
+                        block.slot,
                         elapsed.as_secs_f64() * 1000.0, block_notifier.len()
                     );
                     if elapsed > Duration::from_millis(150) {
@@ -192,12 +242,6 @@ fn storage_listen(
     })
 }
 
-#[derive(Debug, Clone)]
-struct BlockDebugDetails {
-    pub blockhash: String,
-    pub block: ProducedBlock,
-}
-
 fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut last_highest_slot_number = 0;
@@ -207,7 +251,7 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
             match block_notifier.recv().await {
                 Ok(block) => {
                     debug!(
-                        "Saw block: {} @ {} with {} txs",
+                        "Saw block: {}@{} with {} txs",
                         block.slot,
                         block.commitment_config.commitment,
                         block.transactions.len()
@@ -243,127 +287,54 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
     })
 }
 
-/// inspect stream of blocks and check that the commitment transition from confirmed to finalized is correct
-fn block_stream_assert_commitment_order(block_notifier: BlockStream) -> JoinHandle<()> {
+fn spawn_client_to_blockstorage(
+    block_storage_query: Arc<PostgresQueryBlockStore>,
+    mut blocks_notifier: Receiver<ProducedBlock>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let mut block_notifier = block_notifier;
-
-        let mut confirmed_blocks_by_slot = HashMap::<Slot, BlockDebugDetails>::new();
-        let mut finalized_blocks = HashSet::<Slot>::new();
-
-        let mut warmup_cutoff: Slot = 0;
-        let mut warmup_first_confirmed: Slot = 0;
-
+        // note: no startup deloy
         loop {
-            match block_notifier.recv().await {
-                Ok(block) => {
-                    if warmup_cutoff > 0 {
-                        if block.slot < warmup_cutoff {
-                            continue;
+            match blocks_notifier.recv().await {
+                Ok(ProducedBlock {
+                    slot,
+                    commitment_config,
+                    ..
+                }) => {
+                    if commitment_config != CommitmentConfig::confirmed() {
+                        continue;
+                    }
+                    let confirmed_slot = slot;
+                    // we cannot expect the most recent data
+                    let query_slot = confirmed_slot - 3;
+                    match block_storage_query.query_block(query_slot).await {
+                        Ok(pb) => {
+                            info!(
+                                "Query result for slot {}: {}",
+                                query_slot,
+                                to_string_without_transactions(&pb)
+                            );
+                            for tx in pb.transactions.iter().take(10) {
+                                info!("  - tx: {}", tx.signature);
+                            }
+                            if pb.transactions.len() > 10 {
+                                info!("  - ... and {} more", pb.transactions.len() - 10);
+                            }
                         }
-
-                        // check semantics and log/panic
-                        inspect_this_block(
-                            &mut confirmed_blocks_by_slot,
-                            &mut finalized_blocks,
-                            &block,
-                        );
-                    } else {
-                        trace!("Warming up {} ...", block.slot);
-
-                        if warmup_first_confirmed == 0
-                            && block.commitment_config == CommitmentConfig::confirmed()
-                        {
-                            warmup_first_confirmed = block.slot;
-                        }
-
-                        if block.commitment_config == CommitmentConfig::finalized()
-                            && block.slot >= warmup_first_confirmed
-                        {
-                            warmup_cutoff = block.slot + 32;
-                            debug!("Warming done (slot {})", warmup_cutoff);
+                        Err(err) => {
+                            info!("Query did not return produced block: {}", err);
                         }
                     }
-                } // -- Ok
-                Err(RecvError::Lagged(missed_blocks)) => {
-                    warn!(
-                        "Could not keep up with producer - missed {} blocks",
-                        missed_blocks
-                    );
+                    // Query result for slot 245710738
+                    // Inserting block 245710741 to schema rpc2a_epoch_581 postgres took 1.52ms
                 }
-                Err(other_err) => {
-                    panic!("Error receiving block: {:?}", other_err);
+                Err(_err) => {
+                    warn!("Aborting client");
+                    break;
                 }
             }
-
-            // ...
+            sleep(Duration::from_secs(1)).await;
         }
     })
-}
-
-fn inspect_this_block(
-    confirmed_blocks_by_slot: &mut HashMap<Slot, BlockDebugDetails>,
-    finalized_blocks: &mut HashSet<Slot>,
-    block: &ProducedBlock,
-) {
-    if block.commitment_config == CommitmentConfig::confirmed() {
-        let prev_block = confirmed_blocks_by_slot.insert(
-            block.slot,
-            BlockDebugDetails {
-                blockhash: block.blockhash.clone(),
-                block: block.clone(),
-            },
-        );
-        // Assumption I: we never see the same confirmed block twice
-        assert!(prev_block.is_none(), "Must not see a confirmed block twice");
-    } else if block.commitment_config == CommitmentConfig::finalized() {
-        let finalized_block = &block;
-        let finalized_block_existed = finalized_blocks.insert(finalized_block.slot);
-        // Assumption II: we never see the same finalized block twice
-        assert!(
-            finalized_block_existed,
-            "Finalized block {} must NOT have been seen before",
-            finalized_block.slot
-        );
-        let prev_block = confirmed_blocks_by_slot.get(&block.slot);
-        match prev_block {
-            Some(prev_block) => {
-                info!(
-                    "Got finalized block {} with blockhash {} - prev confirmed was {}",
-                    finalized_block.slot, finalized_block.blockhash, prev_block.blockhash
-                );
-                // TODO is that correct?
-                // Assumption III: confirmed and finalized block can be matched by slot and have the same blockhash
-                assert_eq!(
-                    finalized_block.blockhash, prev_block.blockhash,
-                    "Must see the same blockhash for confirmed and finalized block"
-                );
-
-                debug!(
-                    "confirmed: {:?}",
-                    to_string_without_transactions(&prev_block.block)
-                );
-                debug!(
-                    "finalized: {:?}",
-                    to_string_without_transactions(finalized_block)
-                );
-
-                // Assumption IV: block details do not change between confirmed and finalized
-                assert_eq!(
-                    // normalized and compare
-                    to_string_without_transactions(&prev_block.block)
-                        .replace("commitment_config=confirmed", "commitment_config=IGNORE"),
-                    to_string_without_transactions(finalized_block)
-                        .replace("commitment_config=finalized", "commitment_config=IGNORE"),
-                    "block tostring mismatch"
-                )
-            }
-            None => {
-                // note at startup we might see some orphan finalized blocks before we see matching pairs of confirmed-finalized blocks
-                warn!("Must see a confirmed block before it is finalized (slot {}) - could be a warmup issue", finalized_block.slot);
-            }
-        }
-    }
 }
 
 fn to_string_without_transactions(produced_block: &ProducedBlock) -> String {

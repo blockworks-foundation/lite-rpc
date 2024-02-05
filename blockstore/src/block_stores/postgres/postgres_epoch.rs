@@ -20,6 +20,16 @@ impl PostgresEpoch {
         )
     }
 
+    pub fn build_drop_schema_statement(epoch: EpochRef) -> String {
+        let schema = PostgresEpoch::build_schema_name(epoch);
+        format!(
+            "
+            DROP SCHEMA IF EXISTS {} CASCADE;
+            ",
+            schema
+        )
+    }
+
     pub fn parse_epoch_from_schema_name(schema_name: &str) -> EpochRef {
         let epoch_number_str = schema_name.trim_start_matches(EPOCH_SCHEMA_PREFIX);
         let epoch = epoch_number_str.parse::<u64>().unwrap();

@@ -2519,9 +2519,9 @@ dependencies = [
  "quinn",
  "serde",
  "serde_json",
+ "solana-lite-rpc-blockstore",
  "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
- "solana-lite-rpc-history",
  "solana-lite-rpc-prioritization-fees",
  "solana-lite-rpc-services",
  "solana-rpc-client",
@@ -4284,6 +4284,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-lite-rpc-blockstore"
+version = "0.2.4"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.7",
+ "bincode",
+ "bytes",
+ "chrono",
+ "dashmap 5.5.3",
+ "futures",
+ "futures-util",
+ "itertools 0.10.5",
+ "jsonrpsee",
+ "log",
+ "native-tls",
+ "postgres-native-tls",
+ "rand 0.8.5",
+ "rangetools",
+ "serde",
+ "serde_json",
+ "solana-lite-rpc-cluster-endpoints",
+ "solana-lite-rpc-core",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-transaction-status",
+ "tokio",
+ "tokio-postgres",
+ "tokio-util",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "solana-lite-rpc-cluster-endpoints"
 version = "0.2.4"
 dependencies = [
@@ -4354,40 +4388,6 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
-]
-
-[[package]]
-name = "solana-lite-rpc-history"
-version = "0.2.4"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.21.7",
- "bincode",
- "bytes",
- "chrono",
- "dashmap 5.5.3",
- "futures",
- "futures-util",
- "itertools 0.10.5",
- "jsonrpsee",
- "log",
- "native-tls",
- "postgres-native-tls",
- "rand 0.8.5",
- "rangetools",
- "serde",
- "serde_json",
- "solana-lite-rpc-cluster-endpoints",
- "solana-lite-rpc-core",
- "solana-rpc-client",
- "solana-rpc-client-api",
- "solana-sdk",
- "solana-transaction-status",
- "tokio",
- "tokio-postgres",
- "tokio-util",
- "tracing-subscriber",
 ]
 
 [[package]]
