@@ -1,3 +1,9 @@
+mod postgres_session;
+mod postgres_config;
+
+pub use crate::postgres_logger::postgres_session::{PostgresSession, PostgresSessionCache};
+pub use crate::postgres_logger::postgres_config::{PostgresSessionConfig};
+
 use anyhow::bail;
 use chrono::{DateTime, Utc};
 use futures::join;
@@ -20,7 +26,6 @@ lazy_static::lazy_static! {
 }
 
 use std::convert::From;
-use crate::postgres_session::{PostgresSession, PostgresSessionCache};
 
 const MAX_QUERY_SIZE: usize = 200_000; // 0.2 mb
 

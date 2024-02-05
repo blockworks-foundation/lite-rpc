@@ -52,8 +52,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
-use lite_rpc::postgres_config::PostgresSessionConfig;
-use lite_rpc::postgres_session::PostgresSessionCache;
+use lite_rpc::postgres_logger;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -82,7 +81,7 @@ async fn get_latest_block(
 }
 
 pub async fn start_postgres(
-    config: Option<PostgresSessionConfig>,
+    config: Option<postgres_logger::PostgresSessionConfig>,
 ) -> anyhow::Result<(Option<NotificationSender>, AnyhowJoinHandle)> {
     let Some(config) = config else {
         return Ok((
@@ -96,7 +95,7 @@ pub async fn start_postgres(
 
     let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
 
-    let postgres_session_cache = PostgresSessionCache::new(config).await?;
+    let postgres_session_cache = postgres_logger::PostgresSessionCache::new(config).await?;
     let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
 
     Ok((Some(postgres_send), postgres))
