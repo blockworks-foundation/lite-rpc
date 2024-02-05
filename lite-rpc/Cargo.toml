@@ -49,6 +49,7 @@ solana-lite-rpc-services = { workspace = true }
 solana-lite-rpc-cluster-endpoints = { workspace = true }
 solana-lite-rpc-blockstore = { workspace = true }
 solana-lite-rpc-prioritization-fees = { workspace = true }
+solana-lite-rpc-address-lookup-tables = { workspace = true }
 
 [dev-dependencies]
 bench = { path = "../bench" }

@@ -1,5 +1,5 @@
 [package]
-name = "solana-lite-address-lookup-tables"
+name = "solana-lite-rpc-address-lookup-tables"
 version = "0.2.4"
 edition = "2021"
 description = "Library to save and update address lookup tables in lite-rpc"

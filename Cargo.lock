@@ -2520,6 +2520,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-lite-rpc-blockstore",
+ "solana-lite-rpc-address-lookup-tables",
  "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
  "solana-lite-rpc-prioritization-fees",
@@ -4307,6 +4308,7 @@ dependencies = [
 [[package]]
 name = "solana-lite-rpc-blockstore"
 name = "solana-lite-address-lookup-tables"
+name = "solana-lite-rpc-address-lookup-tables"
 version = "0.2.4"
 dependencies = [
  "anyhow",

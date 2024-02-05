@@ -185,7 +185,7 @@ impl BinaryALTData {
 impl AddressLookupTableInterface for ALTStore {
     async fn get_address_lookup_table(
         &self,
-        message_address_table_lookup: solana_sdk::message::v0::MessageAddressTableLookup,
+        message_address_table_lookup: &solana_sdk::message::v0::MessageAddressTableLookup,
     ) -> (Vec<Pubkey>, Vec<Pubkey>) {
         (
             self.get_accounts(
