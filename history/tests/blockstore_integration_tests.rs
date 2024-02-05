@@ -1,32 +1,28 @@
-use log::{debug, error, info, trace, warn};
-use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
+use log::{debug, error, info, warn};
+use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{
+    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription,
+};
+use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
 use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::types::{BlockStream, SlotStream};
+use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
+use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
+use solana_lite_rpc_history::block_stores::postgres::PostgresSessionConfig;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
-use std::collections::{HashMap, HashSet};
-use std::{env, process};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{env, process};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
-use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription};
-use solana_lite_rpc_cluster_endpoints::grpc_subscription::from_grpc_block_update;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
-use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
-use solana_lite_rpc_history::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
-use solana_lite_rpc_history::block_stores::postgres::PostgresSessionConfig;
-
-// force ordered stream of blocks
-const NUM_PARALLEL_TASKS: usize = 1;
 
 const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 #[ignore = "need to enable postgres"]
@@ -61,7 +57,6 @@ async fn storage_test() {
         grpc_x_token.is_some()
     );
 
-
     let timeouts = GrpcConnectionTimeouts {
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
@@ -79,13 +74,20 @@ async fn storage_test() {
 
     let (epoch_cache, _) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
-    let block_storage_query = Arc::new(PostgresQueryBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await);
+    let block_storage_query = Arc::new(
+        PostgresQueryBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await,
+    );
 
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_cache, pg_session_config).await);
     let current_epoch = rpc_client.get_epoch_info().await.unwrap().epoch;
-    block_storage.drop_epoch_schema(EpochRef::new(current_epoch)).await.unwrap();
-    block_storage.drop_epoch_schema(EpochRef::new(current_epoch).get_next_epoch()).await.unwrap();
-
+    block_storage
+        .drop_epoch_schema(EpochRef::new(current_epoch))
+        .await
+        .unwrap();
+    block_storage
+        .drop_epoch_schema(EpochRef::new(current_epoch).get_next_epoch())
+        .await
+        .unwrap();
 
     let (jh1_1, first_init) =
         storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());
@@ -94,10 +96,13 @@ async fn storage_test() {
 
     let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
-    let jh3 = spawn_client_to_blockstorage(block_storage_query.clone(), blocks_notifier.resubscribe());
+    let jh3 =
+        spawn_client_to_blockstorage(block_storage_query.clone(), blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
-    let seconds_to_run = env::var("SECONDS_TO_RUN").map(|s| s.parse::<u64>().expect("a number")).unwrap_or(20);
+    let seconds_to_run = env::var("SECONDS_TO_RUN")
+        .map(|s| s.parse::<u64>().expect("a number"))
+        .unwrap_or(20);
     info!("Run tests for some time ({} seconds) ...", seconds_to_run);
     sleep(Duration::from_secs(seconds_to_run)).await;
 
@@ -166,7 +171,10 @@ fn storage_listen(
             match block_notifier.recv().await {
                 Ok(block) => {
                     if block.commitment_config != CommitmentConfig::confirmed() {
-                        debug!("Skip block {}@{} due to commitment level", block.slot, block.commitment_config.commitment);
+                        debug!(
+                            "Skip block {}@{} due to commitment level",
+                            block.slot, block.commitment_config.commitment
+                        );
                         continue;
                     }
                     let started = Instant::now();
@@ -234,12 +242,6 @@ fn storage_listen(
     })
 }
 
-#[derive(Debug, Clone)]
-struct BlockDebugDetails {
-    pub blockhash: String,
-    pub block: ProducedBlock,
-}
-
 fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut last_highest_slot_number = 0;
@@ -285,13 +287,19 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
     })
 }
 
-
-fn spawn_client_to_blockstorage(block_storage_query: Arc<PostgresQueryBlockStore>, mut blocks_notifier: Receiver<ProducedBlock>) -> JoinHandle<()> {
+fn spawn_client_to_blockstorage(
+    block_storage_query: Arc<PostgresQueryBlockStore>,
+    mut blocks_notifier: Receiver<ProducedBlock>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
         // note: no startup deloy
         loop {
             match blocks_notifier.recv().await {
-                Ok(ProducedBlock { slot, commitment_config, .. }) => {
+                Ok(ProducedBlock {
+                    slot,
+                    commitment_config,
+                    ..
+                }) => {
                     if commitment_config != CommitmentConfig::confirmed() {
                         continue;
                     }
@@ -300,7 +308,11 @@ fn spawn_client_to_blockstorage(block_storage_query: Arc<PostgresQueryBlockStore
                     let query_slot = confirmed_slot - 3;
                     match block_storage_query.query_block(query_slot).await {
                         Ok(pb) => {
-                            info!("Query result for slot {}: {}", query_slot, to_string_without_transactions(&pb));
+                            info!(
+                                "Query result for slot {}: {}",
+                                query_slot,
+                                to_string_without_transactions(&pb)
+                            );
                             for tx in pb.transactions.iter().take(10) {
                                 info!("  - tx: {}", tx.signature);
                             }

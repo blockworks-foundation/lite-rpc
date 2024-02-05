@@ -138,9 +138,11 @@ impl PostgresSession {
         // DISCARD PLANS -> we want to keep the plans
         // DISCARD SEQUENCES -> we want to keep the sequences
         self.client
-            .batch_execute(r#"
+            .batch_execute(
+                r#"
                DISCARD TEMP;
-                CLOSE ALL;"#)
+                CLOSE ALL;"#,
+            )
             .await
             .unwrap();
         debug!("Clear postgres session");

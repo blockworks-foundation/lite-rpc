@@ -1,5 +1,5 @@
 use crate::block_stores::faithful::faithful_block_store::FaithfulBlockStore;
-use crate::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
+use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use anyhow::{bail, Context, Result};
 use log::{debug, trace};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
@@ -7,7 +7,6 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
 use std::ops::{Deref, RangeInclusive};
 use std::sync::Arc;
-use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {

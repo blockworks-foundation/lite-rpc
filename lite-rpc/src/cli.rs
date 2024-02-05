@@ -1,10 +1,13 @@
 use std::env;
 
-use crate::{DEFAULT_FANOUT_SIZE, DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR, DEFAULT_WS_ADDR, MAX_RETRIES};
+use crate::postgres_logger;
+use crate::{
+    DEFAULT_FANOUT_SIZE, DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
+    DEFAULT_WS_ADDR, MAX_RETRIES,
+};
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
-use crate::postgres_logger;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -170,7 +173,8 @@ impl Config {
             .map(Some)
             .unwrap_or(config.grpc_x_token4);
 
-        config.postgres = postgres_logger::PostgresSessionConfig::new_from_env()?.or(config.postgres);
+        config.postgres =
+            postgres_logger::PostgresSessionConfig::new_from_env()?.or(config.postgres);
 
         Ok(config)
     }

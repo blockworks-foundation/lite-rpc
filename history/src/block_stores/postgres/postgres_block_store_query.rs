@@ -1,31 +1,26 @@
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use anyhow::{bail, Context, Result};
+use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
+use anyhow::{bail, Result};
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{debug, info, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
-use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
-use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
 
+use super::postgres_block::*;
 use super::postgres_config::*;
 use super::postgres_epoch::*;
-use super::postgres_transaction::*;
-use super::postgres_block::*;
 use super::postgres_session::*;
-
-const PARALLEL_READ_SESSIONS: usize = 4;
-
+use super::postgres_transaction::*;
 
 #[derive(Clone)]
 pub struct PostgresQueryBlockStore {
     session_cache: PostgresSessionCache,
-    read_sessions: Vec<PostgresSession>,
     epoch_schedule: EpochCache,
-    // postgres_data: Arc<RwLock<PostgresData>>,
 }
 
 impl PostgresQueryBlockStore {
@@ -33,24 +28,11 @@ impl PostgresQueryBlockStore {
         let session_cache = PostgresSessionCache::new(pg_session_config.clone())
             .await
             .unwrap();
-        let mut read_sessions = Vec::new();
-        for _i in 0..PARALLEL_READ_SESSIONS {
-            read_sessions.push(
-                PostgresSession::new(pg_session_config.clone())
-                    .await
-                    .unwrap(),
-            );
-        }
-        assert!(
-            !read_sessions.is_empty(),
-            "must have at least one read session"
-        );
 
         Self::check_query_role(&session_cache).await;
 
         Self {
             session_cache,
-            read_sessions,
             epoch_schedule,
         }
     }
@@ -89,12 +71,20 @@ impl PostgresQueryBlockStore {
         }
 
         let statement = PostgresTransaction::build_query_statement(epoch, slot);
-        let transaction_rows =
-            self.get_session().await.query_list(&statement, &[]).await.unwrap();
+        let transaction_rows = self
+            .get_session()
+            .await
+            .query_list(&statement, &[])
+            .await
+            .unwrap();
 
-        warn!("transaction_rows: {} - print first 10", transaction_rows.len());
+        warn!(
+            "transaction_rows: {} - print first 10",
+            transaction_rows.len()
+        );
 
-        let tx_infos = transaction_rows.iter()
+        let tx_infos = transaction_rows
+            .iter()
             .map(|tx_row| {
                 let postgres_transaction = PostgresTransaction {
                     slot: slot as i64,
@@ -107,10 +97,9 @@ impl PostgresQueryBlockStore {
                     message: tx_row.get("message"),
                 };
 
-                let transaction_info = postgres_transaction.into_transaction_info();
-                transaction_info
-            }).collect_vec();
-
+                postgres_transaction.to_transaction_info()
+            })
+            .collect_vec();
 
         let row = block_row.unwrap();
         // meta data
@@ -137,8 +126,7 @@ impl PostgresQueryBlockStore {
             leader_id,
         };
 
-
-        let produced_block = postgres_block.into_produced_block(
+        let produced_block = postgres_block.to_produced_block(
             tx_infos,
             // FIXME
             CommitmentConfig::confirmed(),
@@ -176,12 +164,6 @@ impl PostgresQueryBlockStore {
             info!("Self check - found postgres role '{}'", role);
         }
     }
-
-
-}
-
-fn div_ceil(a: usize, b: usize) -> usize {
-    (a.saturating_add(b).saturating_sub(1)).saturating_div(b)
 }
 
 impl PostgresQueryBlockStore {
@@ -301,5 +283,3 @@ impl PostgresQueryBlockStore {
         final_range
     }
 }
-
-

@@ -1,8 +1,8 @@
-mod postgres_session;
 mod postgres_config;
+mod postgres_session;
 
+pub use crate::postgres_logger::postgres_config::PostgresSessionConfig;
 pub use crate::postgres_logger::postgres_session::{PostgresSession, PostgresSessionCache};
-pub use crate::postgres_logger::postgres_config::{PostgresSessionConfig};
 
 use anyhow::bail;
 use chrono::{DateTime, Utc};
@@ -18,7 +18,6 @@ use solana_lite_rpc_core::{
 };
 use std::time::Duration;
 use tokio_postgres::types::ToSql;
-
 
 lazy_static::lazy_static! {
     pub static ref MESSAGES_IN_POSTGRES_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_messages_in_postgres", "Number of messages in postgres")).unwrap();

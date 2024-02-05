@@ -5,10 +5,7 @@ use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
-use tokio_postgres::{
-    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, CopyInSink, Error, NoTls, Row,
-    Socket,
-};
+use tokio_postgres::{config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, NoTls, Socket};
 
 use super::postgres_config::{PostgresSessionConfig, PostgresSessionSslConfig};
 
@@ -120,7 +117,6 @@ impl PostgresSession {
             }
         }
     }
-
 }
 
 #[derive(Clone)]
@@ -150,10 +146,3 @@ impl PostgresSessionCache {
         }
     }
 }
-
-#[derive(Clone)]
-pub struct PostgresWriteSession {
-    session: Arc<RwLock<PostgresSession>>,
-    pub pg_session_config: PostgresSessionConfig,
-}
-

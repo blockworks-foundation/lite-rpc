@@ -1,25 +1,23 @@
 use std::time::{Duration, Instant};
 
+use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 use anyhow::{bail, Context, Result};
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
-use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
+use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::slot_history::Slot;
-use tokio_postgres::Error;
 use tokio_postgres::error::SqlState;
-use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 
+use super::postgres_block::*;
 use super::postgres_config::*;
 use super::postgres_epoch::*;
-use super::postgres_transaction::*;
-use super::postgres_block::*;
 use super::postgres_session::*;
+use super::postgres_transaction::*;
 
 const PARALLEL_WRITE_SESSIONS: usize = 4;
 const MIN_WRITE_CHUNK_SIZE: usize = 500;
-
 
 #[derive(Clone)]
 pub struct PostgresBlockStore {
@@ -73,7 +71,10 @@ impl PostgresBlockStore {
                 role
             );
         } else {
-            info!("Self check - found postgres write role/ownership '{}'", role);
+            info!(
+                "Self check - found postgres write role/ownership '{}'",
+                role
+            );
         }
     }
 
@@ -161,7 +162,11 @@ impl PostgresBlockStore {
 
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
-        trace!("Saving block {}@{} to postgres storage...", block.slot, block.commitment_config.commitment);
+        trace!(
+            "Saving block {}@{} to postgres storage...",
+            block.slot,
+            block.commitment_config.commitment
+        );
         let slot = block.slot;
         let transactions = block
             .transactions
@@ -197,7 +202,8 @@ impl PostgresBlockStore {
         );
         for (i, chunk) in chunks.iter().enumerate() {
             let session = self.write_sessions[i].get_write_session().await.clone();
-            let future = PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
+            let future =
+                PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
             queries_fut.push(future);
         }
         let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;
@@ -280,12 +286,11 @@ impl PostgresBlockStore {
                 warn!("Dropped schema {}", schema_name);
                 Ok(())
             }
-            Err(e) => {
+            Err(_err) => {
                 bail!("Error dropping schema {}", schema_name)
             }
         }
     }
-
 }
 
 fn build_assign_permissions_statements(epoch: EpochRef) -> String {

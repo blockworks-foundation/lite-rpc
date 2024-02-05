@@ -41,6 +41,7 @@ use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceCon
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
+use lite_rpc::postgres_logger;
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -52,7 +53,6 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
-use lite_rpc::postgres_logger;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,

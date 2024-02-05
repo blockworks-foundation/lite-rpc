@@ -1,13 +1,12 @@
-use bytes::Bytes;
 use futures_util::pin_mut;
-use log::{debug, trace, warn};
+use log::debug;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::slot_history::Slot;
-use solana_sdk::transaction::{TransactionError, VersionedTransaction};
+use solana_sdk::transaction::TransactionError;
 use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::types::{ToSql, Type};
+use tokio_postgres::types::Type;
 use tokio_postgres::CopyInSink;
 
 use super::postgres_epoch::*;
@@ -25,7 +24,6 @@ pub struct PostgresTransaction {
     pub recent_blockhash: String,
     pub message: String,
 }
-
 
 impl PostgresTransaction {
     pub fn new(value: &TransactionInfo, slot: Slot) -> Self {
@@ -45,14 +43,13 @@ impl PostgresTransaction {
         }
     }
 
-    pub fn into_transaction_info(&self) -> TransactionInfo {
+    pub fn to_transaction_info(&self) -> TransactionInfo {
         TransactionInfo {
             signature: self.signature.clone(),
             err: self
                 .err
                 .as_ref()
-                .map(|x| BASE64.deserialize::<TransactionError>(x).ok())
-                .flatten(),
+                .and_then(|x| BASE64.deserialize::<TransactionError>(x).ok()),
             cu_requested: self.cu_requested.map(|x| x as u32),
             prioritization_fees: self.prioritization_fees.map(|x| x as u64),
             cu_consumed: self.cu_consumed.map(|x| x as u64),
@@ -157,8 +154,7 @@ impl PostgresTransaction {
                 Type::INT8,
                 Type::TEXT,
                 Type::TEXT,
-                Type::TEXT
-                // model_transaction_blockdata
+                Type::TEXT, // model_transaction_blockdata
             ],
         );
         pin_mut!(writer);
@@ -242,10 +238,7 @@ impl PostgresTransaction {
         Ok(())
     }
 
-    pub fn build_query_statement(
-        epoch: EpochRef,
-        slot: Slot,
-    ) -> String {
+    pub fn build_query_statement(epoch: EpochRef, slot: Slot) -> String {
         format!(
             r#"
                 SELECT
