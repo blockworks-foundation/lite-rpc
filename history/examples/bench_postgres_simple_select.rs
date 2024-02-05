@@ -3,8 +3,8 @@ use itertools::Itertools;
 /// test program to query postgres the simples possible way
 ///
 use log::info;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
-use solana_lite_rpc_history::postgres::postgres_session::PostgresSession;
+use solana_lite_rpc_history::block_stores::postgres::postgres_config::PostgresSessionConfig;
+use solana_lite_rpc_history::block_stores::postgres::postgres_session::PostgresSession;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {

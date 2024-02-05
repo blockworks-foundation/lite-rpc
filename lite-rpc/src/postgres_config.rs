@@ -56,24 +56,3 @@ impl PostgresSessionConfig {
     }
 }
 
-impl PostgresSessionConfig {
-    pub fn new_for_tests() -> PostgresSessionConfig {
-        assert!(
-            env::var("PG_CONFIG").is_err(),
-            "MUST NOT provide PG_CONFIG environment variables as they are ignored!"
-        );
-
-        // see localdev_integrationtest.sql how to setup the database
-        PostgresSessionConfig {
-            pg_config: r#"
-            host=localhost
-            dbname=literpc_integrationtest_localdev
-            user=literpc_integrationtest
-            password=youknowme
-            sslmode=disable
-            "#
-            .to_string(),
-            ssl: None,
-        }
-    }
-}
