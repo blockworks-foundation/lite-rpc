@@ -15,12 +15,12 @@ lazy_static::lazy_static! {
 }
 
 #[derive(Clone)]
-pub struct ALTStore {
+pub struct AddressLookupTableStore {
     rpc_client: Arc<RpcClient>,
     pub map: Arc<DashMap<Pubkey, Vec<Pubkey>>>,
 }
 
-impl ALTStore {
+impl AddressLookupTableStore {
     pub fn new(rpc_client: Arc<RpcClient>) -> Self {
         Self {
             rpc_client,
@@ -94,6 +94,8 @@ impl ALTStore {
     }
 
     pub async fn reload_alt_account(&self, address: &Pubkey) {
+        log::debug!("Reloading {address:?}");
+
         let account = match self
             .rpc_client
             .get_account_with_commitment(address, CommitmentConfig::processed())
@@ -182,7 +184,7 @@ impl BinaryALTData {
 }
 
 #[async_trait]
-impl AddressLookupTableInterface for ALTStore {
+impl AddressLookupTableInterface for AddressLookupTableStore {
     async fn get_address_lookup_table(
         &self,
         message_address_table_lookup: &solana_sdk::message::v0::MessageAddressTableLookup,

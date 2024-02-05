@@ -10,7 +10,7 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
 use log::{debug, info};
 use solana_lite_rpc_blockstore::history::History;
-use solana_lite_rpc_address_lookup_tables::alt_store::ALTStore;
+use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
@@ -204,13 +204,16 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let address_lookup_tables: Option<Arc<dyn AddressLookupTableInterface>> =
         if enable_address_lookup_tables.unwrap_or_default() {
-            let alts_store = ALTStore::new(rpc_client.clone());
+            log::info!("ALTs enabled");
+            let alts_store = AddressLookupTableStore::new(rpc_client.clone());
             if let Some(address_lookup_tables_binary) = address_lookup_tables_binary {
                 match tokio::fs::File::open(address_lookup_tables_binary).await {
                     Ok(mut alts_file) => {
                         let mut buf = vec![];
                         alts_file.read_to_end(&mut buf).await.unwrap();
                         alts_store.load_binary(buf);
+
+                        log::info!("{} ALTs loaded from binary file", alts_store.map.len());
                     }
                     Err(e) => {
                         log::error!("Error loading address lookup tables binary : {e:?}");
@@ -220,6 +223,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             }
             Some(Arc::new(alts_store))
         } else {
+            log::info!("ALTs disabled");
             None
         };
 

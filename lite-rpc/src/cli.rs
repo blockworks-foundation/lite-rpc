@@ -70,7 +70,7 @@ pub struct Config {
 
     #[serde(default)]
     pub max_number_of_connection: Option<usize>,
-    
+
     #[serde(default)]
     pub address_lookup_tables_binary: Option<String>,
 
