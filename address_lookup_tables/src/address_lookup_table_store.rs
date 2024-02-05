@@ -28,18 +28,8 @@ impl AddressLookupTableStore {
         }
     }
 
-    pub async fn load_alts_list(&self, alts_list: &[Pubkey]) {
+    async fn load_alts_list(&self, alts_list: &[Pubkey]) {
         log::trace!("Preloading {} ALTs", alts_list.len());
-
-        let alts_list = alts_list
-            .iter()
-            .filter(|x| !self.map.contains_key(x))
-            .cloned()
-            .collect_vec();
-        if alts_list.is_empty() {
-            return;
-        }
-
         for batches in alts_list.chunks(1000).map(|x| x.to_vec()) {
             let tasks = batches.chunks(100).map(|batch| {
                 let batch = batch.to_vec();
@@ -93,8 +83,31 @@ impl AddressLookupTableStore {
         drop(lookup_table);
     }
 
+    pub async fn reload_if_necessary(
+        &self,
+        alt_messages: &[&solana_sdk::message::v0::MessageAddressTableLookup],
+    ) {
+        let accounts_to_load = alt_messages
+            .iter()
+            .filter_map(|alt| match self.map.get(&alt.account_key) {
+                Some(alt_data) => {
+                    let size = alt_data.len() as u8;
+                    if alt.readonly_indexes.iter().any(|x| *x >= size)
+                        || alt.writable_indexes.iter().any(|x| *x >= size)
+                    {
+                        Some(alt.account_key)
+                    } else {
+                        None
+                    }
+                }
+                None => Some(alt.account_key),
+            })
+            .collect_vec();
+        self.load_alts_list(&accounts_to_load).await;
+    }
+
     pub async fn reload_alt_account(&self, address: &Pubkey) {
-        log::debug!("Reloading {address:?}");
+        log::info!("Reloading {address:?}");
 
         let account = match self
             .rpc_client
@@ -122,14 +135,6 @@ impl AddressLookupTableStore {
     }
 
     async fn load_accounts(&self, alt: &Pubkey, accounts: &[u8]) -> Option<Vec<Pubkey>> {
-        let do_reload = match self.map.get(alt) {
-            Some(lookup_table) => accounts.iter().any(|x| *x as usize >= lookup_table.len()),
-            None => true,
-        };
-        if do_reload {
-            self.reload_alt_account(alt).await;
-        }
-
         let alt_account = self.map.get(alt);
         match alt_account {
             Some(alt_account) => Some(
@@ -201,5 +206,13 @@ impl AddressLookupTableInterface for AddressLookupTableStore {
             )
             .await,
         )
+    }
+
+    async fn reload_if_necessary(
+        &self,
+        message_address_table_lookups: &[&solana_sdk::message::v0::MessageAddressTableLookup],
+    ) {
+        self.reload_if_necessary(message_address_table_lookups)
+            .await;
     }
 }

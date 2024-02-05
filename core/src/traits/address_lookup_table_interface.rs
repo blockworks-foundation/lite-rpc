@@ -7,4 +7,9 @@ pub trait AddressLookupTableInterface: Send + Sync {
         &self,
         message_address_table_lookup: &MessageAddressTableLookup,
     ) -> (Vec<Pubkey>, Vec<Pubkey>);
+
+    async fn reload_if_necessary(
+        &self,
+        message_address_table_lookups: &[&MessageAddressTableLookup],
+    );
 }

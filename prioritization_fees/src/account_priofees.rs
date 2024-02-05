@@ -50,12 +50,24 @@ impl AccountPrioStore {
             .iter()
             .filter(|x| !x.is_vote)
             .sorted_by(|a, b| a.prioritization_fees.cmp(&b.prioritization_fees))
-            .rev();
+            .rev()
+            .collect_vec();
         // accounts
         let mut accounts_by_prioritization_write: HashMap<Pubkey, Vec<PrioFeesData>> =
             HashMap::new();
         let mut accounts_by_prioritization_read_write: HashMap<Pubkey, Vec<PrioFeesData>> =
             HashMap::new();
+
+        if let Some(alt_fetcher) = &self.address_lookup_tables_impl {
+            let alt_messages = transactions
+                .iter()
+                .flat_map(|x| &x.address_lookup_tables)
+                .collect_vec();
+
+            log::trace!("Checking to reload {} accounts", alt_messages.len());
+            alt_fetcher.reload_if_necessary(&alt_messages).await;
+        }
+
         for transaction in transactions {
             let value = PrioFeesData {
                 priority: transaction.prioritization_fees.unwrap_or_default(),

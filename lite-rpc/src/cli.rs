@@ -190,10 +190,13 @@ impl Config {
             postgres_logger::PostgresSessionConfig::new_from_env()?.or(config.postgres);
 
         config.enable_address_lookup_tables = env::var("ENABLE_ADDRESS_LOOKUP_TABLES")
-            .map(|val| val == "True" || val == "true")
-            .ok();
+            .map(|value| value.parse::<bool>().unwrap())
+            .ok()
+            .or(config.enable_address_lookup_tables);
 
-        config.address_lookup_tables_binary = env::var("ADDRESS_LOOKUP_TABLES_BINARY").ok();
+        config.address_lookup_tables_binary = env::var("ADDRESS_LOOKUP_TABLES_BINARY")
+            .ok()
+            .or(config.address_lookup_tables_binary);
         Ok(config)
     }
 
