@@ -22,6 +22,7 @@ use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{create_grpc_multiplex_bl
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::from_grpc_block_update;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{create_geyser_reconnecting_stream, GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use solana_lite_rpc_history::block_stores::postgres::postgres_block_store::PostgresBlockStore;
+use solana_lite_rpc_history::block_stores::postgres::postgres_query_block_store::PostgresQueryBlockStore;
 use solana_lite_rpc_history::block_stores::postgres::PostgresSessionConfig;
 
 // force ordered stream of blocks
@@ -78,10 +79,13 @@ async fn storage_test() {
 
     let (epoch_cache, _) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
+    let block_storage_query = Arc::new(PostgresQueryBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await);
+
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_cache, pg_session_config).await);
     let current_epoch = rpc_client.get_epoch_info().await.unwrap().epoch;
     block_storage.drop_epoch_schema(EpochRef::new(current_epoch)).await.unwrap();
     block_storage.drop_epoch_schema(EpochRef::new(current_epoch).get_next_epoch()).await.unwrap();
+
 
     let (jh1_1, first_init) =
         storage_prepare_epoch_schema(slot_notifier.resubscribe(), block_storage.clone());
@@ -90,7 +94,7 @@ async fn storage_test() {
 
     let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
     let jh2 = block_debug_listen(blocks_notifier.resubscribe());
-    let jh3 = spawn_client_to_blockstorage(block_storage.clone(), blocks_notifier.resubscribe());
+    let jh3 = spawn_client_to_blockstorage(block_storage_query.clone(), blocks_notifier.resubscribe());
     drop(blocks_notifier);
 
     let seconds_to_run = env::var("SECONDS_TO_RUN").map(|s| s.parse::<u64>().expect("a number")).unwrap_or(20);
@@ -282,7 +286,7 @@ fn block_debug_listen(block_notifier: BlockStream) -> JoinHandle<()> {
 }
 
 
-fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut blocks_notifier: Receiver<ProducedBlock>) -> JoinHandle<()> {
+fn spawn_client_to_blockstorage(block_storage_query: Arc<PostgresQueryBlockStore>, mut blocks_notifier: Receiver<ProducedBlock>) -> JoinHandle<()> {
     tokio::spawn(async move {
         // note: no startup deloy
         loop {
@@ -294,7 +298,7 @@ fn spawn_client_to_blockstorage(block_storage: Arc<PostgresBlockStore>, mut bloc
                     let confirmed_slot = slot;
                     // we cannot expect the most recent data
                     let query_slot = confirmed_slot - 3;
-                    match block_storage.query_block(query_slot).await {
+                    match block_storage_query.query_block(query_slot).await {
                         Ok(pb) => {
                             info!("Query result for slot {}: {}", query_slot, to_string_without_transactions(&pb));
                             for tx in pb.transactions.iter().take(10) {

@@ -7,6 +7,7 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
 use std::ops::{Deref, RangeInclusive};
 use std::sync::Arc;
+use crate::block_stores::postgres::postgres_query_block_store::PostgresQueryBlockStore;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {
@@ -33,7 +34,7 @@ impl Deref for BlockStorageData {
 
 // you might need to add a read-cache instead
 pub struct MultipleStrategyBlockStorage {
-    persistent_block_storage: PostgresBlockStore, // for persistent block storage
+    block_storage_query: PostgresQueryBlockStore,
     // note supported ATM
     faithful_block_storage: Option<FaithfulBlockStore>, // to fetch legacy blocks from faithful
                                                         // last_confirmed_slot: Arc<AtomicU64>,
@@ -41,11 +42,11 @@ pub struct MultipleStrategyBlockStorage {
 
 impl MultipleStrategyBlockStorage {
     pub fn new(
-        persistent_block_storage: PostgresBlockStore,
+        block_storage_query: PostgresQueryBlockStore,
         _faithful_rpc_client: Option<Arc<RpcClient>>,
     ) -> Self {
         Self {
-            persistent_block_storage,
+            block_storage_query,
             // faithful not used ATM
             faithful_block_storage: None,
             // faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
@@ -55,7 +56,7 @@ impl MultipleStrategyBlockStorage {
     // we need to build the slots from right to left
     pub async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         // merge them
-        let persistent_storage_range = self.persistent_block_storage.get_slot_range().await;
+        let persistent_storage_range = self.block_storage_query.get_slot_range().await;
         trace!("Persistent storage range: {:?}", persistent_storage_range);
 
         let mut lower = *persistent_storage_range.start();
@@ -95,14 +96,14 @@ impl MultipleStrategyBlockStorage {
         // 2.1. if yes; fetch from Postgres
         // 2.2. if not: try to fetch from faithful
 
-        match self.persistent_block_storage.is_block_in_range(slot).await {
+        match self.block_storage_query.is_block_in_range(slot).await {
             true => {
                 debug!(
                     "Assume block {} to be available in persistent block-storage",
                     slot,
                 );
                 let lookup = self
-                    .persistent_block_storage
+                    .block_storage_query
                     .query_block(slot)
                     .await
                     .context(format!("block {} not found although it was in range", slot));
