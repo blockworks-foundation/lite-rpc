@@ -200,7 +200,7 @@ pub async fn start_stakes_and_votes_loop(
                                                     }
                                                 }
                                             }
-                                            None => log::error!("Bootstrap error, can't read stake history from geyser account data."),
+                                            None => log::error!("Bootstrap error, can't read stake blockstore from geyser account data."),
                                         }
                                     }
                                 }

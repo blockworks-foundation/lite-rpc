@@ -154,7 +154,7 @@ impl LiteBridge {
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
     async fn get_block(&self, _slot: u64) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
-        // let block = self.history.block_storage.query_block(slot).await;
+        // let block = self.blockstore.block_storage.query_block(slot).await;
         // if block.is_ok() {
         //     // TO DO Convert to UIConfirmed Block
         //     Err(jsonrpsee::core::Error::HttpNotImplemented)
@@ -162,7 +162,7 @@ impl LiteRpcServer for LiteBridge {
         //     Ok(None)
         // }
 
-        // TODO get_block might deserve different implementation based on whether we serve from "history module" vs. from "send tx module"
+        // TODO get_block might deserve different implementation based on whether we serve from "blockstore module" vs. from "send tx module"
         todo!("get_block: decide where to look")
     }
 

@@ -253,7 +253,7 @@ impl PostgresLogger {
                                     tx_batch.append(&mut tx)
                                 }
                                 NotificationMsg::BlockNotificationMsg(_) => {
-                                    // ignore block storage as it has been moved to persistant history.
+                                    // ignore block storage as it has been moved to persistant blockstore.
                                     continue;
                                 }
                                 NotificationMsg::UpdateTransactionMsg(update) => {

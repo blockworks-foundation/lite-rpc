@@ -11,7 +11,7 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 pub struct FaithfulBlockStore {
-    faithful_rpc_client: Arc<RpcClient>, // to fetch legacy blocks from faithful
+    faithful_rpc_client: Arc<RpcClient>, // to fetch legacy blocks from faithful_history
 }
 
 impl FaithfulBlockStore {
@@ -48,7 +48,10 @@ impl FaithfulBlockStore {
                 CommitmentConfig::finalized(),
             )),
             Err(err) => {
-                bail!(format!("Block {} not found in faithful: {}", slot, err));
+                bail!(format!(
+                    "Block {} not found in faithful_history: {}",
+                    slot, err
+                ));
             }
         }
     }
