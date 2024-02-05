@@ -10,7 +10,8 @@ members = [
     "cluster-endpoints",
     "blockstore",
     "prioritization_fees",
-    "bench"
+    "bench",
+    "address_lookup_tables"
 ]
 
 [workspace.package]
@@ -33,6 +34,8 @@ solana-streamer = "~1.17.15"
 solana-account-decoder = "~1.17.15"
 solana-ledger = "~1.17.15"
 solana-program = "~1.17.15"
+solana-address-lookup-table-program = "~1.17.15"
+
 itertools = "0.10.5"
 rangetools = "0.1.4"
 serde = { version = "1.0.160", features = ["derive"] }

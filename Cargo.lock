@@ -4156,6 +4156,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "solana-address-lookup-table-program"
+version = "1.17.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d89cd9fd1668735eab8c83407bde1d073a35c0486c0d9f1afc9ef75b9b726f94"
+dependencies = [
+ "bincode",
+ "bytemuck",
+ "log",
+ "num-derive 0.3.3",
+ "num-traits 0.2.17",
+ "rustc_version",
+ "serde",
+ "solana-frozen-abi",
+ "solana-frozen-abi-macro",
+ "solana-program",
+ "solana-program-runtime",
+ "solana-sdk",
+ "thiserror",
+]
+
+[[package]]
 name = "solana-clap-utils"
 version = "1.17.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4285,39 +4306,41 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-blockstore"
+name = "solana-lite-address-lookup-tables"
 version = "0.2.4"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.21.7",
  "bincode",
+ "bs58",
  "bytes",
  "chrono",
  "dashmap 5.5.3",
  "futures",
  "futures-util",
  "itertools 0.10.5",
- "jsonrpsee",
- "log",
- "native-tls",
- "postgres-native-tls",
- "rand 0.8.5",
- "rangetools",
+ "prometheus",
+ "quinn",
+ "rustls",
  "serde",
  "serde_json",
- "solana-lite-rpc-cluster-endpoints",
+ "solana-account-decoder",
+ "solana-address-lookup-table-program",
+ "solana-client",
  "solana-lite-rpc-core",
+ "solana-net-utils",
+ "solana-pubsub-client",
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",
+ "solana-streamer",
  "solana-transaction-status",
+ "solana-version",
+ "thiserror",
  "tokio",
- "tokio-postgres",
- "tokio-util",
- "tracing-subscriber",
 ]
 
-[[package]]
 name = "solana-lite-rpc-cluster-endpoints"
 version = "0.2.4"
 dependencies = [

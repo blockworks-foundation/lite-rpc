@@ -3,7 +3,7 @@ name = "solana-lite-address-lookup-tables"
 version = "0.2.4"
 edition = "2021"
 description = "Library to save and update address lookup tables in lite-rpc"
-rust-version = "1.70.0"
+rust-version = "1.73.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
@@ -18,6 +18,8 @@ solana-pubsub-client = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-streamer = { workspace = true }
 solana-account-decoder = { workspace = true }
+solana-address-lookup-table-program = { workspace = true }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = "1.*"
@@ -35,3 +37,7 @@ chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
 itertools = { workspace = true }
+prometheus = { workspace = true }
+lazy_static = { workspace = true }
+
+solana-lite-rpc-core = { workspace = true }
