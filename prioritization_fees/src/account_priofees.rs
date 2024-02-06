@@ -44,13 +44,12 @@ impl AccountPrioStore {
     }
 
     pub async fn update(&self, produced_block: &ProducedBlock) -> AccountPrioFeesUpdateMessage {
-        // sort by ascending order
+        // sort by ascending order of priority
         let transactions = produced_block
             .transactions
             .iter()
             .filter(|x| !x.is_vote)
             .sorted_by(|a, b| a.prioritization_fees.cmp(&b.prioritization_fees))
-            .rev()
             .collect_vec();
         // accounts
         let mut accounts_by_prioritization_write: HashMap<Pubkey, Vec<PrioFeesData>> =
@@ -79,7 +78,7 @@ impl AccountPrioStore {
             if let Some(alt_fetcher) = &self.address_lookup_tables_impl {
                 for transaction_lookup_table in &transaction.address_lookup_tables {
                     let (mut alts_w, mut alts_r) = alt_fetcher
-                        .get_address_lookup_table(transaction_lookup_table)
+                        .resolve_addresses_from_lookup_table(transaction_lookup_table)
                         .await;
                     writable_accounts.append(&mut alts_w);
                     readable_accounts.append(&mut alts_r);

@@ -53,7 +53,7 @@ impl AddressLookupTableStore {
                         }
                         Err(e) => {
                             log::error!(
-                                "error loading {} alts with error {}",
+                                "error loading {} alts with error {}, skipping lookup for this batch and continue",
                                 batch.len(),
                                 e.to_string()
                             );
@@ -65,7 +65,10 @@ impl AddressLookupTableStore {
                 .await
                 .is_err()
             {
-                log::error!("timeout loading {} alts", alts_list.len());
+                log::error!(
+                    "timeout loading {} alts, skipping lookup for this batch and continue",
+                    alts_list.len()
+                );
             }
         }
         LRPC_ALTS_IN_STORE.set(self.map.len() as i64);
@@ -134,7 +137,11 @@ impl AddressLookupTableStore {
         }
     }
 
-    async fn load_accounts(&self, alt: &Pubkey, accounts: &[u8]) -> Option<Vec<Pubkey>> {
+    async fn get_accounts_in_address_lookup_table(
+        &self,
+        alt: &Pubkey,
+        accounts: &[u8],
+    ) -> Option<Vec<Pubkey>> {
         let alt_account = self.map.get(alt);
         match alt_account {
             Some(alt_account) => Some(
@@ -151,7 +158,10 @@ impl AddressLookupTableStore {
     }
 
     pub async fn get_accounts(&self, alt: &Pubkey, accounts: &[u8]) -> Vec<Pubkey> {
-        match self.load_accounts(alt, accounts).await {
+        match self
+            .get_accounts_in_address_lookup_table(alt, accounts)
+            .await
+        {
             Some(x) => x,
             None => {
                 // forget alt for now, start loading it for next blocks
@@ -165,6 +175,7 @@ impl AddressLookupTableStore {
         bincode::serialize::<BinaryALTData>(&BinaryALTData::new(&self.map)).unwrap()
     }
 
+    /// To load binary ALT file at the startup
     pub fn load_binary(&self, binary_data: Vec<u8>) {
         let binary_alt_data = bincode::deserialize::<BinaryALTData>(&binary_data).unwrap();
         for (alt, accounts) in binary_alt_data.data.iter() {
@@ -175,7 +186,7 @@ impl AddressLookupTableStore {
 
 #[derive(Serialize, Deserialize)]
 pub struct BinaryALTData {
-    pub data: Vec<(Pubkey, Vec<Pubkey>)>,
+    data: Vec<(Pubkey, Vec<Pubkey>)>,
 }
 
 impl BinaryALTData {
@@ -190,7 +201,7 @@ impl BinaryALTData {
 
 #[async_trait]
 impl AddressLookupTableInterface for AddressLookupTableStore {
-    async fn get_address_lookup_table(
+    async fn resolve_addresses_from_lookup_table(
         &self,
         message_address_table_lookup: &solana_sdk::message::v0::MessageAddressTableLookup,
     ) -> (Vec<Pubkey>, Vec<Pubkey>) {
