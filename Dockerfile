@@ -1,11 +1,8 @@
 # syntax = docker/dockerfile:1.2
-
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y clang libssl3 libssl-dev openssl cmake ssh
-
 FROM rust:1.73.0 as base
 RUN cargo install cargo-chef --locked
 RUN rustup component add rustfmt
+RUN apt-get update && apt-get install -y clang cmake ssh
 WORKDIR /app
 
 FROM base AS plan
@@ -20,7 +17,7 @@ COPY . .
 RUN cargo build --release --bin lite-rpc --bin solana-lite-rpc-quic-forward-proxy
 
 FROM debian:bullseye-slim as run
-RUN apt-get update && apt-get -y install ca-certificates libc6
+RUN apt-get update && apt-get -y install ca-certificates libc6 libssl3 libssl-dev openssl
 COPY --from=build /app/target/release/solana-lite-rpc-quic-forward-proxy /usr/local/bin/
 COPY --from=build /app/target/release/lite-rpc /usr/local/bin/
 
