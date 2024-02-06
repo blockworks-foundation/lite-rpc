@@ -48,8 +48,9 @@ pub fn debugtask_blockstream_confirmation_sequence(
                             }
                             Some(prev) => {
                                 // this is actually fatal
-                                error!(
-                                    "should not see same processed slot twice ({}) - saw at {:?}",
+                                warn!(
+                                    "should not see same processed slot twice ({}, {}) - saw at {:?}",
+                                    slot,
                                     blockhash,
                                     format_timestamp(&prev.1)
                                 );
@@ -65,7 +66,7 @@ pub fn debugtask_blockstream_confirmation_sequence(
                             }
                             Some(prev) => {
                                 // this is actually fatal
-                                error!(
+                                warn!(
                                     "should not see same confirmed slot twice ({}) - saw at {:?}",
                                     blockhash,
                                     format_timestamp(&prev.1)
@@ -82,7 +83,7 @@ pub fn debugtask_blockstream_confirmation_sequence(
                             }
                             Some(prev) => {
                                 // this is actually fatal
-                                error!(
+                                warn!(
                                     "should not see same finalized slot twice ({}) - saw at {:?}",
                                     slot,
                                     format_timestamp(&prev.1)
@@ -96,10 +97,10 @@ pub fn debugtask_blockstream_confirmation_sequence(
                         if saw_processed_at.contains_key(&blockhash) {
                             // okey
                         } else {
-                            error!("should not see confirmed slot without seeing processed slot first ({})", blockhash);
+                            warn!("should not see confirmed slot without seeing processed slot first ({})", blockhash);
                         }
                         if saw_finalized_at.contains_key(&blockhash) {
-                            error!(
+                            warn!(
                                 "should not see confirmed slot after seeing finalized slot ({})",
                                 blockhash
                             );
@@ -111,7 +112,7 @@ pub fn debugtask_blockstream_confirmation_sequence(
                     // rule: if processed, we should have seen neither confirmed nor finalized
                     if block.commitment_config.is_processed() {
                         if saw_confirmed_at.contains_key(&blockhash) {
-                            error!(
+                            warn!(
                                 "should not see processed slot after seeing confirmed slot ({})",
                                 blockhash
                             );
@@ -119,7 +120,7 @@ pub fn debugtask_blockstream_confirmation_sequence(
                             // okey
                         }
                         if saw_finalized_at.contains_key(&blockhash) {
-                            error!(
+                            warn!(
                                 "should not see processed slot after seeing finalized slot ({})",
                                 blockhash
                             );
@@ -133,12 +134,12 @@ pub fn debugtask_blockstream_confirmation_sequence(
                         if saw_processed_at.contains_key(&blockhash) {
                             // okey
                         } else {
-                            error!("should not see finalized slot without seeing processed slot first ({})", blockhash);
+                            warn!("should not see finalized slot without seeing processed slot first ({})", blockhash);
                         }
                         if saw_confirmed_at.contains_key(&blockhash) {
                             // okey
                         } else {
-                            error!("should not see finalized slot without seeing confirmed slot first ({})", blockhash);
+                            warn!("should not see finalized slot without seeing confirmed slot first ({})", blockhash);
                         }
 
                         if let (Some(processed), Some(confirmed)) = (
@@ -245,7 +246,7 @@ pub fn debugtask_blockstream_slot_progression(
                     }
 
                     debug!(
-                        "Saw block: {} @ {} with {} txs",
+                        "Saw block on BlockStream: {} @ {} with {} txs",
                         block.slot,
                         block.commitment_config.commitment,
                         block.transactions.len()
