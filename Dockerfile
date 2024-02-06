@@ -16,7 +16,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
 RUN cargo build --release --bin lite-rpc --bin solana-lite-rpc-quic-forward-proxy
 
-FROM debian:bullseye-slim as run
+FROM debian:bookworm-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6 libssl3 libssl-dev openssl
 COPY --from=build /app/target/release/solana-lite-rpc-quic-forward-proxy /usr/local/bin/
 COPY --from=build /app/target/release/lite-rpc /usr/local/bin/
