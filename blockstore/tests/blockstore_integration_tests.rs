@@ -25,27 +25,31 @@ use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
 mod integration_tests {
-    use std::{env, process};
-    use std::sync::Arc;
-    use std::time::{Duration, Instant};
     use log::{debug, error, info, warn};
+    use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
+    use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
+    use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
+    use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{
+        create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription,
+    };
+    use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+        GrpcConnectionTimeouts, GrpcSourceConfig,
+    };
+    use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};
+    use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+    use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
+    use solana_lite_rpc_core::types::{BlockStream, SlotStream};
     use solana_rpc_client::nonblocking::rpc_client::RpcClient;
     use solana_sdk::commitment_config::CommitmentConfig;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+    use std::{env, process};
     use tokio::sync::broadcast::error::RecvError;
     use tokio::sync::broadcast::Receiver;
     use tokio::task::JoinHandle;
     use tokio::time::sleep;
     use tokio_util::sync::CancellationToken;
     use tracing_subscriber::EnvFilter;
-    use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
-    use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
-    use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
-    use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription};
-    use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{GrpcConnectionTimeouts, GrpcSourceConfig};
-    use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};
-    use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-    use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
-    use solana_lite_rpc_core::types::{BlockStream, SlotStream};
 
     const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 
@@ -76,10 +80,10 @@ mod integration_tests {
         let grpc_x_token = env::var("GRPC_X_TOKEN").ok();
 
         info!(
-        "Using grpc source on {} ({})",
-        grpc_addr,
-        grpc_x_token.is_some()
-    );
+            "Using grpc source on {} ({})",
+            grpc_addr,
+            grpc_x_token.is_some()
+        );
 
         let timeouts = GrpcConnectionTimeouts {
             connect_timeout: Duration::from_secs(5),
@@ -120,8 +124,10 @@ mod integration_tests {
 
         let jh1_2 = storage_listen(blocks_notifier.resubscribe(), block_storage.clone());
         let jh2 = block_debug_listen(blocks_notifier.resubscribe());
-        let jh3 =
-            spawn_client_to_blockstorage(block_storage_query.clone(), blocks_notifier.resubscribe());
+        let jh3 = spawn_client_to_blockstorage(
+            block_storage_query.clone(),
+            blocks_notifier.resubscribe(),
+        );
         drop(blocks_notifier);
 
         let seconds_to_run = env::var("SECONDS_TO_RUN")
@@ -162,9 +168,9 @@ mod integration_tests {
                                 debug!("Async job prepared schema at slot {}", processed_slot);
                             } else {
                                 debug!(
-                                "Async job for preparing schema at slot {} was a noop",
-                                processed_slot
-                            );
+                                    "Async job for preparing schema at slot {} was a noop",
+                                    processed_slot
+                                );
                             }
                         }
                     }
@@ -196,24 +202,24 @@ mod integration_tests {
                     Ok(block) => {
                         if block.commitment_config != CommitmentConfig::confirmed() {
                             debug!(
-                            "Skip block {}@{} due to commitment level",
-                            block.slot, block.commitment_config.commitment
-                        );
+                                "Skip block {}@{} due to commitment level",
+                                block.slot, block.commitment_config.commitment
+                            );
                             continue;
                         }
                         let started = Instant::now();
                         debug!(
-                        "Storage task received block: {}@{} with {} txs",
-                        block.slot,
-                        block.commitment_config.commitment,
-                        block.transactions.len()
-                    );
+                            "Storage task received block: {}@{} with {} txs",
+                            block.slot,
+                            block.commitment_config.commitment,
+                            block.transactions.len()
+                        );
 
                         if block_notifier.len() > CHANNEL_SIZE_WARNING_THRESHOLD {
                             warn!(
-                            "(soft_realtime) Block queue is growing - {} elements",
-                            block_notifier.len()
-                        );
+                                "(soft_realtime) Block queue is growing - {} elements",
+                                block_notifier.len()
+                            );
                         }
 
                         // TODO we should intercept finalized blocks and try to update only the status optimistically
@@ -236,13 +242,13 @@ mod integration_tests {
                         // debounce for 4 slots but run at least every 10 slots
                         if block.slot > last_optimizer_run + OPTIMIZE_EVERY_N_SLOTS
                             || block.slot > last_optimizer_run + OPTIMIZE_DEBOUNCE_SLOTS
-                            && started.elapsed() < Duration::from_millis(200)
-                            && block_notifier.is_empty()
+                                && started.elapsed() < Duration::from_millis(200)
+                                && block_notifier.is_empty()
                         {
                             debug!(
-                            "Use extra time to do some optimization (slot {})",
-                            block.slot
-                        );
+                                "Use extra time to do some optimization (slot {})",
+                                block.slot
+                            );
                             block_storage
                                 .optimize_blocks_table(block.slot)
                                 .await
@@ -252,9 +258,9 @@ mod integration_tests {
                     } // -- Ok
                     Err(RecvError::Lagged(missed_blocks)) => {
                         warn!(
-                        "Could not keep up with producer - missed {} blocks",
-                        missed_blocks
-                    );
+                            "Could not keep up with producer - missed {} blocks",
+                            missed_blocks
+                        );
                     }
                     Err(other_err) => {
                         warn!("Error receiving block: {:?}", other_err);
@@ -275,11 +281,11 @@ mod integration_tests {
                 match block_notifier.recv().await {
                     Ok(block) => {
                         debug!(
-                        "Saw block: {}@{} with {} txs",
-                        block.slot,
-                        block.commitment_config.commitment,
-                        block.transactions.len()
-                    );
+                            "Saw block: {}@{} with {} txs",
+                            block.slot,
+                            block.commitment_config.commitment,
+                            block.transactions.len()
+                        );
 
                         // check monotony
                         // note: this succeeds if poll_block parallelism is 1 (see NUM_PARALLEL_BLOCKS)
@@ -297,9 +303,9 @@ mod integration_tests {
                     } // -- Ok
                     Err(RecvError::Lagged(missed_blocks)) => {
                         warn!(
-                        "Could not keep up with producer - missed {} blocks",
-                        missed_blocks
-                    );
+                            "Could not keep up with producer - missed {} blocks",
+                            missed_blocks
+                        );
                     }
                     Err(other_err) => {
                         panic!("Error receiving block: {:?}", other_err);
@@ -320,10 +326,10 @@ mod integration_tests {
             loop {
                 match blocks_notifier.recv().await {
                     Ok(ProducedBlock {
-                           slot,
-                           commitment_config,
-                           ..
-                       }) => {
+                        slot,
+                        commitment_config,
+                        ..
+                    }) => {
                         if commitment_config != CommitmentConfig::confirmed() {
                             continue;
                         }
@@ -333,10 +339,10 @@ mod integration_tests {
                         match block_storage_query.query_block(query_slot).await {
                             Ok(pb) => {
                                 info!(
-                                "Query result for slot {}: {}",
-                                query_slot,
-                                to_string_without_transactions(&pb)
-                            );
+                                    "Query result for slot {}: {}",
+                                    query_slot,
+                                    to_string_without_transactions(&pb)
+                                );
                                 for tx in pb.transactions.iter().take(10) {
                                     info!("  - tx: {}", tx.signature);
                                 }
@@ -398,5 +404,4 @@ mod integration_tests {
             process::exit(12);
         }));
     }
-
 }
