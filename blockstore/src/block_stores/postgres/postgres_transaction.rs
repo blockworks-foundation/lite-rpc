@@ -59,6 +59,7 @@ impl PostgresTransaction {
             readable_accounts: vec![],
             writable_accounts: vec![],
             is_vote: false,
+            address_lookup_tables: vec![],
         }
     }
 
