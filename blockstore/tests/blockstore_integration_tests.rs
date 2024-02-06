@@ -2,6 +2,12 @@ use log::{debug, error, info, warn};
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
+use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{
+    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
+};
 use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
@@ -17,8 +23,6 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
-use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig};
-use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription};
 
 const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 #[ignore = "need to enable postgres"]
