@@ -2,6 +2,7 @@
 FROM rust:1.73.0 as base
 RUN cargo install cargo-chef --locked
 RUN rustup component add rustfmt
+FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y clang libssl3 libssl-dev openssl cmake ssh
 WORKDIR /app
 
