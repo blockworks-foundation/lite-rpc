@@ -127,7 +127,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
     // return value is the broadcast receiver
     let (producedblock_sender, blocks_output_stream) =
-        tokio::sync::broadcast::channel::<ProducedBlock>(1000);
+        tokio::sync::broadcast::channel::<ProducedBlock>(32);
 
     let jh_block_emitter_task = {
         tokio::task::spawn(async move {
@@ -277,7 +277,7 @@ pub fn create_grpc_multiplex_slots_subscription(
     }
 
     let (multiplexed_messages_sender, multiplexed_messages_rx) =
-        tokio::sync::broadcast::channel(1000);
+        tokio::sync::broadcast::channel(32);
 
     let jh = tokio::spawn(async move {
         loop {
