@@ -2,7 +2,7 @@
 FROM rust:1.73.0 as base
 RUN cargo install cargo-chef --locked
 RUN rustup component add rustfmt
-RUN apt-get update && apt-get install -y clang libssl3 libssl-dev cmake ssh
+RUN apt-get update && apt-get install -y clang libssl3 libssl-dev openssl cmake ssh
 WORKDIR /app
 
 FROM base AS plan
