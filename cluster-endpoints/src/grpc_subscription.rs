@@ -205,6 +205,11 @@ pub fn from_grpc_block_update(
                 .map(|(_, pk)| *pk)
                 .collect();
 
+            let address_lookup_tables = message
+                .address_table_lookups()
+                .map(|x| x.to_vec())
+                .unwrap_or_default();
+
             Some(TransactionInfo {
                 signature: signature.to_string(),
                 is_vote: is_vote_transaction,
@@ -216,6 +221,7 @@ pub fn from_grpc_block_update(
                 message: BASE64.encode(message.serialize()),
                 readable_accounts,
                 writable_accounts,
+                address_lookup_tables,
             })
         })
         .collect();

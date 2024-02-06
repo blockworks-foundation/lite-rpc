@@ -5,7 +5,10 @@ use std::{
 
 use dashmap::{mapref::multiple::RefMutMulti, DashMap};
 use itertools::Itertools;
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+use solana_lite_rpc_core::{
+    structures::produced_block::ProducedBlock,
+    traits::address_lookup_table_interface::AddressLookupTableInterface,
+};
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 
 use crate::{
@@ -23,37 +26,66 @@ pub struct AccountPrioStore {
     pub account_by_prio_fees_writeonly: Arc<DashMap<Pubkey, AccountPrio>>,
     pub number_of_slots_to_save: usize,
     pub last_slot: Arc<AtomicU64>,
+    pub address_lookup_tables_impl: Option<Arc<dyn AddressLookupTableInterface>>,
 }
 
 impl AccountPrioStore {
-    pub fn new(number_of_slots_to_save: usize) -> Self {
+    pub fn new(
+        number_of_slots_to_save: usize,
+        address_lookup_tables_impl: Option<Arc<dyn AddressLookupTableInterface>>,
+    ) -> Self {
         Self {
             account_by_prio_fees_all: Arc::new(DashMap::new()),
             account_by_prio_fees_writeonly: Arc::new(DashMap::new()),
             number_of_slots_to_save,
             last_slot: Arc::new(AtomicU64::new(0)),
+            address_lookup_tables_impl,
         }
     }
 
-    pub fn update(&self, produced_block: &ProducedBlock) -> AccountPrioFeesUpdateMessage {
-        // sort by ascending order
+    pub async fn update(&self, produced_block: &ProducedBlock) -> AccountPrioFeesUpdateMessage {
+        // sort by ascending order of priority
         let transactions = produced_block
             .transactions
             .iter()
             .filter(|x| !x.is_vote)
             .sorted_by(|a, b| a.prioritization_fees.cmp(&b.prioritization_fees))
-            .rev();
+            .collect_vec();
         // accounts
         let mut accounts_by_prioritization_write: HashMap<Pubkey, Vec<PrioFeesData>> =
             HashMap::new();
         let mut accounts_by_prioritization_read_write: HashMap<Pubkey, Vec<PrioFeesData>> =
             HashMap::new();
+
+        if let Some(alt_fetcher) = &self.address_lookup_tables_impl {
+            let alt_messages = transactions
+                .iter()
+                .flat_map(|x| &x.address_lookup_tables)
+                .collect_vec();
+
+            log::trace!("Checking to reload {} accounts", alt_messages.len());
+            alt_fetcher.reload_if_necessary(&alt_messages).await;
+        }
+
         for transaction in transactions {
             let value = PrioFeesData {
                 priority: transaction.prioritization_fees.unwrap_or_default(),
                 cu_consumed: transaction.cu_consumed.unwrap_or_default(),
             };
-            for write_lock in &transaction.writable_accounts {
+            let mut writable_accounts = transaction.writable_accounts.clone();
+            let mut readable_accounts = transaction.readable_accounts.clone();
+
+            if let Some(alt_fetcher) = &self.address_lookup_tables_impl {
+                for transaction_lookup_table in &transaction.address_lookup_tables {
+                    let (mut alts_w, mut alts_r) = alt_fetcher
+                        .resolve_addresses_from_lookup_table(transaction_lookup_table)
+                        .await;
+                    writable_accounts.append(&mut alts_w);
+                    readable_accounts.append(&mut alts_r);
+                }
+            }
+
+            for write_lock in &writable_accounts {
                 match accounts_by_prioritization_write.get_mut(write_lock) {
                     Some(acc_vec) => {
                         acc_vec.push(value);
@@ -73,7 +105,7 @@ impl AccountPrioStore {
                 }
             }
 
-            for readlock in &transaction.readable_accounts {
+            for readlock in &readable_accounts {
                 match accounts_by_prioritization_read_write.get_mut(readlock) {
                     Some(acc_vec) => {
                         acc_vec.push(value);

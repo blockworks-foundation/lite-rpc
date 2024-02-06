@@ -68,7 +68,14 @@ pub struct Config {
     #[serde(default)]
     pub postgres: Option<postgres_logger::PostgresSessionConfig>,
 
+    #[serde(default)]
     pub max_number_of_connection: Option<usize>,
+
+    #[serde(default)]
+    pub address_lookup_tables_binary: Option<String>,
+
+    #[serde(default)]
+    pub enable_address_lookup_tables: Option<bool>,
 }
 
 impl Config {
@@ -182,6 +189,14 @@ impl Config {
         config.postgres =
             postgres_logger::PostgresSessionConfig::new_from_env()?.or(config.postgres);
 
+        config.enable_address_lookup_tables = env::var("ENABLE_ADDRESS_LOOKUP_TABLES")
+            .map(|value| value.parse::<bool>().unwrap())
+            .ok()
+            .or(config.enable_address_lookup_tables);
+
+        config.address_lookup_tables_binary = env::var("ADDRESS_LOOKUP_TABLES_BINARY")
+            .ok()
+            .or(config.address_lookup_tables_binary);
         Ok(config)
     }
 
