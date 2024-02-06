@@ -80,6 +80,7 @@ impl DataCache {
                 commitment_config: CommitmentConfig::finalized(),
                 last_valid_blockheight: 300,
                 slot: 0,
+                block_time: 0,
             }),
             cluster_info: ClusterInfo::default(),
             identity_stakes: IdentityStakes::new(Pubkey::new_unique()),

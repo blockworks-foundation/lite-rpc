@@ -42,12 +42,13 @@ tokio = { version = "1.28.2", features = ["full", "fs"]}
 tokio-util = "0.7"
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 chrono = { workspace = true }
+itertools = { workspace = true }
 
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-services = { workspace = true }
 solana-lite-rpc-cluster-endpoints = { workspace = true }
-solana-lite-rpc-history = { workspace = true }
-solana-lite-rpc-block-priofees = { workspace = true }
+solana-lite-rpc-blockstore = { workspace = true }
+solana-lite-rpc-prioritization-fees = { workspace = true }
 
 [dev-dependencies]
 bench = { path = "../bench" }

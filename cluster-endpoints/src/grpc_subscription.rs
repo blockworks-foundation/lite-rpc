@@ -80,6 +80,14 @@ pub fn from_grpc_block_update(
 
             let signature = signatures[0];
             let compute_units_consumed = meta.compute_units_consumed;
+            let account_keys: Vec<Pubkey> = message
+                .account_keys
+                .into_iter()
+                .map(|key| {
+                    let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
+                    Pubkey::new_from_array(bytes)
+                })
+                .collect();
 
             let message = VersionedMessage::V0(v0::Message {
                 header: MessageHeader {
@@ -87,15 +95,7 @@ pub fn from_grpc_block_update(
                     num_readonly_signed_accounts: header.num_readonly_signed_accounts as u8,
                     num_readonly_unsigned_accounts: header.num_readonly_unsigned_accounts as u8,
                 },
-                account_keys: message
-                    .account_keys
-                    .into_iter()
-                    .map(|key| {
-                        let bytes: [u8; 32] =
-                            key.try_into().unwrap_or(Pubkey::default().to_bytes());
-                        Pubkey::new_from_array(bytes)
-                    })
-                    .collect(),
+                account_keys: account_keys.clone(),
                 recent_blockhash: Hash::new(&message.recent_blockhash),
                 instructions: message
                     .instructions
@@ -192,6 +192,19 @@ pub fn from_grpc_block_update(
                         .unwrap_or(false)
             });
 
+            let readable_accounts = account_keys
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| !message.is_maybe_writable(*index))
+                .map(|(_, pk)| *pk)
+                .collect();
+            let writable_accounts = account_keys
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| message.is_maybe_writable(*index))
+                .map(|(_, pk)| *pk)
+                .collect();
+
             Some(TransactionInfo {
                 signature: signature.to_string(),
                 is_vote: is_vote_transaction,
@@ -201,6 +214,8 @@ pub fn from_grpc_block_update(
                 cu_consumed: compute_units_consumed,
                 recent_blockhash: message.recent_blockhash().to_string(),
                 message: BASE64.encode(message.serialize()),
+                readable_accounts,
+                writable_accounts,
             })
         })
         .collect();

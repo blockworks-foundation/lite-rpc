@@ -8,8 +8,8 @@ members = [
     "quic-forward-proxy",
     "quic-forward-proxy-integration-test",
     "cluster-endpoints",
-    "history",
-    "block_priofees",
+    "blockstore",
+    "prioritization_fees",
     "bench"
 ]
 
@@ -68,9 +68,9 @@ rustls = { version = "0.21.7", default-features = false, features = ["quic"] }
 solana-lite-rpc-services = {path = "services", version="0.2.4"}
 solana-lite-rpc-core = {path = "core", version="0.2.4"}
 solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.4"}
-solana-lite-rpc-history = {path = "history", version="0.2.4"}
+solana-lite-rpc-blockstore = {path = "blockstore", version="0.2.4"}
 solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.4"}
-solana-lite-rpc-block-priofees = {path = "block_priofees", version="0.2.4"}
+solana-lite-rpc-prioritization-fees = {path = "prioritization_fees", version="0.2.4"}
 
 async-trait = "0.1.68"
 yellowstone-grpc-client = { version = "1.13.0+solana.1.17.15", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.12.0+solana.1.17.15" }

@@ -7,8 +7,9 @@ use lite_rpc::bridge::LiteBridge;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
-use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
+use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
 use log::{debug, info};
+use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_inspect::{
     debugtask_blockstream_confirmation_sequence, debugtask_blockstream_slot_progression,
@@ -32,9 +33,7 @@ use solana_lite_rpc_core::structures::{
 };
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
-use solana_lite_rpc_history::history::History;
-use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
-use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
+use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
@@ -42,7 +41,8 @@ use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceCon
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
-use solana_lite_rpc_block_priofees::start_block_priofees_task;
+use lite_rpc::postgres_logger;
+use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
@@ -84,7 +84,7 @@ async fn get_latest_block(
 }
 
 pub async fn start_postgres(
-    config: Option<PostgresSessionConfig>,
+    config: Option<postgres_logger::PostgresSessionConfig>,
 ) -> anyhow::Result<(Option<NotificationSender>, AnyhowJoinHandle)> {
     let Some(config) = config else {
         return Ok((
@@ -98,7 +98,7 @@ pub async fn start_postgres(
 
     let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
 
-    let postgres_session_cache = PostgresSessionCache::new(config).await?;
+    let postgres_session_cache = postgres_logger::PostgresSessionCache::new(config).await?;
     let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
 
     Ok((Some(postgres_send), postgres))
@@ -209,10 +209,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     );
 
-    let (_block_priofees_task, block_priofees_service) =
-        start_block_priofees_task(blocks_notifier.resubscribe()).await;
+    let (block_priofees_task, block_priofees_service) =
+        start_block_priofees_task(blocks_notifier.resubscribe(), 100);
 
-    drop(blocks_notifier);
+    let (account_priofees_task, account_priofees_service) =
+        AccountPrioService::start_account_priofees_task(blocks_notifier.resubscribe(), 100);
 
     let (notification_channel, postgres) = start_postgres(postgres).await?;
 
@@ -223,7 +224,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             connection_timeout: Duration::from_secs(1),
             connection_retry_count: 10,
             finalize_timeout: Duration::from_millis(1000),
-            max_number_of_connections: 8,
+            max_number_of_connections: args
+                .max_number_of_connection
+                .unwrap_or(MAX_NB_OF_CONNECTIONS_WITH_LEADERS),
             unistream_timeout: Duration::from_millis(500),
             write_timeout: Duration::from_secs(1),
             number_of_transactions_per_unistream: 1,
@@ -257,8 +260,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         slot_notifier.resubscribe(),
     );
 
-    drop(slot_notifier);
-
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
     let history = History::new();
@@ -270,9 +271,14 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             transaction_service,
             history,
             block_priofees_service,
+            account_priofees_service,
+            blocks_notifier.resubscribe(),
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
+    drop(slot_notifier);
+    drop(blocks_notifier);
+
     tokio::select! {
         res = tx_service_jh => {
             anyhow::bail!("Tx Services {res:?}")
@@ -295,6 +301,12 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         }
         res = futures::future::select_all(cluster_endpoint_tasks) => {
             anyhow::bail!("cluster endpoint failure {res:?}")
+        }
+        res = block_priofees_task => {
+            anyhow::bail!("block prioritization fees task failed {res:?}")
+        }
+        res = account_priofees_task => {
+            anyhow::bail!("account prioritization fees task failed {res:?}")
         }
     }
 }
