@@ -118,6 +118,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
+        enable_grpc_stream_inspection,
         ..
     } = args;
 
@@ -162,16 +163,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     } = subscriptions;
 
-    // note: check failes for commitment_config processed because sources might disagree on the blocks
-    debugtask_blockstream_slot_progression(
-        blocks_notifier.resubscribe(),
-        CommitmentConfig::confirmed(),
-    );
-    debugtask_blockstream_slot_progression(
-        blocks_notifier.resubscribe(),
-        CommitmentConfig::finalized(),
-    );
-    debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
+    setup_grpc_stream_debugging(enable_grpc_stream_inspection, &blocks_notifier);
 
     info!("Waiting for first finalized block...");
     let finalized_block =
@@ -308,6 +300,24 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         res = account_priofees_task => {
             anyhow::bail!("account prioritization fees task failed {res:?}")
         }
+    }
+}
+
+fn setup_grpc_stream_debugging(enable_grpc_stream_debugging: bool, blocks_notifier: &BlockStream) {
+    if enable_grpc_stream_debugging {
+        info!("Setting up grpc stream inspection");
+        // note: check failes for commitment_config processed because sources might disagree on the blocks
+        debugtask_blockstream_slot_progression(
+            blocks_notifier.resubscribe(),
+            CommitmentConfig::confirmed(),
+        );
+        debugtask_blockstream_slot_progression(
+            blocks_notifier.resubscribe(),
+            CommitmentConfig::finalized(),
+        );
+        debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
+    } else {
+        info!("Disabled grpc stream inspection");
     }
 }
 

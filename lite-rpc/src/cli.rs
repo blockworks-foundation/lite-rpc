@@ -64,6 +64,9 @@ pub struct Config {
     #[serde(default)]
     pub grpc_x_token4: Option<String>,
 
+    #[serde(default)]
+    pub enable_grpc_stream_inspection: bool,
+
     /// postgres config
     #[serde(default)]
     pub postgres: Option<postgres_logger::PostgresSessionConfig>,
@@ -174,6 +177,10 @@ impl Config {
         config.grpc_x_token4 = env::var("GRPC_X_TOKEN4")
             .map(Some)
             .unwrap_or(config.grpc_x_token4);
+
+        config.enable_grpc_stream_inspection = env::var("ENABLE_GRPC_STREAM_INSPECTION")
+            .map(|value| value.parse::<bool>().expect("bool value"))
+            .unwrap_or(config.enable_grpc_stream_inspection);
 
         config.max_number_of_connection = env::var("MAX_NB_OF_CONNECTIONS_WITH_LEADERS")
             .map(|x| x.parse().ok())

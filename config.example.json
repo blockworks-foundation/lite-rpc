@@ -13,6 +13,7 @@
   "calculate_leader_schedule_form_geyser": false,
   "grpc_addr": "http://127.0.0.0:10000",
   "grpc_x_token": null,
+  "enable_grpc_stream_inspection": true,
   "postgres": {
     "pg_config": "your_postgres_config",
     "ssl": {
