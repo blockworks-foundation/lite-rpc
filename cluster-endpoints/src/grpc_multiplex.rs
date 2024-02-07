@@ -183,7 +183,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
             let mut last_finalized_slot: Slot = 0;
-            let mut cleanup_without_recv_blocks: u32 = 0;
             let mut cleanup_without_recv_full_blocks: u8 = 0;
             let mut cleanup_without_confirmed_recv_blocks_meta: u8 = 0;
             let mut cleanup_without_finalized_recv_blocks_meta: u8 = 0;
@@ -196,8 +195,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
             'recv_loop: loop {
                 tokio::select! {
                     processed_block = processed_block_reciever.recv() => {
-                            cleanup_without_recv_blocks = 0;
-
                             let processed_block = processed_block.expect("processed block from stream");
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
