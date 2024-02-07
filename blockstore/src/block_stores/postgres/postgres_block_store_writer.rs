@@ -391,6 +391,7 @@ mod tests {
             message: "some message".to_string(),
             writable_accounts: vec![],
             readable_accounts: vec![],
+            address_lookup_tables: vec![],
         }
     }
 }

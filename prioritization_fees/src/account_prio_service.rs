@@ -1,4 +1,8 @@
-use solana_lite_rpc_core::types::BlockStream;
+use std::sync::Arc;
+
+use solana_lite_rpc_core::{
+    traits::address_lookup_table_interface::AddressLookupTableInterface, types::BlockStream,
+};
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 
@@ -18,8 +22,9 @@ impl AccountPrioService {
     pub fn start_account_priofees_task(
         mut block_stream: BlockStream,
         slots_to_retain: usize,
+        address_lookup_tables_impl: Option<Arc<dyn AddressLookupTableInterface>>,
     ) -> (JoinHandle<()>, AccountPrioService) {
-        let account_store = AccountPrioStore::new(slots_to_retain);
+        let account_store = AccountPrioStore::new(slots_to_retain, address_lookup_tables_impl);
         let (priofees_update_sender, _priofees_update_receiver) =
             tokio::sync::broadcast::channel(64);
 
@@ -35,7 +40,7 @@ impl AccountPrioService {
                                 continue;
                             }
 
-                            let account_fee_message = account_store.update(&block);
+                            let account_fee_message = account_store.update(&block).await;
                             let _ = priofees_update_sender.send(account_fee_message);
                         }
                         Err(Lagged(_lagged)) => {

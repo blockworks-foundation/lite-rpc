@@ -10,7 +10,8 @@ members = [
     "cluster-endpoints",
     "blockstore",
     "prioritization_fees",
-    "bench"
+    "bench",
+    "address_lookup_tables"
 ]
 
 [workspace.package]
@@ -33,6 +34,8 @@ solana-streamer = "~1.17.15"
 solana-account-decoder = "~1.17.15"
 solana-ledger = "~1.17.15"
 solana-program = "~1.17.15"
+solana-address-lookup-table-program = "~1.17.15"
+
 itertools = "0.10.5"
 rangetools = "0.1.4"
 serde = { version = "1.0.160", features = ["derive"] }
@@ -71,6 +74,7 @@ solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.4"
 solana-lite-rpc-blockstore = {path = "blockstore", version="0.2.4"}
 solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.4"}
 solana-lite-rpc-prioritization-fees = {path = "prioritization_fees", version="0.2.4"}
+solana-lite-rpc-address-lookup-tables = {path = "address_lookup_tables", version="0.2.4"}
 
 async-trait = "0.1.68"
 yellowstone-grpc-client = { version = "1.13.0+solana.1.17.15", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.12.0+solana.1.17.15" }

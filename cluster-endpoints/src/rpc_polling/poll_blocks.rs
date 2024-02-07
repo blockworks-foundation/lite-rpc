@@ -286,6 +286,12 @@ pub fn from_ui_block(
                 }
             }
 
+            let address_lookup_tables = tx
+                .message
+                .address_table_lookups()
+                .map(|x| x.to_vec())
+                .unwrap_or_default();
+
             Some(TransactionInfo {
                 signature,
                 is_vote: is_vote_transaction,
@@ -297,6 +303,7 @@ pub fn from_ui_block(
                 message,
                 readable_accounts,
                 writable_accounts,
+                address_lookup_tables,
             })
         })
         .collect();

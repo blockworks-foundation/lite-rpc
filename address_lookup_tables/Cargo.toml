@@ -1,17 +1,13 @@
 [package]
-name = "solana-lite-rpc-cluster-endpoints"
+name = "solana-lite-rpc-address-lookup-tables"
 version = "0.2.4"
 edition = "2021"
-description = "Core classes and methods used by solana lite rpc"
+description = "Library to save and update address lookup tables in lite-rpc"
 rust-version = "1.73.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
-#geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.1+yellowstone.1.12+solana.1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
-#geyser-grpc-connector = { tag = "v1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
-
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-transaction-status = { workspace = true }
@@ -19,17 +15,19 @@ solana-version = { workspace = true }
 solana-client = { workspace = true }
 solana-net-utils = { workspace = true }
 solana-pubsub-client = { workspace = true }
+solana-rpc-client = { workspace = true }
 solana-streamer = { workspace = true }
+solana-account-decoder = { workspace = true }
+solana-address-lookup-table-program = { workspace = true }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = "1.*"
-tokio-stream = { version = "0.1.14" , features = ["sync"]}
 bincode = { workspace = true }
 bs58 = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
-merge-streams = "0.1.2"
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
@@ -38,11 +36,8 @@ quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
-derive_more = "0.99.17"
-async-channel = { workspace = true }
-solana-lite-rpc-core = { workspace = true }
-yellowstone-grpc-client = { workspace = true }
-yellowstone-grpc-proto = { workspace = true }
-itertools = {workspace = true}
+itertools = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
+
+solana-lite-rpc-core = { workspace = true }

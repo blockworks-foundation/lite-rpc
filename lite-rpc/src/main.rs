@@ -9,6 +9,7 @@ use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
 use log::{debug, info};
+use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_inspect::{
@@ -31,6 +32,7 @@ use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
     produced_block::ProducedBlock,
 };
+use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
@@ -53,6 +55,7 @@ use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
@@ -119,6 +122,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         quic_proxy_addr,
         use_grpc,
         enable_grpc_stream_inspection,
+        enable_address_lookup_tables,
+        address_lookup_tables_binary,
         ..
     } = args;
 
@@ -204,8 +209,37 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let (block_priofees_task, block_priofees_service) =
         start_block_priofees_task(blocks_notifier.resubscribe(), 100);
 
+    let address_lookup_tables: Option<Arc<dyn AddressLookupTableInterface>> =
+        if enable_address_lookup_tables.unwrap_or_default() {
+            log::info!("ALTs enabled");
+            let alts_store = AddressLookupTableStore::new(rpc_client.clone());
+            if let Some(address_lookup_tables_binary) = address_lookup_tables_binary {
+                match tokio::fs::File::open(address_lookup_tables_binary).await {
+                    Ok(mut alts_file) => {
+                        let mut buf = vec![];
+                        alts_file.read_to_end(&mut buf).await.unwrap();
+                        alts_store.load_binary(buf);
+
+                        log::info!("{} ALTs loaded from binary file", alts_store.map.len());
+                    }
+                    Err(e) => {
+                        log::error!("Error loading address lookup tables binary : {e:?}");
+                        anyhow::bail!(e.to_string());
+                    }
+                }
+            }
+            Some(Arc::new(alts_store))
+        } else {
+            log::info!("ALTs disabled");
+            None
+        };
+
     let (account_priofees_task, account_priofees_service) =
-        AccountPrioService::start_account_priofees_task(blocks_notifier.resubscribe(), 100);
+        AccountPrioService::start_account_priofees_task(
+            blocks_notifier.resubscribe(),
+            100,
+            address_lookup_tables,
+        );
 
     let (notification_channel, postgres) = start_postgres(postgres).await?;
 
