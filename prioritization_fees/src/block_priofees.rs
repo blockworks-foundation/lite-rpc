@@ -17,6 +17,7 @@ pub struct PrioFeeStore {
     recent: Arc<RwLock<BTreeMap<Slot, BlockPrioData>>>,
 }
 
+#[derive(Clone)]
 pub struct PrioFeesService {
     pub block_fees_store: PrioFeeStore,
     // use .subscribe() to get a receiver

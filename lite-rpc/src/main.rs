@@ -4,9 +4,11 @@ use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
 use lite_rpc::bridge::LiteBridge;
+use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
+use lite_rpc::start_server::start_servers;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
 use log::{debug, info};
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
@@ -290,20 +292,28 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let history = History::new();
 
-    let bridge_service = tokio::spawn(
-        LiteBridge::new(
-            rpc_client.clone(),
-            data_cache.clone(),
-            transaction_service,
-            history,
-            block_priofees_service,
-            account_priofees_service,
-            blocks_notifier.resubscribe(),
-        )
-        .start(lite_rpc_http_addr, lite_rpc_ws_addr),
+    let rpc_service = LiteBridge::new(
+        data_cache.clone(),
+        transaction_service,
+        history,
+        block_priofees_service.clone(),
+        account_priofees_service.clone(),
     );
+
+    let pubsub_service = LitePubSubBridge::new(
+        data_cache.clone(),
+        block_priofees_service,
+        account_priofees_service,
+        blocks_notifier,
+    );
+
+    let bridge_service = tokio::spawn(start_servers(
+        rpc_service,
+        pubsub_service,
+        lite_rpc_ws_addr,
+        lite_rpc_http_addr,
+    ));
     drop(slot_notifier);
-    drop(blocks_notifier);
 
     tokio::select! {
         res = tx_service_jh => {
