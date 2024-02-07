@@ -1,4 +1,4 @@
-use anyhow::Context;
+
 use log::{debug, warn};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -28,7 +28,6 @@ pub fn poll_cluster_info(
                 }
             }
         }
-        unreachable!("Task is not allowed to terminate");
     })
 }
 
@@ -57,6 +56,5 @@ pub fn poll_vote_accounts(
                 }
             }
         }
-        unreachable!("Task is not allowed to terminate");
     })
 }

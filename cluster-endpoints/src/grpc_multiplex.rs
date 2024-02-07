@@ -5,7 +5,7 @@ use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig, Message};
 use itertools::Itertools;
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 use merge_streams::MergeStreams;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
@@ -152,7 +152,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
         let (processed_block_sender, mut processed_block_reciever) =
             tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
 
-        'reconnect_loop: loop {
+        loop {
             let processed_block_sender = processed_block_sender.clone();
             reconnect_attempts += 1;
             if reconnect_attempts > 1 {
@@ -187,7 +187,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let mut cleanup_without_confirmed_recv_blocks_meta: u8 = 0;
             let mut cleanup_without_finalized_recv_blocks_meta: u8 = 0;
             let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
-            let mut finalized_block_not_yet_processed = HashSet::<String>::new();
+            let _finalized_block_not_yet_processed = HashSet::<String>::new();
 
             //  start logging errors when we recieve first finalized block
             let mut startup_completed = false;
@@ -267,7 +267,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 }
             } // -- END receiver loop
         } // -- END reconnect loop
-        unreachable!("Task is not allowed to terminate");
     });
 
     (blocks_output_stream, jh_block_emitter_task)
@@ -291,7 +290,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
 
     // task MUST not terminate but might be aborted from outside
     let jh_multiplex_task = tokio::spawn(async move {
-        'reconnect_loop: loop {
+        loop {
             let mut channels = vec![];
             for grpc_source in &grpc_sources {
                 // tasks will be shutdown automatically if the channel gets closed
@@ -348,7 +347,6 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                 }
             } // -- END receiver loop
         } // -- END reconnect loop
-        unreachable!("Task is not allowed to terminate");
     });
 
     (multiplexed_messages_rx, jh_multiplex_task)

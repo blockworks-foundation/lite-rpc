@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
