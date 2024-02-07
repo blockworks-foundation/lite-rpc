@@ -76,6 +76,14 @@ Thank you for providing the default values. Here's the updated table with the de
 | `GRPC_X_TOKEN`<br/>`GRPC_X_TOKEN2`<br/>`GRPC_X_TOKEN3`<br/>`GRPC_X_TOKEN4` | Token for gRPC authentication                            | Optional | None |
 | `PG_*`                                                                     | Various environment variables for Postgres configuration | Depends on Postgres usage | Based on `PostgresSessionConfig::new_from_env()` |
 
+### Bencher Specific Environment Variables
+
+| Environment Variable          | Purpose      | Required?               | Default Value |
+|-------------------------------|--------------|-------------------------|---------------|
+| `CU_BUDGET`                   | CU Budget    | Replaces default if set | `5000`        |
+| `PRIORITY_FEE_MICRO_LAMPORTS` | Priority Fee | Replaces default if set | `3`           |
+
+
 ### Postgres
 lite-rpc implements an optional postgres service that can write to postgres
 database tables as defined in `./migrations`. This can be enabled by either
