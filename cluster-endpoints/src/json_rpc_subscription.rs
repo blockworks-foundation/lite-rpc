@@ -1,9 +1,9 @@
+use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
+    poll_cluster_info, poll_vote_accounts,
+};
 use crate::{
     endpoint_stremers::EndpointStreaming,
-    rpc_polling::{
-        poll_blocks::poll_block, poll_slots::poll_slots,
-        vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
-    },
+    rpc_polling::{poll_blocks::poll_block, poll_slots::poll_slots},
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -30,9 +30,11 @@ pub fn create_json_rpc_polling_subscription(
     );
     endpoint_tasks.append(&mut block_polling_tasks);
 
-    let cluster_info_polling =
-        poll_vote_accounts_and_cluster_info(rpc_client, cluster_info_sx, va_sx);
+    let cluster_info_polling = poll_cluster_info(rpc_client.clone(), cluster_info_sx);
     endpoint_tasks.push(cluster_info_polling);
+
+    let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
+    endpoint_tasks.push(vote_accounts_polling);
 
     let streamers = EndpointStreaming {
         blocks_notifier,

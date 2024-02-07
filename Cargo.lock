@@ -1766,8 +1766,8 @@ dependencies = [
 
 [[package]]
 name = "geyser-grpc-connector"
-version = "0.7.1+yellowstone.1.11"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v1.17.15#4d737e7c2e8a7bb85b1580da094370dafba3eb8e"
+version = "0.10.1+yellowstone.1.12"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.1+yellowstone.1.12+solana.1.17.15#6c26802864b60be5d1458a59a2547a2ed7d86771"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4419,6 +4419,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
@@ -5727,6 +5728,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

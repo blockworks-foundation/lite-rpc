@@ -2,11 +2,11 @@ use log::{debug, error, info, warn};
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
-use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{
-    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription,
-};
-use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
+};
+use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{
+    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
 use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
@@ -61,13 +61,14 @@ async fn storage_test() {
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
+        receive_timeout: Duration::from_secs(5),
     };
 
     let grpc_config = GrpcSourceConfig::new(grpc_addr, grpc_x_token, None, timeouts.clone());
     let grpc_sources = vec![grpc_config];
 
     let (slot_notifier, _jh_multiplex_slotstream) =
-        create_grpc_multiplex_slots_subscription(grpc_sources.clone());
+        create_grpc_multiplex_processed_slots_subscription(grpc_sources.clone());
 
     let (blocks_notifier, _jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources);

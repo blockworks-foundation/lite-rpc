@@ -12,10 +12,10 @@ use log::{debug, info};
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
-    GrpcConnectionTimeouts, GrpcSourceConfig,
+use solana_lite_rpc_cluster_endpoints::grpc_inspect::{
+    debugtask_blockstream_confirmation_sequence, debugtask_blockstream_slot_progression,
 };
+use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
@@ -44,6 +44,9 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
 use lite_rpc::postgres_logger;
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -118,6 +121,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
+        enable_grpc_stream_inspection,
         enable_address_lookup_tables,
         address_lookup_tables_binary,
         ..
@@ -140,6 +144,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             connect_timeout: Duration::from_secs(5),
             request_timeout: Duration::from_secs(5),
             subscribe_timeout: Duration::from_secs(5),
+            receive_timeout: Duration::from_secs(5),
         };
 
         create_grpc_subscription(
@@ -162,6 +167,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         slot_notifier,
         vote_account_notifier,
     } = subscriptions;
+
+    setup_grpc_stream_debugging(enable_grpc_stream_inspection, &blocks_notifier);
 
     info!("Waiting for first finalized block...");
     let finalized_block =
@@ -327,6 +334,24 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         res = account_priofees_task => {
             anyhow::bail!("account prioritization fees task failed {res:?}")
         }
+    }
+}
+
+fn setup_grpc_stream_debugging(enable_grpc_stream_debugging: bool, blocks_notifier: &BlockStream) {
+    if enable_grpc_stream_debugging {
+        info!("Setting up grpc stream inspection");
+        // note: check failes for commitment_config processed because sources might disagree on the blocks
+        debugtask_blockstream_slot_progression(
+            blocks_notifier.resubscribe(),
+            CommitmentConfig::confirmed(),
+        );
+        debugtask_blockstream_slot_progression(
+            blocks_notifier.resubscribe(),
+            CommitmentConfig::finalized(),
+        );
+        debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
+    } else {
+        info!("Disabled grpc stream inspection");
     }
 }
 
