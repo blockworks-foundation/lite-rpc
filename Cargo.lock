@@ -4331,6 +4331,8 @@ dependencies = [
  "log",
  "prometheus",
  "quinn",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
  "rustls",
  "serde",
  "serde_json",
