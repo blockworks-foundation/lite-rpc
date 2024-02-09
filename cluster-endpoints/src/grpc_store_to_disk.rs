@@ -23,6 +23,11 @@ use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 use yellowstone_grpc_proto::prost::Message;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 
+#[tokio::main]
+pub async fn main() {
+    read_stream_and_store().await;
+}
+
 #[test]
 pub fn read_block_from_disk() {
     tracing_subscriber::fmt::init();
@@ -54,20 +59,21 @@ fn parse_slot_and_timestamp_from_file(file_name: &str) -> (Slot, u64) {
 }
 
 
-#[tokio::test]
-pub async fn read_stream() {
+async fn read_stream_and_store() {
     tracing_subscriber::fmt::init();
     configure_panic_hook();
 
-    let grpc_addr = env::var("GRPC_ADDR").unwrap();
-    let grpc_x_token = Some(env::var("GRPC_X_TOKEN").unwrap());
+    let grpc_addr = env::var("GRPC_ADDR").expect("GRPC addr");
+    let grpc_x_token = Some(env::var("GRPC_X_TOKEN").expect("GRPC_X_TOKEN param"));
     let timeouts = GrpcConnectionTimeouts {
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
         receive_timeout: Duration::from_secs(5),
     };
-    let grpc_source_config = GrpcSourceConfig::new(grpc_addr, grpc_x_token, None, timeouts);
+    let grpc_source_config = GrpcSourceConfig::new(grpc_addr, grpc_x_token.clone(), None, timeouts);
+
+    info!("cnofig: {:?}", grpc_x_token);
 
     let commitment_config = CommitmentConfig::confirmed();
 
