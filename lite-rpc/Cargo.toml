@@ -9,6 +9,14 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 publish = false
 
+[[bin]]
+name = "lite-rpc"
+path = "src/main.rs"
+
+[[bin]]
+name = "lite-rpc-dumpconfig"
+path = "src/dumpconfig-tool.rs"
+
 [dependencies]
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
