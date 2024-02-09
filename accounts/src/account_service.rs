@@ -13,18 +13,16 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::{RpcAccountInfoConfig, RpcProgramAccountsConfig};
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 
-use crate::{account_filter::AccountFilters, account_store::AccountStore};
+use crate::{account_filter::AccountFilters, account_store_interface::AccountStorageInterface};
 
 #[derive(Clone)]
 pub struct AccountService {
-    account_store: Arc<AccountStore>,
+    account_store: Arc<dyn AccountStorageInterface>,
 }
 
 impl AccountService {
-    pub fn new() -> Self {
-        Self {
-            account_store: Arc::new(AccountStore::new()),
-        }
+    pub fn new(account_store: Arc<dyn AccountStorageInterface>) -> Self {
+        Self { account_store }
     }
 
     pub async fn populate_from_rpc(
@@ -91,13 +89,15 @@ impl AccountService {
                     }
                     for (index, account) in fetch_accounts.iter().enumerate() {
                         if let Some(account) = account {
-                            self.account_store.add_finalized_account(
-                                accounts[index],
-                                AccountData {
-                                    account: account.clone(),
-                                    updated_slot,
-                                },
-                            );
+                            self.account_store
+                                .initilize_account(
+                                    accounts[index],
+                                    AccountData {
+                                        account: account.clone(),
+                                        updated_slot,
+                                    },
+                                )
+                                .await;
                         }
                     }
                 }
@@ -117,7 +117,7 @@ impl AccountService {
                 match account_stream.recv().await {
                     Ok(account_notification) => {
                         this.account_store
-                            .insert_processed_account(
+                            .update_processed_account(
                                 account_notification.account_pk,
                                 account_notification.data,
                                 account_notification.block_hash,
@@ -145,7 +145,7 @@ impl AccountService {
                         let commitment = Commitment::from(block_notification.commitment_config);
                         let hash = Hash::from_str(block_notification.blockhash.as_str()).expect("");
                         this.account_store
-                            .update_slot_data(block_notification.slot, hash, commitment)
+                            .process_slot_data(block_notification.slot, hash, commitment)
                             .await;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
@@ -162,11 +162,5 @@ impl AccountService {
         });
 
         vec![processed_task, block_processing_task]
-    }
-}
-
-impl Default for AccountService {
-    fn default() -> Self {
-        Self::new()
     }
 }
