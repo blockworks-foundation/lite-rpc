@@ -2520,6 +2520,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solana-account-decoder",
+ "solana-lite-rpc-accounts",
  "solana-lite-rpc-address-lookup-tables",
  "solana-lite-rpc-blockstore",
  "solana-lite-rpc-cluster-endpoints",

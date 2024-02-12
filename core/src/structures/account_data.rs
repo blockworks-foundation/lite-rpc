@@ -1,11 +1,12 @@
 use solana_rpc_client_api::filter::RpcFilterType;
-use solana_sdk::{account::Account, hash::Hash, pubkey::Pubkey, slot_history::Slot};
+use solana_sdk::{account::Account, pubkey::Pubkey, slot_history::Slot};
 use tokio::sync::broadcast::Receiver;
 
 use crate::commitment_utils::Commitment;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct AccountData {
+    pub pubkey: Pubkey,
     pub account: Account,
     pub updated_slot: Slot,
 }
@@ -26,9 +27,7 @@ impl AccountData {
 #[derive(Clone)]
 pub struct AccountNotificationMessage {
     pub data: AccountData,
-    pub account_pk: Pubkey,
     pub commitment: Commitment,
-    pub block_hash: Hash,
 }
 
 pub type AccountStream = Receiver<AccountNotificationMessage>;

@@ -4,6 +4,7 @@ use std::str::FromStr;
 use itertools::Itertools;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
+use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client_api::config::RpcAccountInfoConfig;
@@ -63,6 +64,7 @@ pub struct LiteBridge {
     history: History,
     prio_fees_service: PrioFeesService,
     account_priofees_service: AccountPrioService,
+    accounts_service: Option<AccountService>,
 }
 
 impl LiteBridge {
@@ -72,6 +74,7 @@ impl LiteBridge {
         history: History,
         prio_fees_service: PrioFeesService,
         account_priofees_service: AccountPrioService,
+        accounts_service: Option<AccountService>,
     ) -> Self {
         Self {
             data_cache,
@@ -79,6 +82,7 @@ impl LiteBridge {
             history,
             prio_fees_service,
             account_priofees_service,
+            accounts_service,
         }
     }
 }
@@ -507,25 +511,107 @@ impl LiteRpcServer for LiteBridge {
 
     async fn get_account_info(
         &self,
-        _pubkey_str: String,
-        _config: Option<RpcAccountInfoConfig>,
+        pubkey_str: String,
+        config: Option<RpcAccountInfoConfig>,
     ) -> crate::rpc::Result<RpcResponse<Option<UiAccount>>> {
-        todo!()
+        let Ok(pubkey) = Pubkey::from_str(&pubkey_str) else {
+            return Err(jsonrpsee::core::Error::Custom(
+                "invalid account pubkey".to_string(),
+            ));
+        };
+        if let Some(account_service) = &self.accounts_service {
+            match account_service.get_account(pubkey, config).await {
+                Ok((slot, ui_account)) => Ok(RpcResponse {
+                    context: RpcResponseContext {
+                        slot,
+                        api_version: None,
+                    },
+                    value: ui_account,
+                }),
+                Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
+            }
+        } else {
+            Err(jsonrpsee::core::Error::Custom(
+                "account filters are not configured".to_string(),
+            ))
+        }
     }
 
     async fn get_multiple_accounts(
         &self,
-        _pubkey_strs: Vec<String>,
-        _config: Option<RpcAccountInfoConfig>,
+        pubkey_strs: Vec<String>,
+        config: Option<RpcAccountInfoConfig>,
     ) -> crate::rpc::Result<RpcResponse<Vec<Option<UiAccount>>>> {
-        todo!()
+        let pubkeys = pubkey_strs
+            .iter()
+            .map(|key| Pubkey::from_str(key))
+            .collect_vec();
+        if pubkeys.iter().any(|res| res.is_err()) {
+            return Err(jsonrpsee::core::Error::Custom(
+                "invalid account pubkey".to_string(),
+            ));
+        };
+
+        if let Some(account_service) = &self.accounts_service {
+            let mut ui_accounts = vec![];
+            let mut max_slot = 0;
+            for pubkey in pubkeys {
+                match account_service
+                    .get_account(pubkey.unwrap(), config.clone())
+                    .await
+                {
+                    Ok((slot, ui_account)) => {
+                        if slot > max_slot {
+                            max_slot = slot;
+                        }
+                        ui_accounts.push(ui_account);
+                    }
+                    Err(e) => return Err(jsonrpsee::core::Error::Custom(e.to_string())),
+                }
+            }
+            Ok(RpcResponse {
+                context: RpcResponseContext {
+                    slot: max_slot,
+                    api_version: None,
+                },
+                value: ui_accounts,
+            })
+        } else {
+            Err(jsonrpsee::core::Error::Custom(
+                "account filters are not configured".to_string(),
+            ))
+        }
     }
 
     async fn get_program_accounts(
         &self,
-        _program_id_str: String,
-        _config: Option<RpcProgramAccountsConfig>,
+        program_id_str: String,
+        config: Option<RpcProgramAccountsConfig>,
     ) -> crate::rpc::Result<OptionalContext<Vec<RpcKeyedAccount>>> {
-        todo!()
+        let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
+            return Err(jsonrpsee::core::Error::Custom(
+                "invalid program id pubkey".to_string(),
+            ));
+        };
+
+        if let Some(account_service) = &self.accounts_service {
+            match account_service
+                .get_program_accounts(program_id, config)
+                .await
+            {
+                Ok((slot, ui_account)) => Ok(OptionalContext::Context(RpcResponse {
+                    context: RpcResponseContext {
+                        slot,
+                        api_version: None,
+                    },
+                    value: ui_account,
+                })),
+                Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
+            }
+        } else {
+            Err(jsonrpsee::core::Error::Custom(
+                "account filters are not configured".to_string(),
+            ))
+        }
     }
 }

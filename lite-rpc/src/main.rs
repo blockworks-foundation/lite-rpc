@@ -11,6 +11,9 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
 use log::{debug, info};
+use solana_lite_rpc_accounts::account_service::AccountService;
+use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
+use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
@@ -29,6 +32,7 @@ use solana_lite_rpc_core::stores::{
     subscription_store::SubscriptionStore,
     tx_store::TxStore,
 };
+use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
@@ -126,6 +130,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         enable_grpc_stream_inspection,
         enable_address_lookup_tables,
         address_lookup_tables_binary,
+        account_filters,
         ..
     } = args;
 
@@ -139,6 +144,13 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
+    let account_filters = if let Some(account_filters) = account_filters {
+        serde_json::from_str::<AccountFilters>(account_filters.as_str())
+            .expect("Account filters should be valid")
+    } else {
+        vec![]
+    };
+
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         info!("Creating geyser subscription...");
 
@@ -148,7 +160,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             subscribe_timeout: Duration::from_secs(5),
             receive_timeout: Duration::from_secs(5),
         };
-
         create_grpc_subscription(
             rpc_client.clone(),
             grpc_sources
@@ -157,6 +168,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                     GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
                 })
                 .collect(),
+            account_filters.clone(),
         )?
     } else {
         info!("Creating RPC poll subscription...");
@@ -168,9 +180,34 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         cluster_info_notifier,
         slot_notifier,
         vote_account_notifier,
+        processed_account_stream,
     } = subscriptions;
 
-    setup_grpc_stream_debugging(enable_grpc_stream_inspection, &blocks_notifier);
+    if enable_grpc_stream_inspection {
+        setup_grpc_stream_debugging(&blocks_notifier)
+    } else {
+        info!("Disabled grpc stream inspection");
+    }
+
+    let accounts_service = if let Some(account_stream) = processed_account_stream {
+        // lets use inmemory storage for now
+        let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
+            Arc::new(InmemoryAccountStore::new());
+        const MAX_CONNECTIONS_IN_PARALLEL: usize = 100;
+        let account_service = AccountService::new(inmemory_account_storage);
+        account_service
+            .populate_from_rpc(
+                rpc_client.clone(),
+                &account_filters,
+                MAX_CONNECTIONS_IN_PARALLEL,
+            )
+            .await?;
+        account_service
+            .process_account_stream(account_stream.resubscribe(), blocks_notifier.resubscribe());
+        Some(account_service)
+    } else {
+        None
+    };
 
     info!("Waiting for first finalized block...");
     let finalized_block =
@@ -298,6 +335,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         history,
         block_priofees_service.clone(),
         account_priofees_service.clone(),
+        accounts_service.clone(),
     );
 
     let pubsub_service = LitePubSubBridge::new(
@@ -347,22 +385,18 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     }
 }
 
-fn setup_grpc_stream_debugging(enable_grpc_stream_debugging: bool, blocks_notifier: &BlockStream) {
-    if enable_grpc_stream_debugging {
-        info!("Setting up grpc stream inspection");
-        // note: check failes for commitment_config processed because sources might disagree on the blocks
-        debugtask_blockstream_slot_progression(
-            blocks_notifier.resubscribe(),
-            CommitmentConfig::confirmed(),
-        );
-        debugtask_blockstream_slot_progression(
-            blocks_notifier.resubscribe(),
-            CommitmentConfig::finalized(),
-        );
-        debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
-    } else {
-        info!("Disabled grpc stream inspection");
-    }
+fn setup_grpc_stream_debugging(blocks_notifier: &BlockStream) {
+    info!("Setting up grpc stream inspection");
+    // note: check failes for commitment_config processed because sources might disagree on the blocks
+    debugtask_blockstream_slot_progression(
+        blocks_notifier.resubscribe(),
+        CommitmentConfig::confirmed(),
+    );
+    debugtask_blockstream_slot_progression(
+        blocks_notifier.resubscribe(),
+        CommitmentConfig::finalized(),
+    );
+    debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
 }
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
