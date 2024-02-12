@@ -162,8 +162,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 );
             }
 
+            // tasks which should be cleaned up uppon reconnect
+            let mut task_list: Vec<AbortHandle> = vec![];
+
             let processed_blocks_tasks =
                 create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
+            task_list.extend(processed_blocks_tasks);
 
             let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
                 &grpc_sources,
@@ -270,7 +274,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     }
                 }
             } // -- END receiver loop
-            processed_blocks_tasks.iter().for_each(|task| task.abort());
+            task_list.iter().for_each(|task| task.abort());
         } // -- END reconnect loop
     });
 
