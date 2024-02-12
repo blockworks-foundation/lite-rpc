@@ -175,6 +175,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             );
 
             // by blockhash
+            // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED
             let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
             // both streams support backpressure, see log:
             // grpc_subscription_autoreconnect_tasks: downstream receiver did not pick put message for 500ms - keep waiting
