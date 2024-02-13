@@ -57,8 +57,7 @@ pub fn configure_account_streaming(
                         },
                     );
                 }
-                if let Some(program_id) = accounts_filter.program_id {
-                    let program_id = program_id.to_string();
+                if let Some(program_id) = &accounts_filter.program_id {
                     let filters = if let Some(filters) = &accounts_filter.filters {
                         filters
                             .iter()
@@ -97,7 +96,7 @@ pub fn configure_account_streaming(
                         format!("accounts_{}", program_id),
                         SubscribeRequestFilterAccounts {
                             account: vec![],
-                            owner: vec![program_id],
+                            owner: vec![program_id.clone()],
                             filters,
                         },
                     );

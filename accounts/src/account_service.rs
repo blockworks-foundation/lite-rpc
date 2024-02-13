@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use anyhow::bail;
 use itertools::Itertools;
@@ -42,10 +42,17 @@ impl AccountService {
         let mut accounts = vec![];
         for filter in filters.iter() {
             if !filter.accounts.is_empty() {
-                accounts.append(&mut filter.accounts.clone());
+                let mut f_accounts = filter
+                    .accounts
+                    .iter()
+                    .map(|x| Pubkey::from_str(x).expect("Accounts in filters should be valid"))
+                    .collect();
+                accounts.append(&mut f_accounts);
             }
 
-            if let Some(program_id) = filter.program_id {
+            if let Some(program_id) = &filter.program_id {
+                let program_id =
+                    Pubkey::from_str(program_id).expect("Program id in filters should be valid");
                 let mut rpc_acc = rpc_client
                     .get_program_accounts_with_config(
                         &program_id,
@@ -70,7 +77,7 @@ impl AccountService {
                 accounts.append(&mut rpc_acc);
             }
         }
-
+        log::info!("Fetching {} accounts", accounts.len());
         for accounts in accounts.chunks(max_request_in_parallel * NB_ACCOUNTS_IN_GMA) {
             for accounts in accounts.chunks(NB_ACCOUNTS_IN_GMA) {
                 let mut fetch_accounts = vec![];
@@ -113,6 +120,7 @@ impl AccountService {
                 }
             }
         }
+        log::info!("{} accounts successfully fetched", accounts.len());
         Ok(())
     }
 
