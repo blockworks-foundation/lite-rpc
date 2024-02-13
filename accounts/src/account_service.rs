@@ -149,16 +149,17 @@ impl AccountService {
                         let _ = this.account_notification_sender.send(account_notification);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
-                        log::error!("Account Stream Lagged by {}", e);
+                        log::error!(
+                            "Account Stream Lagged by {}, we may have missed some account updates",
+                            e
+                        );
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        log::error!("Account Stream Broken");
-                        break;
+                        bail!("Account Stream Broken");
                     }
                 }
             }
-            bail!("Account Stream Broken");
         });
 
         let this = self.clone();

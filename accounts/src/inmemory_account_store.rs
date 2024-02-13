@@ -344,7 +344,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
             }
             Commitment::Processed => {
                 // processed should not use update_slot_data
-                log::error!("Invalid commitment");
+                log::error!("Processed commitment is not treated by process_slot_data method");
                 return vec![];
             }
         }

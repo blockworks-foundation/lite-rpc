@@ -1,5 +1,5 @@
-use std::{collections::HashMap, time::Duration};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
+use std::{collections::HashMap, time::Duration};
 
 use geyser_grpc_connector::GrpcSourceConfig;
 use geyser_grpc_connector::Message::GeyserSubscribeUpdate;
@@ -14,11 +14,14 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio::sync::broadcast;
-use tokio_stream::StreamExt;
-use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::{subscribe_request_filter_accounts_filter::Filter, subscribe_request_filter_accounts_filter_memcmp::Data, subscribe_update::UpdateOneof, SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterAccountsFilter, SubscribeRequestFilterAccountsFilterMemcmp};
+use yellowstone_grpc_proto::geyser::{
+    subscribe_request_filter_accounts_filter::Filter,
+    subscribe_request_filter_accounts_filter_memcmp::Data, subscribe_update::UpdateOneof,
+    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterAccountsFilter,
+    SubscribeRequestFilterAccountsFilterMemcmp,
+};
 
-pub fn configure_account_streaming(
+pub fn start_account_streaming_tasks(
     grpc_config: GrpcSourceConfig,
     accounts_filters: AccountFilters,
     account_stream_sx: tokio::sync::mpsc::UnboundedSender<AccountNotificationMessage>,
@@ -28,15 +31,15 @@ pub fn configure_account_streaming(
             // for now we can only be sure that there is one confirmed block per slot, for processed there can be multiple confirmed blocks
             // So setting commitment to confirmed
             // To do somehow make it processed
-            let commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Confirmed;
+            let confirmed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Confirmed;
 
             let mut subscribe_accounts: HashMap<String, SubscribeRequestFilterAccounts> =
                 HashMap::new();
 
-            for accounts_filter in accounts_filters.iter() {
+            for (index, accounts_filter) in accounts_filters.iter().enumerate() {
                 if !accounts_filter.accounts.is_empty() {
                     subscribe_accounts.insert(
-                        "accounts".to_string(),
+                        format!("accounts_{index:?}"),
                         SubscribeRequestFilterAccounts {
                             account: accounts_filter
                                 .accounts
@@ -101,12 +104,12 @@ pub fn configure_account_streaming(
                 blocks: Default::default(),
                 blocks_meta: Default::default(),
                 entry: Default::default(),
-                commitment: Some(commitment.into()),
+                commitment: Some(confirmed_commitment.into()),
                 accounts_data_slice: Default::default(),
                 ping: None,
             };
-            let (_abort_handler, mut accounts_stream) = create_geyser_autoconnection_task(grpc_config.clone(), subscribe_request);
-
+            let (_abort_handler, mut accounts_stream) =
+                create_geyser_autoconnection_task(grpc_config.clone(), subscribe_request);
 
             while let Some(GeyserSubscribeUpdate(message)) = accounts_stream.recv().await {
                 let Some(update) = message.update_oneof else {
@@ -119,7 +122,7 @@ pub fn configure_account_streaming(
                             let account_pk_bytes: [u8; 32] = account_data
                                 .pubkey
                                 .try_into()
-                                .expect("pubkey should be deserializable");
+                                .expect("Pubkey should be 32 byte long");
                             let owner: [u8; 32] = account_data
                                 .owner
                                 .try_into()
@@ -145,10 +148,10 @@ pub fn configure_account_streaming(
                         }
                     }
                     UpdateOneof::Ping(_) => {
-                        log::trace!("GRPC Ping");
+                        log::trace!("GRPC Ping accounts stream");
                     }
                     _ => {
-                        log::trace!("unknown GRPC notification");
+                        log::error!("GRPC accounts steam misconfigured");
                     }
                 };
             }
@@ -162,8 +165,7 @@ pub fn create_grpc_account_streaming(
     grpc_sources: Vec<GrpcSourceConfig>,
     accounts_filters: AccountFilters,
 ) -> (AnyhowJoinHandle, AccountStream) {
-    let (processed_account_sender, processed_account_stream) =
-        broadcast::channel::<AccountNotificationMessage>(128);
+    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(128);
 
     let jh: AnyhowJoinHandle = tokio::spawn(async move {
         loop {
@@ -171,7 +173,7 @@ pub fn create_grpc_account_streaming(
             grpc_sources
                 .iter()
                 .map(|grpc_config| {
-                    configure_account_streaming(
+                    start_account_streaming_tasks(
                         grpc_config.clone(),
                         accounts_filters.clone(),
                         accounts_sx.clone(),
@@ -183,13 +185,13 @@ pub fn create_grpc_account_streaming(
             loop {
                 match tokio::time::timeout(Duration::from_secs(60), accounts_rx.recv()).await {
                     Ok(Some(data)) => {
-                        let _ = processed_account_sender.send(data);
+                        let _ = account_sender.send(data);
                     }
                     Ok(None) => {
                         log::error!("All grpc accounts channels close; restarting subscription");
                         break;
                     }
-                    Err(_) => {
+                    Err(_elapsed) => {
                         log::error!("No accounts data for a minute; restarting subscription");
                         break;
                     }
@@ -198,5 +200,5 @@ pub fn create_grpc_account_streaming(
         }
     });
 
-    (jh, processed_account_stream)
+    (jh, accounts_stream)
 }
