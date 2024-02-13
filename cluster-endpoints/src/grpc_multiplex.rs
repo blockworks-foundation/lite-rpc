@@ -101,6 +101,71 @@ fn create_grpc_multiplex_processed_block_stream(
     vec![jh_merging_streams.abort_handle()]
 }
 
+fn create_grpc_multiplex_block_meta_task(
+    grpc_sources: &Vec<GrpcSourceConfig>,
+    block_meta_sender: tokio::sync::mpsc::Sender<BlockMeta>,
+    commitment_config: CommitmentConfig,
+) -> Vec<AbortHandle> {
+
+    let mut channels = vec![];
+    for grpc_source in grpc_sources {
+        // tasks will be shutdown automatically if the channel gets closed
+        let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+            grpc_source.clone(),
+            GeyserFilter(commitment_config).blocks_and_txs(),
+        );
+        channels.push(message_channel)
+    }
+
+    let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
+    let mut fused_streams = source_channels.merge();
+
+    let jh_merging_streams = tokio::task::spawn(async move {
+        let mut tip: Slot = 0;
+        loop {
+            match fused_streams.next().await {
+                Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
+                    if let Some(update) = subscribe_update.update_oneof {
+                        match update {
+                            UpdateOneof::BlockMeta(block_meta) => {
+                                let proposed_slot = block_meta.slot;
+                                if proposed_slot > tip {
+                                    tip = proposed_slot;
+                                    let block_meta = BlockMeta {
+                                        blockhash: block_meta.blockhash,
+                                    };
+                                    let send_result = block_meta_sender
+                                        .send(block_meta).await
+                                        .context("Send block to channel");
+                                    if send_result.is_err() {
+                                        warn!("Block channel receiver is closed - aborting");
+                                        return;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Some(Message::Connecting(attempt)) => {
+                    if attempt > 1 {
+                        warn!(
+                            "Multiplexed geyser stream performs reconnect attempt {}",
+                            attempt
+                        );
+                    }
+                }
+                None => {
+                    warn!("Multiplexed geyser source stream terminated - aborting task");
+                    return;
+                }
+            }
+        } // -- END receiver loop
+    });
+
+    vec![jh_merging_streams.abort_handle()]
+}
+
 fn create_grpc_multiplex_block_meta_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     commitment_config: CommitmentConfig,
@@ -149,11 +214,16 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
     // task MUST not terminate but might be aborted from outside
     let jh_block_emitter_task = tokio::task::spawn(async move {
-        // channel must NEVER GET CLOSED
-        let (processed_block_sender, mut processed_block_reciever) =
-            tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
+
 
         loop {
+            // channel must NEVER GET CLOSED
+            let (processed_block_sender, mut processed_block_reciever) =
+                tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
+
+            let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) = tokio::sync::mpsc::channel::<BlockMeta>(10);
+            let (block_meta_sender_finalized, mut block_meta_reciever_finalized) = tokio::sync::mpsc::channel::<BlockMeta>(10);
+
             let processed_block_sender = processed_block_sender.clone();
             reconnect_attempts += 1;
             if reconnect_attempts > 1 {
@@ -170,22 +240,25 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
             task_list.extend(processed_blocks_tasks);
 
-            let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
-                &grpc_sources,
-                CommitmentConfig::confirmed(),
-            );
-            let finalized_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
-                &grpc_sources,
-                CommitmentConfig::finalized(),
-            );
+            let _jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(&grpc_sources, block_meta_sender_confirmed, CommitmentConfig::confirmed());
+            let _jh_meta_task_finalized = create_grpc_multiplex_block_meta_task(&grpc_sources, block_meta_sender_finalized, CommitmentConfig::finalized());
+
+            // let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
+            //     &grpc_sources,
+            //     CommitmentConfig::confirmed(),
+            // );
+            // let finalized_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
+            //     &grpc_sources,
+            //     CommitmentConfig::finalized(),
+            // );
 
             // by blockhash
             // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED
             let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
             // both streams support backpressure, see log:
             // grpc_subscription_autoreconnect_tasks: downstream receiver did not pick put message for 500ms - keep waiting
-            let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
-            let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
+            // let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
+            // let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
             let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
             let mut last_finalized_slot: Slot = 0;
@@ -197,11 +270,11 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             //  start logging errors when we recieve first finalized block
             let mut startup_completed = false;
-            const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
+            const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 1; // 12*5 = 60s without recving data
             'recv_loop: loop {
                 tokio::select! {
                     processed_block = processed_block_reciever.recv() => {
-                            cleanup_without_recv_full_blocks = 0;
+                            // cleanup_without_recv_full_blocks = 0;
 
                             let processed_block = processed_block.expect("processed block from stream");
                             trace!("got processed block {} with blockhash {}",
@@ -216,7 +289,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             }
                             recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
                         },
-                        meta_confirmed = confirmed_blockmeta_stream.next() => {
+                        meta_confirmed = block_meta_reciever_confirmed.recv() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
                             let meta_confirmed = meta_confirmed.expect("confirmed block meta from stream");
                             let blockhash = meta_confirmed.blockhash;
@@ -233,7 +306,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 confirmed_block_not_yet_processed.len(), recent_processed_blocks.len());
                             }
                         },
-                        meta_finalized = finalized_blockmeta_stream.next() => {
+                        meta_finalized = block_meta_reciever_finalized.recv() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
                             let meta_finalized = meta_finalized.expect("finalized block meta from stream");
                             let blockhash = meta_finalized.blockhash;
