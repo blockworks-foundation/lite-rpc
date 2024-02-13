@@ -228,7 +228,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             } else {
                                 confirmed_block_not_yet_processed.insert(blockhash.clone());
-                                log::debug!("backlog of not yset confirmed blocks: {}", confirmed_block_not_yet_processed.len());
+                                log::debug!("backlog of not yet confirmed blocks: {}; recent blocks map size: {}",
+                                confirmed_block_not_yet_processed.len(), recent_processed_blocks.len());
                             }
                         },
                         meta_finalized = finalized_blockmeta_stream.next() => {
