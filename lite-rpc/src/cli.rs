@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::env;
 use std::fmt::{Debug, Display, Formatter};
 
@@ -9,6 +10,7 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
+use solana_rpc_client_api::client_error::reqwest::Url;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -289,25 +291,43 @@ pub struct GrpcSource {
 
 impl Display for GrpcSource {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} (token {})", &self.addr, obfuscate_token(&self.addr))
+        write!(
+            f,
+            "GrpcSource {} (x-token {})",
+            url_obfuscate_api_token(&self.addr),
+            obfuscate_token(&self.x_token)
+        )
     }
 }
 
 impl Debug for GrpcSource {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} (token {})",
-            &self.addr,
-            self.x_token
-                .as_ref()
-                .map(|token| obfuscate_token(&token))
-                .unwrap_or("n/a".to_string())
-        )
+        Display::fmt(self, f)
     }
 }
 
-// dfebXXaX-XfeX-XXXX-bafX-XXccaXbabbcX
-fn obfuscate_token(token: &str) -> String {
-    token.replacen(char::is_numeric, "X", 99)
+/// obfuscate urls with api token like http://mango.rpcpool.com/a991fba00fagbad
+fn url_obfuscate_api_token(url: &str) -> Cow<str> {
+    if let Ok(mut parsed) = Url::parse(url) {
+        if parsed.path() == "/" {
+            return Cow::Borrowed(url);
+        } else {
+            parsed.set_path("omitted-secret");
+            Cow::Owned(parsed.to_string())
+        }
+    } else {
+        Cow::Borrowed(url)
+    }
+}
+
+fn obfuscate_token(token: &Option<String>) -> String {
+    match token {
+        None => "n/a".to_string(),
+        Some(token) => {
+            let mut token = token.clone();
+            token.truncate(5);
+            token += "...";
+            token
+        }
+    }
 }
