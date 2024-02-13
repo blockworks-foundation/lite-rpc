@@ -112,7 +112,7 @@ fn create_grpc_multiplex_block_meta_task(
         // tasks will be shutdown automatically if the channel gets closed
         let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
             grpc_source.clone(),
-            GeyserFilter(commitment_config).blocks_and_txs(),
+            GeyserFilter(commitment_config).blocks_meta(),
         );
         channels.push(message_channel)
     }
@@ -240,8 +240,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
             task_list.extend(processed_blocks_tasks);
 
-            let _jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(&grpc_sources, block_meta_sender_confirmed, CommitmentConfig::confirmed());
-            let _jh_meta_task_finalized = create_grpc_multiplex_block_meta_task(&grpc_sources, block_meta_sender_finalized, CommitmentConfig::finalized());
+            let jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(&grpc_sources, block_meta_sender_confirmed, CommitmentConfig::confirmed());
+            task_list.extend(jh_meta_task_confirmed);
+            let jh_meta_task_finalized = create_grpc_multiplex_block_meta_task(&grpc_sources, block_meta_sender_finalized, CommitmentConfig::finalized());
+            task_list.extend(jh_meta_task_finalized);
 
             // let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
             //     &grpc_sources,
