@@ -1,6 +1,8 @@
 use std::{collections::HashMap, time::Duration};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
 
 use geyser_grpc_connector::GrpcSourceConfig;
+use geyser_grpc_connector::Message::GeyserSubscribeUpdate;
 use itertools::Itertools;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
@@ -14,12 +16,7 @@ use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio::sync::broadcast;
 use tokio_stream::StreamExt;
 use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::{
-    subscribe_request_filter_accounts_filter::Filter,
-    subscribe_request_filter_accounts_filter_memcmp::Data, subscribe_update::UpdateOneof,
-    SubscribeRequestFilterAccounts, SubscribeRequestFilterAccountsFilter,
-    SubscribeRequestFilterAccountsFilterMemcmp,
-};
+use yellowstone_grpc_proto::geyser::{subscribe_request_filter_accounts_filter::Filter, subscribe_request_filter_accounts_filter_memcmp::Data, subscribe_update::UpdateOneof, SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterAccountsFilter, SubscribeRequestFilterAccountsFilterMemcmp};
 
 pub fn configure_account_streaming(
     grpc_config: GrpcSourceConfig,
@@ -32,12 +29,6 @@ pub fn configure_account_streaming(
             // So setting commitment to confirmed
             // To do somehow make it processed
             let commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Confirmed;
-
-            let mut client = GeyserGrpcClient::connect(
-                grpc_config.grpc_addr.clone(),
-                grpc_config.grpc_x_token.clone(),
-                None,
-            )?;
 
             let mut subscribe_accounts: HashMap<String, SubscribeRequestFilterAccounts> =
                 HashMap::new();
@@ -103,25 +94,21 @@ pub fn configure_account_streaming(
                 }
             }
 
-            let mut stream = client
-                .subscribe_once(
-                    Default::default(),
-                    subscribe_accounts,
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    Default::default(),
-                    Some(commitment),
-                    Default::default(),
-                    None,
-                )
-                .await?;
+            let subscribe_request = SubscribeRequest {
+                accounts: subscribe_accounts,
+                slots: Default::default(),
+                transactions: Default::default(),
+                blocks: Default::default(),
+                blocks_meta: Default::default(),
+                entry: Default::default(),
+                commitment: Some(commitment.into()),
+                accounts_data_slice: Default::default(),
+                ping: None,
+            };
+            let (_abort_handler, mut accounts_stream) = create_geyser_autoconnection_task(grpc_config.clone(), subscribe_request);
 
-            while let Some(message) = stream.next().await {
-                let Ok(message) = message else {
-                    continue;
-                };
 
+            while let Some(GeyserSubscribeUpdate(message)) = accounts_stream.recv().await {
                 let Some(update) = message.update_oneof else {
                     continue;
                 };
