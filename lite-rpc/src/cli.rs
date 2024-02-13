@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt::{Debug, Display, Formatter};
 
 use crate::postgres_logger;
 use crate::{
@@ -280,8 +281,33 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GrpcSource {
     pub addr: String,
     pub x_token: Option<String>,
+}
+
+impl Display for GrpcSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} (token {})", &self.addr, obfuscate_token(&self.addr))
+    }
+}
+
+impl Debug for GrpcSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} (token {})",
+            &self.addr,
+            self.x_token
+                .as_ref()
+                .map(|token| obfuscate_token(&token))
+                .unwrap_or("n/a".to_string())
+        )
+    }
+}
+
+// dfebXXaX-XfeX-XXXX-bafX-XXccaXbabbcX
+fn obfuscate_token(token: &str) -> String {
+    token.replacen(char::is_numeric, "X", 99)
 }
