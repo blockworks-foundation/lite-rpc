@@ -270,11 +270,11 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             //  start logging errors when we recieve first finalized block
             let mut startup_completed = false;
-            const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 1; // 12*5 = 60s without recving data
+            const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
             'recv_loop: loop {
                 tokio::select! {
                     processed_block = processed_block_reciever.recv() => {
-                            // cleanup_without_recv_full_blocks = 0;
+                            cleanup_without_recv_full_blocks = 0;
 
                             let processed_block = processed_block.expect("processed block from stream");
                             trace!("got processed block {} with blockhash {}",
