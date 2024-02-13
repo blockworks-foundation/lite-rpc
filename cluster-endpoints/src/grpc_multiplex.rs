@@ -13,6 +13,7 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::mpsc::Sender;
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
@@ -28,7 +29,7 @@ use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 /// - will also shutdown the grpc autoconnection task(s)
 fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    block_sender: UnboundedSender<ProducedBlock>,
+    block_sender: tokio::sync::mpsc::Sender<ProducedBlock>,
 ) -> Vec<AbortHandle> {
     let commitment_config = CommitmentConfig::processed();
 
@@ -62,7 +63,7 @@ fn create_grpc_multiplex_processed_block_stream(
                                 || slot > slots_processed.first().cloned().unwrap_or_default())
                         {
                             let send_result = block_sender
-                                .send(produced_block)
+                                .send(produced_block).await
                                 .context("Send block to channel");
                             if send_result.is_err() {
                                 warn!("Block channel receiver is closed - aborting");
@@ -150,7 +151,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
     let jh_block_emitter_task = tokio::task::spawn(async move {
         // channel must NEVER GET CLOSED
         let (processed_block_sender, mut processed_block_reciever) =
-            tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
+            tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
 
         loop {
             let processed_block_sender = processed_block_sender.clone();
