@@ -59,7 +59,7 @@ impl AccountService {
                         RpcProgramAccountsConfig {
                             filters: filter.get_rpc_filter(),
                             account_config: RpcAccountInfoConfig {
-                                encoding: Some(solana_account_decoder::UiAccountEncoding::Binary),
+                                encoding: Some(solana_account_decoder::UiAccountEncoding::Base64),
                                 data_slice: Some(UiDataSliceConfig {
                                     offset: 0,
                                     length: 0,
@@ -159,6 +159,10 @@ impl AccountService {
             loop {
                 match block_stream.recv().await {
                     Ok(block_notification) => {
+                        if block_notification.commitment_config.is_processed() {
+                            // processed commitment is not processed in this loop
+                            continue;
+                        }
                         let commitment = Commitment::from(block_notification.commitment_config);
                         this.account_store
                             .process_slot_data(block_notification.slot, commitment)

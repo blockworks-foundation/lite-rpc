@@ -170,7 +170,6 @@ impl AccountDataByCommitment {
                 .unwrap_or(u64::MAX)
                 <= slot
             {
-                log::error!("Should not be the case, we should have seen this block in processed atleast once to reach here. Something seems broken");
                 self.processed_accounts.pop_first();
             }
             None

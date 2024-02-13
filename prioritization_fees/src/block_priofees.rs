@@ -138,7 +138,9 @@ pub fn start_block_priofees_task(
                     }
                 }
                 Err(Lagged(_lagged)) => {
-                    warn!("channel error receiving block for priofees calculation - continue");
+                    warn!(
+                        "channel lagged receiving block for block priofees calculation - continue"
+                    );
                     continue 'recv_loop;
                 }
                 Err(Closed) => {
