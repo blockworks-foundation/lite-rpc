@@ -59,7 +59,7 @@ impl AccountDataByCommitment {
         }
     }
 
-    pub fn update(&mut self, data: AccountData, commitment: Commitment) {
+    pub fn update(&mut self, data: AccountData, commitment: Commitment) -> bool {
         // if commitmentment is processed check and update processed
         // if commitmentment is confirmed check and update processed and confirmed
         // if commitmentment is finalized check and update all
@@ -79,10 +79,12 @@ impl AccountDataByCommitment {
             self.processed_accounts
                 .insert(data.updated_slot, data.clone());
         }
+        let mut updated = false;
         match commitment {
             Commitment::Confirmed => {
                 if update_confirmed {
                     self.confirmed_account = Some(data);
+                    updated = true;
                 }
             }
             Commitment::Finalized => {
@@ -91,12 +93,14 @@ impl AccountDataByCommitment {
                 }
                 if update_finalized {
                     self.finalized_account = Some(data);
+                    updated = true;
                 }
             }
             Commitment::Processed => {
                 // processed already treated
             }
         }
+        updated
     }
     // this method will promote processed account to confirmed account to finalized account
     // returns promoted account
@@ -261,11 +265,20 @@ impl AccountStorageInterface for InmemoryAccountStore {
     }
 
     async fn initilize_account(&self, account_data: AccountData) {
-        self.add_account_owner(account_data.pubkey, account_data.account.owner);
-        self.account_store.insert(
-            account_data.pubkey,
-            AccountDataByCommitment::initialize(account_data),
-        );
+        match self.account_store.get_mut(&account_data.pubkey) {
+            Some(_) => {
+                // account has already been filled by an event
+                self.update_account(account_data, Commitment::Finalized)
+                    .await;
+            }
+            None => {
+                self.add_account_owner(account_data.pubkey, account_data.account.owner);
+                self.account_store.insert(
+                    account_data.pubkey,
+                    AccountDataByCommitment::initialize(account_data),
+                );
+            }
+        }
     }
 
     async fn get_account(&self, account_pk: Pubkey, commitment: Commitment) -> Option<AccountData> {
@@ -339,12 +352,18 @@ impl AccountStorageInterface for InmemoryAccountStore {
         self.account_store
             .iter_mut()
             .filter_map(|mut acc| acc.promote_slot_commitment(slot, commitment))
-            .map(|(account_data, prev_account_data)| {
+            .filter_map(|(account_data, prev_account_data)| {
                 // update owners
                 if let Some(prev_account_data) = prev_account_data {
-                    self.update_owner(&prev_account_data, &account_data, commitment)
+                    self.update_owner(&prev_account_data, &account_data, commitment);
+                    if prev_account_data != account_data {
+                        Some(account_data)
+                    } else {
+                        None
+                    }
+                } else {
+                    Some(account_data)
                 }
-                account_data
             })
             .collect_vec()
     }

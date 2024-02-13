@@ -1,5 +1,10 @@
+
 use prometheus::{opts, register_int_counter, IntCounter};
-use solana_lite_rpc_core::{stores::data_cache::DataCache, types::BlockStream};
+use solana_lite_rpc_accounts::account_service::AccountService;
+use solana_lite_rpc_core::{
+    commitment_utils::Commitment, stores::data_cache::DataCache,
+    structures::account_data::AccountNotificationMessage, types::BlockStream,
+};
 use std::{str::FromStr, sync::Arc};
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 
@@ -22,7 +27,7 @@ use solana_rpc_client_api::{
         RpcProgramAccountsConfig, RpcSignatureSubscribeConfig, RpcTransactionLogsConfig,
         RpcTransactionLogsFilter,
     },
-    response::{Response as RpcResponse, RpcResponseContext, SlotInfo},
+    response::{Response as RpcResponse, RpcKeyedAccount, RpcResponseContext, SlotInfo},
 };
 use solana_sdk::pubkey::Pubkey;
 
@@ -33,6 +38,10 @@ lazy_static::lazy_static! {
     register_int_counter!(opts!("literpc_rpc_block_priofees_subscribe", "RPC call to subscribe to block prio fees")).unwrap();
     static ref RPC_ACCOUNT_PRIOFEES_SUBSCRIBE: IntCounter =
     register_int_counter!(opts!("literpc_rpc_account_priofees_subscribe", "RPC call to subscribe to account prio fees")).unwrap();
+    static ref RPC_ACCOUNT_SUBSCRIBE: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_account_subscribe", "RPC call to subscribe to account")).unwrap();
+    static ref RPC_PROGRAM_ACCOUNT_SUBSCRIBE: IntCounter =
+    register_int_counter!(opts!("literpc_rpc_program_account_subscribe", "RPC call to subscribe to program account")).unwrap();
 }
 
 pub struct LitePubSubBridge {
@@ -40,6 +49,7 @@ pub struct LitePubSubBridge {
     prio_fees_service: PrioFeesService,
     account_priofees_service: AccountPrioService,
     block_stream: BlockStream,
+    accounts_service: Option<AccountService>,
 }
 
 impl LitePubSubBridge {
@@ -48,12 +58,14 @@ impl LitePubSubBridge {
         prio_fees_service: PrioFeesService,
         account_priofees_service: AccountPrioService,
         block_stream: BlockStream,
+        accounts_service: Option<AccountService>,
     ) -> Self {
         Self {
             data_cache,
             prio_fees_service,
             account_priofees_service,
             block_stream,
+            accounts_service,
         }
     }
 }
@@ -273,19 +285,196 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
 
     async fn account_subscribe(
         &self,
-        _pending: PendingSubscriptionSink,
-        _account: String,
-        _config: Option<RpcAccountInfoConfig>,
+        pending: PendingSubscriptionSink,
+        account: String,
+        config: Option<RpcAccountInfoConfig>,
     ) -> SubscriptionResult {
-        todo!();
+        let Ok(account) = Pubkey::from_str(&account) else {
+            return Err(StringError::from("Invalid account".to_string()));
+        };
+
+        let Some(accounts_service) = &self.accounts_service else {
+            return Err(StringError::from(
+                "Accounts service not configured".to_string(),
+            ));
+        };
+        let sink = pending.accept().await?;
+        let mut accounts_stream = accounts_service.account_notification_sender.subscribe();
+
+        tokio::spawn(async move {
+            RPC_ACCOUNT_SUBSCRIBE.inc();
+
+            loop {
+                match accounts_stream.recv().await {
+                    Ok(AccountNotificationMessage { data, commitment }) => {
+                        if sink.is_closed() {
+                            // sink is already closed
+                            return;
+                        }
+
+                        if data.pubkey != account {
+                            // notification is different account
+                            continue;
+                        }
+                        let account_config = config.clone().unwrap_or_default();
+                        let config_commitment = account_config.commitment.unwrap_or_default();
+                        let min_context_slot = account_config.min_context_slot.unwrap_or_default();
+                        // check config
+                        // check if commitment match
+                        if Commitment::from(config_commitment) != commitment {
+                            continue;
+                        }
+                        // check for min context slot
+                        if data.updated_slot < min_context_slot {
+                            continue;
+                        }
+
+                        let result_message =
+                            jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
+                                context: RpcResponseContext {
+                                    slot: data.updated_slot,
+                                    api_version: None,
+                                },
+                                value: AccountService::convert_account_data_to_ui_account(
+                                    &data,
+                                    config.clone(),
+                                ),
+                            });
+
+                        match sink.send(result_message.unwrap()).await {
+                            Ok(()) => {
+                                // success
+                                continue;
+                            }
+                            Err(DisconnectError(_subscription_message)) => {
+                                log::debug!("Stopping subscription task on disconnect");
+                                return;
+                            }
+                        };
+                    }
+                    Err(Lagged(lagged)) => {
+                        // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
+                        log::warn!(
+                            "subscriber laggs some({}) accounts messages - continue",
+                            lagged
+                        );
+                        continue;
+                    }
+                    Err(Closed) => {
+                        log::error!(
+                            "failed to receive account notifications, sender closed - aborting"
+                        );
+                        return;
+                    }
+                }
+            }
+        });
+
+        Ok(())
     }
 
     async fn program_subscribe(
         &self,
-        _pending: PendingSubscriptionSink,
-        _pubkey_str: String,
-        _config: Option<RpcProgramAccountsConfig>,
+        pending: PendingSubscriptionSink,
+        pubkey_str: String,
+        config: Option<RpcProgramAccountsConfig>,
     ) -> SubscriptionResult {
-        todo!();
+        let Ok(program_id) = Pubkey::from_str(&pubkey_str) else {
+            return Err(StringError::from("Invalid account".to_string()));
+        };
+
+        let Some(accounts_service) = &self.accounts_service else {
+            return Err(StringError::from(
+                "Accounts service not configured".to_string(),
+            ));
+        };
+        let sink = pending.accept().await?;
+        let mut accounts_stream = accounts_service.account_notification_sender.subscribe();
+
+        tokio::spawn(async move {
+            RPC_ACCOUNT_SUBSCRIBE.inc();
+
+            loop {
+                match accounts_stream.recv().await {
+                    Ok(AccountNotificationMessage { data, commitment }) => {
+                        if sink.is_closed() {
+                            // sink is already closed
+                            return;
+                        }
+                        if data.account.owner != program_id {
+                            // wrong program owner
+                            continue;
+                        }
+
+                        let program_config = config.clone().unwrap_or_default();
+                        let config_commitment =
+                            program_config.account_config.commitment.unwrap_or_default();
+                        let min_context_slot = program_config
+                            .account_config
+                            .min_context_slot
+                            .unwrap_or_default();
+                        // check config
+                        // check if commitment match
+                        if Commitment::from(config_commitment) != commitment {
+                            continue;
+                        }
+                        // check for min context slot
+                        if data.updated_slot < min_context_slot {
+                            continue;
+                        }
+                        // check filters
+                        if let Some(filters) = program_config.filters {
+                            if filters.iter().any(|filter| !data.allows(filter)) {
+                                // filters not stasfied
+                                continue;
+                            }
+                        }
+
+                        let value = RpcKeyedAccount {
+                            pubkey: data.pubkey.to_string(),
+                            account: AccountService::convert_account_data_to_ui_account(
+                                &data,
+                                config.clone().map(|x| x.account_config),
+                            ),
+                        };
+
+                        let result_message =
+                            jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
+                                context: RpcResponseContext {
+                                    slot: data.updated_slot,
+                                    api_version: None,
+                                },
+                                value,
+                            });
+
+                        match sink.send(result_message.unwrap()).await {
+                            Ok(()) => {
+                                // success
+                                continue;
+                            }
+                            Err(DisconnectError(_subscription_message)) => {
+                                log::debug!("Stopping subscription task on disconnect");
+                                return;
+                            }
+                        };
+                    }
+                    Err(Lagged(lagged)) => {
+                        // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
+                        log::warn!(
+                            "subscriber laggs some({}) program accounts messages - continue",
+                            lagged
+                        );
+                        continue;
+                    }
+                    Err(Closed) => {
+                        log::error!(
+                            "failed to receive account notifications, sender closed - aborting"
+                        );
+                        return;
+                    }
+                }
+            }
+        });
+        Ok(())
     }
 }

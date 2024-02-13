@@ -6,7 +6,7 @@ use solana_account_decoder::{UiAccount, UiDataSliceConfig};
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
-        account_data::{AccountData, AccountStream},
+        account_data::{AccountData, AccountNotificationMessage, AccountStream},
         account_filter::AccountFilters,
     },
     types::BlockStream,
@@ -18,17 +18,23 @@ use solana_rpc_client_api::{
     response::RpcKeyedAccount,
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
+use tokio::sync::broadcast::Sender;
 
 use crate::account_store_interface::AccountStorageInterface;
 
 #[derive(Clone)]
 pub struct AccountService {
     account_store: Arc<dyn AccountStorageInterface>,
+    pub account_notification_sender: Sender<AccountNotificationMessage>,
 }
 
 impl AccountService {
     pub fn new(account_store: Arc<dyn AccountStorageInterface>) -> Self {
-        Self { account_store }
+        let (account_notification_sender, _) = tokio::sync::broadcast::channel(256);
+        Self {
+            account_store,
+            account_notification_sender,
+        }
     }
 
     pub async fn populate_from_rpc(
@@ -136,10 +142,11 @@ impl AccountService {
                     Ok(account_notification) => {
                         this.account_store
                             .update_account(
-                                account_notification.data,
+                                account_notification.data.clone(),
                                 account_notification.commitment,
                             )
                             .await;
+                        let _ = this.account_notification_sender.send(account_notification);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
                         log::error!("Account Stream Lagged by {}", e);
@@ -164,9 +171,15 @@ impl AccountService {
                             continue;
                         }
                         let commitment = Commitment::from(block_notification.commitment_config);
-                        this.account_store
+                        let updated_accounts = this
+                            .account_store
                             .process_slot_data(block_notification.slot, commitment)
                             .await;
+                        for data in updated_accounts {
+                            let _ = this
+                                .account_notification_sender
+                                .send(AccountNotificationMessage { data, commitment });
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
                         log::error!("Account Stream Lagged by {}", e);

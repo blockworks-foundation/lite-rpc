@@ -195,6 +195,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             Arc::new(InmemoryAccountStore::new());
         const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
         let account_service = AccountService::new(inmemory_account_storage);
+
+        // start populating store with account stream so that we do not miss any account updates
+        account_service
+            .process_account_stream(account_stream.resubscribe(), blocks_notifier.resubscribe());
+
         account_service
             .populate_from_rpc(
                 rpc_client.clone(),
@@ -202,8 +207,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                 MAX_CONNECTIONS_IN_PARALLEL,
             )
             .await?;
-        account_service
-            .process_account_stream(account_stream.resubscribe(), blocks_notifier.resubscribe());
         Some(account_service)
     } else {
         None
@@ -343,6 +346,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         block_priofees_service,
         account_priofees_service,
         blocks_notifier,
+        accounts_service.clone(),
     );
 
     let bridge_service = tokio::spawn(start_servers(
