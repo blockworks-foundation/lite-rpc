@@ -193,7 +193,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         // lets use inmemory storage for now
         let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
             Arc::new(InmemoryAccountStore::new());
-        const MAX_CONNECTIONS_IN_PARALLEL: usize = 100;
+        const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
         let account_service = AccountService::new(inmemory_account_storage);
         account_service
             .populate_from_rpc(

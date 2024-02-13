@@ -224,7 +224,7 @@ impl InmemoryAccountStore {
                     accounts.remove(&prev_account_data.pubkey);
                 }
             }
-            self.add_account_owner(prev_account_data.pubkey, new_account_data.account.owner);
+            self.add_account_owner(new_account_data.pubkey, new_account_data.account.owner);
         }
     }
 }
@@ -261,6 +261,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
     }
 
     async fn initilize_account(&self, account_data: AccountData) {
+        self.add_account_owner(account_data.pubkey, account_data.account.owner);
         self.account_store.insert(
             account_data.pubkey,
             AccountDataByCommitment::initialize(account_data),
