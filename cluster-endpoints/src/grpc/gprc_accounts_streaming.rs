@@ -27,10 +27,10 @@ pub fn start_account_streaming_tasks(
     account_stream_sx: tokio::sync::mpsc::UnboundedSender<AccountNotificationMessage>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
-        loop {
+        'main_loop: loop {
             // for now we can only be sure that there is one confirmed block per slot, for processed there can be multiple confirmed blocks
             // So setting commitment to confirmed
-            // To do somehow make it processed
+            // To do somehow make it processed, we we could get blockhash with slot it should be ideal
             let confirmed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Confirmed;
 
             let mut subscribe_accounts: HashMap<String, SubscribeRequestFilterAccounts> =
@@ -139,11 +139,13 @@ pub fn start_account_streaming_tasks(
                                     },
                                     updated_slot: account.slot,
                                 },
+                                // TODO update with processed commitment / check above
                                 commitment: Commitment::Confirmed,
                             };
                             if account_stream_sx.send(notification).is_err() {
-                                log::error!("Account stream broken");
-                                break;
+                                // non recoverable, i.e the whole stream is being restarted
+                                log::error!("Account stream broken, breaking from main loop");
+                                break 'main_loop;
                             }
                         }
                     }
@@ -158,6 +160,7 @@ pub fn start_account_streaming_tasks(
             log::error!("Grpc account subscription broken (resubscribing)");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
+        Ok(())
     })
 }
 

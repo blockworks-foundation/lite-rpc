@@ -349,13 +349,27 @@ impl AccountStorageInterface for InmemoryAccountStore {
             }
         }
 
-        self.account_store
+        let updated_accounts = self
+            .account_store
             .iter_mut()
             .filter_map(|mut acc| acc.promote_slot_commitment(slot, commitment))
-            .filter_map(|(account_data, prev_account_data)| {
-                // update owners
+            .collect_vec();
+
+        // update owners
+        updated_accounts
+            .iter()
+            .for_each(|(account_data, prev_account_data)| {
                 if let Some(prev_account_data) = prev_account_data {
-                    self.update_owner(&prev_account_data, &account_data, commitment);
+                    if prev_account_data.account.owner != account_data.account.owner {
+                        self.update_owner(prev_account_data, account_data, commitment);
+                    }
+                }
+            });
+
+        updated_accounts
+            .iter()
+            .filter_map(|(account_data, prev_account_data)| {
+                if let Some(prev_account_data) = prev_account_data {
                     if prev_account_data != account_data {
                         Some(account_data)
                     } else {
@@ -365,6 +379,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                     Some(account_data)
                 }
             })
+            .cloned()
             .collect_vec()
     }
 }
@@ -450,9 +465,7 @@ mod tests {
         );
 
         let account_data_2 = create_random_account(&mut rng, 1, pk1, program);
-        let account_data_2_bis = create_random_account(&mut rng, 1, pk1, program);
         let account_data_3 = create_random_account(&mut rng, 2, pk1, program);
-        let account_data_3_bis = create_random_account(&mut rng, 2, pk1, program);
         let account_data_4 = create_random_account(&mut rng, 3, pk1, program);
         let account_data_5 = create_random_account(&mut rng, 4, pk1, program);
 
@@ -461,12 +474,6 @@ mod tests {
             .await;
         store
             .update_account(account_data_3.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_data_2_bis.clone(), Commitment::Processed)
-            .await;
-        store
-            .update_account(account_data_3_bis.clone(), Commitment::Processed)
             .await;
         store
             .update_account(account_data_4.clone(), Commitment::Processed)
@@ -496,7 +503,7 @@ mod tests {
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed).await,
-            Some(account_data_2_bis.clone())
+            Some(account_data_2.clone())
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
@@ -530,7 +537,7 @@ mod tests {
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
-            Some(account_data_2_bis.clone())
+            Some(account_data_2.clone())
         );
     }
 
