@@ -70,7 +70,7 @@ impl AccountService {
                                     offset: 0,
                                     length: 0,
                                 }),
-                                commitment: Some(CommitmentConfig::finalized()),
+                                commitment: None,
                                 min_context_slot: None,
                             },
                             with_context: None,
