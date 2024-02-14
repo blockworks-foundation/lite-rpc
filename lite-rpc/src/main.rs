@@ -55,6 +55,7 @@ use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
+use solana_rpc_client_api::response::{RpcContactInfo, RpcVoteAccountStatus};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
@@ -160,6 +161,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?
     };
+
+    let (cluster_info_notifier_tx, cluster_info_notifier_rx) = tokio::sync::broadcast::channel::<Vec<RpcContactInfo>>(100);
+    let (vote_account_notifier_tx, vote_account_notifier_rx) = tokio::sync::broadcast::channel::<RpcVoteAccountStatus>(100);
+
+
     let EndpointStreaming {
         // note: blocks_notifier will be dropped at some point
         blocks_notifier,
@@ -168,6 +174,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vote_account_notifier,
     } = subscriptions;
 
+    let cluster_info_notifier = cluster_info_notifier_rx;
+    let vote_account_notifier = vote_account_notifier_rx;
+
+    let enable_grpc_stream_inspection = true;
     setup_grpc_stream_debugging(enable_grpc_stream_inspection, &blocks_notifier);
 
     info!("Waiting for first finalized block...");
@@ -179,6 +189,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let block_information_store =
         BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
+
+    let (noop_blocks_notifier_tx, noop_blocks_notifier_rx) = tokio::sync::broadcast::channel::<ProducedBlock>(100);
+
+    // OVErwrite the blocks_notifier with a noop notifier
+    let blocks_notifier = noop_blocks_notifier_rx;
 
     let data_cache = DataCache {
         block_information_store,
@@ -358,6 +373,7 @@ fn setup_grpc_stream_debugging(enable_grpc_stream_debugging: bool, blocks_notifi
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+    // console_subscriber::init();
 
     let config = Config::load().await?;
 
