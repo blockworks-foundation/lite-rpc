@@ -43,6 +43,8 @@ tokio-util = "0.7"
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 chrono = { workspace = true }
 itertools = { workspace = true }
+console-subscriber = "0.2.0"
+cap = { version = "0.1.2", features = ["stats"] }
 
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-services = { workspace = true }

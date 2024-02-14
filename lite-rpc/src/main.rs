@@ -55,6 +55,9 @@ use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
+use cap::Cap;
+use prometheus::core::GenericGauge;
+use prometheus::{opts, register_int_gauge};
 use solana_rpc_client_api::response::{RpcContactInfo, RpcVoteAccountStatus};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
@@ -371,10 +374,29 @@ fn setup_grpc_stream_debugging(enable_grpc_stream_debugging: bool, blocks_notifi
     }
 }
 
+#[global_allocator]
+static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
+
+lazy_static::lazy_static! {
+    static ref MEMORY_USGE: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_memory_used", "Memory")).unwrap();
+}
+
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     // console_subscriber::init();
+
+    // log memory usage
+    tokio::spawn(async move {
+        loop {
+            let usage = ALLOCATOR.allocated();
+            log::info!("MEMORY usage: {}kb", usage / 1024);
+            MEMORY_USGE.set(usage as i64);
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+    });
 
     let config = Config::load().await?;
 
