@@ -82,6 +82,9 @@ pub struct Config {
 
     #[serde(default)]
     pub enable_address_lookup_tables: Option<bool>,
+
+    #[serde(default)]
+    pub account_filters: Option<String>,
 }
 
 impl Config {

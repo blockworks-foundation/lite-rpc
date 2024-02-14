@@ -45,7 +45,7 @@ impl AccountPrioService {
                         }
                         Err(Lagged(_lagged)) => {
                             log::warn!(
-                                "channel error receiving block for priofees calculation - continue"
+                                "channel lagged receiving block for account priofees calculation - continue"
                             );
                             continue 'recv_loop;
                         }
