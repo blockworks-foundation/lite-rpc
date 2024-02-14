@@ -318,8 +318,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         )
         .start(lite_rpc_http_addr, lite_rpc_ws_addr),
     );
-    drop(slot_notifier);
-    drop(blocks_notifier);
+    // drop(slot_notifier);
+    // drop(blocks_notifier);
 
     tokio::select! {
         res = tx_service_jh => {
