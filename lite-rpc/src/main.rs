@@ -60,6 +60,7 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
+use solana_lite_rpc_services::transaction_service::{TransactionService, TransactionServiceBuilder};
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -177,8 +178,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let cluster_info_notifier = cluster_info_notifier_rx;
     let vote_account_notifier = vote_account_notifier_rx;
 
-    let enable_grpc_stream_inspection = true;
-    setup_grpc_stream_debugging(enable_grpc_stream_inspection, &blocks_notifier);
+    // let enable_grpc_stream_inspection = true;
+    // setup_grpc_stream_debugging(enable_grpc_stream_inspection, &blocks_notifier);
 
     info!("Waiting for first finalized block...");
     let finalized_block =
@@ -214,12 +215,12 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     };
 
     // to avoid laggin we resubscribe to block notification
-    let data_caching_service = data_cache_service.listen(
-        blocks_notifier.resubscribe(),
-        slot_notifier.resubscribe(),
-        cluster_info_notifier,
-        vote_account_notifier,
-    );
+    // let data_caching_service = data_cache_service.listen(
+    //     blocks_notifier.resubscribe(),
+    //     slot_notifier.resubscribe(),
+    //     cluster_info_notifier,
+    //     vote_account_notifier,
+    // );
 
     let (block_priofees_task, block_priofees_service) =
         start_block_priofees_task(blocks_notifier.resubscribe(), 100);
@@ -337,9 +338,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         res = postgres => {
             anyhow::bail!("Postgres service {res:?}");
         }
-        res = futures::future::select_all(data_caching_service) => {
-            anyhow::bail!("Data caching service failed {res:?}")
-        }
+        // res = futures::future::select_all(data_caching_service) => {
+        //     anyhow::bail!("Data caching service failed {res:?}")
+        // }
         res = futures::future::select_all(cluster_endpoint_tasks) => {
             anyhow::bail!("cluster endpoint failure {res:?}")
         }
