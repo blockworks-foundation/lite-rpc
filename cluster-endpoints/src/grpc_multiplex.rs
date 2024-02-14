@@ -20,6 +20,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
+use tracing::info_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
@@ -47,6 +48,7 @@ fn create_grpc_multiplex_processed_block_stream(
     let mut fused_streams = source_channels.merge();
 
     let jh_merging_streams = tokio::task::spawn(async move {
+        info_span!("multiplexed_processed_block_stream_task");
         let mut slots_processed = BTreeSet::<u64>::new();
         loop {
             const MAX_SIZE: usize = 1024;
@@ -121,6 +123,7 @@ fn create_grpc_multiplex_block_meta_task(
     let mut fused_streams = source_channels.merge();
 
     let jh_merging_streams = tokio::task::spawn(async move {
+        info_span!("multiplexed_block_meta_stream_task");
         let mut tip: Slot = 0;
         loop {
             match fused_streams.next().await {
@@ -214,7 +217,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
     // task MUST not terminate but might be aborted from outside
     let jh_block_emitter_task = tokio::task::spawn(async move {
-
+        info_span!("multiplexed_blocks_task");
 
         loop {
             // channel must NEVER GET CLOSED
@@ -376,6 +379,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
 
     // task MUST not terminate but might be aborted from outside
     let jh_multiplex_task = tokio::spawn(async move {
+        info_span!("multiplexed_processed_slots_task");
         loop {
             let mut channels = vec![];
             for grpc_source in &grpc_sources {
