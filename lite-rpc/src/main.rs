@@ -56,6 +56,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
 use cap::Cap;
+use jsonrpsee::tracing::Instrument;
 use prometheus::core::GenericGauge;
 use prometheus::{opts, register_int_gauge};
 use solana_rpc_client_api::response::{RpcContactInfo, RpcVoteAccountStatus};
@@ -391,10 +392,11 @@ pub async fn main() -> anyhow::Result<()> {
     // log memory usage
     tokio::spawn(async move {
         loop {
-            let usage = ALLOCATOR.allocated();
-            log::info!("MEMORY usage: {}kb", usage / 1024);
-            MEMORY_USGE.set(usage as i64);
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            let allocated = ALLOCATOR.allocated();
+            let total_allocated = ALLOCATOR.total_allocated();
+            log::info!("MEMORY - allocated {}kb, total_allocated {}kb", allocated / 1024, total_allocated / 1024);
+            MEMORY_USGE.set(allocated as i64);
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     });
 
