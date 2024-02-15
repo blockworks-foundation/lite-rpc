@@ -50,7 +50,7 @@ impl LoggingTimer {
     fn log_if_exceed(&self, name: &str) {
         let elapsed = self.started_at.elapsed();
         if elapsed > self.threshold {
-            eprintln!("{} exceeded: {:?}", name, elapsed);
+            println!("{} exceeded: {:?}", name, elapsed);
         }
 
     }
@@ -75,8 +75,9 @@ pub fn from_grpc_block_update(
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
+        .take(10) //FIXME for testing only
         .filter_map(|tx| {
-            let log_timer_tx = LoggingTimer { started_at: Instant::now(), threshold: Duration::from_micros(100) };
+            let log_timer_tx = LoggingTimer { started_at: Instant::now(), threshold: Duration::from_micros(10) };
             log_timer_tx.log_if_exceed("start");
             let meta = tx.meta?;
 
