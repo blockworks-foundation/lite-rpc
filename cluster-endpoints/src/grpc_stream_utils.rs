@@ -10,34 +10,41 @@ use tokio::task::{AbortHandle, JoinHandle};
 
 
 /// note: backpressure will NOT get propagated to upstream but pushed down into broadcast channel
-pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static, const TAG: u32>(
+/// service will shut down if upstream gets closed
+/// service will NOT shut down if downstream has no receivers
+///
+/// use `debug_label` to identify the plugger in logs (e.g. "confirmed-blocks-channel")
+pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
     mut upstream: tokio::sync::mpsc::Receiver<T>,
     downstream: tokio::sync::broadcast::Sender<T>,
-    // TODO allow multiple downstreams + fanout
+    debug_label: &str,
 ) {
-    let jh_channelizer = spawn(async move {
+    let debug_label = debug_label.to_string();
+
+    // abort plugger task by closing the sender
+    let _jh_task = spawn(async move {
         'main_loop: loop {
             match upstream.recv().await {
                 Some(msg) => {
                     match downstream.send(msg) {
                         Ok(receivers) => {
-                            trace!("sent data to {} receivers (#{TAG})", receivers);
+                            trace!("sent data to {} receivers ({debug_label})", receivers);
                         }
                         Err(send_error) => match send_error {
                             SendError(_msg) => {
-                                debug!("no active receivers - skipping message");
+                                debug!("no active receivers on channel {debug_label} - skipping message");
                                 continue 'main_loop;
                             }
                         },
                     };
                     if downstream.len() < 10 {
-                        debug!("messages in broadcast channel #{TAG}: {}", downstream.len());
+                        debug!("messages in broadcast channel {debug_label}: {}", downstream.len());
                     } else {
-                        warn!("messages in broadcast channel #{TAG}: {}", downstream.len());
+                        warn!("messages in broadcast channel {debug_label}: {}", downstream.len());
                     }
                 }
                 None => {
-                    info!("plugger #{TAG} source mpsc was closed - aborting plugger task");
+                    info!("plugger {debug_label} source mpsc was closed - aborting plugger task");
                     return; // abort task
                 }
             }

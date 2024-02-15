@@ -59,8 +59,11 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::process::exit;
 use std::sync::Arc;
+use std::thread::sleep;
 use std::time::Duration;
+use jsonrpsee::tracing::info_span;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
@@ -483,7 +486,9 @@ fn setup_tracing_subscriber() {
     if enable_instrument_tracing {
         tracing_subscriber::fmt::fmt()
             .with_env_filter(EnvFilter::from_default_env())
-            .with_span_events(FmtSpan::FULL)
+            // not sure if "CLOSE" is exactly what we want
+            // ex. "close time.busy=14.7ms time.idle=14.0µs"
+            .with_span_events(FmtSpan::CLOSE)
             .init();
     } else {
         tracing_subscriber::fmt::init();

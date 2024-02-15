@@ -32,6 +32,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
+use tracing::debug_span;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterSlots, SubscribeUpdateSlot};
 
@@ -48,6 +49,7 @@ pub fn from_grpc_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
+    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()

@@ -18,7 +18,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::channel;
 use tokio::task::AbortHandle;
-use tokio::time::{Instant, sleep, timeout};
+use tokio::time::{Instant, sleep};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug_span};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -51,32 +51,33 @@ fn create_grpc_multiplex_processed_block_task(
             upstream_tx.clone(),
         );
     }
-    // let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
-    // let mut merged_streams = source_channels.merge();
-
-    // TODO rename
-    let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(10);
-
-    spawn_plugger_mpcs_to_broadcast::<_, 0x23000020>(blocks_rx, broadcast_tx);
+    let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(16);
+    spawn_plugger_mpcs_to_broadcast(blocks_rx, broadcast_tx, "processed-blocks-channel");
 
     // let (mut channelized, _abort_handler) = channelize_stream(merged_streams, 30);
 
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut slots_processed = BTreeSet::<u64>::new();
-        loop {
+        let mut last_tick = Instant::now();
+        loop { // recv loop
+            if last_tick.elapsed() > Duration::from_millis(200) {
+                warn!("(soft_realtime) slow multiplex loop interation: {:?}", last_tick.elapsed());
+            }
+            last_tick = Instant::now();
+
             const MAX_SIZE: usize = 1024;
             match broadcast_rx.recv().await {
                 Ok(Message::GeyserSubscribeUpdate(subscribe_update)) => {
+                    let started_at = Instant::now();
                     let mapfilter =
                         map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
                     if let Some((slot, produced_block)) = mapfilter {
-                        debug_span!("grpc_multiplex_processed_block_stream", ?produced_block.slot);
                         assert_eq!(COMMITMENT_CONFIG, produced_block.commitment_config);
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
                         if !slots_processed.contains(&slot)
                             && (slots_processed.len() < MAX_SIZE / 2
-                                || slot > slots_processed.first().cloned().unwrap_or_default())
+                            || slot > slots_processed.first().cloned().unwrap_or_default())
                         {
 
                             let send_started_at = Instant::now();
@@ -133,16 +134,8 @@ fn create_grpc_multiplex_block_meta_task(
     block_meta_sender: tokio::sync::mpsc::Sender<BlockMeta>,
     commitment_config: CommitmentConfig,
 ) -> Vec<AbortHandle> {
-    // let mut channels = vec![];
     let (upstream_tx, blocks_rx) = channel(10);
     for grpc_source in grpc_sources {
-        // tasks will be shutdown automatically if the channel gets closed
-        // let (_jh_geyser_task, result_channel_sz1) = create_geyser_autoconnection_task(
-        //     grpc_source.clone(),
-        //     GeyserFilter(commitment_config).blocks_meta(),
-        // );
-        // channels.push(result_channel_sz1)
-
         create_geyser_autoconnection_task_with_mpsc(
             grpc_source.clone(),
             GeyserFilter(commitment_config).blocks_meta(),
@@ -153,9 +146,9 @@ fn create_grpc_multiplex_block_meta_task(
     // let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
     // let mut merged_streams = source_channels.merge();
 
-    let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(10);
+    let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(16);
 
-    spawn_plugger_mpcs_to_broadcast::<_, 23000010>(blocks_rx, broadcast_tx);
+    spawn_plugger_mpcs_to_broadcast(blocks_rx, broadcast_tx, "block-meta-channel");
 
 
     let jh_merging_streams = tokio::task::spawn(async move {
@@ -166,7 +159,6 @@ fn create_grpc_multiplex_block_meta_task(
                     if let Some(update) = subscribe_update.update_oneof {
                         match update {
                             UpdateOneof::BlockMeta(block_meta) => {
-                                debug_span!("grpc_multiplex_block_meta_stream", ?block_meta.slot);
                                 let proposed_slot = block_meta.slot;
                                 if proposed_slot > tip {
                                     tip = proposed_slot;
@@ -312,7 +304,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             cleanup_without_recv_full_blocks = 0;
 
                             let processed_block = processed_block.expect("processed block from stream");
-                            debug_span!("sequence_processed_block", ?processed_block.slot);
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
@@ -328,7 +319,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         meta_confirmed = block_meta_reciever_confirmed.recv() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
                             let meta_confirmed = meta_confirmed.expect("confirmed block meta from stream");
-                            debug_span!("sequence_block_meta_confirmed", ?meta_confirmed.slot);
                             let blockhash = meta_confirmed.blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.get(&blockhash) {
                                 let confirmed_block = cached_processed_block.to_confirmed_block();
@@ -346,7 +336,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         meta_finalized = block_meta_reciever_finalized.recv() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
                             let meta_finalized = meta_finalized.expect("finalized block meta from stream");
-                            debug_span!("sequence_block_meta_finalized", ?meta_finalized.slot);
+                            // let _span = debug_span!("sequence_block_meta_finalized", ?meta_finalized.slot).entered();
                             let blockhash = meta_finalized.blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
@@ -363,7 +353,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             }
                         },
                     _ = cleanup_tick.tick() => {
-                         debug_span!("sequence_cleanup_ticker");
                          // timebased restart
                         if cleanup_without_recv_full_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
                             cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
@@ -434,7 +423,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                     Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
-                            debug_span!("grpc_multiplex_processed_slots_stream", ?slot);
+                            let _span = debug_span!("grpc_multiplex_processed_slots_stream", ?slot).entered();
                             let send_started_at = Instant::now();
                             let send_result = multiplexed_messages_sender
                                 .send(SlotNotification {
@@ -512,6 +501,7 @@ fn map_block_from_yellowstone_update(
     update: SubscribeUpdate,
     commitment_config: CommitmentConfig,
 ) -> Option<(Slot, ProducedBlock)> {
+    let _span = debug_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
             let block = from_grpc_block_update(update_block_message, commitment_config);
