@@ -30,6 +30,8 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use log::info;
 use tracing::debug_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
@@ -37,16 +39,41 @@ use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
 };
 use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
 
+
+struct LoggingTimer {
+    started_at: Instant,
+    threshold: Duration,
+}
+
+impl LoggingTimer {
+
+    fn log_if_exceed(&self, name: &str) {
+        let elapsed = self.started_at.elapsed();
+        if elapsed > self.threshold {
+            eprintln!("{} exceeded: {:?}", name, elapsed);
+        }
+
+    }
+}
+
+
+
 /// grpc version of ProducedBlock mapping
 pub fn from_grpc_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
     let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
+    let started_at = Instant::now();
+    let log_timer = LoggingTimer { started_at, threshold: Duration::from_millis(40)};
+
+    log_timer.log_if_exceed("start");
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
         .filter_map(|tx| {
+            let log_timer_tx = LoggingTimer { started_at: Instant::now(), threshold: Duration::from_micros(100) };
+            log_timer_tx.log_if_exceed("start");
             let meta = tx.meta?;
 
             let transaction = tx.transaction?;
@@ -69,11 +96,13 @@ pub fn from_grpc_block_update(
                     }
                 })
                 .collect_vec();
+            log_timer_tx.log_if_exceed("after signatures");
 
             let err = meta.err.map(|x| {
                 bincode::deserialize::<TransactionError>(&x.err)
                     .expect("TransactionError should be deserialized")
             });
+            log_timer_tx.log_if_exceed("after err");
 
             let signature = signatures[0];
             let compute_units_consumed = meta.compute_units_consumed;
@@ -85,6 +114,7 @@ pub fn from_grpc_block_update(
                     Pubkey::new_from_array(bytes)
                 })
                 .collect();
+            log_timer_tx.log_if_exceed("after account keys");
 
             let message = VersionedMessage::V0(v0::Message {
                 header: MessageHeader {
@@ -119,6 +149,7 @@ pub fn from_grpc_block_update(
                     })
                     .collect(),
             });
+            log_timer_tx.log_if_exceed("after message mapping");
 
             let legacy_compute_budget: Option<(u32, Option<u64>)> =
                 message.instructions().iter().find_map(|i| {
@@ -142,6 +173,7 @@ pub fn from_grpc_block_update(
                     }
                     None
                 });
+            log_timer_tx.log_if_exceed("after legacy_compute_budget");
 
             let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
             let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
@@ -162,6 +194,7 @@ pub fn from_grpc_block_update(
                     None
                 })
                 .or(legacy_cu_requested);
+            log_timer_tx.log_if_exceed("after cu_requested");
 
             let prioritization_fees = message
                 .instructions()
@@ -180,6 +213,7 @@ pub fn from_grpc_block_update(
                     None
                 })
                 .or(legacy_prioritization_fees);
+            log_timer_tx.log_if_exceed("after prioritization_fees");
 
             let is_vote_transaction = message.instructions().iter().any(|i| {
                 i.program_id(message.static_account_keys())
@@ -188,6 +222,7 @@ pub fn from_grpc_block_update(
                         .map(|vi| vi.is_simple_vote())
                         .unwrap_or(false)
             });
+            log_timer_tx.log_if_exceed("after is_vote_transaction");
 
             let readable_accounts = account_keys
                 .iter()
@@ -195,18 +230,22 @@ pub fn from_grpc_block_update(
                 .filter(|(index, _)| !message.is_maybe_writable(*index))
                 .map(|(_, pk)| *pk)
                 .collect();
+            log_timer_tx.log_if_exceed("after readable_accounts");
             let writable_accounts = account_keys
                 .iter()
                 .enumerate()
                 .filter(|(index, _)| message.is_maybe_writable(*index))
                 .map(|(_, pk)| *pk)
                 .collect();
+            log_timer_tx.log_if_exceed("after writable_accounts");
 
             let address_lookup_tables = message
                 .address_table_lookups()
                 .map(|x| x.to_vec())
                 .unwrap_or_default();
+            log_timer_tx.log_if_exceed("after address_lookup_tables");
 
+            log_timer_tx.log_if_exceed("before return");
             Some(TransactionInfo {
                 signature: signature.to_string(),
                 is_vote: is_vote_transaction,
@@ -222,6 +261,7 @@ pub fn from_grpc_block_update(
             })
         })
         .collect();
+    log_timer.log_if_exceed("after transactions");
 
     let rewards = block.rewards.map(|rewards| {
         rewards
@@ -244,6 +284,7 @@ pub fn from_grpc_block_update(
             })
             .collect_vec()
     });
+    log_timer.log_if_exceed("after rewards");
 
     let leader_id = if let Some(rewards) = &rewards {
         rewards
@@ -253,7 +294,9 @@ pub fn from_grpc_block_update(
     } else {
         None
     };
+    log_timer.log_if_exceed("after leader_id");
 
+    log_timer.log_if_exceed("before return");
     ProducedBlock {
         transactions: txs,
         block_height: block
@@ -325,5 +368,30 @@ pub fn create_grpc_subscription(
             vote_accounts_polling,
         ];
         Ok((streamers, endpoint_tasks))
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+    use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
+
+    #[test]
+    fn map_block() {
+        // version yellowstone.1.12+solana.1.17.15
+        let raw_block = include_bytes!("block-000251402816-confirmed-1707315774189.dat");
+
+        use yellowstone_grpc_proto::prost::Message;
+
+        let example_block = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
+
+        // info!("example_block: {:?}", example_block);
+
+        let started_at = Instant::now();
+        let produced_block = from_grpc_block_update(example_block, CommitmentConfig::confirmed());
+        println!("from_grpc_block_update mapping took: {:?}", started_at.elapsed());
     }
 }
