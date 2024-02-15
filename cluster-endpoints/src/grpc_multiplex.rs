@@ -1,15 +1,10 @@
 use crate::grpc_stream_utils::spawn_plugger_mpcs_to_broadcast_channel;
 use crate::grpc_subscription::from_grpc_block_update;
 use anyhow::{bail, Context};
-use futures::StreamExt;
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{
-    create_geyser_autoconnection_task, create_geyser_autoconnection_task_with_mpsc,
-};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig, Message};
-use itertools::Itertools;
 use log::{debug, info, trace, warn};
-use merge_streams::MergeStreams;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
@@ -20,10 +15,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
-use tokio::sync::mpsc::channel;
 use tokio::task::AbortHandle;
 use tokio::time::{sleep, Instant};
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -38,19 +31,12 @@ fn create_grpc_multiplex_processed_block_task(
 ) -> Vec<AbortHandle> {
     const COMMITMENT_CONFIG: CommitmentConfig = CommitmentConfig::processed();
 
-    let (upstream_tx, blocks_rx) = channel(10);
-    // let mut channels = vec![];
+    let (autoconnect_tx, blocks_rx) = tokio::sync::mpsc::channel(10);
     for grpc_source in grpc_sources {
-        // tasks will be shutdown automatically if the channel gets closed
-        // let (_jh_geyser_task, result_channel_sz1) = create_geyser_autoconnection_task(
-        //     grpc_source.clone(),
-        //     GeyserFilter(COMMITMENT_CONFIG).blocks_and_txs(),
-        // );
-        // channels.push(result_channel_sz1)
         create_geyser_autoconnection_task_with_mpsc(
             grpc_source.clone(),
             GeyserFilter(COMMITMENT_CONFIG).blocks_and_txs(),
-            upstream_tx.clone(),
+            autoconnect_tx.clone(),
         );
     }
     let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(16);
@@ -93,7 +79,7 @@ fn create_grpc_multiplex_processed_block_task(
                             }
 
                             trace!(
-                                "emitted block #{}@{} from multiplexer in {:?}",
+                                "emitted block #{}@{} from multiplexer took {:?}",
                                 slot,
                                 COMMITMENT_CONFIG.commitment,
                                 send_started_at.elapsed()
@@ -136,12 +122,12 @@ fn create_grpc_multiplex_block_meta_task(
     block_meta_sender: tokio::sync::mpsc::Sender<BlockMeta>,
     commitment_config: CommitmentConfig,
 ) -> Vec<AbortHandle> {
-    let (upstream_tx, blocks_rx) = channel(10);
+    let (autoconnect_tx, blocks_rx) = tokio::sync::mpsc::channel(10);
     for grpc_source in grpc_sources {
         create_geyser_autoconnection_task_with_mpsc(
             grpc_source.clone(),
             GeyserFilter(commitment_config).blocks_meta(),
-            upstream_tx.clone(),
+            autoconnect_tx.clone(),
         );
     }
 
@@ -176,7 +162,7 @@ fn create_grpc_multiplex_block_meta_task(
                                     }
 
                                     trace!(
-                                        "emitted block meta #{}@{} from multiplexer in {:?}",
+                                        "emitted block meta #{}@{} from multiplexer took {:?}",
                                         proposed_slot,
                                         commitment_config.commitment,
                                         send_started_at.elapsed()
@@ -403,24 +389,23 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
     // task MUST not terminate but might be aborted from outside
     let jh_multiplex_task = tokio::spawn(async move {
         loop {
-            let mut channels = vec![];
+            let (autoconnect_tx, slots_rx) = tokio::sync::mpsc::channel(10);
             for grpc_source in &grpc_sources {
-                // tasks will be shutdown automatically if the channel gets closed
-                let (_jh_geyser_task, result_channel_sz1) = create_geyser_autoconnection_task(
+                create_geyser_autoconnection_task_with_mpsc(
                     grpc_source.clone(),
                     GeyserFilter(COMMITMENT_CONFIG).slots(),
+                    autoconnect_tx.clone(),
                 );
-                channels.push(result_channel_sz1)
             }
 
-            let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
-            let mut merged_streams = source_channels.merge();
+            let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(16);
+
+            spawn_plugger_mpcs_to_broadcast_channel(slots_rx, broadcast_tx, "slots-channel");
 
             'recv_loop: loop {
-                let next =
-                    tokio::time::timeout(Duration::from_secs(30), merged_streams.next()).await;
+                let next = tokio::time::timeout(Duration::from_secs(30), broadcast_rx.recv()).await;
                 match next {
-                    Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
+                    Ok(Ok(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
                             let _span = debug_span!("grpc_multiplex_processed_slots_stream", ?slot)
@@ -438,14 +423,14 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                             }
 
                             trace!(
-                                "emitted slot #{}@{} from multiplexer in {:?}",
+                                "emitted slot #{}@{} from multiplexer took {:?}",
                                 slot,
                                 COMMITMENT_CONFIG.commitment,
                                 send_started_at.elapsed()
                             );
                         }
                     }
-                    Ok(Some(Message::Connecting(attempt))) => {
+                    Ok(Ok(Message::Connecting(attempt))) => {
                         if attempt > 1 {
                             warn!(
                                 "Multiplexed geyser slot stream performs reconnect attempt {}",
@@ -453,7 +438,16 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                             );
                         }
                     }
-                    Ok(None) => {}
+                    Ok(Err(RecvError::Lagged(missed_slots))) => {
+                        warn!(
+                            "Could not keep up with producer - missed {} slots",
+                            missed_slots
+                        );
+                    }
+                    Ok(Err(RecvError::Closed)) => {
+                        warn!("Multiplexed geyser source stream slot terminated - reconnect");
+                        break 'recv_loop;
+                    }
                     Err(_elapsed) => {
                         warn!("Multiplexed geyser slot stream timeout - reconnect");
                         // throttle
