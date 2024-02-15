@@ -35,21 +35,20 @@ fn create_grpc_multiplex_processed_block_task(
     let mut channels = vec![];
     for grpc_source in grpc_sources {
         // tasks will be shutdown automatically if the channel gets closed
-        let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+        let (_jh_geyser_task, result_channel_sz1) = create_geyser_autoconnection_task(
             grpc_source.clone(),
             GeyserFilter(COMMITMENT_CONFIG).blocks_and_txs(),
         );
-        channels.push(message_channel)
+        channels.push(result_channel_sz1)
     }
-
     let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
-    let mut fused_streams = source_channels.merge();
+    let mut merged_streams = source_channels.merge();
 
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut slots_processed = BTreeSet::<u64>::new();
         loop {
             const MAX_SIZE: usize = 1024;
-            match fused_streams.next().await {
+            match merged_streams.next().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     let mapfilter =
                         map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
@@ -115,24 +114,25 @@ fn create_grpc_multiplex_block_meta_task(
     let mut channels = vec![];
     for grpc_source in grpc_sources {
         // tasks will be shutdown automatically if the channel gets closed
-        let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+        let (_jh_geyser_task, result_channel_sz1) = create_geyser_autoconnection_task(
             grpc_source.clone(),
             GeyserFilter(commitment_config).blocks_meta(),
         );
-        channels.push(message_channel)
+        channels.push(result_channel_sz1)
     }
 
     let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
-    let mut fused_streams = source_channels.merge();
+    let mut merged_streams = source_channels.merge();
 
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut tip: Slot = 0;
         loop {
-            match fused_streams.next().await {
+            match merged_streams.next().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     if let Some(update) = subscribe_update.update_oneof {
                         match update {
                             UpdateOneof::BlockMeta(block_meta) => {
+                                debug_span!("grpc_multiplex_block_meta_stream", ?block_meta.slot);
                                 let proposed_slot = block_meta.slot;
                                 if proposed_slot > tip {
                                     tip = proposed_slot;
@@ -229,7 +229,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let mut task_list: Vec<AbortHandle> = vec![];
 
             let processed_blocks_tasks =
-                create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender.clone());
+                create_grpc_multiplex_processed_block_task(&grpc_sources, processed_block_sender.clone());
             task_list.extend(processed_blocks_tasks);
 
             let jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(
@@ -248,10 +248,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
             // by blockhash
             // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED
             let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
-            // both streams support backpressure, see log:
-            // grpc_subscription_autoreconnect_tasks: downstream receiver did not pick ut message for 500ms - keep waiting
-            // let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
-            // let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
             let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
             let mut last_finalized_slot: Slot = 0;
@@ -377,24 +373,24 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
             let mut channels = vec![];
             for grpc_source in &grpc_sources {
                 // tasks will be shutdown automatically if the channel gets closed
-                let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
+                let (_jh_geyser_task, result_channel_sz1) = create_geyser_autoconnection_task(
                     grpc_source.clone(),
                     GeyserFilter(COMMITMENT_CONFIG).slots(),
                 );
-                channels.push(message_channel)
+                channels.push(result_channel_sz1)
             }
 
             let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
-            let mut fused_streams = source_channels.merge();
+            let mut merged_streams = source_channels.merge();
 
             'recv_loop: loop {
                 let next =
-                    tokio::time::timeout(Duration::from_secs(30), fused_streams.next()).await;
+                    tokio::time::timeout(Duration::from_secs(30), merged_streams.next()).await;
                 match next {
                     Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
-
+                            debug_span!("grpc_multiplex_processed_slots_stream", ?slot);
                             let send_started_at = Instant::now();
                             let send_result = multiplexed_messages_sender
                                 .send(SlotNotification {
