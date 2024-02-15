@@ -65,6 +65,8 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::EnvFilter;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -405,7 +407,7 @@ fn setup_grpc_stream_debugging(blocks_notifier: &BlockStream) {
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    setup_tracing_subscriber();
 
     let config = Config::load().await?;
 
@@ -469,4 +471,22 @@ fn obfuscate_rpcurl(rpc_addr: &str) -> String {
         return rpc_addr.replacen(char::is_numeric, "X", 99);
     }
     rpc_addr.to_string()
+}
+
+fn setup_tracing_subscriber() {
+    let enable_instrument_tracing = std::env::var("ENABLE_INSTRUMENT_TRACING")
+        .unwrap_or("false".to_string())
+        .parse::<bool>()
+        .expect("flag must be true or false");
+
+    if enable_instrument_tracing {
+        tracing_subscriber::fmt::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            // not sure if "CLOSE" is exactly what we want
+            // ex. "close time.busy=14.7ms time.idle=14.0µs"
+            .with_span_events(FmtSpan::CLOSE)
+            .init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
 }

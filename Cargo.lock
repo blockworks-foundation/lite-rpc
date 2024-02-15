@@ -837,6 +837,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
+name = "cap"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f125eb85b84a24c36b02ed1d22c9dd8632f53b3cde6e4d23512f94021030003"
+
+[[package]]
 name = "caps"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1767,7 +1773,7 @@ dependencies = [
 [[package]]
 name = "geyser-grpc-connector"
 version = "0.10.1+yellowstone.1.12"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.1+yellowstone.1.12+solana.1.17.15#6c26802864b60be5d1458a59a2547a2ed7d86771"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.2+yellowstone.1.12+solana.1.17.15#a6ab686fa4607e95550d29f77f08ea074b90e91f"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2503,6 +2509,7 @@ dependencies = [
  "bincode",
  "bs58",
  "bytes",
+ "cap",
  "chrono",
  "clap 4.4.18",
  "const_env",
@@ -4461,6 +4468,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tracing",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
