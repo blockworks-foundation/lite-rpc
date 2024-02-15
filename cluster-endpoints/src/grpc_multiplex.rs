@@ -13,15 +13,12 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::mpsc::Sender;
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
-use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::AbortHandle;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::info_span;
-use tracing::{debug_span, instrument, trace_span, warn_span};
+use tracing::{debug_span};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
@@ -33,14 +30,14 @@ fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     block_sender: tokio::sync::mpsc::Sender<ProducedBlock>,
 ) -> Vec<AbortHandle> {
-    let commitment_config = CommitmentConfig::processed();
+    let commitment_processed = CommitmentConfig::processed();
 
     let mut channels = vec![];
     for grpc_source in grpc_sources {
         // tasks will be shutdown automatically if the channel gets closed
         let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
             grpc_source.clone(),
-            GeyserFilter(commitment_config).blocks_and_txs(),
+            GeyserFilter(commitment_processed).blocks_and_txs(),
         );
         channels.push(message_channel)
     }
@@ -49,14 +46,13 @@ fn create_grpc_multiplex_processed_block_stream(
     let mut fused_streams = source_channels.merge();
 
     let jh_merging_streams = tokio::task::spawn(async move {
-        info_span!("multiplexed_processed_block_stream_task");
         let mut slots_processed = BTreeSet::<u64>::new();
         loop {
             const MAX_SIZE: usize = 1024;
             match fused_streams.next().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     let mapfilter =
-                        map_block_from_yellowstone_update(*subscribe_update, commitment_config);
+                        map_block_from_yellowstone_update(*subscribe_update, commitment_processed);
                     if let Some((slot, produced_block)) = mapfilter {
                         debug_span!("grpc_multiplex_processed_block_stream", ?produced_block.slot);
                         let commitment_level_block = produced_block.commitment_config.commitment;
@@ -106,6 +102,8 @@ fn create_grpc_multiplex_processed_block_stream(
     vec![jh_merging_streams.abort_handle()]
 }
 
+
+// backpressure: the mpsc sender will block grpc stream until capacity is available
 fn create_grpc_multiplex_block_meta_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
     block_meta_sender: tokio::sync::mpsc::Sender<BlockMeta>,
@@ -125,7 +123,6 @@ fn create_grpc_multiplex_block_meta_task(
     let mut fused_streams = source_channels.merge();
 
     let jh_merging_streams = tokio::task::spawn(async move {
-        info_span!("multiplexed_block_meta_stream_task");
         let mut tip: Slot = 0;
         loop {
             match fused_streams.next().await {
@@ -196,17 +193,15 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
     // task MUST not terminate but might be aborted from outside
     let jh_block_emitter_task = tokio::task::spawn(async move {
-        info_span!("multiplexed_blocks_task");
 
         loop {
-            // channel must NEVER GET CLOSED
+            // channels must NEVER GET CLOSED (unless full restart of multiplexer)
             let (processed_block_sender, mut processed_block_reciever) =
                 tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
-
             let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) =
-                tokio::sync::mpsc::channel::<BlockMeta>(10);
+                tokio::sync::mpsc::channel::<BlockMeta>(500);
             let (block_meta_sender_finalized, mut block_meta_reciever_finalized) =
-                tokio::sync::mpsc::channel::<BlockMeta>(10);
+                tokio::sync::mpsc::channel::<BlockMeta>(500);
 
             let processed_block_sender = processed_block_sender.clone();
             reconnect_attempts += 1;
@@ -221,18 +216,18 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let mut task_list: Vec<AbortHandle> = vec![];
 
             let processed_blocks_tasks =
-                create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
+                create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender.clone());
             task_list.extend(processed_blocks_tasks);
 
             let jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(
                 &grpc_sources,
-                block_meta_sender_confirmed,
+                block_meta_sender_confirmed.clone(),
                 CommitmentConfig::confirmed(),
             );
             task_list.extend(jh_meta_task_confirmed);
             let jh_meta_task_finalized = create_grpc_multiplex_block_meta_task(
                 &grpc_sources,
-                block_meta_sender_finalized,
+                block_meta_sender_finalized.clone(),
                 CommitmentConfig::finalized(),
             );
             task_list.extend(jh_meta_task_finalized);
@@ -257,6 +252,11 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let mut startup_completed = false;
             const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
             'recv_loop: loop {
+                debug!("processed_block_sender: {}, block_meta_sender_confirmed: {}, block_meta_sender_finalized: {}",
+                    processed_block_sender.capacity(),
+                    block_meta_sender_confirmed.capacity(),
+                    block_meta_sender_finalized.capacity()
+                );
                 tokio::select! {
                     processed_block = processed_block_reciever.recv() => {
                             cleanup_without_recv_full_blocks = 0;
@@ -360,7 +360,6 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
 
     // task MUST not terminate but might be aborted from outside
     let jh_multiplex_task = tokio::spawn(async move {
-        info_span!("multiplexed_processed_slots_task");
         loop {
             let mut channels = vec![];
             for grpc_source in &grpc_sources {
