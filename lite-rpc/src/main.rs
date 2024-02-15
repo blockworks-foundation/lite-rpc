@@ -43,28 +43,31 @@ use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceCon
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
+use cap::Cap;
+use jsonrpsee::tracing::Instrument;
 use lite_rpc::postgres_logger;
+use prometheus::core::GenericGauge;
+use prometheus::{opts, register_int_gauge};
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
+use solana_lite_rpc_services::transaction_service::{
+    TransactionService, TransactionServiceBuilder,
+};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::response::{RpcContactInfo, RpcVoteAccountStatus};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
-use cap::Cap;
-use jsonrpsee::tracing::Instrument;
-use prometheus::core::GenericGauge;
-use prometheus::{opts, register_int_gauge};
-use solana_rpc_client_api::response::{RpcContactInfo, RpcVoteAccountStatus};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
-use solana_lite_rpc_services::transaction_service::{TransactionService, TransactionServiceBuilder};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -167,9 +170,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?
     };
 
-    let (cluster_info_notifier_tx, cluster_info_notifier_rx) = tokio::sync::broadcast::channel::<Vec<RpcContactInfo>>(100);
-    let (vote_account_notifier_tx, vote_account_notifier_rx) = tokio::sync::broadcast::channel::<RpcVoteAccountStatus>(100);
-
+    let (cluster_info_notifier_tx, cluster_info_notifier_rx) =
+        tokio::sync::broadcast::channel::<Vec<RpcContactInfo>>(100);
+    let (vote_account_notifier_tx, vote_account_notifier_rx) =
+        tokio::sync::broadcast::channel::<RpcVoteAccountStatus>(100);
 
     let EndpointStreaming {
         // note: blocks_notifier will be dropped at some point
@@ -195,7 +199,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let block_information_store =
         BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
 
-    let (noop_blocks_notifier_tx, noop_blocks_notifier_rx) = tokio::sync::broadcast::channel::<ProducedBlock>(100);
+    let (noop_blocks_notifier_tx, noop_blocks_notifier_rx) =
+        tokio::sync::broadcast::channel::<ProducedBlock>(100);
 
     // OVErwrite the blocks_notifier with a noop notifier
     let blocks_notifier = noop_blocks_notifier_rx;
@@ -383,18 +388,20 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_memory_used", "Memory")).unwrap();
 }
 
-
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-    // console_subscriber::init();
+    setup_tracing_subscriber();
 
     // log memory usage
     tokio::spawn(async move {
         loop {
             let allocated = ALLOCATOR.allocated();
             let total_allocated = ALLOCATOR.total_allocated();
-            log::info!("MEMORY - allocated {}kb, total_allocated {}kb", allocated / 1024, total_allocated / 1024);
+            log::info!(
+                "MEMORY - allocated {}kb, total_allocated {}kb",
+                allocated / 1024,
+                total_allocated / 1024
+            );
             MEMORY_USGE.set(allocated as i64);
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
@@ -462,4 +469,19 @@ fn obfuscate_rpcurl(rpc_addr: &str) -> String {
         return rpc_addr.replacen(char::is_numeric, "X", 99);
     }
     rpc_addr.to_string()
+}
+
+fn setup_tracing_subscriber() {
+    let enable_instrument_tracing = std::env::var("ENABLE_INSTRUMENT_TRACING")
+        .unwrap_or("false".to_string())
+        .parse::<bool>()
+        .expect("flag must be true or false");
+
+    if enable_instrument_tracing {
+        tracing_subscriber::fmt::fmt()
+            .with_span_events(FmtSpan::FULL)
+            .init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
 }

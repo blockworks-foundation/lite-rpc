@@ -21,6 +21,7 @@ use tokio::task::AbortHandle;
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::info_span;
+use tracing::{debug_span, instrument, trace_span, warn_span};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
@@ -57,6 +58,7 @@ fn create_grpc_multiplex_processed_block_stream(
                     let mapfilter =
                         map_block_from_yellowstone_update(*subscribe_update, commitment_config);
                     if let Some((slot, produced_block)) = mapfilter {
+                        debug_span!("grpc_multiplex_processed_block_stream", ?produced_block.slot);
                         let commitment_level_block = produced_block.commitment_config.commitment;
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
@@ -65,7 +67,8 @@ fn create_grpc_multiplex_processed_block_stream(
                                 || slot > slots_processed.first().cloned().unwrap_or_default())
                         {
                             let send_result = block_sender
-                                .send(produced_block).await
+                                .send(produced_block)
+                                .await
                                 .context("Send block to channel");
                             if send_result.is_err() {
                                 warn!("Block channel receiver is closed - aborting");
@@ -108,7 +111,6 @@ fn create_grpc_multiplex_block_meta_task(
     block_meta_sender: tokio::sync::mpsc::Sender<BlockMeta>,
     commitment_config: CommitmentConfig,
 ) -> Vec<AbortHandle> {
-
     let mut channels = vec![];
     for grpc_source in grpc_sources {
         // tasks will be shutdown automatically if the channel gets closed
@@ -138,7 +140,8 @@ fn create_grpc_multiplex_block_meta_task(
                                         blockhash: block_meta.blockhash,
                                     };
                                     let send_result = block_meta_sender
-                                        .send(block_meta).await
+                                        .send(block_meta)
+                                        .await
                                         .context("Send block to channel");
                                     if send_result.is_err() {
                                         warn!("Block channel receiver is closed - aborting");
@@ -224,8 +227,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let (processed_block_sender, mut processed_block_reciever) =
                 tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
 
-            let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) = tokio::sync::mpsc::channel::<BlockMeta>(10);
-            let (block_meta_sender_finalized, mut block_meta_reciever_finalized) = tokio::sync::mpsc::channel::<BlockMeta>(10);
+            let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) =
+                tokio::sync::mpsc::channel::<BlockMeta>(10);
+            let (block_meta_sender_finalized, mut block_meta_reciever_finalized) =
+                tokio::sync::mpsc::channel::<BlockMeta>(10);
 
             let processed_block_sender = processed_block_sender.clone();
             reconnect_attempts += 1;
@@ -243,9 +248,17 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 create_grpc_multiplex_processed_block_stream(&grpc_sources, processed_block_sender);
             task_list.extend(processed_blocks_tasks);
 
-            let jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(&grpc_sources, block_meta_sender_confirmed, CommitmentConfig::confirmed());
+            let jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(
+                &grpc_sources,
+                block_meta_sender_confirmed,
+                CommitmentConfig::confirmed(),
+            );
             task_list.extend(jh_meta_task_confirmed);
-            let jh_meta_task_finalized = create_grpc_multiplex_block_meta_task(&grpc_sources, block_meta_sender_finalized, CommitmentConfig::finalized());
+            let jh_meta_task_finalized = create_grpc_multiplex_block_meta_task(
+                &grpc_sources,
+                block_meta_sender_finalized,
+                CommitmentConfig::finalized(),
+            );
             task_list.extend(jh_meta_task_finalized);
 
             // let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
@@ -261,7 +274,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED
             let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
             // both streams support backpressure, see log:
-            // grpc_subscription_autoreconnect_tasks: downstream receiver did not pick put message for 500ms - keep waiting
+            // grpc_subscription_autoreconnect_tasks: downstream receiver did not pick ut message for 500ms - keep waiting
             // let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
             // let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
@@ -280,6 +293,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 tokio::select! {
                     processed_block = processed_block_reciever.recv() => {
                             cleanup_without_recv_full_blocks = 0;
+
 
                             let processed_block = processed_block.expect("processed block from stream");
                             trace!("got processed block {} with blockhash {}",

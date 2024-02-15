@@ -19,11 +19,11 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_sdk::transaction::VersionedTransaction;
+use tokio::time::sleep;
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
     time::Instant,
 };
-use tokio::time::sleep;
 
 #[derive(Clone)]
 pub struct TransactionServiceBuilder {
