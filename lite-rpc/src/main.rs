@@ -65,6 +65,7 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
+use tracing_subscriber::fmt::format::FmtSpan;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
