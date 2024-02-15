@@ -1,5 +1,5 @@
 use futures::{Stream, StreamExt};
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use std::pin::pin;
 use futures::future::select_all;
 use geyser_grpc_connector::Message;
@@ -10,7 +10,7 @@ use tokio::task::{AbortHandle, JoinHandle};
 
 
 /// note: backpressure will NOT get propagated to upstream but pushed down into broadcast channel
-pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
+pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static, const TAG: u32>(
     mut upstream: tokio::sync::mpsc::Receiver<T>,
     downstream: tokio::sync::broadcast::Sender<T>,
     // TODO allow multiple downstreams + fanout
@@ -21,7 +21,7 @@ pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
                 Some(msg) => {
                     match downstream.send(msg) {
                         Ok(receivers) => {
-                            trace!("sent data to {} receivers", receivers);
+                            trace!("sent data to {} receivers (#{TAG})", receivers);
                         }
                         Err(send_error) => match send_error {
                             SendError(_msg) => {
@@ -30,10 +30,14 @@ pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
                             }
                         },
                     };
-                    debug!("messages in broadcast channel: {}", downstream.len());
+                    if downstream.len() < 10 {
+                        debug!("messages in broadcast channel #{TAG}: {}", downstream.len());
+                    } else {
+                        warn!("messages in broadcast channel #{TAG}: {}", downstream.len());
+                    }
                 }
                 None => {
-                    info!("channelizer source stream was closed - aborting channelizer task");
+                    info!("plugger #{TAG} source mpsc was closed - aborting plugger task");
                     return; // abort task
                 }
             }

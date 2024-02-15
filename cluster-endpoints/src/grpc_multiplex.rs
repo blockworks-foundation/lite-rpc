@@ -25,6 +25,7 @@ use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 use crate::grpc_stream_utils::spawn_plugger_mpcs_to_broadcast;
 
+
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
 /// - task will shutdown of the receiver side of block_sender gets closed
@@ -56,7 +57,7 @@ fn create_grpc_multiplex_processed_block_task(
     // TODO rename
     let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(10);
 
-    spawn_plugger_mpcs_to_broadcast(blocks_rx, broadcast_tx);
+    spawn_plugger_mpcs_to_broadcast::<_, 0x23000020>(blocks_rx, broadcast_tx);
 
     // let (mut channelized, _abort_handler) = channelize_stream(merged_streams, 30);
 
@@ -154,7 +155,7 @@ fn create_grpc_multiplex_block_meta_task(
 
     let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(10);
 
-    spawn_plugger_mpcs_to_broadcast(blocks_rx, broadcast_tx);
+    spawn_plugger_mpcs_to_broadcast::<_, 23000010>(blocks_rx, broadcast_tx);
 
 
     let jh_merging_streams = tokio::task::spawn(async move {
