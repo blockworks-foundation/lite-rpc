@@ -1,4 +1,6 @@
+use std::borrow::Cow;
 use std::env;
+use std::fmt::{Debug, Display, Formatter};
 
 use crate::postgres_logger;
 use crate::{
@@ -8,6 +10,7 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
+use solana_rpc_client_api::client_error::reqwest::Url;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -79,6 +82,9 @@ pub struct Config {
 
     #[serde(default)]
     pub enable_address_lookup_tables: Option<bool>,
+
+    #[serde(default)]
+    pub account_filters: Option<String>,
 }
 
 impl Config {
@@ -280,8 +286,51 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GrpcSource {
     pub addr: String,
     pub x_token: Option<String>,
+}
+
+impl Display for GrpcSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "GrpcSource {} (x-token {})",
+            url_obfuscate_api_token(&self.addr),
+            obfuscate_token(&self.x_token)
+        )
+    }
+}
+
+impl Debug for GrpcSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+/// obfuscate urls with api token like http://mango.rpcpool.com/a991fba00fagbad
+fn url_obfuscate_api_token(url: &str) -> Cow<str> {
+    if let Ok(mut parsed) = Url::parse(url) {
+        if parsed.path() == "/" {
+            return Cow::Borrowed(url);
+        } else {
+            parsed.set_path("omitted-secret");
+            Cow::Owned(parsed.to_string())
+        }
+    } else {
+        Cow::Borrowed(url)
+    }
+}
+
+fn obfuscate_token(token: &Option<String>) -> String {
+    match token {
+        None => "n/a".to_string(),
+        Some(token) => {
+            let mut token = token.clone();
+            token.truncate(5);
+            token += "...";
+            token
+        }
+    }
 }

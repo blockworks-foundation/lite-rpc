@@ -15,6 +15,8 @@ solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-transaction-status = { workspace = true }
 solana-version = { workspace = true }
+solana-account-decoder = { workspace = true }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }
@@ -51,6 +53,7 @@ solana-lite-rpc-cluster-endpoints = { workspace = true }
 solana-lite-rpc-blockstore = { workspace = true }
 solana-lite-rpc-prioritization-fees = { workspace = true }
 solana-lite-rpc-address-lookup-tables = { workspace = true }
+solana-lite-rpc-accounts = { workspace = true }
 
 [dev-dependencies]
 bench = { path = "../bench" }
