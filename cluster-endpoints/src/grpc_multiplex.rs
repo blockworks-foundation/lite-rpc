@@ -16,7 +16,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
-use tokio::time::sleep;
+use tokio::time::{Instant, sleep, timeout};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug_span};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -26,18 +26,18 @@ use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 /// shutdown handling:
 /// - task will shutdown of the receiver side of block_sender gets closed
 /// - will also shutdown the grpc autoconnection task(s)
-fn create_grpc_multiplex_processed_block_stream(
+fn create_grpc_multiplex_processed_block_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
     block_sender: tokio::sync::mpsc::Sender<ProducedBlock>,
 ) -> Vec<AbortHandle> {
-    let commitment_processed = CommitmentConfig::processed();
+    const COMMITMENT_CONFIG: CommitmentConfig = CommitmentConfig::processed();
 
     let mut channels = vec![];
     for grpc_source in grpc_sources {
         // tasks will be shutdown automatically if the channel gets closed
         let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
             grpc_source.clone(),
-            GeyserFilter(commitment_processed).blocks_and_txs(),
+            GeyserFilter(COMMITMENT_CONFIG).blocks_and_txs(),
         );
         channels.push(message_channel)
     }
@@ -52,16 +52,18 @@ fn create_grpc_multiplex_processed_block_stream(
             match fused_streams.next().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     let mapfilter =
-                        map_block_from_yellowstone_update(*subscribe_update, commitment_processed);
+                        map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
                     if let Some((slot, produced_block)) = mapfilter {
                         debug_span!("grpc_multiplex_processed_block_stream", ?produced_block.slot);
-                        let commitment_level_block = produced_block.commitment_config.commitment;
+                        assert_eq!(COMMITMENT_CONFIG, produced_block.commitment_config);
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
                         if !slots_processed.contains(&slot)
                             && (slots_processed.len() < MAX_SIZE / 2
                                 || slot > slots_processed.first().cloned().unwrap_or_default())
                         {
+
+                            let send_started_at = Instant::now();
                             let send_result = block_sender
                                 .send(produced_block)
                                 .await
@@ -72,9 +74,10 @@ fn create_grpc_multiplex_processed_block_stream(
                             }
 
                             trace!(
-                                "emitted block #{}@{} from multiplexer",
+                                "emitted block #{}@{} from multiplexer in {:?}",
                                 slot,
-                                commitment_level_block
+                                COMMITMENT_CONFIG.commitment,
+                                send_started_at.elapsed()
                             );
 
                             slots_processed.insert(slot);
@@ -136,6 +139,8 @@ fn create_grpc_multiplex_block_meta_task(
                                     let block_meta = BlockMeta {
                                         blockhash: block_meta.blockhash,
                                     };
+
+                                    let send_started_at = Instant::now();
                                     let send_result = block_meta_sender
                                         .send(block_meta)
                                         .await
@@ -144,6 +149,14 @@ fn create_grpc_multiplex_block_meta_task(
                                         warn!("Block channel receiver is closed - aborting");
                                         return;
                                     }
+
+                                    trace!(
+                                        "emitted block meta #{}@{} from multiplexer in {:?}",
+                                        proposed_slot,
+                                        commitment_config.commitment,
+                                        send_started_at.elapsed()
+                                    );
+
                                 }
                             }
                             _ => {}
@@ -381,6 +394,8 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                     Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
+
+                            let send_started_at = Instant::now();
                             let send_result = multiplexed_messages_sender
                                 .send(SlotNotification {
                                     processed_slot: slot,
@@ -393,9 +408,10 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                             }
 
                             trace!(
-                                "emitted slot #{}@{} from multiplexer",
+                                "emitted slot #{}@{} from multiplexer in {:?}",
                                 slot,
-                                COMMITMENT_CONFIG.commitment
+                                COMMITMENT_CONFIG.commitment,
+                                send_started_at.elapsed()
                             );
                         }
                     }
