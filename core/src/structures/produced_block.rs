@@ -3,6 +3,7 @@ use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
 use solana_transaction_status::Reward;
+use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
@@ -17,6 +18,12 @@ pub struct TransactionInfo {
     pub writable_accounts: Vec<Pubkey>,
     pub readable_accounts: Vec<Pubkey>,
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
+}
+
+pub struct ProducedBlockMapTask {
+    pub slot: Slot,
+    pub blockhash: String,
+    pub task: JoinHandle<ProducedBlock>,
 }
 
 // TODO try to remove Clone

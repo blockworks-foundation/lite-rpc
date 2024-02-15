@@ -4,7 +4,7 @@ use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig, Message};
 use log::{debug, info, trace, warn};
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+use solana_lite_rpc_core::structures::produced_block::{ProducedBlock, ProducedBlockMapTask};
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
@@ -25,7 +25,7 @@ use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 /// - will also shutdown the grpc autoconnection task(s)
 fn create_grpc_multiplex_processed_block_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    block_sender: tokio::sync::mpsc::Sender<ProducedBlock>,
+    block_sender: tokio::sync::mpsc::Sender<ProducedBlockMapTask>,
 ) -> Vec<AbortHandle> {
     const COMMITMENT_CONFIG: CommitmentConfig = CommitmentConfig::processed();
 
@@ -54,10 +54,10 @@ fn create_grpc_multiplex_processed_block_task(
             const MAX_SIZE: usize = 1024;
             match blocks_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
-                    let mapfilter =
-                        map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
-                    if let Some((slot, produced_block)) = mapfilter {
-                        assert_eq!(COMMITMENT_CONFIG, produced_block.commitment_config);
+                    let mapping =
+                        spawn_produced_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
+                    if let Some((slot, mapping_task)) = mapping {
+                        // assert_eq!(COMMITMENT_CONFIG, produced_block.commitment_config);
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
                         if !slots_processed.contains(&slot)
@@ -66,7 +66,7 @@ fn create_grpc_multiplex_processed_block_task(
                         {
                             let send_started_at = Instant::now();
                             let send_result = block_sender
-                                .send(produced_block)
+                                .send(mapping_task)
                                 .await
                                 .context("Send block to channel");
                             if send_result.is_err() {
@@ -206,7 +206,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
         loop {
             // channels must NEVER GET CLOSED (unless full restart of multiplexer)
             let (processed_block_sender, mut processed_block_reciever) =
-                tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
+                tokio::sync::mpsc::channel::<ProducedBlockMapTask>(10); // experiemental
             let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) =
                 tokio::sync::mpsc::channel::<BlockMeta>(500);
             let (block_meta_sender_finalized, mut block_meta_reciever_finalized) =
@@ -266,21 +266,23 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     block_meta_sender_finalized.capacity()
                 );
                 tokio::select! {
-                    processed_block = processed_block_reciever.recv() => {
+                    processed_block_task = processed_block_reciever.recv() => {
                             cleanup_without_recv_full_blocks = 0;
 
-                            let processed_block = processed_block.expect("processed block from stream");
+                            let processed_block_task = processed_block_task.expect("processed block from stream");
+                            let blockhash = processed_block_task.blockhash;
                             trace!("got processed block {} with blockhash {}",
-                                processed_block.slot, processed_block.blockhash.clone());
+                                processed_block_task.slot, blockhash);
+                            let processed_block = processed_block_task.task.await.expect("task result"); // TODO improve text
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
                                 warn!("produced block channel has no receivers {e:?}");
                             }
-                            if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
+                            if confirmed_block_not_yet_processed.remove(&blockhash) {
                                 if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
                                     warn!("produced block channel has no receivers while trying to send confirmed block {e:?}");
                                 }
                             }
-                            recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
+                            recent_processed_blocks.insert(blockhash, processed_block);
                         },
                         meta_confirmed = block_meta_reciever_confirmed.recv() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
@@ -463,15 +465,26 @@ fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
     }
 }
 
-fn map_block_from_yellowstone_update(
+fn spawn_produced_block_from_yellowstone_update(
     update: SubscribeUpdate,
     commitment_config: CommitmentConfig,
-) -> Option<(Slot, ProducedBlock)> {
+) -> Option<(Slot, ProducedBlockMapTask)> {
     let _span = debug_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
-            let block = from_grpc_block_update(update_block_message, commitment_config);
-            Some((block.slot, block))
+            let slot = update_block_message.slot;
+            let blockhash = update_block_message.blockhash.clone();
+            let mapper_task =
+                tokio::spawn(async move {
+                from_grpc_block_update(update_block_message, commitment_config)
+            });
+            Some((
+                slot,
+                ProducedBlockMapTask {
+                    slot: slot,
+                    blockhash: blockhash,
+                    task: mapper_task,
+            }))
         }
         _ => None,
     }
