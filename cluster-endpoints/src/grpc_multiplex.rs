@@ -116,7 +116,7 @@ fn create_grpc_multiplex_processed_block_task(
                     );
                 }
                 Err(RecvError::Closed) => {
-                    warn!("Multiplexed geyser source stream terminated - aborting task");
+                    warn!("Multiplexed geyser source stream block terminated - aborting task");
                     return;
                 }
             }
@@ -132,24 +132,36 @@ fn create_grpc_multiplex_block_meta_task(
     block_meta_sender: tokio::sync::mpsc::Sender<BlockMeta>,
     commitment_config: CommitmentConfig,
 ) -> Vec<AbortHandle> {
-    let mut channels = vec![];
+    // let mut channels = vec![];
+    let (upstream_tx, blocks_rx) = channel(10);
     for grpc_source in grpc_sources {
         // tasks will be shutdown automatically if the channel gets closed
-        let (_jh_geyser_task, result_channel_sz1) = create_geyser_autoconnection_task(
+        // let (_jh_geyser_task, result_channel_sz1) = create_geyser_autoconnection_task(
+        //     grpc_source.clone(),
+        //     GeyserFilter(commitment_config).blocks_meta(),
+        // );
+        // channels.push(result_channel_sz1)
+
+        create_geyser_autoconnection_task_with_mpsc(
             grpc_source.clone(),
             GeyserFilter(commitment_config).blocks_meta(),
+            upstream_tx.clone(),
         );
-        channels.push(result_channel_sz1)
     }
 
-    let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
-    let mut merged_streams = source_channels.merge();
+    // let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
+    // let mut merged_streams = source_channels.merge();
+
+    let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(10);
+
+    spawn_plugger_mpcs_to_broadcast(blocks_rx, broadcast_tx);
+
 
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut tip: Slot = 0;
         loop {
-            match merged_streams.next().await {
-                Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
+            match broadcast_rx.recv().await {
+                Ok(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     if let Some(update) = subscribe_update.update_oneof {
                         match update {
                             UpdateOneof::BlockMeta(block_meta) => {
@@ -185,7 +197,7 @@ fn create_grpc_multiplex_block_meta_task(
                         }
                     }
                 }
-                Some(Message::Connecting(attempt)) => {
+                Ok(Message::Connecting(attempt)) => {
                     if attempt > 1 {
                         warn!(
                             "Multiplexed geyser stream performs reconnect attempt {}",
@@ -193,8 +205,13 @@ fn create_grpc_multiplex_block_meta_task(
                         );
                     }
                 }
-                None => {
-                    warn!("Multiplexed geyser source stream terminated - aborting task");
+                Err(RecvError::Lagged(missed_blockmetas)) => {
+                    warn!("Could not keep up with producer - missed {} block metas",
+                        missed_blockmetas
+                    );
+                }
+                Err(RecvError::Closed) => {
+                    warn!("Multiplexed geyser source stream block meta terminated - aborting task");
                     return;
                 }
             }
@@ -254,6 +271,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 create_grpc_multiplex_processed_block_task(&grpc_sources, processed_block_sender.clone());
             task_list.extend(processed_blocks_tasks);
 
+            // TODO apply same pattern as in create_grpc_multiplex_processed_block_task
             let jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(
                 &grpc_sources,
                 block_meta_sender_confirmed.clone(),
@@ -290,10 +308,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 );
                 tokio::select! {
                     processed_block = processed_block_reciever.recv() => {
-                            debug_span!("sequence_processed_block", ?processed_block);
                             cleanup_without_recv_full_blocks = 0;
 
                             let processed_block = processed_block.expect("processed block from stream");
+                            debug_span!("sequence_processed_block", ?processed_block.slot);
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
