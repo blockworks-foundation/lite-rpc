@@ -172,30 +172,6 @@ fn create_grpc_multiplex_block_meta_task(
     vec![jh_merging_streams.abort_handle()]
 }
 
-fn create_grpc_multiplex_block_meta_stream(
-    grpc_sources: &Vec<GrpcSourceConfig>,
-    commitment_config: CommitmentConfig,
-) -> impl Stream<Item = BlockMeta> {
-    let mut channels = vec![];
-    for grpc_source in grpc_sources {
-        let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
-            grpc_source.clone(),
-            GeyserFilter(commitment_config).blocks_meta(),
-        );
-        channels.push(message_channel)
-    }
-
-    let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
-
-    assert!(
-        commitment_config != CommitmentConfig::processed(),
-        "fastestwins strategy must not be used for processed level"
-    );
-    geyser_grpc_connector::grpcmultiplex_fastestwins::create_multiplexed_stream(
-        source_channels,
-        BlockMetaExtractor(commitment_config),
-    )
-}
 
 /// connect to multiple grpc sources to consume processed blocks and block status update
 /// emits full blocks for commitment levels processed, confirmed, finalized in that order
@@ -260,15 +236,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 CommitmentConfig::finalized(),
             );
             task_list.extend(jh_meta_task_finalized);
-
-            // let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
-            //     &grpc_sources,
-            //     CommitmentConfig::confirmed(),
-            // );
-            // let finalized_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
-            //     &grpc_sources,
-            //     CommitmentConfig::finalized(),
-            // );
 
             // by blockhash
             // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED

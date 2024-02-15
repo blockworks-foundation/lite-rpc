@@ -19,7 +19,6 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_sdk::transaction::VersionedTransaction;
-use tokio::time::sleep;
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
     time::Instant,
@@ -58,39 +57,33 @@ impl TransactionServiceBuilder {
         let (transaction_channel, tx_recv) = mpsc::channel(self.max_nb_txs_in_queue);
         let (replay_channel, replay_reciever) = tokio::sync::mpsc::unbounded_channel();
 
-        // let jh_services: AnyhowJoinHandle = {
-        //     let tx_sender = self.tx_sender.clone();
-        //     let tx_replayer = self.tx_replayer.clone();
-        //     let tpu_service = self.tpu_service.clone();
-        //     let replay_channel_task = replay_channel.clone();
-        //
-        //     tokio::spawn(async move {
-        //         let tpu_service_fx = tpu_service.start(slot_notifications);
-        //
-        //         let tx_sender_jh = tx_sender.clone().execute(tx_recv, notifier.clone());
-        //
-        //         let replay_service =
-        //             tx_replayer.start_service(replay_channel_task, replay_reciever);
-        //
-        //         tokio::select! {
-        //             res = tpu_service_fx => {
-        //                 bail!("Tpu Service {res:?}")
-        //             },
-        //             res = tx_sender_jh => {
-        //                 bail!("Tx Sender {res:?}")
-        //             },
-        //             res = replay_service => {
-        //                 bail!("Replay Service {res:?}")
-        //             },
-        //         }
-        //     })
-        // };
+        let jh_services: AnyhowJoinHandle = {
+            let tx_sender = self.tx_sender.clone();
+            let tx_replayer = self.tx_replayer.clone();
+            let tpu_service = self.tpu_service.clone();
+            let replay_channel_task = replay_channel.clone();
 
-        let jh_services = tokio::spawn(async move {
-            loop {
-                sleep(Duration::from_secs(100)).await;
-            }
-        });
+            tokio::spawn(async move {
+                let tpu_service_fx = tpu_service.start(slot_notifications);
+
+                let tx_sender_jh = tx_sender.clone().execute(tx_recv, notifier.clone());
+
+                let replay_service =
+                    tx_replayer.start_service(replay_channel_task, replay_reciever);
+
+                tokio::select! {
+                    res = tpu_service_fx => {
+                        bail!("Tpu Service {res:?}")
+                    },
+                    res = tx_sender_jh => {
+                        bail!("Tx Sender {res:?}")
+                    },
+                    res = replay_service => {
+                        bail!("Replay Service {res:?}")
+                    },
+                }
+            })
+        };
 
         (
             TransactionService {

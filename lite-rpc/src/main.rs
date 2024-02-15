@@ -174,12 +174,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?
     };
-
-    let (cluster_info_notifier_tx, cluster_info_notifier_rx) =
-        tokio::sync::broadcast::channel::<Vec<RpcContactInfo>>(100);
-    let (vote_account_notifier_tx, vote_account_notifier_rx) =
-        tokio::sync::broadcast::channel::<RpcVoteAccountStatus>(100);
-
     let EndpointStreaming {
         // note: blocks_notifier will be dropped at some point
         blocks_notifier,
