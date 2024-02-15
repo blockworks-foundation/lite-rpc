@@ -1,13 +1,13 @@
 use futures::{Stream, StreamExt};
 use log::{debug, info, trace, warn};
 use std::pin::pin;
-use futures::future::select_all;
-use geyser_grpc_connector::Message;
 use tokio::spawn;
 use tokio::sync::broadcast::error::SendError;
 use tokio::sync::broadcast::Receiver;
-use tokio::task::{AbortHandle, JoinHandle};
+use tokio::task::{AbortHandle};
 
+
+const BROADCAST_CHANNEL_WARNING_THRESHOLD: usize = 10;
 
 /// note: backpressure will NOT get propagated to upstream but pushed down into broadcast channel
 /// service will shut down if upstream gets closed
@@ -37,7 +37,7 @@ pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
                             }
                         },
                     };
-                    if downstream.len() < 10 {
+                    if downstream.len() < BROADCAST_CHANNEL_WARNING_THRESHOLD {
                         debug!("messages in broadcast channel {debug_label}: {}", downstream.len());
                     } else {
                         warn!("messages in broadcast channel {debug_label}: {}", downstream.len());
