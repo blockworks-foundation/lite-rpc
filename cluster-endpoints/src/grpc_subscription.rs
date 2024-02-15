@@ -54,6 +54,10 @@ impl LoggingTimer {
         }
 
     }
+
+    fn elapsed(&self) -> Duration {
+        self.started_at.elapsed()
+    }
 }
 
 
@@ -245,6 +249,8 @@ pub fn from_grpc_block_update(
                 .unwrap_or_default();
             log_timer_tx.log_if_exceed("after address_lookup_tables");
 
+
+            println!("elapsed: {:?} for tx", log_timer_tx.elapsed());
             log_timer_tx.log_if_exceed("before return");
             Some(TransactionInfo {
                 signature: signature.to_string(),
@@ -262,6 +268,7 @@ pub fn from_grpc_block_update(
         })
         .collect();
     log_timer.log_if_exceed("after transactions");
+    println!("tx count {}", txs.len());
 
     let rewards = block.rewards.map(|rewards| {
         rewards
