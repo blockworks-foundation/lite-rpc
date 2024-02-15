@@ -13,8 +13,52 @@ const BROADCAST_CHANNEL_WARNING_THRESHOLD: usize = 10;
 /// service will shut down if upstream gets closed
 /// service will NOT shut down if downstream has no receivers
 ///
-/// use `debug_label` to identify the plugger in logs (e.g. "confirmed-blocks-channel")
-pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
+/// use `debug_label` to identify the plugger in
+/// note: Clone is required
+pub fn spawn_plugger_mpcs_to_broadcast_channels<T: Send + Clone + 'static>(
+    mut upstream: tokio::sync::mpsc::Receiver<T>,
+    downstreams: Vec<tokio::sync::broadcast::Sender<T>>,
+    debug_label: &str,
+) {
+    let debug_label = debug_label.to_string();
+    assert!(downstreams.len() > 0, "at least one downstream must be provided");
+
+    // abort plugger task by closing the sender
+    let _jh_task = spawn(async move {
+        'main_loop: loop {
+            match upstream.recv().await {
+                Some(msg) => {
+                    for (idx, downstream) in downstreams.iter().enumerate() {
+                        match downstream.send(msg.clone()) {
+                            Ok(receivers) => {
+                                trace!("sent data to {} receivers for downstream-{idx} ({debug_label})", receivers);
+                            }
+                            Err(send_error) => match send_error {
+                                SendError(_msg) => {
+                                    debug!("no active receivers for downstream-{idx} on channel {debug_label} - skipping message");
+                                    continue 'main_loop;
+                                }
+                            },
+                        };
+                        if downstream.len() < BROADCAST_CHANNEL_WARNING_THRESHOLD {
+                            debug!("messages in downstream-{idx} channel {debug_label}: {}", downstream.len());
+                        } else {
+                            warn!("messages in downstream-{idx} channel {debug_label}: {}", downstream.len());
+                        }
+                    }
+                }
+                None => {
+                    info!("plugger {debug_label} source mpsc was closed - aborting plugger task");
+                    return; // abort task
+                }
+            }
+
+        }
+    });
+}
+
+// note: sending to one broadcast does not require Clone
+pub fn spawn_plugger_mpcs_to_broadcast_channel<T: Send + 'static>(
     mut upstream: tokio::sync::mpsc::Receiver<T>,
     downstream: tokio::sync::broadcast::Sender<T>,
     debug_label: &str,
@@ -28,19 +72,19 @@ pub fn spawn_plugger_mpcs_to_broadcast<T: Send + 'static>(
                 Some(msg) => {
                     match downstream.send(msg) {
                         Ok(receivers) => {
-                            trace!("sent data to {} receivers ({debug_label})", receivers);
+                            trace!("sent data to {} receivers for downstream ({debug_label})", receivers);
                         }
                         Err(send_error) => match send_error {
                             SendError(_msg) => {
-                                debug!("no active receivers on channel {debug_label} - skipping message");
+                                debug!("no active receivers for downstream on channel {debug_label} - skipping message");
                                 continue 'main_loop;
                             }
                         },
                     };
                     if downstream.len() < BROADCAST_CHANNEL_WARNING_THRESHOLD {
-                        debug!("messages in broadcast channel {debug_label}: {}", downstream.len());
+                        debug!("messages in downstream channel {debug_label}: {}", downstream.len());
                     } else {
-                        warn!("messages in broadcast channel {debug_label}: {}", downstream.len());
+                        warn!("messages in downstream channel {debug_label}: {}", downstream.len());
                     }
                 }
                 None => {

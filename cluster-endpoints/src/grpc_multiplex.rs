@@ -23,7 +23,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug_span};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
-use crate::grpc_stream_utils::spawn_plugger_mpcs_to_broadcast;
+use crate::grpc_stream_utils::{spawn_plugger_mpcs_to_broadcast_channel};
 
 
 /// connect to all sources provided using transparent autoconnection task
@@ -52,9 +52,7 @@ fn create_grpc_multiplex_processed_block_task(
         );
     }
     let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(16);
-    spawn_plugger_mpcs_to_broadcast(blocks_rx, broadcast_tx, "processed-blocks-channel");
-
-    // let (mut channelized, _abort_handler) = channelize_stream(merged_streams, 30);
+    spawn_plugger_mpcs_to_broadcast_channel(blocks_rx, broadcast_tx, "processed-blocks-channel");
 
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut slots_processed = BTreeSet::<u64>::new();
@@ -143,12 +141,9 @@ fn create_grpc_multiplex_block_meta_task(
         );
     }
 
-    // let source_channels = channels.into_iter().map(ReceiverStream::new).collect_vec();
-    // let mut merged_streams = source_channels.merge();
-
     let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(16);
 
-    spawn_plugger_mpcs_to_broadcast(blocks_rx, broadcast_tx, "block-meta-channel");
+    spawn_plugger_mpcs_to_broadcast_channel(blocks_rx, broadcast_tx, "block-meta-channel");
 
 
     let jh_merging_streams = tokio::task::spawn(async move {
@@ -467,6 +462,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
     (multiplexed_messages_rx, jh_multiplex_task)
 }
 
+#[allow(dead_code)]
 struct BlockMeta {
     pub slot: Slot,
     pub blockhash: String,
