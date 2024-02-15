@@ -52,8 +52,10 @@ fn create_grpc_multiplex_processed_block_task(
             last_tick = Instant::now();
 
             const MAX_SIZE: usize = 1024;
+
             match blocks_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
+                    info!("blocked waiting for next block: {:?}", last_tick.elapsed());
                     let mapping =
                         spawn_produced_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
                     if let Some((slot, mapping_task)) = mapping {
