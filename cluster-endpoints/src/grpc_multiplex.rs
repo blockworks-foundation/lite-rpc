@@ -1,7 +1,10 @@
+use crate::grpc_stream_utils::spawn_plugger_mpcs_to_broadcast_channel;
 use crate::grpc_subscription::from_grpc_block_update;
 use anyhow::{bail, Context};
-use futures::{Stream, StreamExt};
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{create_geyser_autoconnection_task, create_geyser_autoconnection_task_with_mpsc};
+use futures::StreamExt;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::{
+    create_geyser_autoconnection_task, create_geyser_autoconnection_task_with_mpsc,
+};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig, Message};
 use itertools::Itertools;
@@ -12,19 +15,18 @@ use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
+
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::channel;
 use tokio::task::AbortHandle;
-use tokio::time::{Instant, sleep};
+use tokio::time::{sleep, Instant};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug_span};
+use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
-use crate::grpc_stream_utils::{spawn_plugger_mpcs_to_broadcast_channel};
-
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
@@ -57,16 +59,19 @@ fn create_grpc_multiplex_processed_block_task(
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut slots_processed = BTreeSet::<u64>::new();
         let mut last_tick = Instant::now();
-        loop { // recv loop
+        loop {
+            // recv loop
             if last_tick.elapsed() > Duration::from_millis(200) {
-                warn!("(soft_realtime) slow multiplex loop interation: {:?}", last_tick.elapsed());
+                warn!(
+                    "(soft_realtime) slow multiplex loop interation: {:?}",
+                    last_tick.elapsed()
+                );
             }
             last_tick = Instant::now();
 
             const MAX_SIZE: usize = 1024;
             match broadcast_rx.recv().await {
                 Ok(Message::GeyserSubscribeUpdate(subscribe_update)) => {
-                    let started_at = Instant::now();
                     let mapfilter =
                         map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
                     if let Some((slot, produced_block)) = mapfilter {
@@ -75,9 +80,8 @@ fn create_grpc_multiplex_processed_block_task(
                         // it means that the slot is too old to process
                         if !slots_processed.contains(&slot)
                             && (slots_processed.len() < MAX_SIZE / 2
-                            || slot > slots_processed.first().cloned().unwrap_or_default())
+                                || slot > slots_processed.first().cloned().unwrap_or_default())
                         {
-
                             let send_started_at = Instant::now();
                             let send_result = block_sender
                                 .send(produced_block)
@@ -111,7 +115,8 @@ fn create_grpc_multiplex_processed_block_task(
                     }
                 }
                 Err(RecvError::Lagged(missed_blocks)) => {
-                    warn!("Could not keep up with producer - missed {} blocks",
+                    warn!(
+                        "Could not keep up with producer - missed {} blocks",
                         missed_blocks
                     );
                 }
@@ -124,7 +129,6 @@ fn create_grpc_multiplex_processed_block_task(
     });
     vec![jh_merging_streams.abort_handle()]
 }
-
 
 // backpressure: the mpsc sender will block grpc stream until capacity is available
 fn create_grpc_multiplex_block_meta_task(
@@ -144,7 +148,6 @@ fn create_grpc_multiplex_block_meta_task(
     let (broadcast_tx, mut broadcast_rx) = tokio::sync::broadcast::channel::<Message>(16);
 
     spawn_plugger_mpcs_to_broadcast_channel(blocks_rx, broadcast_tx, "block-meta-channel");
-
 
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut tip: Slot = 0;
@@ -178,10 +181,11 @@ fn create_grpc_multiplex_block_meta_task(
                                         commitment_config.commitment,
                                         send_started_at.elapsed()
                                     );
-
                                 }
                             }
-                            _ => {}
+                            _other_message => {
+                                trace!("ignoring message")
+                            }
                         }
                     }
                 }
@@ -194,7 +198,8 @@ fn create_grpc_multiplex_block_meta_task(
                     }
                 }
                 Err(RecvError::Lagged(missed_blockmetas)) => {
-                    warn!("Could not keep up with producer - missed {} block metas",
+                    warn!(
+                        "Could not keep up with producer - missed {} block metas",
                         missed_blockmetas
                     );
                 }
@@ -208,7 +213,6 @@ fn create_grpc_multiplex_block_meta_task(
 
     vec![jh_merging_streams.abort_handle()]
 }
-
 
 /// connect to multiple grpc sources to consume processed blocks and block status update
 /// emits full blocks for commitment levels processed, confirmed, finalized in that order
@@ -233,7 +237,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
     // task MUST not terminate but might be aborted from outside
     let jh_block_emitter_task = tokio::task::spawn(async move {
-
         loop {
             // channels must NEVER GET CLOSED (unless full restart of multiplexer)
             let (processed_block_sender, mut processed_block_reciever) =
@@ -255,8 +258,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
             // tasks which should be cleaned up uppon reconnect
             let mut task_list: Vec<AbortHandle> = vec![];
 
-            let processed_blocks_tasks =
-                create_grpc_multiplex_processed_block_task(&grpc_sources, processed_block_sender.clone());
+            let processed_blocks_tasks = create_grpc_multiplex_processed_block_task(
+                &grpc_sources,
+                processed_block_sender.clone(),
+            );
             task_list.extend(processed_blocks_tasks);
 
             // TODO apply same pattern as in create_grpc_multiplex_processed_block_task
@@ -418,7 +423,8 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                     Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
-                            let _span = debug_span!("grpc_multiplex_processed_slots_stream", ?slot).entered();
+                            let _span = debug_span!("grpc_multiplex_processed_slots_stream", ?slot)
+                                .entered();
                             let send_started_at = Instant::now();
                             let send_result = multiplexed_messages_sender
                                 .send(SlotNotification {

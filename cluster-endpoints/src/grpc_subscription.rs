@@ -3,8 +3,6 @@ use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
-use anyhow::Context;
-use futures::StreamExt;
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -31,18 +29,13 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solana_transaction_status::{Reward, RewardType};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 use tracing::debug_span;
-use yellowstone_grpc_client::GeyserGrpcClient;
-use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterSlots, SubscribeUpdateSlot};
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
 };
-use yellowstone_grpc_proto::prelude::{
-    subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
-    SubscribeUpdateBlock,
-};
+use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
 
 /// grpc version of ProducedBlock mapping
 pub fn from_grpc_block_update(

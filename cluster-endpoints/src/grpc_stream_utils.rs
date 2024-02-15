@@ -4,8 +4,7 @@ use std::pin::pin;
 use tokio::spawn;
 use tokio::sync::broadcast::error::SendError;
 use tokio::sync::broadcast::Receiver;
-use tokio::task::{AbortHandle};
-
+use tokio::task::AbortHandle;
 
 const BROADCAST_CHANNEL_WARNING_THRESHOLD: usize = 10;
 
@@ -21,7 +20,10 @@ pub fn spawn_plugger_mpcs_to_broadcast_channels<T: Send + Clone + 'static>(
     debug_label: &str,
 ) {
     let debug_label = debug_label.to_string();
-    assert!(downstreams.len() > 0, "at least one downstream must be provided");
+    assert!(
+        !downstreams.is_empty(),
+        "at least one downstream must be provided"
+    );
 
     // abort plugger task by closing the sender
     let _jh_task = spawn(async move {
@@ -41,9 +43,15 @@ pub fn spawn_plugger_mpcs_to_broadcast_channels<T: Send + Clone + 'static>(
                             },
                         };
                         if downstream.len() < BROADCAST_CHANNEL_WARNING_THRESHOLD {
-                            debug!("messages in downstream-{idx} channel {debug_label}: {}", downstream.len());
+                            debug!(
+                                "messages in downstream-{idx} channel {debug_label}: {}",
+                                downstream.len()
+                            );
                         } else {
-                            warn!("messages in downstream-{idx} channel {debug_label}: {}", downstream.len());
+                            warn!(
+                                "messages in downstream-{idx} channel {debug_label}: {}",
+                                downstream.len()
+                            );
                         }
                     }
                 }
@@ -52,7 +60,6 @@ pub fn spawn_plugger_mpcs_to_broadcast_channels<T: Send + Clone + 'static>(
                     return; // abort task
                 }
             }
-
         }
     });
 }
@@ -72,7 +79,10 @@ pub fn spawn_plugger_mpcs_to_broadcast_channel<T: Send + 'static>(
                 Some(msg) => {
                     match downstream.send(msg) {
                         Ok(receivers) => {
-                            trace!("sent data to {} receivers for downstream ({debug_label})", receivers);
+                            trace!(
+                                "sent data to {} receivers for downstream ({debug_label})",
+                                receivers
+                            );
                         }
                         Err(send_error) => match send_error {
                             SendError(_msg) => {
@@ -82,9 +92,15 @@ pub fn spawn_plugger_mpcs_to_broadcast_channel<T: Send + 'static>(
                         },
                     };
                     if downstream.len() < BROADCAST_CHANNEL_WARNING_THRESHOLD {
-                        debug!("messages in downstream channel {debug_label}: {}", downstream.len());
+                        debug!(
+                            "messages in downstream channel {debug_label}: {}",
+                            downstream.len()
+                        );
                     } else {
-                        warn!("messages in downstream channel {debug_label}: {}", downstream.len());
+                        warn!(
+                            "messages in downstream channel {debug_label}: {}",
+                            downstream.len()
+                        );
                     }
                 }
                 None => {
@@ -92,11 +108,9 @@ pub fn spawn_plugger_mpcs_to_broadcast_channel<T: Send + 'static>(
                     return; // abort task
                 }
             }
-
         }
     });
 }
-
 
 pub fn channelize_stream<T>(
     grpc_source_stream: impl Stream<Item = T> + Send + 'static,
@@ -130,7 +144,6 @@ where
                     return; // abort task
                 }
             }
-
         }
     });
 
