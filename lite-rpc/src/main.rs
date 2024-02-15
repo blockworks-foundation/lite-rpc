@@ -405,7 +405,7 @@ fn setup_grpc_stream_debugging(blocks_notifier: &BlockStream) {
     debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 16)]
+#[tokio::main(flavor = "multi_thread")]
 pub async fn main() -> anyhow::Result<()> {
     setup_tracing_subscriber();
 
