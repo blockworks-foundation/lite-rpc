@@ -65,7 +65,9 @@ use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::util::SubscriberInitExt;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -480,6 +482,7 @@ fn setup_tracing_subscriber() {
 
     if enable_instrument_tracing {
         tracing_subscriber::fmt::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
             .with_span_events(FmtSpan::FULL)
             .init();
     } else {
