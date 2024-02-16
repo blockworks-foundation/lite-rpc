@@ -470,9 +470,24 @@ fn map_block_from_yellowstone_update(
     let _span = debug_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
+            let started_at = std::time::Instant::now();
             let block = from_grpc_block_update(update_block_message, commitment_config);
+            debug!("MAPPING block from yellowstone with {} txs update took {:?}",
+                block.transactions.len(),
+                started_at.elapsed());
+            sleep_350(started_at);
+            debug!("SLEEP+MAPPING block from yellowstone with {} txs took {:?}",
+                block.transactions.len(),
+                started_at.elapsed());
+
             Some((block.slot, block))
         }
         _ => None,
+    }
+}
+
+fn sleep_350(started_at: std::time::Instant) {
+    while std::time::Instant::now().duration_since(started_at) < Duration::from_millis(350)  {
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
