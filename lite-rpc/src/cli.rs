@@ -11,6 +11,7 @@ use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
 use solana_rpc_client_api::client_error::reqwest::Url;
+use tokio::net::TcpListener;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -123,6 +124,13 @@ impl Config {
 
         config.lite_rpc_http_addr =
             env::var("LITE_RPC_HTTP_ADDR").unwrap_or(config.lite_rpc_http_addr);
+
+        assert!(
+            TcpListener::bind(config.lite_rpc_http_addr.clone())
+                .await
+                .is_ok(),
+            "invalid LITE_RPC_HTTP_ADDR"
+        );
 
         config.lite_rpc_ws_addr = env::var("LITE_RPC_WS_ADDR").unwrap_or(config.lite_rpc_ws_addr);
 
