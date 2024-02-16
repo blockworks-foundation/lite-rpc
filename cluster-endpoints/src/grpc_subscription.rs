@@ -38,6 +38,7 @@ use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
 };
 use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
+use rayon::prelude::*;
 
 struct LoggingTimer {
     started_at: Instant,
@@ -73,7 +74,7 @@ pub fn from_grpc_block_update(
     log_timer.log_if_exceed("start");
     let txs: Vec<TransactionInfo> = block // TODO: rayon iter here
         .transactions
-        .into_iter()
+        .into_par_iter()
         .filter_map(|tx| maptx(tx))
         .collect();
     log_timer.log_if_exceed("after transactions");
