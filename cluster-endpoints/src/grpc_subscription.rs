@@ -45,7 +45,7 @@ pub fn from_grpc_block_update(
     let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
     let txs: Vec<TransactionInfo> = block
         .transactions
-        .into_iter()
+        .into_iter().take(5)
         .filter_map(|tx| {
             let meta = tx.meta?;
 
