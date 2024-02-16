@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use itertools::Itertools;
+use jsonrpsee::core::RpcResult;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
 use solana_lite_rpc_accounts::account_service::AccountService;
@@ -89,7 +90,8 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-    async fn get_block(&self, _slot: u64) -> crate::rpc::Result<Option<UiConfirmedBlock>> {
+    async fn get_block(&self, _slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
+        log::info!("Get Block");
         // let block = self.blockstore.block_storage.query_block(slot).await;
         // if block.is_ok() {
         //     // TO DO Convert to UIConfirmed Block
@@ -107,7 +109,8 @@ impl LiteRpcServer for LiteBridge {
         _start_slot: Slot,
         _config: Option<RpcBlocksConfigWrapper>,
         _commitment: Option<CommitmentConfig>,
-    ) -> crate::rpc::Result<Vec<Slot>> {
+    ) -> RpcResult<Vec<Slot>> {
+        log::info!("Get Blocks");
         todo!()
     }
 
@@ -115,11 +118,13 @@ impl LiteRpcServer for LiteBridge {
         &self,
         _address: String,
         _config: Option<RpcSignaturesForAddressConfig>,
-    ) -> crate::rpc::Result<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+    ) -> RpcResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
+        log::info!("Get sFA");
         todo!()
     }
 
-    async fn get_cluster_nodes(&self) -> crate::rpc::Result<Vec<RpcContactInfo>> {
+    async fn get_cluster_nodes(&self) -> RpcResult<Vec<RpcContactInfo>> {
+        log::info!("Get CN");
         Ok(self
             .data_cache
             .cluster_info
@@ -129,7 +134,8 @@ impl LiteRpcServer for LiteBridge {
             .collect_vec())
     }
 
-    async fn get_slot(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<Slot> {
+    async fn get_slot(&self, config: Option<RpcContextConfig>) -> RpcResult<Slot> {
+        log::info!("Get Slot");
         let commitment_config = config
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
@@ -142,7 +148,8 @@ impl LiteRpcServer for LiteBridge {
         Ok(slot)
     }
 
-    async fn get_block_height(&self, config: Option<RpcContextConfig>) -> crate::rpc::Result<u64> {
+    async fn get_block_height(&self, config: Option<RpcContextConfig>) -> RpcResult<u64> {
+        log::info!("Get BH");
         let commitment_config = config.map_or(CommitmentConfig::finalized(), |x| {
             x.commitment.unwrap_or_default()
         });
@@ -154,27 +161,28 @@ impl LiteRpcServer for LiteBridge {
         Ok(block_info.block_height)
     }
 
-    async fn get_block_time(&self, slot: u64) -> crate::rpc::Result<u64> {
+    async fn get_block_time(&self, slot: u64) -> RpcResult<u64> {
+        log::info!("Get BT");
         let block_info = self
             .data_cache
             .block_information_store
             .get_block_info_by_slot(slot);
         match block_info {
             Some(info) => Ok(info.block_time),
-            None => Err(jsonrpsee::core::Error::Custom(
-                "Unable to find block information in LiteRPC cache".to_string(),
-            )),
+            None => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
         }
     }
 
-    async fn get_first_available_block(&self) -> crate::rpc::Result<u64> {
+    async fn get_first_available_block(&self) -> RpcResult<u64> {
+        log::info!("Get FAB");
         todo!()
     }
 
     async fn get_latest_blockhash(
         &self,
         config: Option<RpcContextConfig>,
-    ) -> crate::rpc::Result<RpcResponse<RpcBlockhash>> {
+    ) -> RpcResult<RpcResponse<RpcBlockhash>> {
+        log::info!("Get latest BH");
         RPC_GET_LATEST_BLOCKHASH.inc();
 
         let commitment_config = config
@@ -210,7 +218,8 @@ impl LiteRpcServer for LiteBridge {
         &self,
         blockhash: String,
         config: Option<IsBlockHashValidConfig>,
-    ) -> crate::rpc::Result<RpcResponse<bool>> {
+    ) -> RpcResult<RpcResponse<bool>> {
+        log::info!("Get is BH Valid");
         RPC_IS_BLOCKHASH_VALID.inc();
 
         let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
@@ -234,7 +243,8 @@ impl LiteRpcServer for LiteBridge {
     async fn get_epoch_info(
         &self,
         config: Option<RpcContextConfig>,
-    ) -> crate::rpc::Result<EpochInfo> {
+    ) -> RpcResult<EpochInfo> {
+        log::info!("Get epoch info");
         let commitment_config = config
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
@@ -256,15 +266,17 @@ impl LiteRpcServer for LiteBridge {
     async fn get_recent_performance_samples(
         &self,
         _limit: Option<usize>,
-    ) -> crate::rpc::Result<Vec<RpcPerfSample>> {
-        todo!()
+    ) -> RpcResult<Vec<RpcPerfSample>> {
+        log::info!("get _recent performance samples");
+        Ok(vec![])
     }
 
     async fn get_signature_statuses(
         &self,
         sigs: Vec<String>,
         _config: Option<RpcSignatureStatusConfig>,
-    ) -> crate::rpc::Result<RpcResponse<Vec<Option<TransactionStatus>>>> {
+    ) -> RpcResult<RpcResponse<Vec<Option<TransactionStatus>>>> {
+        log::info!("Get sig status");
         RPC_GET_SIGNATURE_STATUSES.inc();
 
         let sig_statuses = sigs
@@ -289,7 +301,8 @@ impl LiteRpcServer for LiteBridge {
     async fn get_recent_prioritization_fees(
         &self,
         pubkey_strs: Vec<String>,
-    ) -> crate::rpc::Result<Vec<RpcPrioritizationFee>> {
+    ) -> RpcResult<Vec<RpcPrioritizationFee>> {
+        log::info!("Get recent prio fees");
         // This method will get the latest global and account prioritization fee stats and then send the maximum p75
         const PERCENTILE: f32 = 0.75;
         let accounts = pubkey_strs
@@ -298,9 +311,7 @@ impl LiteRpcServer for LiteBridge {
             .collect_vec();
         if accounts.len() != pubkey_strs.len() {
             // if lengths do not match it means some of the accounts are invalid
-            return Err(jsonrpsee::core::Error::Custom(
-                "Some accounts are invalid".to_string(),
-            ));
+            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
         }
 
         let global_prio_fees = self.prio_fees_service.get_latest_priofees().await;
@@ -333,7 +344,8 @@ impl LiteRpcServer for LiteBridge {
         &self,
         tx: String,
         send_transaction_config: Option<SendTransactionConfig>,
-    ) -> crate::rpc::Result<String> {
+    ) -> RpcResult<String> {
+        log::info!("Get send tx");
         RPC_SEND_TX.inc();
 
         // Copied these constants from solana labs code
@@ -350,17 +362,13 @@ impl LiteRpcServer for LiteBridge {
             encoding::BinaryEncoding::Base64 => MAX_BASE64_SIZE,
         };
         if tx.len() > expected_size {
-            return Err(jsonrpsee::core::Error::Custom(format!(
-                "Transaction too large, expected : {} transaction len {}",
-                expected_size,
-                tx.len()
-            )));
+            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
         }
 
         let raw_tx = match encoding.decode(tx) {
             Ok(raw_tx) => raw_tx,
             Err(err) => {
-                return Err(jsonrpsee::core::Error::Custom(err.to_string()));
+                return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
             }
         };
 
@@ -374,11 +382,12 @@ impl LiteRpcServer for LiteBridge {
 
                 Ok(sig)
             }
-            Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
+            Err(e) => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
         }
     }
 
-    fn get_version(&self) -> crate::rpc::Result<RpcVersionInfo> {
+    fn get_version(&self) -> RpcResult<RpcVersionInfo> {
+        log::info!("Get version");
         RPC_GET_VERSION.inc();
 
         let version = solana_version::Version::default();
@@ -393,18 +402,17 @@ impl LiteRpcServer for LiteBridge {
         _pubkey_str: String,
         _lamports: u64,
         _config: Option<RpcRequestAirdropConfig>,
-    ) -> crate::rpc::Result<String> {
+    ) -> RpcResult<String> {
         RPC_REQUEST_AIRDROP.inc();
-        Err(jsonrpsee::core::Error::Custom(
-            "Does not support airdrop".to_string(),
-        ))
+        Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
     }
 
     async fn get_leader_schedule(
         &self,
         slot: Option<u64>,
         config: Option<RpcLeaderScheduleConfig>,
-    ) -> crate::rpc::Result<Option<HashMap<String, Vec<usize>>>> {
+    ) -> RpcResult<Option<HashMap<String, Vec<usize>>>> {
+        log::info!("Get leader schedule");
         //TODO verify leader identity.
         let schedule = self
             .data_cache
@@ -419,7 +427,8 @@ impl LiteRpcServer for LiteBridge {
         &self,
         start_slot: u64,
         limit: u64,
-    ) -> crate::rpc::Result<Vec<Pubkey>> {
+    ) -> RpcResult<Vec<Pubkey>> {
+        log::info!("Get slot leaders");
         let epock_schedule = self.data_cache.epoch_data.get_epoch_schedule();
 
         self.data_cache
@@ -429,21 +438,23 @@ impl LiteRpcServer for LiteBridge {
             .get_slot_leaders(start_slot, limit, epock_schedule)
             .await
             .map_err(|err| {
-                jsonrpsee::core::Error::Custom(format!("error during query processing:{err}"))
+                jsonrpsee::types::error::ErrorCode::InternalError.into()
             })
     }
 
     async fn get_vote_accounts(
         &self,
         _config: Option<RpcGetVoteAccountsConfig>,
-    ) -> crate::rpc::Result<RpcVoteAccountStatus> {
+    ) -> RpcResult<RpcVoteAccountStatus> {
+        log::info!("Get vote accounts");
         todo!()
     }
 
     async fn get_latest_block_priofees(
         &self,
         method: Option<PrioritizationFeeCalculationMethod>,
-    ) -> crate::rpc::Result<RpcResponse<PrioFeesStats>> {
+    ) -> RpcResult<RpcResponse<PrioFeesStats>> {
+        log::info!("Get latest block prio");
         let method = method.unwrap_or_default();
         let res = match method {
             PrioritizationFeeCalculationMethod::Latest => {
@@ -455,9 +466,7 @@ impl LiteRpcServer for LiteBridge {
                     .await
             }
             _ => {
-                return Err(jsonrpsee::core::Error::Custom(
-                    "Invalid calculation method".to_string(),
-                ))
+                return Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
             }
         };
 
@@ -469,9 +478,7 @@ impl LiteRpcServer for LiteBridge {
                 },
                 value: priofees,
             }),
-            None => Err(jsonrpsee::core::Error::Custom(
-                "No latest priofees stats available found".to_string(),
-            )),
+            None => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
         }
     }
 
@@ -479,7 +486,8 @@ impl LiteRpcServer for LiteBridge {
         &self,
         account: String,
         method: Option<PrioritizationFeeCalculationMethod>,
-    ) -> crate::rpc::Result<RpcResponse<AccountPrioFeesStats>> {
+    ) -> RpcResult<RpcResponse<AccountPrioFeesStats>> {
+        log::info!("Get latest account prio");
         if let Ok(account) = Pubkey::from_str(&account) {
             let method = method.unwrap_or_default();
             let (slot, value) = match method {
@@ -490,9 +498,7 @@ impl LiteRpcServer for LiteBridge {
                     self.account_priofees_service.get_n_last_stats(&account, nb)
                 }
                 _ => {
-                    return Err(jsonrpsee::core::Error::Custom(
-                        "Invalid calculation method".to_string(),
-                    ))
+                    return Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
                 }
             };
             Ok(RpcResponse {
@@ -503,9 +509,7 @@ impl LiteRpcServer for LiteBridge {
                 value,
             })
         } else {
-            Err(jsonrpsee::core::Error::Custom(
-                "Invalid account".to_string(),
-            ))
+            Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
         }
     }
 
@@ -513,11 +517,11 @@ impl LiteRpcServer for LiteBridge {
         &self,
         pubkey_str: String,
         config: Option<RpcAccountInfoConfig>,
-    ) -> crate::rpc::Result<RpcResponse<Option<UiAccount>>> {
+    ) -> RpcResult<RpcResponse<Option<UiAccount>>> {
+
+        log::info!("getAccountInfo {}", pubkey_str);
         let Ok(pubkey) = Pubkey::from_str(&pubkey_str) else {
-            return Err(jsonrpsee::core::Error::Custom(
-                "invalid account pubkey".to_string(),
-            ));
+            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
         };
         if let Some(account_service) = &self.accounts_service {
             match account_service.get_account(pubkey, config).await {
@@ -528,12 +532,10 @@ impl LiteRpcServer for LiteBridge {
                     },
                     value: ui_account,
                 }),
-                Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
+                Err(e) => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
             }
         } else {
-            Err(jsonrpsee::core::Error::Custom(
-                "account filters are not configured".to_string(),
-            ))
+            Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
         }
     }
 
@@ -541,15 +543,15 @@ impl LiteRpcServer for LiteBridge {
         &self,
         pubkey_strs: Vec<String>,
         config: Option<RpcAccountInfoConfig>,
-    ) -> crate::rpc::Result<RpcResponse<Vec<Option<UiAccount>>>> {
+    ) -> RpcResult<RpcResponse<Vec<Option<UiAccount>>>> {
+        log::info!("getMultipleAccount {}", pubkey_strs.join(", "));
+
         let pubkeys = pubkey_strs
             .iter()
             .map(|key| Pubkey::from_str(key))
             .collect_vec();
         if pubkeys.iter().any(|res| res.is_err()) {
-            return Err(jsonrpsee::core::Error::Custom(
-                "invalid account pubkey".to_string(),
-            ));
+            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
         };
 
         if let Some(account_service) = &self.accounts_service {
@@ -566,7 +568,7 @@ impl LiteRpcServer for LiteBridge {
                         }
                         ui_accounts.push(ui_account);
                     }
-                    Err(e) => return Err(jsonrpsee::core::Error::Custom(e.to_string())),
+                    Err(e) => return Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
                 }
             }
             Ok(RpcResponse {
@@ -577,9 +579,7 @@ impl LiteRpcServer for LiteBridge {
                 value: ui_accounts,
             })
         } else {
-            Err(jsonrpsee::core::Error::Custom(
-                "account filters are not configured".to_string(),
-            ))
+            Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
         }
     }
 
@@ -587,11 +587,12 @@ impl LiteRpcServer for LiteBridge {
         &self,
         program_id_str: String,
         config: Option<RpcProgramAccountsConfig>,
-    ) -> crate::rpc::Result<OptionalContext<Vec<RpcKeyedAccount>>> {
+    ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>> {
+
+        log::info!("getProgramAccount {}", program_id_str);
+
         let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
-            return Err(jsonrpsee::core::Error::Custom(
-                "invalid program id pubkey".to_string(),
-            ));
+            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
         };
 
         if let Some(account_service) = &self.accounts_service {
@@ -606,12 +607,10 @@ impl LiteRpcServer for LiteBridge {
                     },
                     value: ui_account,
                 })),
-                Err(e) => Err(jsonrpsee::core::Error::Custom(e.to_string())),
+                Err(e) => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
             }
         } else {
-            Err(jsonrpsee::core::Error::Custom(
-                "account filters are not configured".to_string(),
-            ))
+            Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
         }
     }
 }

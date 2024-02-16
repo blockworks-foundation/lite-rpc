@@ -24,6 +24,7 @@ bs58 = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
+futures-util = { workspace = true }
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
@@ -46,6 +47,9 @@ tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 chrono = { workspace = true }
 itertools = { workspace = true }
 cap = { version = "0.1.2", features = ["stats"] }
+tower = "0.4.13"
+hyper = { version = "0.14", features = ["server", "http1", "http2"] }
+tower-http = { version = "0.4.0", features = ["full"] }
 
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-services = { workspace = true }
