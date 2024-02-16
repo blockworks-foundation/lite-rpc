@@ -11,10 +11,10 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
-use tokio::time::{sleep, Instant};
+use tokio::time::{sleep};
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -470,7 +470,10 @@ fn map_block_from_yellowstone_update(
     let _span = debug_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
+            let started_at = std::time::Instant::now();
             let block = from_grpc_block_update(update_block_message, commitment_config);
+            debug!("MAPPING block from yellowstone update took {:?}",
+                started_at.elapsed());
             Some((block.slot, block))
         }
         _ => None,
