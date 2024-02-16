@@ -75,7 +75,7 @@ pub fn from_grpc_block_update(
     log_timer.log_if_exceed("start");
     let txs: Vec<TransactionInfo> = block
         .transactions
-        .into_iter().take(5)
+        .into_iter()
         .filter_map(|tx| maptx(tx))
         .collect();
     log_timer.log_if_exceed("after transactions");
