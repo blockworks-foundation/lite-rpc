@@ -471,6 +471,10 @@ fn map_block_from_yellowstone_update(
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
             let block = from_grpc_block_update(update_block_message, commitment_config);
+            let started_at = Instant::now();
+            debug!("MAPPING block from yellowstone with {} txs update took {:?}",
+                block.transactions.len(),
+                started_at.elapsed());
             Some((block.slot, block))
         }
         _ => None,
