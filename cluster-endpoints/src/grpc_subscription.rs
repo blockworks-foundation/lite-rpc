@@ -72,7 +72,7 @@ pub fn from_grpc_block_update(
     };
 
     log_timer.log_if_exceed("start");
-    let txs: Vec<TransactionInfo> = block // TODO: rayon iter here
+    let txs: Vec<TransactionInfo> = block
         .transactions
         .into_par_iter()
         .filter_map(|tx| maptx(tx))
@@ -332,7 +332,7 @@ fn maptx(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
                 .eq(&solana_sdk::vote::program::id())
         {
             if let Ok(_) = limited_deserialize::<VoteInstruction>(&ix.data) {
-                // should be able to just read bytes here
+                // do we even need to deserialize here?
                 is_vote_transaction = true;
                 continue;
             }
