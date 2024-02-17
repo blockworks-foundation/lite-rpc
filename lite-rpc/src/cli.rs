@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::env;
 use std::fmt::{Debug, Display, Formatter};
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 use crate::postgres_logger;
 use crate::{
@@ -11,7 +13,6 @@ use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
 use solana_rpc_client_api::client_error::reqwest::Url;
-use tokio::net::TcpListener;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -125,14 +126,10 @@ impl Config {
         config.lite_rpc_http_addr =
             env::var("LITE_RPC_HTTP_ADDR").unwrap_or(config.lite_rpc_http_addr);
 
-        assert!(
-            TcpListener::bind(config.lite_rpc_http_addr.clone())
-                .await
-                .is_ok(),
-            "invalid LITE_RPC_HTTP_ADDR"
-        );
-
         config.lite_rpc_ws_addr = env::var("LITE_RPC_WS_ADDR").unwrap_or(config.lite_rpc_ws_addr);
+
+        SocketAddr::from_str(&config.lite_rpc_http_addr).expect("invalid LITE_RPC_HTTP_ADDR");
+        SocketAddr::from_str(&config.lite_rpc_ws_addr).expect("invalid LITE_RPC_WS_ADDR");
 
         config.fanout_size = env::var("FANOUT_SIZE")
             .map(|size| size.parse().unwrap())
