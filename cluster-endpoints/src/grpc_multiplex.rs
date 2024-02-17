@@ -10,8 +10,9 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::time::Duration;
+use debug_collections::hashmap_wrapped::HashMap;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
 use tokio::time::{sleep, Instant};
@@ -246,7 +247,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             // by blockhash
             // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED
-            let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
+            let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new_with_warn_threshold(3);
 
             let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
             let mut last_finalized_slot: Slot = 0;

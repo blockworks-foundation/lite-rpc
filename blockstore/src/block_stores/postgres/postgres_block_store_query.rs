@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use std::ops::RangeInclusive;
 use std::time::Instant;
 
 use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
 use anyhow::{bail, Result};
+use debug_collections::hashmap_wrapped::HashMap;
 use itertools::Itertools;
 use log::{debug, info, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
@@ -215,7 +215,7 @@ impl PostgresQueryBlockStore {
             .collect_vec();
 
         if epoch_schemas.is_empty() {
-            return HashMap::new();
+            return HashMap::new_with_warn_threshold(10);
         }
 
         let inner = epoch_schemas
@@ -242,7 +242,7 @@ impl PostgresQueryBlockStore {
         let rows_minmax = session.query_list(&query, &[]).await.unwrap();
 
         if rows_minmax.is_empty() {
-            return HashMap::new();
+            return HashMap::new_with_warn_threshold(10);
         }
 
         let mut map_epoch_to_slot_range = rows_minmax
@@ -262,7 +262,7 @@ impl PostgresQueryBlockStore {
                 Some(val)
             });
 
-        let final_range: HashMap<EpochRef, RangeInclusive<Slot>> = map_epoch_to_slot_range
+        let final_range = map_epoch_to_slot_range
             .iter_mut()
             .map(|(epoch, range)| {
                 let epoch = EpochRef::new(*epoch as u64);
@@ -272,6 +272,7 @@ impl PostgresQueryBlockStore {
                 )
             })
             .collect();
+        let final_range: HashMap<EpochRef, RangeInclusive<Slot>> = HashMap::from_hashmap_with_threshold(final_range, 10);
 
         debug!(
             "Slot range check in postgres found {} ranges, took {:2}sec: {:?}",

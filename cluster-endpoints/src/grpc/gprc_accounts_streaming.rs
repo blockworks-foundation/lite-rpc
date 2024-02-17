@@ -1,5 +1,6 @@
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
-use std::{collections::HashMap, time::Duration};
+use std::{time::Duration};
+use std::collections::HashMap;
 
 use geyser_grpc_connector::GrpcSourceConfig;
 use geyser_grpc_connector::Message::GeyserSubscribeUpdate;
