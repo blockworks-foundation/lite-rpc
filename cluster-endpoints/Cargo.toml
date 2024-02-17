@@ -47,3 +47,5 @@ yellowstone-grpc-proto = { workspace = true }
 itertools = {workspace = true}
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
+
+debug-collections = { workspace = true }
