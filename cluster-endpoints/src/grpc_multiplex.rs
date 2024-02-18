@@ -19,6 +19,7 @@ use tokio::time::{sleep, Instant};
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use debug_collections::tokio_wrapped::mpsc::channels_wrapped::send_timed;
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
@@ -66,8 +67,8 @@ fn create_grpc_multiplex_processed_block_task(
                                 || slot > slots_processed.first().cloned().unwrap_or_default())
                         {
                             let send_started_at = Instant::now();
-                            let send_result = block_sender
-                                .send(produced_block)
+                            let send_result =
+                                send_timed(produced_block, &block_sender)
                                 .await
                                 .context("Send block to channel");
                             if send_result.is_err() {
@@ -139,8 +140,8 @@ fn create_grpc_multiplex_block_meta_task(
                                     };
 
                                     let send_started_at = Instant::now();
-                                    let send_result = block_meta_sender
-                                        .send(block_meta)
+                                    let send_result =
+                                        send_timed(block_meta, &block_meta_sender)
                                         .await
                                         .context("Send block to channel");
                                     if send_result.is_err() {
@@ -476,10 +477,10 @@ fn map_block_from_yellowstone_update(
             debug!("MAPPING block from yellowstone with {} txs update took {:?}",
                 block.transactions.len(),
                 started_at.elapsed());
-            sleep_350(started_at);
-            debug!("SLEEP+MAPPING block from yellowstone with {} txs took {:?}",
-                block.transactions.len(),
-                started_at.elapsed());
+            // sleep_350(started_at);
+            // debug!("SLEEP+MAPPING block from yellowstone with {} txs took {:?}",
+            //     block.transactions.len(),
+            //     started_at.elapsed());
 
             Some((block.slot, block))
         }
