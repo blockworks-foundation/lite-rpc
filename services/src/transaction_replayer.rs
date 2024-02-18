@@ -9,7 +9,6 @@ use solana_lite_rpc_core::{
 use std::time::Duration;
 use debug_collections::tokio_wrapped::mpsc::channels_wrapped::send_timed;
 use tokio::{
-    sync::mpsc::{UnboundedReceiver, UnboundedSender},
     time::Instant,
 };
 use tokio::sync::mpsc::{Receiver, Sender};

@@ -57,5 +57,5 @@ pub enum NotificationMsg {
     UpdateTransactionMsg(Vec<TransactionUpdateNotification>),
 }
 
-pub type NotificationReciever = UnboundedReceiver<NotificationMsg>;
-pub type NotificationSender = UnboundedSender<NotificationMsg>;
+pub type NotificationReciever = tokio::sync::mpsc::Receiver<NotificationMsg>;
+pub type NotificationSender = tokio::sync::mpsc::Sender<NotificationMsg>;

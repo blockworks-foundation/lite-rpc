@@ -21,7 +21,7 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::transaction::VersionedTransaction;
 use tokio::{
-    sync::mpsc::{self, Sender, UnboundedSender},
+    sync::mpsc::{self, Sender},
     time::Instant,
 };
 
