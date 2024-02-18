@@ -62,13 +62,13 @@ pub fn poll_block(
 
     let recent_slot = AtomicSlot::default();
     let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::channel(99);
-    let (block_schedule_queue_sx, block_schedule_queue_rx) =
-        async_channel::unbounded::<(Slot, CommitmentConfig)>();
+    let (block_schedule_queue_sx, mut block_schedule_queue_rx) =
+        tokio::sync::broadcast::channel::<(Slot, CommitmentConfig)>(99);
 
     for _i in 0..num_parallel_tasks {
         let block_notification_sender = block_notification_sender.clone();
         let rpc_client = rpc_client.clone();
-        let block_schedule_queue_rx = block_schedule_queue_rx.clone();
+        let mut block_schedule_queue_rx = block_schedule_queue_rx.resubscribe();
         let slot_retry_queue_sx = slot_retry_queue_sx.clone();
         let task: AnyhowJoinHandle = tokio::spawn(async move {
             loop {
@@ -98,8 +98,8 @@ pub fn poll_block(
                         let retry_at = tokio::time::Instant::now()
                             .checked_add(Duration::from_millis(10))
                             .unwrap();
-                        slot_retry_queue_sx
-                            .send(((slot, commitment_config), retry_at))
+                        send_timed(((slot, commitment_config), retry_at), &slot_retry_queue_sx)
+                            .await
                             .context("should be able to rescheduled for replay")?;
                     }
                 }
@@ -129,7 +129,7 @@ pub fn poll_block(
                 }
                 if block_schedule_queue_sx
                     .send((slot, commitment_config))
-                    .await
+                    // .await
                     .is_err()
                 {
                     bail!("could not schedule replay for a slot")
@@ -166,7 +166,7 @@ pub fn poll_block(
                 for slot in last_slot + 1..estimated_processed_slot + 1 {
                     block_schedule_queue_sx
                         .send((slot, CommitmentConfig::confirmed()))
-                        .await
+                        // .await
                         .context("Should be able to schedule message")?;
                 }
             }
