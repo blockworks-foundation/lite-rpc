@@ -62,7 +62,7 @@ pub fn poll_block(
 
     let recent_slot = AtomicSlot::default();
     let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::channel(99);
-    let (block_schedule_queue_sx, mut block_schedule_queue_rx) =
+    let (block_schedule_queue_sx, block_schedule_queue_rx) =
         tokio::sync::broadcast::channel::<(Slot, CommitmentConfig)>(99);
 
     for _i in 0..num_parallel_tasks {
