@@ -25,6 +25,7 @@ use solana_transaction_status::{
     TransactionDetails, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta,
 };
 use std::{sync::Arc, time::Duration};
+use debug_collections::tokio_wrapped::mpsc::channels_wrapped::send_timed;
 use tokio::sync::broadcast::{Receiver, Sender};
 
 pub const NUM_PARALLEL_TASKS_DEFAULT: usize = 16;
@@ -60,7 +61,7 @@ pub fn poll_block(
     let mut tasks: Vec<AnyhowJoinHandle> = vec![];
 
     let recent_slot = AtomicSlot::default();
-    let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (slot_retry_queue_sx, mut slot_retry_queue_rx) = tokio::sync::mpsc::channel(99);
     let (block_schedule_queue_sx, block_schedule_queue_rx) =
         async_channel::unbounded::<(Slot, CommitmentConfig)>();
 
@@ -87,9 +88,10 @@ pub fn poll_block(
                             let retry_at = tokio::time::Instant::now()
                                 .checked_add(Duration::from_secs(2))
                                 .unwrap();
-                            slot_retry_queue_sx
-                                .send(((slot, CommitmentConfig::finalized()), retry_at))
-                                .context("Failed to reschedule fetch of finalized block")?;
+                            send_timed(
+                                ((slot, CommitmentConfig::finalized()), retry_at),
+                                &slot_retry_queue_sx
+                            ).await.context("Failed to reschedule fetch of finalized block")?;
                         }
                     }
                     None => {
