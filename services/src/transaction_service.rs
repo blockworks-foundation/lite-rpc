@@ -9,6 +9,7 @@ use crate::{
     tx_sender::TxSender,
 };
 use anyhow::bail;
+use debug_collections::tokio_wrapped::mpsc::channels_wrapped::send_timed;
 use solana_lite_rpc_core::{
     solana_utils::SerializableTransaction, structures::transaction_sent_info::SentTransactionInfo,
     types::SlotStream,
@@ -55,7 +56,7 @@ impl TransactionServiceBuilder {
         slot_notifications: SlotStream,
     ) -> (TransactionService, AnyhowJoinHandle) {
         let (transaction_channel, tx_recv) = mpsc::channel(self.max_nb_txs_in_queue);
-        let (replay_channel, replay_reciever) = tokio::sync::mpsc::unbounded_channel();
+        let (replay_channel, replay_reciever) = tokio::sync::mpsc::channel(99);
 
         let jh_services: AnyhowJoinHandle = {
             let tx_sender = self.tx_sender.clone();
@@ -101,7 +102,7 @@ impl TransactionServiceBuilder {
 #[derive(Clone)]
 pub struct TransactionService {
     pub transaction_channel: Sender<SentTransactionInfo>,
-    pub replay_channel: UnboundedSender<TransactionReplay>,
+    pub replay_channel: Sender<TransactionReplay>,
     pub block_information_store: BlockInformationStore,
     pub max_retries: usize,
     pub replay_offset: Duration,
@@ -151,15 +152,15 @@ impl TransactionService {
         }
         let replay_at = Instant::now() + self.replay_offset;
         // ignore error for replay service
-        if self
-            .replay_channel
-            .send(TransactionReplay {
+        if send_timed(
+            TransactionReplay {
                 transaction: transaction_info,
                 replay_count: 0,
                 max_replay,
                 replay_at,
-            })
-            .is_ok()
+            },
+            &self.replay_channel
+        ).await.is_ok()
         {
             MESSAGES_IN_REPLAY_QUEUE.inc();
         }

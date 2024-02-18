@@ -7,10 +7,12 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use std::time::Duration;
+use debug_collections::tokio_wrapped::mpsc::channels_wrapped::send_timed;
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
     time::Instant,
 };
+use tokio::sync::mpsc::{Receiver, Sender};
 
 lazy_static::lazy_static! {
     pub static ref MESSAGES_IN_REPLAY_QUEUE: GenericGauge<prometheus::core::AtomicI64> =
@@ -49,8 +51,8 @@ impl TransactionReplayer {
 
     pub fn start_service(
         &self,
-        sender: UnboundedSender<TransactionReplay>,
-        mut reciever: UnboundedReceiver<TransactionReplay>,
+        sender: Sender<TransactionReplay>,
+        mut reciever: Receiver<TransactionReplay>,
     ) -> AnyhowJoinHandle {
         let tpu_service = self.tpu_service.clone();
         let tx_store = self.tx_store.clone();
@@ -63,7 +65,7 @@ impl TransactionReplayer {
                 if now < tx_replay.replay_at {
                     if tx_replay.replay_at > now + retry_offset {
                         // requeue the transactions will be replayed after retry_after duration
-                        sender.send(tx_replay).context("replay channel closed")?;
+                        send_timed(tx_replay, &sender).await.context("replay channel closed")?;
                         MESSAGES_IN_REPLAY_QUEUE.inc();
                         continue;
                     }
@@ -85,7 +87,7 @@ impl TransactionReplayer {
                     tx_replay.replay_count += 1;
                     tx_replay.replay_at =
                         Instant::now() + retry_offset.mul_f32(tx_replay.replay_count as f32);
-                    sender.send(tx_replay).context("replay channel closed")?;
+                    send_timed(tx_replay, &sender).await.context("replay channel closed")?;
                     MESSAGES_IN_REPLAY_QUEUE.inc();
                 }
             }
