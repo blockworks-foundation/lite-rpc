@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{bail, Context};
+use debug_collections::tokio_wrapped::mpsc::channels_wrapped::send_timed;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{structures::slot_notification::SlotNotification, AnyhowJoinHandle};
 use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
@@ -10,7 +11,7 @@ const AVERAGE_SLOT_CHANGE_TIME: Duration = Duration::from_millis(400);
 pub async fn poll_commitment_slots(
     rpc_client: Arc<RpcClient>,
     commitment_config: CommitmentConfig,
-    slot_tx: tokio::sync::mpsc::UnboundedSender<Slot>,
+    slot_tx: tokio::sync::mpsc::Sender<Slot>,
 ) -> anyhow::Result<()> {
     let mut poll_frequency = tokio::time::interval(Duration::from_millis(50));
     let mut last_slot = 0;
@@ -21,7 +22,7 @@ pub async fn poll_commitment_slots(
             Ok(slot) => {
                 if slot > last_slot {
                     // send
-                    slot_tx.send(slot).context("Error sending slot")?;
+                    send_timed(slot, &slot_tx).await.context("Error sending slot")?;
                     last_slot = slot;
                 }
                 errors = 0;
@@ -44,7 +45,7 @@ pub fn poll_slots(
     sender: Sender<SlotNotification>,
 ) -> anyhow::Result<Vec<AnyhowJoinHandle>> {
     // processed slot update task
-    let (slot_update_sx, mut slot_update_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (slot_update_sx, mut slot_update_rx) = tokio::sync::mpsc::channel(99);
     let task1 = tokio::spawn(poll_commitment_slots(
         rpc_client.clone(),
         commitment_config,
