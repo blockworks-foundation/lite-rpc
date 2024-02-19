@@ -77,15 +77,14 @@ pub fn from_grpc_block_update(
 
             let signature = signatures[0];
             let compute_units_consumed = meta.compute_units_consumed;
-            // let account_keys: Vec<Pubkey> = message
-            //     .account_keys
-            //     .into_iter()
-            //     .map(|key| {
-            //         let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
-            //         Pubkey::new_from_array(bytes)
-            //     })
-            //     .collect();
-            let account_keys = vec![];
+            let account_keys: Vec<Pubkey> = message
+                .account_keys
+                .into_iter()
+                .map(|key| {
+                    let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
+                    Pubkey::new_from_array(bytes)
+                })
+                .collect();
 
             let message = VersionedMessage::V0(v0::Message {
                 header: MessageHeader {
