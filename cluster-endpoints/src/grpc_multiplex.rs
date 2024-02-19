@@ -3,8 +3,8 @@ use crate::grpc_subscription::{
 };
 use anyhow::Context;
 use futures::{Stream, StreamExt};
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{
-    create_geyser_reconnecting_stream, GeyserFilter, GrpcSourceConfig,
+use geyser_grpc_connector::{
+    GeyserFilter, GrpcSourceConfig,
 };
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
@@ -17,10 +17,12 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use crate::grpc_newmultiplex::create_grpc_multiplex_processed_block_task;
 
 struct BlockExtractor(CommitmentConfig);
 
@@ -135,9 +137,15 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let (processed_block_sender, mut processed_block_reciever) =
                     tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
 
-                let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
+                // let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
+                //     &grpc_sources,
+                //     processed_block_sender,
+                // );
+
+                // this is the major change
+                let processed_blocks_tasks = create_grpc_multiplex_processed_block_task(
                     &grpc_sources,
-                    processed_block_sender,
+                   processed_block_sender,
                 );
 
                 let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(

@@ -11,7 +11,7 @@ use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::{debug, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+use solana_lite_rpc_cluster_endpoints::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
@@ -135,6 +135,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             connect_timeout: Duration::from_secs(5),
             request_timeout: Duration::from_secs(5),
             subscribe_timeout: Duration::from_secs(5),
+            receive_timeout: Duration::from_secs(5),
         };
 
         create_grpc_subscription(
