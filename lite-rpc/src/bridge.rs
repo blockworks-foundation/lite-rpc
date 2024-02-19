@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use itertools::Itertools;
+use log::warn;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
 use solana_lite_rpc_accounts::account_service::AccountService;
@@ -63,7 +64,7 @@ pub struct LiteBridge {
     transaction_service: TransactionService,
     history: History,
     prio_fees_service: PrioFeesService,
-    account_priofees_service: AccountPrioService,
+    // account_priofees_service: AccountPrioService,
     accounts_service: Option<AccountService>,
 }
 
@@ -73,7 +74,7 @@ impl LiteBridge {
         transaction_service: TransactionService,
         history: History,
         prio_fees_service: PrioFeesService,
-        account_priofees_service: AccountPrioService,
+        // account_priofees_service: AccountPrioService,
         accounts_service: Option<AccountService>,
     ) -> Self {
         Self {
@@ -81,7 +82,7 @@ impl LiteBridge {
             transaction_service,
             history,
             prio_fees_service,
-            account_priofees_service,
+            // account_priofees_service,
             accounts_service,
         }
     }
@@ -311,22 +312,23 @@ impl LiteRpcServer for LiteBridge {
             })
             .unwrap_or_default();
 
-        let ret: Vec<RpcPrioritizationFee> = accounts
-            .iter()
-            .map(|account| {
-                let (slot, stats) = self.account_priofees_service.get_latest_stats(account);
-                let stat = stats
-                    .all_stats
-                    .get_percentile(PERCENTILE)
-                    .unwrap_or_default();
-                RpcPrioritizationFee {
-                    slot,
-                    prioritization_fee: std::cmp::max(max_p75, std::cmp::max(stat.0, stat.1)),
-                }
-            })
-            .collect_vec();
+        // let ret: Vec<RpcPrioritizationFee> = accounts
+        //     .iter()
+        //     .map(|account| {
+        //         let (slot, stats) = self.account_priofees_service.get_latest_stats(account);
+        //         let stat = stats
+        //             .all_stats
+        //             .get_percentile(PERCENTILE)
+        //             .unwrap_or_default();
+        //         RpcPrioritizationFee {
+        //             slot,
+        //             prioritization_fee: std::cmp::max(max_p75, std::cmp::max(stat.0, stat.1)),
+        //         }
+        //     })
+        //     .collect_vec();
+        warn!("disabled");
 
-        Ok(ret)
+        Ok(vec![])
     }
 
     async fn send_transaction(
@@ -480,33 +482,36 @@ impl LiteRpcServer for LiteBridge {
         account: String,
         method: Option<PrioritizationFeeCalculationMethod>,
     ) -> crate::rpc::Result<RpcResponse<AccountPrioFeesStats>> {
-        if let Ok(account) = Pubkey::from_str(&account) {
-            let method = method.unwrap_or_default();
-            let (slot, value) = match method {
-                PrioritizationFeeCalculationMethod::Latest => {
-                    self.account_priofees_service.get_latest_stats(&account)
-                }
-                PrioritizationFeeCalculationMethod::LastNBlocks(nb) => {
-                    self.account_priofees_service.get_n_last_stats(&account, nb)
-                }
-                _ => {
-                    return Err(jsonrpsee::core::Error::Custom(
-                        "Invalid calculation method".to_string(),
-                    ))
-                }
-            };
-            Ok(RpcResponse {
-                context: RpcResponseContext {
-                    slot,
-                    api_version: None,
-                },
-                value,
-            })
-        } else {
-            Err(jsonrpsee::core::Error::Custom(
-                "Invalid account".to_string(),
-            ))
-        }
+        Err(jsonrpsee::core::Error::Custom(
+            "Invalid account".to_string(),
+        ))
+        // if let Ok(account) = Pubkey::from_str(&account) {
+        //     let method = method.unwrap_or_default();
+        //     let (slot, value) = match method {
+        //         PrioritizationFeeCalculationMethod::Latest => {
+        //             self.account_priofees_service.get_latest_stats(&account)
+        //         }
+        //         PrioritizationFeeCalculationMethod::LastNBlocks(nb) => {
+        //             self.account_priofees_service.get_n_last_stats(&account, nb)
+        //         }
+        //         _ => {
+        //             return Err(jsonrpsee::core::Error::Custom(
+        //                 "Invalid calculation method".to_string(),
+        //             ))
+        //         }
+        //     };
+        //     Ok(RpcResponse {
+        //         context: RpcResponseContext {
+        //             slot,
+        //             api_version: None,
+        //         },
+        //         value,
+        //     })
+        // } else {
+        //     Err(jsonrpsee::core::Error::Custom(
+        //         "Invalid account".to_string(),
+        //     ))
+        // }
     }
 
     async fn get_account_info(

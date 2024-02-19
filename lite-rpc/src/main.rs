@@ -192,6 +192,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     }
 
     let accounts_service = if let Some(account_stream) = processed_account_stream {
+        info!("Starting accounts service...");
         // lets use inmemory storage for now
         let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
             Arc::new(InmemoryAccountStore::new());
@@ -211,6 +212,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
         Some(account_service)
     } else {
+        info!("Disabled accounts service...");
         None
     };
 
@@ -278,12 +280,12 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             None
         };
 
-    let (account_priofees_task, account_priofees_service) =
-        AccountPrioService::start_account_priofees_task(
-            blocks_notifier.resubscribe(),
-            100,
-            address_lookup_tables,
-        );
+    // let (account_priofees_task, account_priofees_service) =
+    //     AccountPrioService::start_account_priofees_task(
+    //         blocks_notifier.resubscribe(),
+    //         100,
+    //         address_lookup_tables,
+    //     );
 
     let (notification_channel, postgres) = start_postgres(postgres).await?;
 
@@ -339,14 +341,14 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_service,
         history,
         block_priofees_service.clone(),
-        account_priofees_service.clone(),
+        // account_priofees_service.clone(),
         accounts_service.clone(),
     );
 
     let pubsub_service = LitePubSubBridge::new(
         data_cache.clone(),
         block_priofees_service,
-        account_priofees_service,
+        // account_priofees_service,
         blocks_notifier,
         accounts_service.clone(),
     );
@@ -385,9 +387,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         res = block_priofees_task => {
             anyhow::bail!("block prioritization fees task failed {res:?}")
         }
-        res = account_priofees_task => {
-            anyhow::bail!("account prioritization fees task failed {res:?}")
-        }
+        // res = account_priofees_task => {
+        //     anyhow::bail!("account prioritization fees task failed {res:?}")
+        // }
     }
 }
 

@@ -46,7 +46,7 @@ lazy_static::lazy_static! {
 pub struct LitePubSubBridge {
     data_cache: DataCache,
     prio_fees_service: PrioFeesService,
-    account_priofees_service: AccountPrioService,
+    // account_priofees_service: AccountPrioService,
     block_stream: BlockStream,
     accounts_service: Option<AccountService>,
 }
@@ -55,14 +55,14 @@ impl LitePubSubBridge {
     pub fn new(
         data_cache: DataCache,
         prio_fees_service: PrioFeesService,
-        account_priofees_service: AccountPrioService,
+        // account_priofees_service: AccountPrioService,
         block_stream: BlockStream,
         accounts_service: Option<AccountService>,
     ) -> Self {
         Self {
             data_cache,
             prio_fees_service,
-            account_priofees_service,
+            // account_priofees_service,
             block_stream,
             accounts_service,
         }
@@ -227,57 +227,57 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
         let Ok(account) = Pubkey::from_str(&account) else {
             return Err(StringError::from("Invalid account".to_string()));
         };
-        let sink = pending.accept().await?;
-        let mut account_fees_stream = self
-            .account_priofees_service
-            .priofees_update_sender
-            .subscribe();
-        tokio::spawn(async move {
-            RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
-
-            'recv_loop: loop {
-                match account_fees_stream.recv().await {
-                    Ok(AccountPrioFeesUpdateMessage {
-                        slot,
-                        accounts_data,
-                    }) => {
-                        if let Some(account_data) = accounts_data.get(&account) {
-                            let result_message =
-                                jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
-                                    context: RpcResponseContext {
-                                        slot,
-                                        api_version: None,
-                                    },
-                                    value: account_data,
-                                });
-
-                            match sink.send(result_message.unwrap()).await {
-                                Ok(()) => {
-                                    // success
-                                    continue 'recv_loop;
-                                }
-                                Err(DisconnectError(_subscription_message)) => {
-                                    log::debug!("Stopping subscription task on disconnect");
-                                    return;
-                                }
-                            };
-                        }
-                    }
-                    Err(Lagged(lagged)) => {
-                        // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
-                        log::warn!(
-                            "subscriber laggs some({}) priofees update messages - continue",
-                            lagged
-                        );
-                        continue 'recv_loop;
-                    }
-                    Err(Closed) => {
-                        log::error!("failed to receive block, sender closed - aborting");
-                        return;
-                    }
-                }
-            }
-        });
+        // let sink = pending.accept().await?;
+        // let mut account_fees_stream = self
+        //     .account_priofees_service
+        //     .priofees_update_sender
+        //     .subscribe();
+        // tokio::spawn(async move {
+        //     RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
+        //
+        //     'recv_loop: loop {
+        //         match account_fees_stream.recv().await {
+        //             Ok(AccountPrioFeesUpdateMessage {
+        //                 slot,
+        //                 accounts_data,
+        //             }) => {
+        //                 if let Some(account_data) = accounts_data.get(&account) {
+        //                     let result_message =
+        //                         jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
+        //                             context: RpcResponseContext {
+        //                                 slot,
+        //                                 api_version: None,
+        //                             },
+        //                             value: account_data,
+        //                         });
+        //
+        //                     match sink.send(result_message.unwrap()).await {
+        //                         Ok(()) => {
+        //                             // success
+        //                             continue 'recv_loop;
+        //                         }
+        //                         Err(DisconnectError(_subscription_message)) => {
+        //                             log::debug!("Stopping subscription task on disconnect");
+        //                             return;
+        //                         }
+        //                     };
+        //                 }
+        //             }
+        //             Err(Lagged(lagged)) => {
+        //                 // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
+        //                 log::warn!(
+        //                     "subscriber laggs some({}) priofees update messages - continue",
+        //                     lagged
+        //                 );
+        //                 continue 'recv_loop;
+        //             }
+        //             Err(Closed) => {
+        //                 log::error!("failed to receive block, sender closed - aborting");
+        //                 return;
+        //             }
+        //         }
+        //     }
+        // });
 
         Ok(())
     }
