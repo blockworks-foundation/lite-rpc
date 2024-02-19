@@ -56,15 +56,13 @@ fn create_grpc_multiplex_processed_block_task(
 
             const MAX_SIZE: usize = 1024;
             match blocks_rx.recv().await {
-                Some(Message::GeyserSubscribeUpdate(subscribe_update, received_at)) => {
+                Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     // TIME SPENT IN CHANNEL: 18.450375ms
                     // TIME SPENT IN CHANNEL: 25.791µs
-                    info!("TIME SPENT IN CHANNEL: {:?}", received_at.elapsed());
                     let mapfilter =
                         map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
                     if let Some((slot, produced_block)) = mapfilter {
                         assert_eq!(COMMITMENT_CONFIG, produced_block.commitment_config);
-                        info!("DO NOTHING2: {:?}", received_at.elapsed());
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
                         if !slots_processed.contains(&slot)
@@ -132,7 +130,7 @@ fn create_grpc_multiplex_block_meta_task(
         let mut tip: Slot = 0;
         loop {
             match blocks_rx.recv().await {
-                Some(Message::GeyserSubscribeUpdate(subscribe_update, _received_at)) => {
+                Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     if let Some(update) = subscribe_update.update_oneof {
                         match update {
                             UpdateOneof::BlockMeta(block_meta) => {
@@ -388,7 +386,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
             'recv_loop: loop {
                 let next = tokio::time::timeout(Duration::from_secs(30), slots_rx.recv()).await;
                 match next {
-                    Ok(Some(Message::GeyserSubscribeUpdate(slot_update, _received_at))) => {
+                    Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
                             let _span = debug_span!("grpc_multiplex_processed_slots_stream", ?slot)
