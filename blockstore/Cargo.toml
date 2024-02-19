@@ -39,5 +39,7 @@ futures-util = {workspace = true}
 bytes = "1.5.0"
 rand = "0.8.5"
 
+debug-collections = { workspace = true }
+
 [dev-dependencies]
 tracing-subscriber = { workspace = true }

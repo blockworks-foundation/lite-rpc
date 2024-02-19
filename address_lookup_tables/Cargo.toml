@@ -41,3 +41,5 @@ prometheus = { workspace = true }
 lazy_static = { workspace = true }
 
 solana-lite-rpc-core = { workspace = true }
+
+debug-collections = { workspace = true }

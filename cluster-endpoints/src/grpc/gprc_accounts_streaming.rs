@@ -1,5 +1,7 @@
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
-use std::{collections::HashMap, time::Duration};
+use std::{time::Duration};
+use std::collections::HashMap;
+use debug_collections::tokio_wrapped::mpsc::channels_wrapped::send_timed;
 
 use geyser_grpc_connector::GrpcSourceConfig;
 use geyser_grpc_connector::Message::GeyserSubscribeUpdate;
@@ -24,7 +26,7 @@ use yellowstone_grpc_proto::geyser::{
 pub fn start_account_streaming_tasks(
     grpc_config: GrpcSourceConfig,
     accounts_filters: AccountFilters,
-    account_stream_sx: tokio::sync::mpsc::UnboundedSender<AccountNotificationMessage>,
+    account_stream_sx: tokio::sync::mpsc::Sender<AccountNotificationMessage>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
         'main_loop: loop {
@@ -144,7 +146,7 @@ pub fn start_account_streaming_tasks(
                                 // TODO update with processed commitment / check above
                                 commitment: Commitment::Confirmed,
                             };
-                            if account_stream_sx.send(notification).is_err() {
+                            if send_timed(notification, &account_stream_sx).await.is_err() {
                                 // non recoverable, i.e the whole stream is being restarted
                                 log::error!("Account stream broken, breaking from main loop");
                                 break 'main_loop;
@@ -174,7 +176,7 @@ pub fn create_grpc_account_streaming(
 
     let jh: AnyhowJoinHandle = tokio::spawn(async move {
         loop {
-            let (accounts_sx, mut accounts_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (accounts_sx, mut accounts_rx) = tokio::sync::mpsc::channel(99);
             grpc_sources
                 .iter()
                 .map(|grpc_config| {

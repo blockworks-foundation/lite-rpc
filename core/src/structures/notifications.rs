@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use solana_sdk::{commitment_config::CommitmentLevel, transaction::TransactionError};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
 
 #[derive(Debug)]
 pub struct TransactionNotification {
@@ -57,5 +57,5 @@ pub enum NotificationMsg {
     UpdateTransactionMsg(Vec<TransactionUpdateNotification>),
 }
 
-pub type NotificationReciever = UnboundedReceiver<NotificationMsg>;
-pub type NotificationSender = UnboundedSender<NotificationMsg>;
+pub type NotificationReciever = tokio::sync::mpsc::Receiver<NotificationMsg>;
+pub type NotificationSender = tokio::sync::mpsc::Sender<NotificationMsg>;

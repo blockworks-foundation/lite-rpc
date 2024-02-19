@@ -10,15 +10,17 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use debug_collections::hashmap_wrapped::HashMap;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
 use tokio::time::sleep;
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use debug_collections::tokio_wrapped::mpsc::channels_wrapped::send_timed;
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
@@ -70,8 +72,8 @@ fn create_grpc_multiplex_processed_block_task(
                                 || slot > slots_processed.first().cloned().unwrap_or_default())
                         {
                             let send_started_at = Instant::now();
-                            let send_result = block_sender
-                                .send(produced_block)
+                            let send_result =
+                                send_timed(produced_block, &block_sender)
                                 .await
                                 .context("Send block to channel");
                             if send_result.is_err() {
@@ -143,8 +145,8 @@ fn create_grpc_multiplex_block_meta_task(
                                     };
 
                                     let send_started_at = Instant::now();
-                                    let send_result = block_meta_sender
-                                        .send(block_meta)
+                                    let send_result =
+                                        send_timed(block_meta, &block_meta_sender)
                                         .await
                                         .context("Send block to channel");
                                     if send_result.is_err() {
@@ -251,7 +253,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             // by blockhash
             // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED
-            let mut recent_processed_blocks = HashMap::<String, ProducedBlockShared>::new();
+            let mut recent_processed_blocks = HashMap::<String, ProducedBlockShared>::new_with_warn_threshold(3);
 
             let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
             let mut last_finalized_slot: Slot = 0;
@@ -482,8 +484,21 @@ fn map_block_from_yellowstone_update(
                 block.transactions.len(),
                 started_at.elapsed()
             );
+            debug!("MAPPING block from yellowstone with {} txs update took {:?}",
+                block.transactions.len(),
+                started_at.elapsed());
+            // sleep_350(started_at);
+            // debug!("SLEEP+MAPPING block from yellowstone with {} txs took {:?}",
+            //     block.transactions.len(),
+            //     started_at.elapsed());
             Some((block.slot, block))
         }
         _ => None,
+    }
+}
+
+fn sleep_350(started_at: std::time::Instant) {
+    while std::time::Instant::now().duration_since(started_at) < Duration::from_millis(350)  {
+        std::thread::sleep(Duration::from_millis(10));
     }
 }

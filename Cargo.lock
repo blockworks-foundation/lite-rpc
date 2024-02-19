@@ -1283,6 +1283,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7e962a19be5cfc3f3bf6dd8f61eb50107f356ad6270fbb3ed41476571db78be5"
 
 [[package]]
+name = "debug-collections"
+version = "0.1.0"
+source = "git+https://github.com/grooviegermanikus/rust-debug-collections.git?tag=v0.1#0a044224c5c8c7712ed3705d16d3191c6e2e63cc"
+dependencies = [
+ "log",
+ "tokio",
+]
+
+[[package]]
 name = "der"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2514,6 +2523,7 @@ dependencies = [
  "clap 4.4.18",
  "const_env",
  "dashmap 5.5.3",
+ "debug-collections",
  "dotenv",
  "futures",
  "itertools 0.10.5",
@@ -4372,6 +4382,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dashmap 5.5.3",
+ "debug-collections",
  "futures",
  "itertools 0.10.5",
  "lazy_static",
@@ -4408,6 +4419,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dashmap 5.5.3",
+ "debug-collections",
  "futures",
  "futures-util",
  "itertools 0.10.5",
@@ -4444,6 +4456,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dashmap 5.5.3",
+ "debug-collections",
  "derive_more",
  "futures",
  "geyser-grpc-connector",
@@ -4511,6 +4524,7 @@ name = "solana-lite-rpc-prioritization-fees"
 version = "0.2.4"
 dependencies = [
  "dashmap 5.5.3",
+ "debug-collections",
  "itertools 0.10.5",
  "jsonrpsee",
  "lazy_static",
@@ -4618,6 +4632,7 @@ dependencies = [
  "countmap",
  "crossbeam-channel",
  "dashmap 5.5.3",
+ "debug-collections",
  "futures",
  "itertools 0.10.5",
  "lazy_static",

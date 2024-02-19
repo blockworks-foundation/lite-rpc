@@ -108,7 +108,7 @@ pub async fn start_postgres(
         ));
     };
 
-    let (postgres_send, postgres_recv) = mpsc::unbounded_channel();
+    let (postgres_send, postgres_recv) = mpsc::channel(99);
 
     let postgres_session_cache = postgres_logger::PostgresSessionCache::new(config).await?;
     let postgres = PostgresLogger::start(postgres_session_cache, postgres_recv);
