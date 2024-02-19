@@ -1,7 +1,7 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
+use solana_lite_rpc_core::structures::produced_block::{ProducedBlockShared, TransactionInfo};
 use solana_lite_rpc_core::{
     structures::{
         produced_block::ProducedBlock,
@@ -53,7 +53,7 @@ pub async fn process_block(
 
 pub fn poll_block(
     rpc_client: Arc<RpcClient>,
-    block_notification_sender: Sender<ProducedBlock>,
+    block_notification_sender: Sender<ProducedBlockShared>,
     slot_notification: Receiver<SlotNotification>,
     num_parallel_tasks: usize,
 ) -> Vec<AnyhowJoinHandle> {
@@ -76,7 +76,8 @@ pub fn poll_block(
                     .await
                     .context("Recv error on block channel")?;
                 let processed_block =
-                    process_block(rpc_client.as_ref(), slot, commitment_config).await;
+                    process_block(rpc_client.as_ref(), slot, commitment_config).await
+                        .map(|pb| Arc::new(pb));
                 match processed_block {
                     Some(processed_block) => {
                         block_notification_sender

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::pubkey::Pubkey;
@@ -18,6 +19,9 @@ pub struct TransactionInfo {
     pub readable_accounts: Vec<Pubkey>,
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
 }
+
+
+pub type ProducedBlockShared = Arc<ProducedBlock>;
 
 // TODO try to remove Clone
 #[derive(Debug, Clone)]

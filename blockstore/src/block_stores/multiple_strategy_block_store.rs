@@ -16,7 +16,7 @@ pub enum BlockSource {
     FaithfulArchive,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BlockStorageData {
     // note: commitment_config is the actual commitment level
     pub block: ProducedBlock,

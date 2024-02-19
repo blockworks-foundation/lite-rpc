@@ -67,11 +67,12 @@ use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
+use solana_lite_rpc_core::structures::produced_block::ProducedBlockShared;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
     commitment_config: CommitmentConfig,
-) -> ProducedBlock {
+) -> ProducedBlockShared {
     let started = Instant::now();
     loop {
         match timeout(Duration::from_millis(500), block_stream.recv()).await {

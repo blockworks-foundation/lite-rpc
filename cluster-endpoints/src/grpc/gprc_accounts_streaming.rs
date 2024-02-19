@@ -111,7 +111,9 @@ pub fn start_account_streaming_tasks(
             let (_abort_handler, mut accounts_stream) =
                 create_geyser_autoconnection_task(grpc_config.clone(), subscribe_request);
 
-            while let Some(GeyserSubscribeUpdate(message)) = accounts_stream.recv().await {
+            while let Some(GeyserSubscribeUpdate(message, _received_at)) =
+                accounts_stream.recv().await
+            {
                 let Some(update) = message.update_oneof else {
                     continue;
                 };
