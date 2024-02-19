@@ -77,14 +77,15 @@ pub fn from_grpc_block_update(
 
             let signature = signatures[0];
             let compute_units_consumed = meta.compute_units_consumed;
-            let account_keys: Vec<Pubkey> = message
-                .account_keys
-                .into_iter()
-                .map(|key| {
-                    let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
-                    Pubkey::new_from_array(bytes)
-                })
-                .collect();
+            // let account_keys: Vec<Pubkey> = message
+            //     .account_keys
+            //     .into_iter()
+            //     .map(|key| {
+            //         let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
+            //         Pubkey::new_from_array(bytes)
+            //     })
+            //     .collect();
+            let account_keys = vec![];
 
             let message = VersionedMessage::V0(v0::Message {
                 header: MessageHeader {
@@ -188,24 +189,28 @@ pub fn from_grpc_block_update(
                         .map(|vi| vi.is_simple_vote())
                         .unwrap_or(false)
             });
+            //
+            // let readable_accounts = account_keys
+            //     .iter()
+            //     .enumerate()
+            //     .filter(|(index, _)| !message.is_maybe_writable(*index))
+            //     .map(|(_, pk)| *pk)
+            //     .collect();
+            // let writable_accounts = account_keys
+            //     .iter()
+            //     .enumerate()
+            //     .filter(|(index, _)| message.is_maybe_writable(*index))
+            //     .map(|(_, pk)| *pk)
+            //     .collect();
+            //
+            // let address_lookup_tables = message
+            //     .address_table_lookups()
+            //     .map(|x| x.to_vec())
+            //     .unwrap_or_default();
 
-            let readable_accounts = account_keys
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| !message.is_maybe_writable(*index))
-                .map(|(_, pk)| *pk)
-                .collect();
-            let writable_accounts = account_keys
-                .iter()
-                .enumerate()
-                .filter(|(index, _)| message.is_maybe_writable(*index))
-                .map(|(_, pk)| *pk)
-                .collect();
-
-            let address_lookup_tables = message
-                .address_table_lookups()
-                .map(|x| x.to_vec())
-                .unwrap_or_default();
+            let readable_accounts = vec![];
+            let writable_accounts = vec![];
+            let address_lookup_tables = vec![];
 
             Some(TransactionInfo {
                 signature: signature.to_string(),
