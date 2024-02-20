@@ -135,7 +135,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
         tokio::task::spawn(async move {
             loop {
                 let (processed_block_sender, mut processed_block_reciever) =
-                    tokio::sync::mpsc::unbounded_channel::<ProducedBlock>();
+                    tokio::sync::mpsc::channel::<ProducedBlock>(10);
 
                 // let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
                 //     &grpc_sources,
