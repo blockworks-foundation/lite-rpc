@@ -485,7 +485,7 @@ impl PostgresBlockStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
+    use solana_lite_rpc_core::structures::produced_block::{Bloat, TransactionInfo};
     use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::signature::Signature;
     use std::str::FromStr;
@@ -545,6 +545,7 @@ mod tests {
             commitment_config: CommitmentConfig::finalized(),
             leader_id: None,
             rewards: None,
+            bloat: Bloat::new(),
         }
     }
 

@@ -326,7 +326,6 @@ pub async fn main() -> anyhow::Result<()> {
     });
 
 
-
     info!("Use RPC address: {}", obfuscate_rpcurl(rpc_addr));
 
     let main = start_lite_rpc(config, rpc_client);
