@@ -27,7 +27,7 @@ use crate::grpc_newmultiplex::{BlockMeta, create_grpc_multiplex_block_meta_task,
 struct BlockExtractor(CommitmentConfig);
 
 impl FromYellowstoneExtractor for BlockExtractor {
-    type Target = ProducedBlock;
+    type Target = Box<ProducedBlock>;
     fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
         match update.update_oneof {
             Some(UpdateOneof::Block(update_block_message)) => {
@@ -55,7 +55,7 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
 
 fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    processed_block_sender: UnboundedSender<ProducedBlock>,
+    processed_block_sender: UnboundedSender<Box<ProducedBlock>>,
 ) -> Vec<AnyhowJoinHandle> {
     let commitment_config = CommitmentConfig::processed();
 

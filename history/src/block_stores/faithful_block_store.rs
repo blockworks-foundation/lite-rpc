@@ -27,7 +27,7 @@ impl FaithfulBlockStore {
         RangeInclusive::new(1, 0) // empty
     }
 
-    pub async fn get_block(&self, slot: Slot) -> anyhow::Result<ProducedBlock> {
+    pub async fn get_block(&self, slot: Slot) -> anyhow::Result<Box<ProducedBlock>> {
         // TODO check what parameters we want
         let faithful_config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),

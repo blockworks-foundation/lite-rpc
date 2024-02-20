@@ -121,7 +121,7 @@ fn map_block_from_yellowstone_update(
             debug!("MAPPING block from yellowstone with {} txs update took {:?}",
                 block.transactions.len(),
                 started_at.elapsed());
-            Some((block.slot, Box::new(block)))
+            Some((block.slot, block))
         }
         _ => None,
     }

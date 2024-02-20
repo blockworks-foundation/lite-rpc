@@ -50,7 +50,7 @@ impl PostgresBlock {
         &self,
         transaction_infos: Vec<TransactionInfo>,
         commitment_config: CommitmentConfig,
-    ) -> ProducedBlock {
+    ) -> ProducedBlock { // TODO Box
         let rewards_vec: Option<Vec<Reward>> = self
             .rewards
             .as_ref()

@@ -29,7 +29,7 @@ pub struct ProducedBlock {
     pub rewards: Option<Vec<Reward>>,
     pub bloat: [u8; BLOAT_SIZE],
 }
-pub const BLOAT_SIZE: usize = 1_000_000;
+pub const BLOAT_SIZE: usize = 100_000;
 
 impl ProducedBlock {
     /// moving commitment level to finalized

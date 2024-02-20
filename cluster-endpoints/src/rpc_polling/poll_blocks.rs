@@ -49,7 +49,6 @@ pub async fn process_block(
     block
         .ok()
         .map(|block| from_ui_block(block, slot, commitment_config))
-        .map(Box::new)
 }
 
 pub fn poll_block(
@@ -181,7 +180,7 @@ pub fn from_ui_block(
     block: UiConfirmedBlock,
     slot: Slot,
     commitment_config: CommitmentConfig,
-) -> ProducedBlock {
+) -> Box<ProducedBlock> {
     let block_height = block.block_height.unwrap_or_default();
     let txs = block.transactions.unwrap_or_default();
 
@@ -300,7 +299,7 @@ pub fn from_ui_block(
 
     let block_time = block.block_time.unwrap_or(0) as u64;
 
-    ProducedBlock {
+    Box::new(ProducedBlock {
         transactions: txs,
         block_height,
         leader_id,
@@ -312,7 +311,7 @@ pub fn from_ui_block(
         commitment_config,
         rewards,
         bloat: [0; BLOAT_SIZE],
-    }
+    })
 }
 
 #[inline]

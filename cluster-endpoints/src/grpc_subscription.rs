@@ -46,7 +46,7 @@ use solana_lite_rpc_core::structures::produced_block::BLOAT_SIZE;
 pub fn from_grpc_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
-) -> ProducedBlock {
+) -> Box<ProducedBlock> {
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
@@ -237,7 +237,7 @@ pub fn from_grpc_block_update(
         None
     };
 
-    ProducedBlock {
+    Box::new(ProducedBlock {
         transactions: txs,
         block_height: block
             .block_height
@@ -252,7 +252,7 @@ pub fn from_grpc_block_update(
         slot: block.slot,
         rewards,
         bloat: [0; BLOAT_SIZE],
-    }
+    })
 }
 
 pub fn create_block_processing_task(

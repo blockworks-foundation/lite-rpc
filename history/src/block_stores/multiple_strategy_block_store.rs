@@ -19,7 +19,7 @@ pub enum BlockSource {
 #[derive(Debug, Clone)]
 pub struct BlockStorageData {
     // note: commitment_config is the actual commitment level
-    pub block: ProducedBlock,
+    pub block: Box<ProducedBlock>,
     // meta data
     pub result_source: BlockSource,
 }
@@ -108,7 +108,7 @@ impl MultipleStrategyBlockStorage {
                     .context(format!("block {} not found although it was in range", slot));
 
                 return lookup.map(|b| BlockStorageData {
-                    block: b,
+                    block: Box::new(b), // TODO hack
                     result_source: BlockSource::RecentEpochDatabase,
                 });
             }
