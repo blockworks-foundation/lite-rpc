@@ -1,7 +1,7 @@
 use crate::postgres::postgres_epoch::PostgresEpoch;
 use log::{debug, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
+use solana_lite_rpc_core::structures::produced_block::{BLOAT_SIZE, TransactionInfo};
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -69,9 +69,11 @@ impl PostgresBlock {
             commitment_config,
             previous_blockhash: self.previous_blockhash.clone(),
             rewards: rewards_vec,
+            bloat: [0; BLOAT_SIZE],
         }
     }
 }
+
 
 impl PostgresBlock {
     pub fn build_create_table_statement(epoch: EpochRef) -> String {

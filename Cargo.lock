@@ -1766,8 +1766,8 @@ dependencies = [
 
 [[package]]
 name = "geyser-grpc-connector"
-version = "0.7.1+yellowstone.1.11"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v1.17.15#4d737e7c2e8a7bb85b1580da094370dafba3eb8e"
+version = "0.10.1+yellowstone.1.12"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.2+yellowstone.1.12+solana.1.17.15#a6ab686fa4607e95550d29f77f08ea074b90e91f"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2205,6 +2205,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1a46d1a171d865aa5f83f92695765caa047a9b4cbae2cbf37dbd613a793fd4c"
 
 [[package]]
+name = "jemalloc-ctl"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cffc705424a344c054e135d12ee591402f4539245e8bbd64e6c9eaa9458b63c"
+dependencies = [
+ "jemalloc-sys",
+ "libc",
+ "paste",
+]
+
+[[package]]
+name = "jemalloc-sys"
+version = "0.5.4+5.3.0-patched"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac6c1946e1cea1788cbfde01c993b52a10e2da07f4bac608228d1bed20bfebf2"
+dependencies = [
+ "cc",
+ "libc",
+]
+
+[[package]]
+name = "jemallocator"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0de374a9f8e63150e6f5e8a60cc14c668226d7a347d8aee1a45766e3c4dd3bc"
+dependencies = [
+ "jemalloc-sys",
+ "libc",
+]
+
+[[package]]
 name = "jobserver"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2509,6 +2540,8 @@ dependencies = [
  "dashmap 5.5.3",
  "dotenv",
  "futures",
+ "jemalloc-ctl",
+ "jemallocator",
  "jsonrpsee",
  "lazy_static",
  "log",
@@ -4336,6 +4369,8 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tokio-stream",
+ "tracing",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
@@ -5659,6 +5694,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

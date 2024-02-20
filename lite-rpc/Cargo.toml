@@ -49,7 +49,8 @@ solana-lite-rpc-cluster-endpoints = { workspace = true }
 solana-lite-rpc-history = { workspace = true }
 solana-lite-rpc-block-priofees = { workspace = true }
 
-cap = "0.1.2"
+jemallocator = "0.5.4"
+jemalloc-ctl = "0.5.4"
 
 [dev-dependencies]
 bench = { path = "../bench" }

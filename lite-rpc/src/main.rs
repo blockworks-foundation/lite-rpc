@@ -49,8 +49,9 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
+use std::thread;
+use std::thread::sleep;
 use std::time::Duration;
-use cap::Cap;
 use prometheus::core::GenericGauge;
 use prometheus::{opts, register_int_gauge};
 use tokio::sync::mpsc;
@@ -295,13 +296,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 }
 
 #[global_allocator]
-static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
-
-lazy_static::lazy_static! {
-    static ref MEMORY_USGE: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_memory_used", "Memory")).unwrap();
-}
-
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
@@ -315,15 +310,21 @@ pub async fn main() -> anyhow::Result<()> {
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
 
-    // log memory usage
-    tokio::spawn(async move {
+    thread::spawn(move || {
+        let e = jemalloc_ctl::epoch::mib().unwrap();
+        let allocated = jemalloc_ctl::stats::allocated::mib().unwrap();
+        let resident = jemalloc_ctl::stats::resident::mib().unwrap();
         loop {
-            let usage = ALLOCATOR.allocated();
-            info!("MEMORY usage: {}kb", usage / 1024);
-            MEMORY_USGE.set(usage as i64);
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            // many statistics are cached and only updated when the epoch is advanced.
+            e.advance().unwrap();
+
+            let allocated = allocated.read().unwrap();
+            let resident = resident.read().unwrap();
+            info!("{} bytes allocated/{} bytes resident", allocated, resident);
+            sleep(Duration::from_secs(2));
         }
     });
+
 
 
     info!("Use RPC address: {}", obfuscate_rpcurl(rpc_addr));

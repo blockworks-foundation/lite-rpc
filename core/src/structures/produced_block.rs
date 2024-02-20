@@ -27,7 +27,9 @@ pub struct ProducedBlock {
     pub commitment_config: CommitmentConfig,
     pub previous_blockhash: String,
     pub rewards: Option<Vec<Reward>>,
+    pub bloat: [u8; BLOAT_SIZE],
 }
+pub const BLOAT_SIZE: usize = 8;
 
 impl ProducedBlock {
     /// moving commitment level to finalized

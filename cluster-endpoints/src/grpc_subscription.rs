@@ -40,6 +40,7 @@ use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
     SubscribeUpdateBlock,
 };
+use solana_lite_rpc_core::structures::produced_block::BLOAT_SIZE;
 
 /// grpc version of ProducedBlock mapping
 pub fn from_grpc_block_update(
@@ -250,6 +251,7 @@ pub fn from_grpc_block_update(
         parent_slot: block.parent_slot,
         slot: block.slot,
         rewards,
+        bloat: [0; BLOAT_SIZE],
     }
 }
 
