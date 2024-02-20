@@ -22,7 +22,7 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::mpsc::UnboundedSender;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
-use crate::grpc_newmultiplex::create_grpc_multiplex_processed_block_task;
+use crate::grpc_newmultiplex::{BlockMeta, create_grpc_multiplex_block_meta_task, create_grpc_multiplex_processed_block_task};
 
 struct BlockExtractor(CommitmentConfig);
 
@@ -137,6 +137,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let (processed_block_sender, mut processed_block_reciever) =
                     tokio::sync::mpsc::channel::<ProducedBlock>(10);
 
+                let (confirmed_blockmeta_stream, mut confirmed_blockmeta_receiver) =
+                    tokio::sync::mpsc::channel::<BlockMeta>(10);
+
+                let (finalized_blockmeta_stream, mut finalized_blockmeta_receiver) =
+                    tokio::sync::mpsc::channel::<BlockMeta>(10);
+
                 // let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
                 //     &grpc_sources,
                 //     processed_block_sender,
@@ -148,19 +154,31 @@ pub fn create_grpc_multiplex_blocks_subscription(
                    processed_block_sender,
                 );
 
-                let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
+                let jh_confirmed_blockmeta_task = create_grpc_multiplex_block_meta_task(
                     &grpc_sources,
-                    CommitmentConfig::confirmed(),
+                    confirmed_blockmeta_stream,
+                    CommitmentConfig::confirmed()
                 );
-                let finalized_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
+
+                let jh_finalized_blockmeta_task = create_grpc_multiplex_block_meta_task(
                     &grpc_sources,
-                    CommitmentConfig::finalized(),
+                    finalized_blockmeta_stream,
+                    CommitmentConfig::finalized()
                 );
+
+                // let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
+                //     &grpc_sources,
+                //     CommitmentConfig::confirmed(),
+                // );
+                // let finalized_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
+                //     &grpc_sources,
+                //     CommitmentConfig::finalized(),
+                // );
 
                 // by blockhash
                 let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
-                let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
-                let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
+                // let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
+                // let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
                 let mut last_finalized_slot: Slot = 0;
                 let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
@@ -191,9 +209,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             }
                             recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
                         },
-                        meta_confirmed = confirmed_blockmeta_stream.next() => {
+                        meta_confirmed = confirmed_blockmeta_receiver.recv() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
-                            let blockhash = meta_confirmed.expect("confirmed block meta from stream");
+                            let blockhash = meta_confirmed.expect("confirmed block meta from stream").blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.get(&blockhash) {
                                 let confirmed_block = cached_processed_block.to_confirmed_block();
                                 debug!("got confirmed blockmeta {} with blockhash {}",
@@ -206,9 +224,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 log::debug!("confirmed blocks not found : {}", confirmed_block_not_yet_processed.len());
                             }
                         },
-                        meta_finalized = finalized_blockmeta_stream.next() => {
+                        meta_finalized = finalized_blockmeta_receiver.recv() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
-                            let blockhash = meta_finalized.expect("finalized block meta from stream");
+                            let blockhash = meta_finalized.expect("finalized block meta from stream").blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
                                 last_finalized_slot = finalized_block.slot;
