@@ -148,23 +148,27 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 //     processed_block_sender,
                 // );
 
+                let mut tasks_list = vec![];
                 // this is the major change
                 let processed_blocks_tasks = create_grpc_multiplex_processed_block_task(
                     &grpc_sources,
                    processed_block_sender,
                 );
+                tasks_list.extend(processed_blocks_tasks);
 
-                let jh_confirmed_blockmeta_task = create_grpc_multiplex_block_meta_task(
+                let jh_confirmed_blockmeta_tasks = create_grpc_multiplex_block_meta_task(
                     &grpc_sources,
                     confirmed_blockmeta_stream,
                     CommitmentConfig::confirmed()
                 );
+                tasks_list.extend(jh_confirmed_blockmeta_tasks);
 
-                let jh_finalized_blockmeta_task = create_grpc_multiplex_block_meta_task(
+                let jh_finalized_blockmeta_tasks = create_grpc_multiplex_block_meta_task(
                     &grpc_sources,
                     finalized_blockmeta_stream,
                     CommitmentConfig::finalized()
                 );
+                tasks_list.extend(jh_finalized_blockmeta_tasks);
 
                 // let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
                 //     &grpc_sources,
@@ -265,7 +269,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     }
                 }
                 // abort all the tasks
-                processed_blocks_tasks.iter().for_each(|task| task.abort());
+                tasks_list.iter().for_each(|task| task.abort());
             }
         })
     };
