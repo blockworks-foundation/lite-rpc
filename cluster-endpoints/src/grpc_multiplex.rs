@@ -118,7 +118,7 @@ fn create_grpc_multiplex_block_meta_stream(
 /// will emit blocks for commitment level processed, confirmed and finalized OR only processed block never gets confirmed
 pub fn create_grpc_multiplex_blocks_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
-) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
+) -> (Receiver<Box<ProducedBlock>>, AnyhowJoinHandle) {
     info!("Setup grpc multiplexed blocks connection...");
     if grpc_sources.is_empty() {
         info!("- no grpc connection configured");
@@ -129,13 +129,13 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
     // return value is the broadcast receiver
     let (producedblock_sender, blocks_output_stream) =
-        tokio::sync::broadcast::channel::<ProducedBlock>(1000);
+        tokio::sync::broadcast::channel::<Box<ProducedBlock>>(1000);
 
     let jh_block_emitter_task = {
         tokio::task::spawn(async move {
             loop {
                 let (processed_block_sender, mut processed_block_reciever) =
-                    tokio::sync::mpsc::channel::<ProducedBlock>(10);
+                    tokio::sync::mpsc::channel::<Box<ProducedBlock>>(10);
 
                 let (confirmed_blockmeta_stream, mut confirmed_blockmeta_receiver) =
                     tokio::sync::mpsc::channel::<BlockMeta>(10);
@@ -180,7 +180,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 // );
 
                 // by blockhash
-                let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
+                let mut recent_processed_blocks = HashMap::<String, Box<ProducedBlock>>::new();
                 // let mut confirmed_blockmeta_stream = std::pin::pin!(confirmed_blockmeta_stream);
                 // let mut finalized_blockmeta_stream = std::pin::pin!(finalized_blockmeta_stream);
 
@@ -207,7 +207,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 warn!("produced block channel has no receivers {e:?}");
                             }
                             if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
-                                if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
+                                if let Err(e) = producedblock_sender.send(Box::new(processed_block.to_confirmed_block())) {
                                     warn!("produced block channel has no receivers {e:?}");
                                 }
                             }
@@ -217,7 +217,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             cleanup_without_confirmed_recv_blocks_meta = 0;
                             let blockhash = meta_confirmed.expect("confirmed block meta from stream").blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.get(&blockhash) {
-                                let confirmed_block = cached_processed_block.to_confirmed_block();
+                                let confirmed_block = Box::new(cached_processed_block.to_confirmed_block());
                                 debug!("got confirmed blockmeta {} with blockhash {}",
                                     confirmed_block.slot, confirmed_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(confirmed_block) {
@@ -232,7 +232,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             cleanup_without_finalized_recv_blocks_meta = 0;
                             let blockhash = meta_finalized.expect("finalized block meta from stream").blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
-                                let finalized_block = cached_processed_block.to_finalized_block();
+                                let finalized_block = Box::new(cached_processed_block.to_finalized_block());
                                 last_finalized_slot = finalized_block.slot;
                                 startup_completed = true;
                                 debug!("got finalized blockmeta {} with blockhash {}",

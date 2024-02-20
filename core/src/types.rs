@@ -8,7 +8,7 @@ use crate::{
     traits::subscription_sink::SubscriptionSink,
 };
 
-pub type BlockStream = Receiver<ProducedBlock>;
+pub type BlockStream = Receiver<Box<ProducedBlock>>;
 pub type SlotStream = Receiver<SlotNotification>;
 pub type VoteAccountStream = Receiver<RpcVoteAccountStatus>;
 pub type ClusterInfoStream = Receiver<Vec<RpcContactInfo>>;

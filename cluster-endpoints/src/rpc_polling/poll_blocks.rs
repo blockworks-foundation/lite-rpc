@@ -33,7 +33,7 @@ pub async fn process_block(
     rpc_client: &RpcClient,
     slot: Slot,
     commitment_config: CommitmentConfig,
-) -> Option<ProducedBlock> {
+) -> Option<Box<ProducedBlock>> {
     let block = rpc_client
         .get_block_with_config(
             slot,
@@ -49,11 +49,12 @@ pub async fn process_block(
     block
         .ok()
         .map(|block| from_ui_block(block, slot, commitment_config))
+        .map(Box::new)
 }
 
 pub fn poll_block(
     rpc_client: Arc<RpcClient>,
-    block_notification_sender: Sender<ProducedBlock>,
+    block_notification_sender: Sender<Box<ProducedBlock>>,
     slot_notification: Receiver<SlotNotification>,
     num_parallel_tasks: usize,
 ) -> Vec<AnyhowJoinHandle> {

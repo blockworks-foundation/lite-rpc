@@ -26,7 +26,7 @@ use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 pub fn create_grpc_multiplex_processed_block_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
     // changed to unbound
-    block_sender: tokio::sync::mpsc::Sender<ProducedBlock>,
+    block_sender: tokio::sync::mpsc::Sender<Box<ProducedBlock>>,
 ) -> Vec<AbortHandle> {
     const COMMITMENT_CONFIG: CommitmentConfig = CommitmentConfig::processed();
 
@@ -112,7 +112,7 @@ pub fn create_grpc_multiplex_processed_block_task(
 fn map_block_from_yellowstone_update(
     update: SubscribeUpdate,
     commitment_config: CommitmentConfig,
-) -> Option<(Slot, ProducedBlock)> {
+) -> Option<(Slot, Box<ProducedBlock>)> {
     let _span = debug_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
@@ -121,7 +121,7 @@ fn map_block_from_yellowstone_update(
             debug!("MAPPING block from yellowstone with {} txs update took {:?}",
                 block.transactions.len(),
                 started_at.elapsed());
-            Some((block.slot, block))
+            Some((block.slot, Box::new(block)))
         }
         _ => None,
     }
@@ -207,7 +207,7 @@ pub fn create_grpc_multiplex_block_meta_task(
 /// the channel must never be closed
 pub fn create_grpc_multiplex_blocks_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
-) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
+) -> (Receiver<Box<ProducedBlock>>, AnyhowJoinHandle) {
     info!("Setup grpc multiplexed blocks connection...");
     if grpc_sources.is_empty() {
         info!("- no grpc connection configured");
@@ -219,7 +219,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
     // return value is the broadcast receiver
     // must NEVER be closed form inside this method
     let (producedblock_sender, blocks_output_stream) =
-        tokio::sync::broadcast::channel::<ProducedBlock>(32);
+        tokio::sync::broadcast::channel::<Box<ProducedBlock>>(32);
 
     let mut reconnect_attempts = 0;
 
@@ -228,7 +228,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
         loop {
             // channels must NEVER GET CLOSED (unless full restart of multiplexer)
             let (processed_block_sender, mut processed_block_reciever) =
-                tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
+                tokio::sync::mpsc::channel::<Box<ProducedBlock>>(10); // experiemental
             let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) =
                 tokio::sync::mpsc::channel::<BlockMeta>(500);
             let (block_meta_sender_finalized, mut block_meta_reciever_finalized) =
@@ -268,7 +268,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             // by blockhash
             // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED
-            let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
+            let mut recent_processed_blocks = HashMap::<String, Box<ProducedBlock>>::new();
 
             let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
             let mut last_finalized_slot: Slot = 0;
@@ -298,7 +298,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 warn!("produced block channel has no receivers {e:?}");
                             }
                             if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
-                                if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
+                                if let Err(e) = producedblock_sender.send(Box::new(processed_block.to_confirmed_block())) {
                                     warn!("produced block channel has no receivers while trying to send confirmed block {e:?}");
                                 }
                             }
@@ -309,7 +309,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             let meta_confirmed = meta_confirmed.expect("confirmed block meta from stream");
                             let blockhash = meta_confirmed.blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.get(&blockhash) {
-                                let confirmed_block = cached_processed_block.to_confirmed_block();
+                                let confirmed_block = Box::new(cached_processed_block.to_confirmed_block());
                                 debug!("got confirmed blockmeta {} with blockhash {}",
                                     confirmed_block.slot, confirmed_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(confirmed_block) {
@@ -327,7 +327,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             // let _span = debug_span!("sequence_block_meta_finalized", ?meta_finalized.slot).entered();
                             let blockhash = meta_finalized.blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
-                                let finalized_block = cached_processed_block.to_finalized_block();
+                                let finalized_block = Box::new(cached_processed_block.to_finalized_block());
                                 last_finalized_slot = finalized_block.slot;
                                 startup_completed = true;
                                 debug!("got finalized blockmeta {} with blockhash {}",

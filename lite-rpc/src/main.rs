@@ -61,7 +61,7 @@ use tokio::time::{timeout, Instant};
 async fn get_latest_block(
     mut block_stream: BlockStream,
     commitment_config: CommitmentConfig,
-) -> ProducedBlock {
+) -> Box<ProducedBlock> {
     let started = Instant::now();
     loop {
         match timeout(Duration::from_millis(500), block_stream.recv()).await {
