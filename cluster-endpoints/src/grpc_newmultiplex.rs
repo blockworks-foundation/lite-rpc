@@ -118,6 +118,7 @@ fn map_block_from_yellowstone_update(
         Some(UpdateOneof::Block(update_block_message)) => {
             let started_at = std::time::Instant::now();
             let block = from_grpc_block_update(update_block_message, commitment_config);
+            // std::thread::sleep(Duration::from_millis(450));
             debug!("MAPPING block from yellowstone with {} txs update took {:?}",
                 block.transactions.len(),
                 started_at.elapsed());

@@ -31,7 +31,7 @@ pub struct ProducedBlock {
     pub rewards: Option<Vec<Reward>>,
     pub bloat: Bloat,
 }
-pub const BLOAT_SIZE: usize = 100_000;
+pub const BLOAT_SIZE: usize = 100;
 
 #[derive(Debug, Clone)]
 pub struct Bloat {
@@ -41,7 +41,7 @@ pub struct Bloat {
 impl Bloat {
     pub fn new() -> Self {
         let stracktrace = get_stacktrace().unwrap();
-        log_frames("Bloat::new", &stracktrace);
+        // log_frames("Bloat::new", &stracktrace);
         Bloat {
             bloat: [0; BLOAT_SIZE],
         }
@@ -79,5 +79,6 @@ pub fn get_stacktrace() -> Result<Stracktrace, BacktrackError> {
     const OMIT_FRAME_SUFFIX1: &str = "rust_debugging_locks:";
     // <rust_debugging_locks::debugging_locks::RwLockWrapped<T> as core::default::Default>::default::haed7701ba5f48aa2:97
     const OMIT_FRAME_SUFFIX2: &str = "<rust_debugging_locks:";
+    // produced_block.rs!solana_lite_rpc_core::structures::produced_block::get_stacktrace::h5a3e40b7d013ff2f:82
     backtrack_frame(|symbol_name| symbol_name.starts_with(OMIT_FRAME_SUFFIX1) || symbol_name.starts_with(OMIT_FRAME_SUFFIX2))
 }
