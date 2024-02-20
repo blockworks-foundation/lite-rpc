@@ -320,7 +320,7 @@ pub async fn main() -> anyhow::Result<()> {
 
             let allocated = allocated.read().unwrap();
             let resident = resident.read().unwrap();
-            info!("{} bytes allocated/{} bytes resident", allocated, resident);
+            info!("{:.1}MB allocated / {:.1}MB resident", (allocated / 1024) as f64 / 1024.0, (resident / 1024) as f64 / 1024.0);
             sleep(Duration::from_secs(2));
         }
     });
