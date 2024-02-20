@@ -50,6 +50,9 @@ use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
+use cap::Cap;
+use prometheus::core::GenericGauge;
+use prometheus::{opts, register_int_gauge};
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
@@ -291,6 +294,15 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     }
 }
 
+#[global_allocator]
+static ALLOCATOR: Cap<std::alloc::System> = Cap::new(std::alloc::System, usize::max_value());
+
+lazy_static::lazy_static! {
+    static ref MEMORY_USGE: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_memory_used", "Memory")).unwrap();
+}
+
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -302,6 +314,17 @@ pub async fn main() -> anyhow::Result<()> {
     // rpc client
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
     let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
+
+    // log memory usage
+    tokio::spawn(async move {
+        loop {
+            let usage = ALLOCATOR.allocated();
+            info!("MEMORY usage: {}kb", usage / 1024);
+            MEMORY_USGE.set(usage as i64);
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+    });
+
 
     info!("Use RPC address: {}", obfuscate_rpcurl(rpc_addr));
 
