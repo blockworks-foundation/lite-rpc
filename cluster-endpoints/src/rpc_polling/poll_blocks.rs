@@ -1,7 +1,7 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
-use solana_lite_rpc_core::structures::produced_block::{BLOAT_SIZE, TransactionInfo};
+use solana_lite_rpc_core::structures::produced_block::{Bloat, BLOAT_SIZE, TransactionInfo};
 use solana_lite_rpc_core::{
     structures::{
         produced_block::ProducedBlock,
@@ -310,7 +310,7 @@ pub fn from_ui_block(
         slot,
         commitment_config,
         rewards,
-        bloat: [0; BLOAT_SIZE],
+        bloat: Bloat::new(),
     })
 }
 

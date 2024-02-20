@@ -35,3 +35,5 @@ chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
 itertools = { workspace = true }
+
+rust-debugging-locks = "0.8.9"

@@ -532,6 +532,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base58"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6107fe1be6682a68940da878d9e9f5e90ca5745b3dec9fd1bb393c8777d4f581"
+
+[[package]]
 name = "base64"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3744,6 +3750,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-debugging-locks"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "feb12ff025f7398bc15cdd0245a0c45b026feb250b5b0528c80e91a7d950c384"
+dependencies = [
+ "backtrace",
+ "base58",
+ "log",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4391,6 +4410,7 @@ dependencies = [
  "itertools 0.10.5",
  "log",
  "quinn",
+ "rust-debugging-locks",
  "rustls",
  "serde",
  "serde_json",
