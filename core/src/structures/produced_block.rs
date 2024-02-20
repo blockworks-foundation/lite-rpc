@@ -29,22 +29,22 @@ pub struct ProducedBlock {
     pub rewards: Option<Vec<Reward>>,
     pub bloat: [u8; BLOAT_SIZE],
 }
-pub const BLOAT_SIZE: usize = 8;
+pub const BLOAT_SIZE: usize = 1_000_000;
 
 impl ProducedBlock {
     /// moving commitment level to finalized
-    pub fn to_finalized_block(&self) -> Self {
-        ProducedBlock {
+    pub fn to_finalized_block(&self) -> Box<ProducedBlock> {
+        Box::new(ProducedBlock {
             commitment_config: CommitmentConfig::finalized(),
             ..self.clone()
-        }
+        })
     }
 
     /// moving commitment level to confirmed
-    pub fn to_confirmed_block(&self) -> Self {
-        ProducedBlock {
+    pub fn to_confirmed_block(&self) -> Box<ProducedBlock> {
+        Box::new(ProducedBlock {
             commitment_config: CommitmentConfig::confirmed(),
             ..self.clone()
-        }
+        })
     }
 }
