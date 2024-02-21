@@ -13,6 +13,7 @@ publish = false
 
 # solana version
 jemallocator = { package = "tikv-jemallocator", version = "0.5.4", features = ["unprefixed_malloc_on_supported_platforms"] }
+tikv-jemalloc-ctl = "0.5.4"
 
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
