@@ -335,6 +335,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let history = History::new();
 
     let rpc_service = LiteBridge::new(
+        rpc_client.clone(),
         data_cache.clone(),
         transaction_service,
         history,

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use jsonrpsee::core::RpcResult;
@@ -8,6 +9,7 @@ use solana_account_decoder::UiAccount;
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::RpcAccountInfoConfig;
 use solana_rpc_client_api::response::{OptionalContext, RpcKeyedAccount};
 use solana_rpc_client_api::{
@@ -61,6 +63,7 @@ lazy_static::lazy_static! {
 /// A bridge between clients and tpu
 #[allow(dead_code)]
 pub struct LiteBridge {
+    rpc_client: Arc<RpcClient>,
     data_cache: DataCache,
     transaction_service: TransactionService,
     history: History,
@@ -71,6 +74,7 @@ pub struct LiteBridge {
 
 impl LiteBridge {
     pub fn new(
+        rpc_client: Arc<RpcClient>,
         data_cache: DataCache,
         transaction_service: TransactionService,
         history: History,
@@ -79,6 +83,7 @@ impl LiteBridge {
         accounts_service: Option<AccountService>,
     ) -> Self {
         Self {
+            rpc_client,
             data_cache,
             transaction_service,
             history,
@@ -257,9 +262,14 @@ impl LiteRpcServer for LiteBridge {
 
     async fn get_recent_performance_samples(
         &self,
-        _limit: Option<usize>,
+        limit: Option<usize>,
     ) -> RpcResult<Vec<RpcPerfSample>> {
-        Ok(vec![])
+        // TODO: implement our own perofmrance samples from blockstream and slot stream
+        // For now just use normal rpc to get the data
+        self.rpc_client
+            .get_recent_performance_samples(limit)
+            .await
+            .map_err(|_| jsonrpsee::types::error::ErrorCode::InternalError.into())
     }
 
     async fn get_signature_statuses(
