@@ -1,6 +1,8 @@
 use std::borrow::Cow;
 use std::env;
 use std::fmt::{Debug, Display, Formatter};
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 use crate::postgres_logger;
 use crate::{
@@ -125,6 +127,9 @@ impl Config {
             env::var("LITE_RPC_HTTP_ADDR").unwrap_or(config.lite_rpc_http_addr);
 
         config.lite_rpc_ws_addr = env::var("LITE_RPC_WS_ADDR").unwrap_or(config.lite_rpc_ws_addr);
+
+        SocketAddr::from_str(&config.lite_rpc_http_addr).expect("invalid LITE_RPC_HTTP_ADDR");
+        SocketAddr::from_str(&config.lite_rpc_ws_addr).expect("invalid LITE_RPC_WS_ADDR");
 
         config.fanout_size = env::var("FANOUT_SIZE")
             .map(|size| size.parse().unwrap())
