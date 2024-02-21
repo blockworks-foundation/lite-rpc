@@ -10,6 +10,10 @@ license = "AGPL"
 publish = false
 
 [dependencies]
+
+# disable secure mode
+mimalloc = { version = "*", default-features = false }
+
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
