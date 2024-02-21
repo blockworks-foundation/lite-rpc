@@ -1,4 +1,4 @@
-use crate::grpc_subscription::from_grpc_block_update;
+use crate::grpc_subscription::{create_slot_stream_task, from_grpc_block_update};
 use anyhow::{bail, Context};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
@@ -12,12 +12,65 @@ use solana_sdk::commitment_config::CommitmentConfig;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
+use futures::StreamExt;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
 use tokio::time::{sleep};
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+
+
+struct BlockExtractor(CommitmentConfig);
+
+impl FromYellowstoneExtractor for BlockExtractor {
+    type Target = Box<ProducedBlock>;
+    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
+        match update.update_oneof {
+            Some(UpdateOneof::Block(update_block_message)) => {
+                let block = from_grpc_block_update(update_block_message, self.0);
+                Some((block.slot, block))
+            }
+            _ => None,
+        }
+    }
+}
+
+struct BlockMetaHashExtractor(CommitmentConfig);
+
+impl FromYellowstoneExtractor for BlockMetaHashExtractor {
+    type Target = String;
+    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(u64, String)> {
+        match update.update_oneof {
+            Some(UpdateOneof::BlockMeta(block_meta)) => {
+                Some((block_meta.slot, block_meta.blockhash))
+            }
+            _ => None,
+        }
+    }
+}
+
+struct SlotExtractor {}
+
+impl FromYellowstoneExtractor for SlotExtractor {
+    type Target = SlotNotification;
+    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(Slot, Self::Target)> {
+        match update.update_oneof {
+            Some(UpdateOneof::Slot(update_slot_message)) => {
+                let slot = SlotNotification {
+                    estimated_processed_slot: update_slot_message.slot,
+                    processed_slot: update_slot_message.slot,
+                };
+                Some((update_slot_message.slot, slot))
+            }
+            _ => None,
+        }
+    }
+}
+
+
+
+
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
@@ -484,5 +537,57 @@ fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
         Some(UpdateOneof::Slot(update_slot_message)) => Some(update_slot_message.slot),
         _ => None,
     }
+}
+
+
+pub fn create_grpc_multiplex_slots_subscription(
+    grpc_sources: Vec<GrpcSourceConfig>,
+) -> (Receiver<SlotNotification>, AnyhowJoinHandle) {
+    info!("Setup grpc multiplexed slots connection...");
+    if grpc_sources.is_empty() {
+        info!("- no grpc connection configured");
+    }
+    for grpc_source in &grpc_sources {
+        info!("- connection to {}", grpc_source);
+    }
+
+    let (multiplexed_messages_sender, multiplexed_messages_rx) =
+        tokio::sync::broadcast::channel(1000);
+
+    let jh = tokio::spawn(async move {
+        loop {
+            let mut streams_tasks = Vec::new();
+            let mut recievers = Vec::new();
+            for grpc_source in &grpc_sources {
+                let (sx, rx) = async_channel::unbounded();
+                let task = create_slot_stream_task(
+                    grpc_source.grpc_addr.clone(),
+                    grpc_source.grpc_x_token.clone(),
+                    sx,
+                    yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
+                );
+                streams_tasks.push(task);
+                recievers.push(rx);
+            }
+
+            while let Ok(slot_update) = tokio::time::timeout(
+                Duration::from_secs(30),
+                futures::stream::select_all(recievers.clone()).next(),
+            )
+                .await
+            {
+                if let Some(slot_update) = slot_update {
+                    multiplexed_messages_sender.send(SlotNotification {
+                        processed_slot: slot_update.slot,
+                        estimated_processed_slot: slot_update.slot,
+                    })?;
+                }
+            }
+
+            streams_tasks.iter().for_each(|task| task.abort());
+        }
+    });
+
+    (multiplexed_messages_rx, jh)
 }
 

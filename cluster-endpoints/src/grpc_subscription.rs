@@ -1,6 +1,3 @@
-use crate::grpc_multiplex::{
-    create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription,
-};
 use crate::{
     endpoint_stremers::EndpointStreaming,
     rpc_polling::vote_accounts_and_cluster_info_polling::poll_vote_accounts_and_cluster_info,
@@ -40,7 +37,8 @@ use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequestFilterBlocks,
     SubscribeUpdateBlock,
 };
-use solana_lite_rpc_core::structures::produced_block::{Bloat, BLOAT_SIZE};
+use solana_lite_rpc_core::structures::produced_block::{Bloat};
+use crate::grpc_newmultiplex::{create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_slots_subscription};
 
 /// grpc version of ProducedBlock mapping
 pub fn from_grpc_block_update(
