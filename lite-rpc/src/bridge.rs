@@ -35,6 +35,7 @@ use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
 
+use crate::rpc_errors::RpcErrors;
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
     rpc::LiteRpcServer,
@@ -169,7 +170,7 @@ impl LiteRpcServer for LiteBridge {
             .get_block_info_by_slot(slot);
         match block_info {
             Some(info) => Ok(info.block_time),
-            None => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
+            None => Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into()),
         }
     }
 
@@ -240,10 +241,7 @@ impl LiteRpcServer for LiteBridge {
         })
     }
 
-    async fn get_epoch_info(
-        &self,
-        config: Option<RpcContextConfig>,
-    ) -> RpcResult<EpochInfo> {
+    async fn get_epoch_info(&self, config: Option<RpcContextConfig>) -> RpcResult<EpochInfo> {
         log::info!("Get epoch info");
         let commitment_config = config
             .map(|config| config.commitment.unwrap_or_default())
@@ -311,7 +309,7 @@ impl LiteRpcServer for LiteBridge {
             .collect_vec();
         if accounts.len() != pubkey_strs.len() {
             // if lengths do not match it means some of the accounts are invalid
-            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
+            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
         }
 
         let global_prio_fees = self.prio_fees_service.get_latest_priofees().await;
@@ -362,13 +360,13 @@ impl LiteRpcServer for LiteBridge {
             encoding::BinaryEncoding::Base64 => MAX_BASE64_SIZE,
         };
         if tx.len() > expected_size {
-            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
+            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
         }
 
         let raw_tx = match encoding.decode(tx) {
             Ok(raw_tx) => raw_tx,
-            Err(err) => {
-                return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
+            Err(_) => {
+                return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
             }
         };
 
@@ -382,7 +380,7 @@ impl LiteRpcServer for LiteBridge {
 
                 Ok(sig)
             }
-            Err(e) => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
+            Err(_) => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
         }
     }
 
@@ -404,7 +402,7 @@ impl LiteRpcServer for LiteBridge {
         _config: Option<RpcRequestAirdropConfig>,
     ) -> RpcResult<String> {
         RPC_REQUEST_AIRDROP.inc();
-        Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
+        Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
     }
 
     async fn get_leader_schedule(
@@ -423,11 +421,7 @@ impl LiteRpcServer for LiteBridge {
             .await;
         Ok(schedule)
     }
-    async fn get_slot_leaders(
-        &self,
-        start_slot: u64,
-        limit: u64,
-    ) -> RpcResult<Vec<Pubkey>> {
+    async fn get_slot_leaders(&self, start_slot: u64, limit: u64) -> RpcResult<Vec<Pubkey>> {
         log::info!("Get slot leaders");
         let epock_schedule = self.data_cache.epoch_data.get_epoch_schedule();
 
@@ -438,6 +432,7 @@ impl LiteRpcServer for LiteBridge {
             .get_slot_leaders(start_slot, limit, epock_schedule)
             .await
             .map_err(|err| {
+                log::error!("Error processing get leader schedule : {err:?}");
                 jsonrpsee::types::error::ErrorCode::InternalError.into()
             })
     }
@@ -466,7 +461,8 @@ impl LiteRpcServer for LiteBridge {
                     .await
             }
             _ => {
-                return Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
+                // method is invalid
+                return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
             }
         };
 
@@ -497,9 +493,7 @@ impl LiteRpcServer for LiteBridge {
                 PrioritizationFeeCalculationMethod::LastNBlocks(nb) => {
                     self.account_priofees_service.get_n_last_stats(&account, nb)
                 }
-                _ => {
-                    return Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
-                }
+                _ => return Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
             };
             Ok(RpcResponse {
                 context: RpcResponseContext {
@@ -509,7 +503,8 @@ impl LiteRpcServer for LiteBridge {
                 value,
             })
         } else {
-            Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
+            // Account key is invalid
+            Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into())
         }
     }
 
@@ -518,10 +513,10 @@ impl LiteRpcServer for LiteBridge {
         pubkey_str: String,
         config: Option<RpcAccountInfoConfig>,
     ) -> RpcResult<RpcResponse<Option<UiAccount>>> {
-
         log::info!("getAccountInfo {}", pubkey_str);
         let Ok(pubkey) = Pubkey::from_str(&pubkey_str) else {
-            return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
+            // pubkey is invalid
+            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
         };
         if let Some(account_service) = &self.accounts_service {
             match account_service.get_account(pubkey, config).await {
@@ -532,10 +527,17 @@ impl LiteRpcServer for LiteBridge {
                     },
                     value: ui_account,
                 }),
-                Err(e) => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
+                Err(_) => {
+                    // account not found
+                    Err(jsonrpsee::types::error::ErrorCode::ServerError(
+                        RpcErrors::AccountNotFound as i32,
+                    )
+                    .into())
+                }
             }
         } else {
-            Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
+            // accounts are disabled
+            Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
         }
     }
 
@@ -568,7 +570,13 @@ impl LiteRpcServer for LiteBridge {
                         }
                         ui_accounts.push(ui_account);
                     }
-                    Err(e) => return Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
+                    Err(_) => {
+                        // internal error while fetching multiple accounts
+                        return Err(jsonrpsee::types::error::ErrorCode::ServerError(
+                            RpcErrors::AccountNotFound as i32,
+                        )
+                        .into());
+                    }
                 }
             }
             Ok(RpcResponse {
@@ -579,7 +587,8 @@ impl LiteRpcServer for LiteBridge {
                 value: ui_accounts,
             })
         } else {
-            Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
+            // accounts are disabled
+            Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
         }
     }
 
@@ -588,7 +597,6 @@ impl LiteRpcServer for LiteBridge {
         program_id_str: String,
         config: Option<RpcProgramAccountsConfig>,
     ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>> {
-
         log::info!("getProgramAccount {}", program_id_str);
 
         let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
@@ -607,10 +615,16 @@ impl LiteRpcServer for LiteBridge {
                     },
                     value: ui_account,
                 })),
-                Err(e) => Err(jsonrpsee::types::error::ErrorCode::InternalError.into()),
+                Err(_) => {
+                    return Err(jsonrpsee::types::error::ErrorCode::ServerError(
+                        RpcErrors::AccountNotFound as i32,
+                    )
+                    .into());
+                }
             }
         } else {
-            Err(jsonrpsee::types::error::ErrorCode::InternalError.into())
+            // accounts are disabled
+            Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
         }
     }
 }

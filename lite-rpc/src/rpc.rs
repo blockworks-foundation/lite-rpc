@@ -154,10 +154,7 @@ pub trait LiteRpc {
     // **********************
 
     #[method(name = "getEpochInfo")]
-    async fn get_epoch_info(
-        &self,
-        config: Option<RpcContextConfig>,
-    ) -> RpcResult<EpochInfo>;
+    async fn get_epoch_info(&self, config: Option<RpcContextConfig>) -> RpcResult<EpochInfo>;
 
     #[method(name = "getLeaderSchedule")]
     async fn get_leader_schedule(
@@ -167,11 +164,7 @@ pub trait LiteRpc {
     ) -> RpcResult<Option<HashMap<String, Vec<usize>>>>;
 
     #[method(name = "getSlotLeaders")]
-    async fn get_slot_leaders(
-        &self,
-        start_slot: u64,
-        limit: u64,
-    ) -> RpcResult<Vec<Pubkey>>;
+    async fn get_slot_leaders(&self, start_slot: u64, limit: u64) -> RpcResult<Vec<Pubkey>>;
 
     #[method(name = "getVoteAccounts")]
     async fn get_vote_accounts(
