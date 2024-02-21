@@ -61,6 +61,7 @@ use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
+use jemallocator::Jemalloc;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
@@ -404,6 +405,10 @@ fn setup_grpc_stream_debugging(blocks_notifier: &BlockStream) {
     );
     debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
 }
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {

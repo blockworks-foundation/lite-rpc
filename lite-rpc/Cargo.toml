@@ -10,6 +10,10 @@ license = "AGPL"
 publish = false
 
 [dependencies]
+
+# solana version
+jemallocator = { package = "tikv-jemallocator", version = "0.5.4", features = ["unprefixed_malloc_on_supported_platforms"] }
+
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
