@@ -155,7 +155,7 @@ impl AddressLookupTableStore {
                     Some(
                         accounts
                             .iter()
-                            .map(|i| alt_account[*i as usize])
+                            .map(|index| alt_account[*index as usize])
                             .collect_vec(),
                     )
                 }

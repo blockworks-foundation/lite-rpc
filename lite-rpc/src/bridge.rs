@@ -92,7 +92,6 @@ impl LiteBridge {
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
     async fn get_block(&self, _slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
-        log::info!("Get Block");
         // let block = self.blockstore.block_storage.query_block(slot).await;
         // if block.is_ok() {
         //     // TO DO Convert to UIConfirmed Block
@@ -102,7 +101,9 @@ impl LiteRpcServer for LiteBridge {
         // }
 
         // TODO get_block might deserve different implementation based on whether we serve from "blockstore module" vs. from "send tx module"
-        todo!("get_block: decide where to look")
+
+        // under progress
+        Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
     }
 
     async fn get_blocks(
@@ -111,8 +112,8 @@ impl LiteRpcServer for LiteBridge {
         _config: Option<RpcBlocksConfigWrapper>,
         _commitment: Option<CommitmentConfig>,
     ) -> RpcResult<Vec<Slot>> {
-        log::info!("Get Blocks");
-        todo!()
+        // under progress
+        Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
     }
 
     async fn get_signatures_for_address(
@@ -120,12 +121,11 @@ impl LiteRpcServer for LiteBridge {
         _address: String,
         _config: Option<RpcSignaturesForAddressConfig>,
     ) -> RpcResult<Vec<RpcConfirmedTransactionStatusWithSignature>> {
-        log::info!("Get sFA");
-        todo!()
+        // under progress
+        Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
     }
 
     async fn get_cluster_nodes(&self) -> RpcResult<Vec<RpcContactInfo>> {
-        log::info!("Get CN");
         Ok(self
             .data_cache
             .cluster_info
@@ -136,7 +136,6 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_slot(&self, config: Option<RpcContextConfig>) -> RpcResult<Slot> {
-        log::info!("Get Slot");
         let commitment_config = config
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
@@ -150,7 +149,6 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_block_height(&self, config: Option<RpcContextConfig>) -> RpcResult<u64> {
-        log::info!("Get BH");
         let commitment_config = config.map_or(CommitmentConfig::finalized(), |x| {
             x.commitment.unwrap_or_default()
         });
@@ -163,7 +161,6 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_block_time(&self, slot: u64) -> RpcResult<u64> {
-        log::info!("Get BT");
         let block_info = self
             .data_cache
             .block_information_store
@@ -175,15 +172,14 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_first_available_block(&self) -> RpcResult<u64> {
-        log::info!("Get FAB");
-        todo!()
+        // under progress
+        Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
     }
 
     async fn get_latest_blockhash(
         &self,
         config: Option<RpcContextConfig>,
     ) -> RpcResult<RpcResponse<RpcBlockhash>> {
-        log::info!("Get latest BH");
         RPC_GET_LATEST_BLOCKHASH.inc();
 
         let commitment_config = config
@@ -220,7 +216,6 @@ impl LiteRpcServer for LiteBridge {
         blockhash: String,
         config: Option<IsBlockHashValidConfig>,
     ) -> RpcResult<RpcResponse<bool>> {
-        log::info!("Get is BH Valid");
         RPC_IS_BLOCKHASH_VALID.inc();
 
         let commitment = config.unwrap_or_default().commitment.unwrap_or_default();
@@ -242,7 +237,6 @@ impl LiteRpcServer for LiteBridge {
     }
 
     async fn get_epoch_info(&self, config: Option<RpcContextConfig>) -> RpcResult<EpochInfo> {
-        log::info!("Get epoch info");
         let commitment_config = config
             .map(|config| config.commitment.unwrap_or_default())
             .unwrap_or_default();
@@ -265,7 +259,6 @@ impl LiteRpcServer for LiteBridge {
         &self,
         _limit: Option<usize>,
     ) -> RpcResult<Vec<RpcPerfSample>> {
-        log::info!("get _recent performance samples");
         Ok(vec![])
     }
 
@@ -274,7 +267,6 @@ impl LiteRpcServer for LiteBridge {
         sigs: Vec<String>,
         _config: Option<RpcSignatureStatusConfig>,
     ) -> RpcResult<RpcResponse<Vec<Option<TransactionStatus>>>> {
-        log::info!("Get sig status");
         RPC_GET_SIGNATURE_STATUSES.inc();
 
         let sig_statuses = sigs
@@ -300,7 +292,6 @@ impl LiteRpcServer for LiteBridge {
         &self,
         pubkey_strs: Vec<String>,
     ) -> RpcResult<Vec<RpcPrioritizationFee>> {
-        log::info!("Get recent prio fees");
         // This method will get the latest global and account prioritization fee stats and then send the maximum p75
         const PERCENTILE: f32 = 0.75;
         let accounts = pubkey_strs
@@ -343,7 +334,6 @@ impl LiteRpcServer for LiteBridge {
         tx: String,
         send_transaction_config: Option<SendTransactionConfig>,
     ) -> RpcResult<String> {
-        log::info!("Get send tx");
         RPC_SEND_TX.inc();
 
         // Copied these constants from solana labs code
@@ -360,7 +350,7 @@ impl LiteRpcServer for LiteBridge {
             encoding::BinaryEncoding::Base64 => MAX_BASE64_SIZE,
         };
         if tx.len() > expected_size {
-            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
+            return Err(jsonrpsee::types::error::ErrorCode::OversizedRequest.into());
         }
 
         let raw_tx = match encoding.decode(tx) {
@@ -385,7 +375,6 @@ impl LiteRpcServer for LiteBridge {
     }
 
     fn get_version(&self) -> RpcResult<RpcVersionInfo> {
-        log::info!("Get version");
         RPC_GET_VERSION.inc();
 
         let version = solana_version::Version::default();
@@ -410,7 +399,6 @@ impl LiteRpcServer for LiteBridge {
         slot: Option<u64>,
         config: Option<RpcLeaderScheduleConfig>,
     ) -> RpcResult<Option<HashMap<String, Vec<usize>>>> {
-        log::info!("Get leader schedule");
         //TODO verify leader identity.
         let schedule = self
             .data_cache
@@ -422,7 +410,6 @@ impl LiteRpcServer for LiteBridge {
         Ok(schedule)
     }
     async fn get_slot_leaders(&self, start_slot: u64, limit: u64) -> RpcResult<Vec<Pubkey>> {
-        log::info!("Get slot leaders");
         let epock_schedule = self.data_cache.epoch_data.get_epoch_schedule();
 
         self.data_cache
@@ -441,15 +428,14 @@ impl LiteRpcServer for LiteBridge {
         &self,
         _config: Option<RpcGetVoteAccountsConfig>,
     ) -> RpcResult<RpcVoteAccountStatus> {
-        log::info!("Get vote accounts");
-        todo!()
+        // under progress
+        Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
     }
 
     async fn get_latest_block_priofees(
         &self,
         method: Option<PrioritizationFeeCalculationMethod>,
     ) -> RpcResult<RpcResponse<PrioFeesStats>> {
-        log::info!("Get latest block prio");
         let method = method.unwrap_or_default();
         let res = match method {
             PrioritizationFeeCalculationMethod::Latest => {
@@ -483,7 +469,6 @@ impl LiteRpcServer for LiteBridge {
         account: String,
         method: Option<PrioritizationFeeCalculationMethod>,
     ) -> RpcResult<RpcResponse<AccountPrioFeesStats>> {
-        log::info!("Get latest account prio");
         if let Ok(account) = Pubkey::from_str(&account) {
             let method = method.unwrap_or_default();
             let (slot, value) = match method {
@@ -513,7 +498,6 @@ impl LiteRpcServer for LiteBridge {
         pubkey_str: String,
         config: Option<RpcAccountInfoConfig>,
     ) -> RpcResult<RpcResponse<Option<UiAccount>>> {
-        log::info!("getAccountInfo {}", pubkey_str);
         let Ok(pubkey) = Pubkey::from_str(&pubkey_str) else {
             // pubkey is invalid
             return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
@@ -546,8 +530,6 @@ impl LiteRpcServer for LiteBridge {
         pubkey_strs: Vec<String>,
         config: Option<RpcAccountInfoConfig>,
     ) -> RpcResult<RpcResponse<Vec<Option<UiAccount>>>> {
-        log::info!("getMultipleAccount {}", pubkey_strs.join(", "));
-
         let pubkeys = pubkey_strs
             .iter()
             .map(|key| Pubkey::from_str(key))
@@ -597,8 +579,6 @@ impl LiteRpcServer for LiteBridge {
         program_id_str: String,
         config: Option<RpcProgramAccountsConfig>,
     ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>> {
-        log::info!("getProgramAccount {}", program_id_str);
-
         let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
             return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
         };
