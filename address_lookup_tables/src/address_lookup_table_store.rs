@@ -144,12 +144,22 @@ impl AddressLookupTableStore {
     ) -> Option<Vec<Pubkey>> {
         let alt_account = self.map.get(alt);
         match alt_account {
-            Some(alt_account) => Some(
-                accounts
+            Some(alt_account) => {
+                if accounts
                     .iter()
-                    .map(|i| alt_account[*i as usize])
-                    .collect_vec(),
-            ),
+                    .any(|index| *index as usize >= alt_account.len())
+                {
+                    log::error!("address lookup table {} should have been reloaded", alt);
+                    None
+                } else {
+                    Some(
+                        accounts
+                            .iter()
+                            .map(|index| alt_account[*index as usize])
+                            .collect_vec(),
+                    )
+                }
+            }
             None => {
                 log::error!("address lookup table {} was not found", alt);
                 None
