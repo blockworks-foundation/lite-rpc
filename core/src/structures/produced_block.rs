@@ -40,7 +40,7 @@ pub struct Bloat {
 
 impl Bloat {
     pub fn new() -> Self {
-        let stracktrace = get_stacktrace().unwrap();
+        // let stracktrace = get_stacktrace().unwrap();
         // log_frames("Bloat::new", &stracktrace);
         Bloat {
             bloat: [0; BLOAT_SIZE],
