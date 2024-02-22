@@ -1,9 +1,9 @@
-use std::fmt::Debug;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
 use solana_transaction_status::Reward;
+use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -86,4 +86,3 @@ impl ProducedBlock {
         }
     }
 }
-
