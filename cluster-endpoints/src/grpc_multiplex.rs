@@ -1,5 +1,6 @@
-use crate::grpc_subscription::from_grpc_block_update;
+use crate::grpc_subscription::{create_block_processing_task, from_grpc_block_update};
 use anyhow::{bail, Context};
+use futures::StreamExt;
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig, Message};
@@ -19,11 +20,59 @@ use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
+fn create_grpc_multiplex_processed_block_stream(
+    grpc_sources: &Vec<GrpcSourceConfig>,
+    block_sender: tokio::sync::mpsc::Sender<ProducedBlock>,
+) -> Vec<AbortHandle> {
+    let commitment_config = CommitmentConfig::processed();
+
+    let mut tasks = Vec::new();
+    let mut streams = vec![];
+    for grpc_source in grpc_sources {
+        let (block_sender, block_reciever) = async_channel::unbounded();
+        let jh = create_block_processing_task(
+            grpc_source.grpc_addr.clone(),
+            grpc_source.grpc_x_token.clone(),
+            block_sender,
+            yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
+        );
+        tasks.push(jh.abort_handle());
+        streams.push(block_reciever)
+    }
+    let merging_streams: AnyhowJoinHandle = tokio::task::spawn(async move {
+        let mut slots_processed = BTreeSet::<u64>::new();
+        loop {
+            let block_message = futures::stream::select_all(streams.clone()).next().await;
+            const MAX_SIZE: usize = 1024;
+            if let Some(block) = block_message {
+                let slot = block.slot;
+                // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
+                // it means that the slot is too old to process
+                if !slots_processed.contains(&slot)
+                    && (slots_processed.len() < MAX_SIZE / 2
+                        || slot > slots_processed.first().cloned().unwrap_or_default())
+                {
+                    block_sender
+                        .send(from_grpc_block_update(block, commitment_config))
+                        .await
+                        .unwrap();
+                    slots_processed.insert(slot);
+                    if slots_processed.len() > MAX_SIZE {
+                        slots_processed.pop_first();
+                    }
+                }
+            }
+        }
+    });
+    tasks.push(merging_streams.abort_handle());
+    tasks
+}
+
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
 /// - task will shutdown of the receiver side of block_sender gets closed
 /// - will also shutdown the grpc autoconnection task(s)
-fn create_grpc_multiplex_processed_block_task(
+fn _create_grpc_multiplex_processed_block_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
     block_sender: tokio::sync::mpsc::Sender<ProducedBlock>,
 ) -> Vec<AbortHandle> {
@@ -55,7 +104,7 @@ fn create_grpc_multiplex_processed_block_task(
             match blocks_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     let mapfilter =
-                        map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
+                        _map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
                     if let Some((slot, produced_block)) = mapfilter {
                         assert_eq!(COMMITMENT_CONFIG, produced_block.commitment_config);
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
@@ -224,7 +273,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             // tasks which should be cleaned up uppon reconnect
             let mut task_list: Vec<AbortHandle> = vec![];
 
-            let processed_blocks_tasks = create_grpc_multiplex_processed_block_task(
+            let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
                 &grpc_sources,
                 processed_block_sender.clone(),
             );
@@ -463,7 +512,7 @@ fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
     }
 }
 
-fn map_block_from_yellowstone_update(
+fn _map_block_from_yellowstone_update(
     update: SubscribeUpdate,
     commitment_config: CommitmentConfig,
 ) -> Option<(Slot, ProducedBlock)> {

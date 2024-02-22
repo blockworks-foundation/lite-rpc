@@ -3,6 +3,8 @@ use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
+use anyhow::Context;
+use futures::StreamExt;
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -29,13 +31,81 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solana_transaction_status::{Reward, RewardType};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::debug_span;
+use yellowstone_grpc_client::GeyserGrpcClient;
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
+use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks};
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
 };
 use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
+
+pub fn create_block_processing_task(
+    grpc_addr: String,
+    grpc_x_token: Option<String>,
+    block_sx: async_channel::Sender<SubscribeUpdateBlock>,
+    commitment_level: CommitmentLevel,
+) -> AnyhowJoinHandle {
+    tokio::spawn(async move {
+        loop {
+            let mut blocks_subs = HashMap::new();
+            blocks_subs.insert(
+                "block_client".to_string(),
+                SubscribeRequestFilterBlocks {
+                    account_include: Default::default(),
+                    include_transactions: Some(true),
+                    include_accounts: Some(false),
+                    include_entries: Some(false),
+                },
+            );
+
+            // connect to grpc
+            let mut client =
+                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
+            let mut stream = client
+                .subscribe_once(
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    blocks_subs,
+                    Default::default(),
+                    Some(commitment_level),
+                    Default::default(),
+                    None,
+                )
+                .await?;
+
+            while let Some(message) = stream.next().await {
+                let message = message?;
+
+                let Some(update) = message.update_oneof else {
+                    continue;
+                };
+
+                match update {
+                    UpdateOneof::Block(block) => {
+                        block_sx
+                            .send(block)
+                            .await
+                            .context("Problem sending on block channel")?;
+                    }
+                    UpdateOneof::Ping(_) => {
+                        log::trace!("GRPC Ping");
+                    }
+                    _ => {
+                        log::trace!("unknown GRPC notification");
+                    }
+                };
+            }
+            log::error!("Grpc block subscription broken (resubscribing)");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    })
+}
 
 /// grpc version of ProducedBlock mapping
 pub fn from_grpc_block_update(
