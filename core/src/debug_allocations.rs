@@ -8,6 +8,8 @@ use std::time::Instant;
 use tracing::debug_span;
 
 lazy_static::lazy_static! {
+    // assume some 100s of elements
+    // assume updated every 100ms or so
     static ref ARC_PRODUCED_BLOCK: Mutex<Vec<(std::sync::Weak<ProducedBlockInner>, Instant)>> =
         Mutex::new(Vec::with_capacity(1000));
 }
@@ -28,31 +30,37 @@ pub fn start_produced_block_inspect_task() -> JoinHandle<()> {
     })
 }
 
+const TRIGGER_CLEANUP_AFTER_N_FREED: i32 = 100;
+
 fn produced_block_inspect_refs() {
-    let mut references = ARC_PRODUCED_BLOCK.lock().unwrap();
+    let references = {
+        // copy out the values we need to miminize the time we hold the lock
+        let locked_references = ARC_PRODUCED_BLOCK.lock().unwrap();
+        locked_references
+            .iter()
+            .map(|(weak_ref, t)| (weak_ref.strong_count(), *t))
+            .collect::<Vec<(usize, Instant)>>()
+    };
 
     let mut live = 0;
     let mut freed = 0;
-    for r in references.iter() {
-        trace!(
-            "- {} refs, created at {:?}",
-            r.0.strong_count(),
-            r.1.elapsed()
-        );
-        if r.0.strong_count() == 0 {
+    for r in &references {
+        trace!("- {} refs, created at {:?}", r.0, r.1.elapsed());
+        if r.0 == 0 {
             freed += 1;
         } else {
             live += 1;
         }
     }
 
-    if freed >= 100 {
-        references.retain(|r| r.0.strong_count() > 0);
+    if freed >= TRIGGER_CLEANUP_AFTER_N_FREED {
+        let mut locked_references = ARC_PRODUCED_BLOCK.lock().unwrap();
+        locked_references.retain(|r| r.0.strong_count() > 0);
     }
 
     let dist = references
         .iter()
-        .filter(|r| r.0.strong_count() > 0)
+        .filter(|r| r.0 > 0)
         .map(|r| r.1.elapsed().as_secs_f64() * 1000.0)
         .sorted_by(|a, b| a.partial_cmp(b).unwrap())
         .collect::<Vec<f64>>();
