@@ -221,11 +221,16 @@ impl InmemoryAccountStore {
             && prev_account_data.account.owner != new_account_data.account.owner
         {
             if commitment == Commitment::Finalized {
-                if let Some(mut accounts) = self
+                match self
                     .owner_map_accounts
-                    .get_mut(&prev_account_data.account.owner)
+                    .entry(prev_account_data.account.owner)
                 {
-                    accounts.remove(&prev_account_data.pubkey);
+                    dashmap::mapref::entry::Entry::Occupied(mut occ) => {
+                        occ.get_mut().remove(&prev_account_data.pubkey);
+                    }
+                    dashmap::mapref::entry::Entry::Vacant(_) => {
+                        // do nothing
+                    }
                 }
             }
             self.add_account_owner(new_account_data.pubkey, new_account_data.account.owner);
@@ -249,29 +254,32 @@ impl AccountStorageInterface for InmemoryAccountStore {
             commitment
         };
 
-        if let Some(mut account_by_commitment) = self.account_store.get_mut(&account_data.pubkey) {
-            let prev_account = account_by_commitment.get_account_data(commitment);
-            if let Some(prev_account) = prev_account {
-                self.update_owner(&prev_account, &account_data, commitment);
+        match self.account_store.entry(account_data.pubkey) {
+            dashmap::mapref::entry::Entry::Occupied(mut occ) => {
+                let prev_account = occ.get().get_account_data(commitment);
+                if let Some(prev_account) = prev_account {
+                    self.update_owner(&prev_account, &account_data, commitment);
+                }
+                occ.get_mut().update(account_data, commitment);
             }
-            account_by_commitment.update(account_data, commitment);
-        } else {
-            self.add_account_owner(account_data.pubkey, account_data.account.owner);
-            self.account_store.insert(
-                account_data.pubkey,
-                AccountDataByCommitment::new(account_data.clone(), commitment),
-            );
+            dashmap::mapref::entry::Entry::Vacant(vac) => {
+                self.add_account_owner(account_data.pubkey, account_data.account.owner);
+                vac.insert(AccountDataByCommitment::new(
+                    account_data.clone(),
+                    commitment,
+                ));
+            }
         }
     }
 
     async fn initilize_account(&self, account_data: AccountData) {
-        match self.account_store.get_mut(&account_data.pubkey) {
-            Some(_) => {
+        match self.account_store.contains_key(&account_data.pubkey) {
+            true => {
                 // account has already been filled by an event
                 self.update_account(account_data, Commitment::Finalized)
                     .await;
             }
-            None => {
+            false => {
                 self.add_account_owner(account_data.pubkey, account_data.account.owner);
                 self.account_store.insert(
                     account_data.pubkey,
