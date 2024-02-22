@@ -19,13 +19,13 @@ use crate::{
 
 lazy_static::lazy_static! {
     static ref WRITE_ONLY_ACCOUNTS_IN_PRIO_CACHE: GenericGauge<prometheus::core::AtomicI64> =
-    register_int_gauge!(opts!("literpc_nb_of_write_accounts_in_prio_cache", "Number of write accounts in prio cache")).unwrap();
+    register_int_gauge!(opts!("literpc_nb_of_write_accounts_in_priofees_cache", "Number of write accounts in priofees cache")).unwrap();
 
     static ref ACCOUNTS_IN_PRIO_CACHE: GenericGauge<prometheus::core::AtomicI64> =
-    register_int_gauge!(opts!("literpc_nb_of_accounts_in_prio_cache", "Number of accounts in prio cache")).unwrap();
+    register_int_gauge!(opts!("literpc_nb_of_accounts_in_priofees_cache", "Number of accounts in priofees cache")).unwrap();
 
     static ref NUMBER_OF_PRIO_DATA_POINTS: GenericGauge<prometheus::core::AtomicI64> =
-    register_int_gauge!(opts!("literpc_nb_of_accouts_prio_datapoints", "Number of prio accounts data points")).unwrap();
+    register_int_gauge!(opts!("literpc_nb_of_accouts_priofees_datapoints", "Number of priofees accounts data points")).unwrap();
 }
 
 pub struct AccountPrio {
