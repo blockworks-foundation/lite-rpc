@@ -18,7 +18,6 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
         parent_slot: slot - 1,
         transactions: vec![],
         block_time: 0,
-        // commitment_config,
         leader_id: None,
         slot,
         rewards: Some(vec![Reward {

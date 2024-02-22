@@ -264,7 +264,6 @@ pub fn from_grpc_block_update(
         block_time: block.block_time.map(|time| time.timestamp).unwrap() as u64,
         blockhash: block.blockhash,
         previous_blockhash: block.parent_blockhash,
-        // commitment_config,
         leader_id,
         parent_slot: block.parent_slot,
         slot: block.slot,

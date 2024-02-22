@@ -328,7 +328,6 @@ pub fn from_ui_block(
         parent_slot,
         block_time,
         slot,
-        // commitment_config,
         rewards,
     };
     ProducedBlock::new(inner, commitment_config)

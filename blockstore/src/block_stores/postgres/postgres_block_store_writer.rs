@@ -373,7 +373,6 @@ mod tests {
             transactions: vec![create_test_tx(sig1), create_test_tx(sig2)],
             // TODO double if this is unix millis or seconds
             block_time: 1699260872000,
-            // commitment_config: CommitmentConfig::finalized(),
             leader_id: None,
             rewards: None,
         };

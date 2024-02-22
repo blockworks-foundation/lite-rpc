@@ -23,7 +23,7 @@ pub struct TransactionInfo {
 
 #[derive(Debug, Clone)]
 pub struct ProducedBlock {
-    // TODO check/document why Arc is needed here
+    // Arc is required for channels
     inner: Arc<ProducedBlockInner>,
     pub commitment_config: CommitmentConfig,
 }
@@ -61,19 +61,19 @@ pub struct ProducedBlockInner {
 }
 
 impl ProducedBlock {
-    /// moving commitment level to finalized
-    pub fn to_finalized_block(&self) -> Self {
-        ProducedBlock {
-            inner: self.inner.clone(),
-            commitment_config: CommitmentConfig::finalized(),
-        }
-    }
-
     /// moving commitment level to confirmed
     pub fn to_confirmed_block(&self) -> Self {
         ProducedBlock {
             inner: self.inner.clone(),
             commitment_config: CommitmentConfig::confirmed(),
+        }
+    }
+
+    /// moving commitment level to finalized
+    pub fn to_finalized_block(&self) -> Self {
+        ProducedBlock {
+            inner: self.inner.clone(),
+            commitment_config: CommitmentConfig::finalized(),
         }
     }
 }

@@ -65,7 +65,6 @@ impl PostgresBlock {
             slot: self.slot as Slot,
             parent_slot: self.parent_slot as Slot,
             block_time: self.block_time as u64,
-            // commitment_config,
             previous_blockhash: self.previous_blockhash.clone(),
             rewards: rewards_vec,
         };
