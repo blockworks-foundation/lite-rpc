@@ -3,8 +3,9 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
-use dashmap::{mapref::multiple::RefMutMulti, DashMap};
+use dashmap::DashMap;
 use itertools::Itertools;
+use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::{
     structures::produced_block::ProducedBlock,
     traits::address_lookup_table_interface::AddressLookupTableInterface,
@@ -15,6 +16,17 @@ use crate::{
     prioritization_fee_data::{BlockPrioData, PrioFeesData},
     rpc_data::{AccountPrioFeesStats, AccountPrioFeesUpdateMessage},
 };
+
+lazy_static::lazy_static! {
+    static ref WRITE_ONLY_ACCOUNTS_IN_PRIO_CACHE: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_nb_of_write_accounts_in_prio_cache", "Number of write accounts in prio cache")).unwrap();
+
+    static ref ACCOUNTS_IN_PRIO_CACHE: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_nb_of_accounts_in_prio_cache", "Number of accounts in prio cache")).unwrap();
+
+    static ref NUMBER_OF_PRIO_DATA_POINTS: GenericGauge<prometheus::core::AtomicI64> =
+    register_int_gauge!(opts!("literpc_nb_of_accouts_prio_datapoints", "Number of prio accounts data points")).unwrap();
+}
 
 pub struct AccountPrio {
     pub stats_by_slot: BTreeMap<u64, BlockPrioData>,
@@ -178,7 +190,7 @@ impl AccountPrioStore {
         let min_slot_to_retain = produced_block
             .slot
             .saturating_sub(self.number_of_slots_to_save as u64);
-        let cleanup_functor = |mut iter: RefMutMulti<'_, Pubkey, AccountPrio>| {
+        let cleanup_functor = |iter: &mut AccountPrio| {
             while let Some((k, _)) = iter.stats_by_slot.first_key_value() {
                 if *k > min_slot_to_retain {
                     break;
@@ -186,15 +198,32 @@ impl AccountPrioStore {
                 iter.stats_by_slot.pop_first();
             }
         };
-        self.account_by_prio_fees_all
-            .iter_mut()
-            .for_each(cleanup_functor);
+        self.account_by_prio_fees_all.retain(|_, ap| {
+            cleanup_functor(ap);
+            !ap.stats_by_slot.is_empty()
+        });
+
+        self.account_by_prio_fees_writeonly.retain(|_, ap| {
+            cleanup_functor(ap);
+            !ap.stats_by_slot.is_empty()
+        });
+
+        ACCOUNTS_IN_PRIO_CACHE.set(self.account_by_prio_fees_all.len() as i64);
+        WRITE_ONLY_ACCOUNTS_IN_PRIO_CACHE.set(self.account_by_prio_fees_writeonly.len() as i64);
+        let dp_all: usize = self
+            .account_by_prio_fees_all
+            .iter()
+            .map(|v| v.stats_by_slot.len())
+            .sum();
+        let dp_writeonly: usize = self
+            .account_by_prio_fees_writeonly
+            .iter()
+            .map(|v| v.stats_by_slot.len())
+            .sum();
+        NUMBER_OF_PRIO_DATA_POINTS.set((dp_all + dp_writeonly) as i64);
+
         self.last_slot
             .store(slot, std::sync::atomic::Ordering::Relaxed);
-
-        self.account_by_prio_fees_writeonly
-            .iter_mut()
-            .for_each(cleanup_functor);
 
         let account_data: HashMap<Pubkey, AccountPrioFeesStats> =
             accounts_by_prioritization_read_write
