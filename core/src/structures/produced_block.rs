@@ -45,7 +45,6 @@ impl Deref for ProducedBlock {
     }
 }
 
-// TODO try to remove Clone
 #[derive(Debug)]
 pub struct ProducedBlockInner {
     pub transactions: Vec<TransactionInfo>,
@@ -55,7 +54,6 @@ pub struct ProducedBlockInner {
     pub slot: Slot,
     pub parent_slot: Slot,
     pub block_time: u64,
-    // pub commitment_config: CommitmentConfig,
     pub previous_blockhash: String,
     pub rewards: Option<Vec<Reward>>,
 }
@@ -77,3 +75,4 @@ impl ProducedBlock {
         }
     }
 }
+
