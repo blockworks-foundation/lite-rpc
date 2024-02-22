@@ -64,7 +64,7 @@ impl DataCachingService {
                     _ => TransactionConfirmationStatus::Processed,
                 };
 
-                for tx in block.transactions {
+                for tx in &block.transactions {
                     let block_info = data_cache
                         .block_information_store
                         .get_block_info(&tx.recent_blockhash);
@@ -101,7 +101,7 @@ impl DataCachingService {
                     // notify
                     data_cache
                         .tx_subs
-                        .notify(block.slot, &tx, block.commitment_config)
+                        .notify(block.slot, tx, block.commitment_config)
                         .await;
                 }
             }

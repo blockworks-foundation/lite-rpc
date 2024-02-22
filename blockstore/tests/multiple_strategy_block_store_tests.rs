@@ -4,21 +4,20 @@ use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_que
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+use solana_lite_rpc_core::structures::produced_block::{ProducedBlock, ProducedBlockInner};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::{commitment_config::CommitmentConfig, hash::Hash};
 use solana_transaction_status::Reward;
 
 pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
-    ProducedBlock {
+    let inner = ProducedBlockInner {
         block_height: slot,
         blockhash: Hash::new_unique().to_string(),
         previous_blockhash: Hash::new_unique().to_string(),
         parent_slot: slot - 1,
         transactions: vec![],
         block_time: 0,
-        commitment_config,
         leader_id: None,
         slot,
         rewards: Some(vec![Reward {
@@ -28,7 +27,8 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
             reward_type: Some(RewardType::Voting),
             commission: None,
         }]),
-    }
+    };
+    ProducedBlock::new(inner, commitment_config)
 }
 
 #[ignore = "need postgres database"]

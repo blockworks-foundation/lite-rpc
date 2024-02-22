@@ -296,15 +296,11 @@ fn spawn_client_to_blockstorage(
         // note: no startup deloy
         loop {
             match blocks_notifier.recv().await {
-                Ok(ProducedBlock {
-                    slot,
-                    commitment_config,
-                    ..
-                }) => {
-                    if commitment_config != CommitmentConfig::confirmed() {
+                Ok(produced_block) => {
+                    if produced_block.commitment_config != CommitmentConfig::confirmed() {
                         continue;
                     }
-                    let confirmed_slot = slot;
+                    let confirmed_slot = produced_block.slot;
                     // we cannot expect the most recent data
                     let query_slot = confirmed_slot - 3;
                     match block_storage_query.query_block(query_slot).await {

@@ -2,7 +2,7 @@ use super::postgres_epoch::PostgresEpoch;
 use super::postgres_session::PostgresSession;
 use log::{debug, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
+use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -56,7 +56,7 @@ impl PostgresBlock {
             .map(|x| BASE64.deserialize::<Vec<Reward>>(x).ok())
             .unwrap_or(None);
 
-        ProducedBlock {
+        let inner = ProducedBlockInner {
             // TODO implement
             transactions: transaction_infos,
             leader_id: None,
@@ -65,10 +65,10 @@ impl PostgresBlock {
             slot: self.slot as Slot,
             parent_slot: self.parent_slot as Slot,
             block_time: self.block_time as u64,
-            commitment_config,
             previous_blockhash: self.previous_blockhash.clone(),
             rewards: rewards_vec,
-        }
+        };
+        ProducedBlock::new(inner, commitment_config)
     }
 }
 
