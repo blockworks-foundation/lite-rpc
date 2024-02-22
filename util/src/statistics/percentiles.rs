@@ -12,7 +12,8 @@ pub struct Percentiles {
 
 #[allow(dead_code)]
 impl Percentiles {
-    fn get_bucket_value(&self, percentile: f32) -> Option<f64> {
+    // percentile must be in range (0.0..1.0)
+    pub fn get_bucket_value(&self, percentile: f32) -> Option<f64> {
         zip(&self.p, &self.v)
             .find(|(&p, _v)| p == percentile)
             .map(|(_p, &v)| v)

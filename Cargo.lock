@@ -4502,6 +4502,7 @@ dependencies = [
  "dashmap 5.5.3",
  "futures",
  "itertools 0.10.5",
+ "lazy_static",
  "log",
  "quinn",
  "rustls",
@@ -4509,6 +4510,7 @@ dependencies = [
  "serde_json",
  "solana-account-decoder",
  "solana-client",
+ "solana-lite-rpc-util",
  "solana-net-utils",
  "solana-pubsub-client",
  "solana-rpc-client",
@@ -4519,6 +4521,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

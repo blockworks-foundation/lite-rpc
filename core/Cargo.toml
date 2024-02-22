@@ -8,6 +8,7 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
+solana-lite-rpc-util = { workspace = true }
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-transaction-status = { workspace = true }
@@ -30,6 +31,7 @@ futures = { workspace = true }
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
+tracing = { workspace = true }
 dashmap = { workspace = true }
 quinn = { workspace = true }
 chrono = { workspace = true }
