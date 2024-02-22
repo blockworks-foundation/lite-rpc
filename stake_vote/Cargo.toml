@@ -31,6 +31,7 @@ solana-account-decoder = { workspace = true }
 solana-program = { workspace = true }
 
 solana-lite-rpc-core = { workspace = true }
+solana-lite-rpc-util = { workspace = true }
 
 futures = { version = "0.3.28", default-features = false }
 tokio = { version = "1.28.2", features = ["full"]}
