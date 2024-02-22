@@ -1,4 +1,5 @@
 pub mod commitment_utils;
+pub mod debug_allocations;
 pub mod encoding;
 pub mod iterutils;
 pub mod keypair_loader;
