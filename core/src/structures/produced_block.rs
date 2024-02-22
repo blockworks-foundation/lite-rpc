@@ -3,6 +3,8 @@ use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
 use solana_transaction_status::Reward;
+use std::ops::Deref;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
@@ -19,9 +21,33 @@ pub struct TransactionInfo {
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
 }
 
-// TODO try to remove Clone
 #[derive(Debug, Clone)]
 pub struct ProducedBlock {
+    // TODO check/document why Arc is needed here
+    inner: Arc<ProducedBlockInner>,
+    pub commitment_config: CommitmentConfig,
+}
+
+impl ProducedBlock {
+    pub fn new(inner: ProducedBlockInner, commitment_config: CommitmentConfig) -> Self {
+        ProducedBlock {
+            inner: Arc::new(inner),
+            commitment_config,
+        }
+    }
+}
+
+impl Deref for ProducedBlock {
+    type Target = ProducedBlockInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+// TODO try to remove Clone
+#[derive(Debug)]
+pub struct ProducedBlockInner {
     pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
     pub blockhash: String,
@@ -29,7 +55,7 @@ pub struct ProducedBlock {
     pub slot: Slot,
     pub parent_slot: Slot,
     pub block_time: u64,
-    pub commitment_config: CommitmentConfig,
+    // pub commitment_config: CommitmentConfig,
     pub previous_blockhash: String,
     pub rewards: Option<Vec<Reward>>,
 }
@@ -38,16 +64,16 @@ impl ProducedBlock {
     /// moving commitment level to finalized
     pub fn to_finalized_block(&self) -> Self {
         ProducedBlock {
+            inner: self.inner.clone(),
             commitment_config: CommitmentConfig::finalized(),
-            ..self.clone()
         }
     }
 
     /// moving commitment level to confirmed
     pub fn to_confirmed_block(&self) -> Self {
         ProducedBlock {
+            inner: self.inner.clone(),
             commitment_config: CommitmentConfig::confirmed(),
-            ..self.clone()
         }
     }
 }

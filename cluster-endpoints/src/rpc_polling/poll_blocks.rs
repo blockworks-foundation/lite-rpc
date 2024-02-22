@@ -1,7 +1,7 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
+use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
 use solana_lite_rpc_core::{
     structures::{
         produced_block::ProducedBlock,
@@ -319,7 +319,7 @@ pub fn from_ui_block(
 
     let block_time = block.block_time.unwrap_or(0) as u64;
 
-    ProducedBlock {
+    let inner = ProducedBlockInner {
         transactions: txs,
         block_height,
         leader_id,
@@ -328,9 +328,10 @@ pub fn from_ui_block(
         parent_slot,
         block_time,
         slot,
-        commitment_config,
+        // commitment_config,
         rewards,
-    }
+    };
+    ProducedBlock::new(inner, commitment_config)
 }
 
 #[inline]

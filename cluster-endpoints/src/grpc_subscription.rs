@@ -35,6 +35,7 @@ use tracing::debug_span;
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
 };
+use solana_lite_rpc_core::structures::produced_block::ProducedBlockInner;
 use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
 
 /// grpc version of ProducedBlock mapping
@@ -254,7 +255,7 @@ pub fn from_grpc_block_update(
         None
     };
 
-    ProducedBlock {
+    let inner = ProducedBlockInner {
         transactions: txs,
         block_height: block
             .block_height
@@ -263,12 +264,13 @@ pub fn from_grpc_block_update(
         block_time: block.block_time.map(|time| time.timestamp).unwrap() as u64,
         blockhash: block.blockhash,
         previous_blockhash: block.parent_blockhash,
-        commitment_config,
+        // commitment_config,
         leader_id,
         parent_slot: block.parent_slot,
         slot: block.slot,
         rewards,
-    }
+    };
+    ProducedBlock::new(inner, commitment_config)
 }
 
 pub fn create_grpc_subscription(

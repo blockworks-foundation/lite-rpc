@@ -316,7 +316,7 @@ fn div_ceil(a: usize, b: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
+    use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
     use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::signature::Signature;
     use std::str::FromStr;
@@ -364,7 +364,7 @@ mod tests {
         let sig1 = Signature::from_str("5VBroA4MxsbZdZmaSEb618WRRwhWYW9weKhh3md1asGRx7nXDVFLua9c98voeiWdBE7A9isEoLL7buKyaVRSK1pV").unwrap();
         let sig2 = Signature::from_str("3d9x3rkVQEoza37MLJqXyadeTbEJGUB6unywK4pjeRLJc16wPsgw3dxPryRWw3UaLcRyuxEp1AXKGECvroYxAEf2").unwrap();
 
-        ProducedBlock {
+        let inner = ProducedBlockInner {
             block_height: 42,
             blockhash: "blockhash".to_string(),
             previous_blockhash: "previous_blockhash".to_string(),
@@ -373,10 +373,11 @@ mod tests {
             transactions: vec![create_test_tx(sig1), create_test_tx(sig2)],
             // TODO double if this is unix millis or seconds
             block_time: 1699260872000,
-            commitment_config: CommitmentConfig::finalized(),
+            // commitment_config: CommitmentConfig::finalized(),
             leader_id: None,
             rewards: None,
-        }
+        };
+        ProducedBlock::new(inner, CommitmentConfig::finalized())
     }
 
     fn create_test_tx(signature: Signature) -> TransactionInfo {
