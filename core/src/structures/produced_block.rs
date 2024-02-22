@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::pubkey::Pubkey;
@@ -21,7 +22,7 @@ pub struct TransactionInfo {
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProducedBlock {
     // Arc is required for channels
     inner: Arc<ProducedBlockInner>,
@@ -37,6 +38,17 @@ impl ProducedBlock {
     }
 }
 
+/// # Example
+/// ```text
+/// ProducedBlock { slot: 254169151, commitment_config: processed, blockhash: BULfZwLswkDbHhTrHGDASUtmNAG8gk6TV2njnobjYLyd, transactions_count: 806 }
+/// ```
+impl Debug for ProducedBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ProducedBlock {{ slot: {}, commitment_config: {}, blockhash: {}, transactions_count: {} }}",
+               self.slot, self.commitment_config.commitment, self.blockhash, self.transactions.len())
+    }
+}
+
 impl Deref for ProducedBlock {
     type Target = ProducedBlockInner;
 
@@ -45,7 +57,6 @@ impl Deref for ProducedBlock {
     }
 }
 
-#[derive(Debug)]
 pub struct ProducedBlockInner {
     pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
