@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::pubkey::Pubkey;
@@ -5,7 +6,10 @@ use solana_sdk::{slot_history::Slot, transaction::TransactionError};
 use solana_transaction_status::Reward;
 use std::fmt::Debug;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::rc::Weak;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use log::info;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
@@ -22,6 +26,13 @@ pub struct TransactionInfo {
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
 }
 
+
+
+lazy_static::lazy_static! {
+    static ref ARC_PRODUCED_BLOCK: Mutex<Vec<(std::sync::Weak<ProducedBlockInner>, Instant)>> = Mutex::new(Vec::with_capacity(1000));
+}
+
+
 #[derive(Clone)]
 pub struct ProducedBlock {
     // Arc is required for channels
@@ -31,11 +42,28 @@ pub struct ProducedBlock {
 
 impl ProducedBlock {
     pub fn new(inner: ProducedBlockInner, commitment_config: CommitmentConfig) -> Self {
+        let arc = Arc::new(inner);
+        let weak: std::sync::Weak<ProducedBlockInner> = Arc::downgrade(&arc);
+
+        ARC_PRODUCED_BLOCK.lock().unwrap()
+            .push((weak, Instant::now()));
+
+        inspect();
+
         ProducedBlock {
-            inner: Arc::new(inner),
+            inner: arc,
             commitment_config,
         }
     }
+}
+
+fn inspect() {
+    let references = ARC_PRODUCED_BLOCK.lock().unwrap();
+    info!("references: {}", references.len());
+    for r in references.iter() {
+        info!("- #{} {:?}", r.0.strong_count(), r.1.elapsed());
+    }
+
 }
 
 /// # Example
