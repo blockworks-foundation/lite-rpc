@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 solana-lite-rpc-core = { workspace = true }
+solana-lite-rpc-util = { workspace = true }
 solana-sdk = { workspace = true }
 solana-streamer = { workspace = true }
 solana-transaction-status = { workspace = true }
