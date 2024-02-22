@@ -10,10 +10,6 @@ license = "AGPL"
 publish = false
 
 [dependencies]
-
-# disable secure mode
-mimalloc = { version = "*", default-features = false }
-
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
@@ -21,6 +17,8 @@ solana-transaction-status = { workspace = true }
 solana-version = { workspace = true }
 solana-account-decoder = { workspace = true }
 
+# disable secure mode
+mimalloc = { version = "0.1.39", default-features = false }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }
