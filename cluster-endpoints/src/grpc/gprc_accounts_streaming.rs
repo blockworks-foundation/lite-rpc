@@ -81,6 +81,11 @@ pub fn start_account_streaming_tasks(
                                         )),
                                     }
                                 }
+                                AccountFilterType::TokenAccountState => {
+                                    SubscribeRequestFilterAccountsFilter {
+                                        filter: Some(Filter::TokenAccountState(false)),
+                                    }
+                                }
                             })
                             .collect_vec()
                     } else {

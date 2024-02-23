@@ -7,7 +7,8 @@ use solana_sdk::slot_history::Slot;
 
 #[async_trait]
 pub trait AccountStorageInterface: Send + Sync {
-    async fn update_account(&self, account_data: AccountData, commitment: Commitment);
+    // Update account and return true if the account was sucessfylly updated
+    async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool;
 
     async fn initilize_account(&self, account_data: AccountData);
 

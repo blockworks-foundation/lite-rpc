@@ -29,8 +29,10 @@ pub struct AccountService {
 }
 
 impl AccountService {
-    pub fn new(account_store: Arc<dyn AccountStorageInterface>) -> Self {
-        let (account_notification_sender, _) = tokio::sync::broadcast::channel(256);
+    pub fn new(
+        account_store: Arc<dyn AccountStorageInterface>,
+        account_notification_sender: Sender<AccountNotificationMessage>,
+    ) -> Self {
         Self {
             account_store,
             account_notification_sender,
@@ -140,13 +142,16 @@ impl AccountService {
             loop {
                 match account_stream.recv().await {
                     Ok(account_notification) => {
-                        this.account_store
+                        if this
+                            .account_store
                             .update_account(
                                 account_notification.data.clone(),
                                 account_notification.commitment,
                             )
-                            .await;
-                        let _ = this.account_notification_sender.send(account_notification);
+                            .await
+                        {
+                            let _ = this.account_notification_sender.send(account_notification);
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
                         log::error!(

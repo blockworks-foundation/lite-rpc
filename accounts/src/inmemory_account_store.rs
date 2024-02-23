@@ -74,12 +74,13 @@ impl AccountDataByCommitment {
             .map(|x| x.updated_slot < data.updated_slot)
             .unwrap_or(true);
 
+        let mut updated = false;
         if self.processed_accounts.get(&data.updated_slot).is_none() {
             // processed not present for the slot
             self.processed_accounts
                 .insert(data.updated_slot, data.clone());
+            updated = true;
         }
-        let mut updated = false;
         match commitment {
             Commitment::Confirmed => {
                 if update_confirmed {
@@ -90,6 +91,7 @@ impl AccountDataByCommitment {
             Commitment::Finalized => {
                 if update_confirmed {
                     self.confirmed_account = Some(data.clone());
+                    updated = true;
                 }
                 if update_finalized {
                     self.finalized_account = Some(data);
@@ -240,7 +242,7 @@ impl InmemoryAccountStore {
 
 #[async_trait]
 impl AccountStorageInterface for InmemoryAccountStore {
-    async fn update_account(&self, account_data: AccountData, commitment: Commitment) {
+    async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
         let slot = account_data.updated_slot;
         // check if the blockhash and slot is already confirmed
         let commitment = if commitment == Commitment::Processed {
@@ -260,7 +262,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 if let Some(prev_account) = prev_account {
                     self.update_owner(&prev_account, &account_data, commitment);
                 }
-                occ.get_mut().update(account_data, commitment);
+                occ.get_mut().update(account_data, commitment)
             }
             dashmap::mapref::entry::Entry::Vacant(vac) => {
                 self.add_account_owner(account_data.pubkey, account_data.account.owner);
@@ -268,6 +270,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                     account_data.clone(),
                     commitment,
                 ));
+                true
             }
         }
     }

@@ -508,6 +508,7 @@ impl LiteRpcServer for LiteBridge {
         pubkey_str: String,
         config: Option<RpcAccountInfoConfig>,
     ) -> RpcResult<RpcResponse<Option<UiAccount>>> {
+        log::info!("Get Account Info {}", pubkey_str.to_string());
         let Ok(pubkey) = Pubkey::from_str(&pubkey_str) else {
             // pubkey is invalid
             return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
@@ -521,7 +522,8 @@ impl LiteRpcServer for LiteBridge {
                     },
                     value: ui_account,
                 }),
-                Err(_) => {
+                Err(e) => {
+                    log::error!("ERRORED Get Account Info {pubkey_str:?} {e:?}");
                     // account not found
                     Err(jsonrpsee::types::error::ErrorCode::ServerError(
                         RpcErrors::AccountNotFound as i32,
@@ -540,6 +542,7 @@ impl LiteRpcServer for LiteBridge {
         pubkey_strs: Vec<String>,
         config: Option<RpcAccountInfoConfig>,
     ) -> RpcResult<RpcResponse<Vec<Option<UiAccount>>>> {
+        log::info!("Get Multiple Accounts {}", pubkey_strs.len());
         let pubkeys = pubkey_strs
             .iter()
             .map(|key| Pubkey::from_str(key))
@@ -563,11 +566,7 @@ impl LiteRpcServer for LiteBridge {
                         ui_accounts.push(ui_account);
                     }
                     Err(_) => {
-                        // internal error while fetching multiple accounts
-                        return Err(jsonrpsee::types::error::ErrorCode::ServerError(
-                            RpcErrors::AccountNotFound as i32,
-                        )
-                        .into());
+                        ui_accounts.push(None);
                     }
                 }
             }
@@ -589,6 +588,7 @@ impl LiteRpcServer for LiteBridge {
         program_id_str: String,
         config: Option<RpcProgramAccountsConfig>,
     ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>> {
+        log::info!("Get program Accounts {}", program_id_str.to_string());
         let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
             return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
         };
@@ -606,6 +606,10 @@ impl LiteRpcServer for LiteBridge {
                     value: ui_account,
                 })),
                 Err(_) => {
+                    log::error!(
+                        "Errored Get program Accounts {}",
+                        program_id_str.to_string()
+                    );
                     return Err(jsonrpsee::types::error::ErrorCode::ServerError(
                         RpcErrors::AccountNotFound as i32,
                     )

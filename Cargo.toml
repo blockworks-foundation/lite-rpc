@@ -12,10 +12,11 @@ members = [
     "blockstore",
     "prioritization_fees",
     "bench",
-    "address_lookup_tables",
+    "address-lookup-tables",
     "accounts",
+    "accounts-on-demand",
     #examples
-    "examples/custom-tpu-send-transactions",
+    "examples/custom-tpu-send-transactions"
 ]
 
 [workspace.package]
@@ -79,8 +80,9 @@ solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.4"
 solana-lite-rpc-blockstore = {path = "blockstore", version="0.2.4"}
 solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.4"}
 solana-lite-rpc-prioritization-fees = {path = "prioritization_fees", version="0.2.4"}
-solana-lite-rpc-address-lookup-tables = {path = "address_lookup_tables", version="0.2.4"}
+solana-lite-rpc-address-lookup-tables = {path = "address-lookup-tables", version="0.2.4"}
 solana-lite-rpc-accounts = {path = "accounts", version = "0.2.4"}
+solana-lite-rpc-accounts-on-demand = {path = "accounts-on-demand", version = "0.2.4"}
 
 async-trait = "0.1.68"
 yellowstone-grpc-client = { version = "1.13.0+solana.1.17.15", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.12.0+solana.1.17.15" }
