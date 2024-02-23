@@ -42,7 +42,6 @@ impl AccountsOnDemand {
         accounts_storage: Arc<dyn AccountStorageInterface>,
         account_notification_sender: Sender<AccountNotificationMessage>,
     ) -> Self {
-        let last_time_updated = Instant::now().elapsed().as_millis() as u64;
         Self {
             rpc_client,
             accounts_storage: accounts_storage.clone(),

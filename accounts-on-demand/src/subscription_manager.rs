@@ -54,6 +54,7 @@ impl SubscriptionManger {
                             old_handles = None;
                             handles_to_abort.iter().for_each(|x| x.abort());
                         }
+                        log::info!("Account updated");
                         if account_store
                             .update_account(
                                 account_notification.data.clone(),
