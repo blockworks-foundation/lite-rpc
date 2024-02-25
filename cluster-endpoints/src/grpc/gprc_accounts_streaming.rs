@@ -1,8 +1,7 @@
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
+use futures::StreamExt;
 use std::{collections::HashMap, time::Duration};
 
 use geyser_grpc_connector::GrpcSourceConfig;
-use geyser_grpc_connector::Message::GeyserSubscribeUpdate;
 use itertools::Itertools;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
@@ -31,7 +30,7 @@ pub fn start_account_streaming_tasks(
             // for now we can only be sure that there is one confirmed block per slot, for processed there can be multiple confirmed blocks
             // So setting commitment to confirmed
             // To do somehow make it processed, we we could get blockhash with slot it should be ideal
-            let confirmed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Confirmed;
+            let confirmed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Processed;
 
             let mut subscribe_accounts: HashMap<String, SubscribeRequestFilterAccounts> =
                 HashMap::new();
@@ -113,10 +112,17 @@ pub fn start_account_streaming_tasks(
                 accounts_data_slice: Default::default(),
                 ping: None,
             };
-            let (_abort_handler, mut accounts_stream) =
-                create_geyser_autoconnection_task(grpc_config.clone(), subscribe_request);
 
-            while let Some(GeyserSubscribeUpdate(message)) = accounts_stream.recv().await {
+            let mut client = yellowstone_grpc_client::GeyserGrpcClient::connect(
+                grpc_config.grpc_addr.clone(),
+                grpc_config.grpc_x_token.clone(),
+                None,
+            )
+            .unwrap();
+            let mut account_stream = client.subscribe_once2(subscribe_request).await.unwrap();
+
+            while let Some(message) = account_stream.next().await {
+                let message = message.unwrap();
                 let Some(update) = message.update_oneof else {
                     continue;
                 };
@@ -145,7 +151,7 @@ pub fn start_account_streaming_tasks(
                                     updated_slot: account.slot,
                                 },
                                 // TODO update with processed commitment / check above
-                                commitment: Commitment::Confirmed,
+                                commitment: Commitment::Processed,
                             };
                             if account_stream_sx.send(notification).is_err() {
                                 // non recoverable, i.e the whole stream is being restarted

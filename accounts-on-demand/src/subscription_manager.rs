@@ -1,23 +1,32 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use futures::StreamExt;
+use itertools::Itertools;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
-use solana_lite_rpc_cluster_endpoints::{
-    geyser_grpc_connector::GrpcSourceConfig,
-    grpc::gprc_accounts_streaming::create_grpc_account_streaming,
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::GrpcSourceConfig;
+use solana_lite_rpc_core::{
+    commitment_utils::Commitment,
+    structures::{
+        account_data::{AccountData, AccountNotificationMessage, AccountStream},
+        account_filter::{AccountFilterType, AccountFilters, MemcmpFilterData},
+    },
+    AnyhowJoinHandle,
 };
-use solana_lite_rpc_core::structures::{
-    account_data::AccountNotificationMessage, account_filter::AccountFilters,
+use solana_sdk::{account::Account, pubkey::Pubkey};
+use tokio::sync::{
+    broadcast::{self, Sender},
+    RwLock,
 };
-use tokio::{
-    sync::{broadcast::Sender, Mutex},
-    task::AbortHandle,
+use yellowstone_grpc_proto::geyser::{
+    subscribe_request_filter_accounts_filter::Filter,
+    subscribe_request_filter_accounts_filter_memcmp::Data, subscribe_update::UpdateOneof,
+    SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterAccountsFilter,
+    SubscribeRequestFilterAccountsFilterMemcmp,
 };
 
 pub struct SubscriptionManger {
-    grpc_sources: Vec<GrpcSourceConfig>,
-    accounts_storage: Arc<dyn AccountStorageInterface>,
-    current_handles: Mutex<Arc<Vec<AbortHandle>>>,
-    account_notification_sender: Sender<AccountNotificationMessage>,
+    accounts_filters: Arc<RwLock<AccountFilters>>,
+    restart_sender: broadcast::Sender<()>,
 }
 
 impl SubscriptionManger {
@@ -26,61 +35,256 @@ impl SubscriptionManger {
         accounts_storage: Arc<dyn AccountStorageInterface>,
         account_notification_sender: Sender<AccountNotificationMessage>,
     ) -> Self {
-        Self {
-            grpc_sources,
-            accounts_storage,
-            current_handles: Mutex::new(Arc::new(vec![])),
-            account_notification_sender,
-        }
-    }
+        let (restart_sender, recver) = broadcast::channel(1);
+        let accounts_filters = Arc::new(RwLock::new(vec![]));
+        log::error!("subtaks");
+        let (_, mut account_stream) =
+            create_grpc_account_streaming(grpc_sources, accounts_filters.clone(), recver);
 
-    pub async fn update_subscriptions(&self, filters: AccountFilters) {
-        let (new_subscription_handles, mut account_stream) =
-            create_grpc_account_streaming(self.grpc_sources.clone(), filters);
-
-        let mut current_handle_lock = self.current_handles.lock().await;
-        // delete the old handles once we start getting notification from the new handles
-        let old_handles = current_handle_lock.clone();
-        let account_store = self.accounts_storage.clone();
-        let account_notification_sender = self.account_notification_sender.clone();
-
-        let task = tokio::spawn(async move {
-            let mut old_handles = Some(old_handles);
+        let task_restart_sender = restart_sender.clone();
+        tokio::spawn(async move {
             loop {
-                match account_stream.recv().await {
-                    Ok(account_notification) => {
-                        if let Some(handles_to_abort) = old_handles {
-                            // abort old account fetching streams as they are no longer needed
-                            old_handles = None;
-                            handles_to_abort.iter().for_each(|x| x.abort());
-                        }
-                        log::info!("Account updated");
-                        if account_store
-                            .update_account(
-                                account_notification.data.clone(),
-                                account_notification.commitment,
-                            )
-                            .await
-                        {
-                            let _ = account_notification_sender.send(account_notification);
-                        }
+                match tokio::time::timeout(Duration::from_secs(60), account_stream.recv()).await {
+                    Ok(Ok(message)) => {
+                        let _ = account_notification_sender.send(message.clone());
+                        accounts_storage
+                            .update_account(message.data, message.commitment)
+                            .await;
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
-                        log::error!(
-                            "Accounts On Demand Stream Lagged by {}, we may have missed some account updates",
-                            e
-                        );
-                        continue;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        break;
+                    Ok(Err(e)) => match e {
+                        broadcast::error::RecvError::Closed => {
+                            log::error!("Account stream channel closed");
+                            break;
+                        }
+                        broadcast::error::RecvError::Lagged(_) => {
+                            continue;
+                        }
+                    },
+                    Err(_) => {
+                        let _ = task_restart_sender.send(());
                     }
                 }
             }
         });
-        *current_handle_lock = Arc::new(vec![
-            new_subscription_handles.abort_handle(),
-            task.abort_handle(),
-        ]);
+        Self {
+            accounts_filters,
+            restart_sender,
+        }
     }
+
+    pub async fn update_subscriptions(&self, filters: AccountFilters) {
+        *self.accounts_filters.write().await = filters;
+        let _ = self.restart_sender.send(());
+    }
+}
+
+pub fn start_account_streaming_tasks(
+    grpc_config: GrpcSourceConfig,
+    accounts_filters: Arc<RwLock<AccountFilters>>,
+    mut restart_channel: broadcast::Receiver<()>,
+    account_stream_sx: broadcast::Sender<AccountNotificationMessage>,
+) -> AnyhowJoinHandle {
+    tokio::spawn(async move {
+        'main_loop: loop {
+            // for now we can only be sure that there is one confirmed block per slot, for processed there can be multiple confirmed blocks
+            // So setting commitment to confirmed
+            // To do somehow make it processed, we we could get blockhash with slot it should be ideal
+            let confirmed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Processed;
+
+            let mut subscribe_accounts: HashMap<String, SubscribeRequestFilterAccounts> =
+                HashMap::new();
+
+            let accounts_filters = accounts_filters.read().await.clone();
+            for (index, accounts_filter) in accounts_filters.iter().enumerate() {
+                if !accounts_filter.accounts.is_empty() {
+                    subscribe_accounts.insert(
+                        format!("accounts_{index:?}"),
+                        SubscribeRequestFilterAccounts {
+                            account: accounts_filter
+                                .accounts
+                                .iter()
+                                .map(|x| x.to_string())
+                                .collect_vec(),
+                            owner: vec![],
+                            filters: vec![],
+                        },
+                    );
+                }
+                if let Some(program_id) = &accounts_filter.program_id {
+                    let filters = if let Some(filters) = &accounts_filter.filters {
+                        filters
+                            .iter()
+                            .map(|filter| match filter {
+                                AccountFilterType::Datasize(size) => {
+                                    SubscribeRequestFilterAccountsFilter {
+                                        filter: Some(Filter::Datasize(*size)),
+                                    }
+                                }
+                                AccountFilterType::Memcmp(memcmp) => {
+                                    SubscribeRequestFilterAccountsFilter {
+                                        filter: Some(Filter::Memcmp(
+                                            SubscribeRequestFilterAccountsFilterMemcmp {
+                                                offset: memcmp.offset,
+                                                data: Some(match &memcmp.data {
+                                                    MemcmpFilterData::Bytes(bytes) => {
+                                                        Data::Bytes(bytes.clone())
+                                                    }
+                                                    MemcmpFilterData::Base58(data) => {
+                                                        Data::Base58(data.clone())
+                                                    }
+                                                    MemcmpFilterData::Base64(data) => {
+                                                        Data::Base64(data.clone())
+                                                    }
+                                                }),
+                                            },
+                                        )),
+                                    }
+                                }
+                                AccountFilterType::TokenAccountState => {
+                                    SubscribeRequestFilterAccountsFilter {
+                                        filter: Some(Filter::TokenAccountState(false)),
+                                    }
+                                }
+                            })
+                            .collect_vec()
+                    } else {
+                        vec![]
+                    };
+                    subscribe_accounts.insert(
+                        format!("accounts_{}", program_id),
+                        SubscribeRequestFilterAccounts {
+                            account: vec![],
+                            owner: vec![program_id.clone()],
+                            filters,
+                        },
+                    );
+                }
+            }
+
+            let subscribe_request = SubscribeRequest {
+                accounts: subscribe_accounts,
+                slots: Default::default(),
+                transactions: Default::default(),
+                blocks: Default::default(),
+                blocks_meta: Default::default(),
+                entry: Default::default(),
+                commitment: Some(confirmed_commitment.into()),
+                accounts_data_slice: Default::default(),
+                ping: None,
+            };
+
+            log::info!(
+                "Accounts on demand subscribing to {}",
+                grpc_config.grpc_addr
+            );
+            let mut client = yellowstone_grpc_client::GeyserGrpcClient::connect(
+                grpc_config.grpc_addr.clone(),
+                grpc_config.grpc_x_token.clone(),
+                None,
+            )
+            .unwrap();
+            let mut account_stream = client.subscribe_once2(subscribe_request).await.unwrap();
+
+            while let Some(message) = account_stream.next().await {
+                let message = message.unwrap();
+                let Some(update) = message.update_oneof else {
+                    continue;
+                };
+
+                match update {
+                    UpdateOneof::Account(account) => {
+                        if let Some(account_data) = account.account {
+                            let account_pk_bytes: [u8; 32] = account_data
+                                .pubkey
+                                .try_into()
+                                .expect("Pubkey should be 32 byte long");
+                            let owner: [u8; 32] = account_data
+                                .owner
+                                .try_into()
+                                .expect("owner pubkey should be deserializable");
+                            let notification = AccountNotificationMessage {
+                                data: AccountData {
+                                    pubkey: Pubkey::new_from_array(account_pk_bytes),
+                                    account: Account {
+                                        lamports: account_data.lamports,
+                                        data: account_data.data,
+                                        owner: Pubkey::new_from_array(owner),
+                                        executable: account_data.executable,
+                                        rent_epoch: account_data.rent_epoch,
+                                    },
+                                    updated_slot: account.slot,
+                                },
+                                // TODO update with processed commitment / check above
+                                commitment: Commitment::Processed,
+                            };
+                            if account_stream_sx.send(notification).is_err() {
+                                // non recoverable, i.e the whole stream is being restarted
+                                log::error!("Account stream broken, breaking from main loop");
+                                break 'main_loop;
+                            }
+                        }
+                    }
+                    UpdateOneof::Ping(_) => {
+                        log::trace!("GRPC Ping accounts stream");
+                    }
+                    _ => {
+                        log::error!("GRPC accounts steam misconfigured");
+                    }
+                };
+
+                match restart_channel.try_recv() {
+                    Ok(_) => {
+                        let _ = restart_channel.try_recv();
+                        let _ = restart_channel.try_recv();
+                        let _ = restart_channel.try_recv();
+                        let _ = restart_channel.try_recv();
+                        log::info!("Restarting account subscription");
+                        break;
+                    }
+                    Err(e) => match e {
+                        broadcast::error::TryRecvError::Empty => {}
+                        broadcast::error::TryRecvError::Closed => {}
+                        broadcast::error::TryRecvError::Lagged(_) => {
+                            let _ = restart_channel.try_recv();
+                            let _ = restart_channel.try_recv();
+                            let _ = restart_channel.try_recv();
+                            let _ = restart_channel.try_recv();
+                            break;
+                        }
+                    },
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
+pub fn create_grpc_account_streaming(
+    grpc_sources: Vec<GrpcSourceConfig>,
+    accounts_filters: Arc<RwLock<AccountFilters>>,
+    restart_channel: broadcast::Receiver<()>,
+) -> (AnyhowJoinHandle, AccountStream) {
+    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(128);
+
+    let jh: AnyhowJoinHandle = tokio::spawn(async move {
+        // wait for atleast one filter
+        while accounts_filters.read().await.is_empty() {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            continue;
+        }
+        grpc_sources
+            .iter()
+            .map(|grpc_config| {
+                start_account_streaming_tasks(
+                    grpc_config.clone(),
+                    accounts_filters.clone(),
+                    restart_channel.resubscribe(),
+                    account_sender.clone(),
+                )
+            })
+            .collect_vec();
+        Ok(())
+    });
+
+    (jh, accounts_stream)
 }

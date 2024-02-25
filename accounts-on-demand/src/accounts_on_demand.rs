@@ -1,4 +1,4 @@
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use dashmap::DashSet;
@@ -18,10 +18,7 @@ use solana_lite_rpc_core::{
     },
 };
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
-use tokio::{
-    sync::{broadcast::Sender, Mutex, RwLock},
-    time::Instant,
-};
+use tokio::sync::{broadcast::Sender, RwLock};
 
 use crate::subscription_manager::SubscriptionManger;
 
@@ -31,8 +28,6 @@ pub struct AccountsOnDemand {
     accounts_subscribed: Arc<DashSet<Pubkey>>,
     program_filters: Arc<RwLock<AccountFilters>>,
     subscription_manager: SubscriptionManger,
-    last_time_updated: Arc<AtomicU64>,
-    mx: Mutex<()>,
 }
 
 impl AccountsOnDemand {
@@ -52,32 +47,11 @@ impl AccountsOnDemand {
                 accounts_storage,
                 account_notification_sender,
             ),
-            last_time_updated: Arc::new(AtomicU64::new(last_time_updated)),
-            mx: Mutex::new(()),
         }
     }
 
     pub async fn reset_subscription(&self) {
-        let _ = self.mx.lock().await;
-        let last_time_updated = self
-            .last_time_updated
-            .load(std::sync::atomic::Ordering::Relaxed);
-        let current_time = Instant::now().elapsed().as_millis() as u64;
-        if current_time.saturating_sub(last_time_updated) > 1000 {
-            return;
-        }
-        self.last_time_updated
-            .store(current_time, std::sync::atomic::Ordering::Relaxed);
-
         let mut filters = self.get_filters().await;
-        if self.accounts_subscribed.is_empty() && filters.is_empty() {
-            return;
-        }
-        log::info!(
-            "Subscribing to {} accounts on demand and{} program filters on demand",
-            self.accounts_subscribed.len(),
-            filters.len()
-        );
 
         // add additional filters related to accounts
         for accounts in &self
