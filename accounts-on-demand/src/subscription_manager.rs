@@ -202,13 +202,13 @@ pub fn start_account_streaming_tasks(
                             let notification = AccountNotificationMessage {
                                 data: AccountData {
                                     pubkey: Pubkey::new_from_array(account_pk_bytes),
-                                    account: Account {
+                                    account: Arc::new(Account {
                                         lamports: account_data.lamports,
                                         data: account_data.data,
                                         owner: Pubkey::new_from_array(owner),
                                         executable: account_data.executable,
                                         rent_epoch: account_data.rent_epoch,
-                                    },
+                                    }),
                                     updated_slot: account.slot,
                                 },
                                 // TODO update with processed commitment / check above

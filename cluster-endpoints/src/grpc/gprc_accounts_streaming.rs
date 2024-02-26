@@ -1,5 +1,5 @@
 use futures::StreamExt;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
@@ -138,13 +138,13 @@ pub fn start_account_streaming_tasks(
                             let notification = AccountNotificationMessage {
                                 data: AccountData {
                                     pubkey: Pubkey::new_from_array(account_pk_bytes),
-                                    account: Account {
+                                    account: Arc::new(Account {
                                         lamports: account_data.lamports,
                                         data: account_data.data,
                                         owner: Pubkey::new_from_array(owner),
                                         executable: account_data.executable,
                                         rent_epoch: account_data.rent_epoch,
-                                    },
+                                    }),
                                     updated_slot: account.slot,
                                 },
                                 // TODO update with processed commitment / check above
@@ -176,7 +176,7 @@ pub fn create_grpc_account_streaming(
     grpc_sources: Vec<GrpcSourceConfig>,
     accounts_filters: AccountFilters,
 ) -> (AnyhowJoinHandle, AccountStream) {
-    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(128);
+    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(1024);
 
     let jh: AnyhowJoinHandle = tokio::spawn(async move {
         loop {

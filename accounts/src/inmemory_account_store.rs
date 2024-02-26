@@ -1,18 +1,13 @@
-use std::{
-    collections::{BTreeSet, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
+use crate::account_store_interface::AccountStorageInterface;
 use async_trait::async_trait;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use itertools::Itertools;
 use solana_lite_rpc_core::{commitment_utils::Commitment, structures::account_data::AccountData};
 use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use std::collections::BTreeMap;
-use tokio::sync::RwLock;
-
-use crate::account_store_interface::AccountStorageInterface;
 
 #[derive(Clone, Default)]
 pub struct AccountDataByCommitment {
@@ -192,7 +187,7 @@ impl AccountDataByCommitment {
 
 pub struct InmemoryAccountStore {
     account_store: Arc<DashMap<Pubkey, AccountDataByCommitment>>,
-    confirmed_slots_map: RwLock<BTreeSet<Slot>>,
+    confirmed_slots_map: DashSet<Slot>,
     owner_map_accounts: Arc<DashMap<Pubkey, HashSet<Pubkey>>>,
 }
 
@@ -200,7 +195,7 @@ impl InmemoryAccountStore {
     pub fn new() -> Self {
         Self {
             account_store: Arc::new(DashMap::new()),
-            confirmed_slots_map: RwLock::new(BTreeSet::new()),
+            confirmed_slots_map: DashSet::new(),
             owner_map_accounts: Arc::new(DashMap::new()),
         }
     }
@@ -253,8 +248,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         let slot = account_data.updated_slot;
         // check if the blockhash and slot is already confirmed
         let commitment = if commitment == Commitment::Processed {
-            let lk = self.confirmed_slots_map.read().await;
-            if lk.contains(&slot) {
+            if self.confirmed_slots_map.contains(&slot) {
                 Commitment::Confirmed
             } else {
                 Commitment::Processed
@@ -344,15 +338,13 @@ impl AccountStorageInterface for InmemoryAccountStore {
             Commitment::Confirmed => {
                 // insert slot and blockhash that were confirmed
                 {
-                    let mut lk = self.confirmed_slots_map.write().await;
-                    lk.insert(slot);
+                    self.confirmed_slots_map.insert(slot);
                 }
             }
             Commitment::Finalized => {
                 // remove finalized slots form confirmed map
                 {
-                    let mut lk = self.confirmed_slots_map.write().await;
-                    if !lk.remove(&slot) {
+                    if self.confirmed_slots_map.remove(&slot).is_none() {
                         log::warn!(
                             "following slot {} were not confirmed by account storage",
                             slot
@@ -366,7 +358,6 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 return vec![];
             }
         }
-
         let updated_accounts = self
             .account_store
             .iter_mut()
@@ -410,6 +401,8 @@ impl Default for InmemoryAccountStore {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use itertools::Itertools;
     use rand::{rngs::ThreadRng, Rng};
     use solana_lite_rpc_core::{
@@ -431,13 +424,13 @@ mod tests {
         let length: usize = rng.gen_range(100..1000);
         AccountData {
             pubkey,
-            account: Account {
+            account: Arc::new(Account {
                 lamports: rng.gen(),
                 data: (0..length).map(|_| rng.gen::<u8>()).collect_vec(),
                 owner: program,
                 executable: false,
                 rent_epoch: 0,
-            },
+            }),
             updated_slot,
         }
     }

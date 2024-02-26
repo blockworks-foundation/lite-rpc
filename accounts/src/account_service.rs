@@ -120,7 +120,7 @@ impl AccountService {
                         self.account_store
                             .initilize_account(AccountData {
                                 pubkey: accounts[index],
-                                account: account.clone(),
+                                account: Arc::new(account.clone()),
                                 updated_slot,
                             })
                             .await;
@@ -188,11 +188,11 @@ impl AccountService {
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
-                        log::error!("Account Stream Lagged by {}", e);
+                        log::error!("Block Stream Lagged to update accounts by {}", e);
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        log::error!("Account Stream Broken");
+                        log::error!("Block Stream Broken");
                         break;
                     }
                 }
@@ -215,7 +215,7 @@ impl AccountService {
         let data_slice = config.as_ref().map(|c| c.data_slice).unwrap_or_default();
         UiAccount::encode(
             &account_data.pubkey,
-            &account_data.account,
+            account_data.account.as_ref(),
             encoding,
             None,
             data_slice,

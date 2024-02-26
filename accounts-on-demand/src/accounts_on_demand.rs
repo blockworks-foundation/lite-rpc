@@ -117,7 +117,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                                 // update account in storage and return the account data
                                 let account_data = AccountData {
                                     pubkey: account_pk,
-                                    account,
+                                    account: Arc::new(account),
                                     updated_slot: response.context.slot,
                                 };
                                 self.accounts_storage
@@ -199,7 +199,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                             .iter()
                             .map(|(pk, account)| AccountData {
                                 pubkey: *pk,
-                                account: account.clone(),
+                                account: Arc::new(account.clone()),
                                 updated_slot: 0,
                             })
                             .collect_vec();
