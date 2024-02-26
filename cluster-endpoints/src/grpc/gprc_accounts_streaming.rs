@@ -27,10 +27,7 @@ pub fn start_account_streaming_tasks(
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
         'main_loop: loop {
-            // for now we can only be sure that there is one confirmed block per slot, for processed there can be multiple confirmed blocks
-            // So setting commitment to confirmed
-            // To do somehow make it processed, we we could get blockhash with slot it should be ideal
-            let confirmed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Processed;
+            let processed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Processed;
 
             let mut subscribe_accounts: HashMap<String, SubscribeRequestFilterAccounts> =
                 HashMap::new();
@@ -108,7 +105,7 @@ pub fn start_account_streaming_tasks(
                 blocks: Default::default(),
                 blocks_meta: Default::default(),
                 entry: Default::default(),
-                commitment: Some(confirmed_commitment.into()),
+                commitment: Some(processed_commitment.into()),
                 accounts_data_slice: Default::default(),
                 ping: None,
             };
