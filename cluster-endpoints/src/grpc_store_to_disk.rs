@@ -1,24 +1,12 @@
-use bytes::Bytes;
-use chrono::{DateTime, Utc};
-use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
-use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
-use log::{debug, error, info, warn};
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_lite_rpc_core::types::BlockStream;
+use log::{error, info, warn};
 use solana_sdk::clock::Slot;
-use solana_sdk::commitment_config::CommitmentConfig;
-use std::collections::HashMap;
-use std::fs::{create_dir, DirBuilder, File, OpenOptions};
-use std::io::{Read, Write};
+use std::fs::{create_dir, OpenOptions};
+use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime};
-use std::{env, io, process, thread};
-use tokio::io::BufWriter;
-use tokio::sync::broadcast::error::RecvError;
-use tokio::task::{AbortHandle, JoinHandle};
-use tokio::time::{sleep, Instant};
+use std::time::SystemTime;
+use tokio::task::AbortHandle;
+
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 use yellowstone_grpc_proto::prost::Message;
@@ -50,14 +38,14 @@ pub fn read_block_from_disk() {
 }
 
 // e.g. block-000251395041-confirmed-1707312285514.dat
-fn parse_slot_and_timestamp_from_file(file_name: &str) -> (Slot, u64) {
-    let slot_str = file_name.split("-").nth(1).unwrap();
+pub fn parse_slot_and_timestamp_from_file(file_name: &str) -> (Slot, u64) {
+    let slot_str = file_name.split('-').nth(1).unwrap();
     let slot = slot_str.parse::<Slot>().unwrap();
     let timestamp_str = file_name
-        .split("-")
+        .split('-')
         .nth(3)
         .unwrap()
-        .split(".")
+        .split('.')
         .next()
         .unwrap();
     info!("parsed slot {} from file name", slot);
@@ -116,13 +104,6 @@ struct BlockStorageMeta {
     epoch_ms: u64,
 }
 
-impl BlockStorageMeta {
-    pub fn new_with_now(slot: Slot) -> Self {
-        let epoch_ms = now_epoch_ms();
-        Self { slot, epoch_ms }
-    }
-}
-
 impl BlockStreamDumpOnDisk {
     // note: the directory must exist and marker file must be present!
     pub fn new_with_existing_directory(root_path: &Path) -> Self {
@@ -140,8 +121,7 @@ impl BlockStreamDumpOnDisk {
 
     // /blocks-000246300xxx/block-000246300234-confirmed-1707308047927.dat
     fn build_path(&self, block_storage_meta: &BlockStorageMeta) -> PathBuf {
-        let block_path = self
-            .root_path
+        self.root_path
             // pad with "0" to allow sorting
             .join(format!(
                 "blocks-{slot_xxx:0>12}",
@@ -151,8 +131,7 @@ impl BlockStreamDumpOnDisk {
                 "block-{slot:0>12}-confirmed-{epoch_ms}.dat",
                 slot = block_storage_meta.slot,
                 epoch_ms = block_storage_meta.epoch_ms
-            ));
-        block_path
+            ))
     }
 
     fn write_block(&self, meta: &BlockStorageMeta, block_protobuf: &SubscribeUpdateBlock) {
@@ -160,10 +139,10 @@ impl BlockStreamDumpOnDisk {
         let block_dir = block_file.parent();
 
         let create_result = create_dir(block_dir.unwrap());
-        if create_result.is_err() {
-            if create_result.err().unwrap().kind() != io::ErrorKind::AlreadyExists {
-                panic!("Must be able to create directory: {:?}", block_dir.unwrap());
-            }
+        if create_result.is_err()
+            && create_result.err().unwrap().kind() != io::ErrorKind::AlreadyExists
+        {
+            panic!("Must be able to create directory: {:?}", block_dir.unwrap());
         }
 
         let block_bytes = block_protobuf.encode_to_vec();
@@ -215,15 +194,4 @@ fn parse_slot_and_epochms() {
     let (slot_from_file, epoch_ms) = parse_slot_and_timestamp_from_file(file_name);
     info!("slot from file: {}", slot_from_file);
     info!("epochms from file: {}", epoch_ms);
-}
-
-fn configure_panic_hook() {
-    let default_panic = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        default_panic(panic_info);
-        // e.g. panicked at 'BANG', lite-rpc/tests/blockstore_integration_tests:260:25
-        error!("{}", panic_info);
-        eprintln!("{}", panic_info);
-        process::exit(12);
-    }));
 }

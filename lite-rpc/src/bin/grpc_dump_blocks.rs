@@ -1,5 +1,4 @@
-use std::env;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::time::Duration;
 use clap::Parser;
 use log::info;
@@ -46,7 +45,7 @@ pub async fn main() {
 
     let commitment_config = CommitmentConfig::confirmed();
 
-    let (_jh_geyser_task, mut message_channel) = create_geyser_autoconnection_task(
+    let (_jh_geyser_task, message_channel) = create_geyser_autoconnection_task(
         grpc_source_config.clone(),
         GeyserFilter(commitment_config).blocks_and_txs(),
     );

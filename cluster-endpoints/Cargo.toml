@@ -9,10 +9,6 @@ license = "AGPL"
 
 [lib]
 
-[[bin]]
-name = "grpc_store_to_disk"
-path = "src/grpc_store_to_disk.rs"
-
 [dependencies]
 #geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
 geyser-grpc-connector = { tag = "v0.10.1+yellowstone.1.12+solana.1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
