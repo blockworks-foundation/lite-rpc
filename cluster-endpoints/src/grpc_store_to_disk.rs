@@ -26,11 +26,6 @@ use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 
 
 
-#[tokio::main]
-pub async fn main() {
-    read_stream_and_store().await;
-}
-
 #[test]
 pub fn read_block_from_disk() {
     tracing_subscriber::fmt::init();
@@ -65,42 +60,16 @@ fn parse_slot_and_timestamp_from_file(file_name: &str) -> (Slot, u64) {
 }
 
 
-async fn read_stream_and_store() {
-    tracing_subscriber::fmt::init();
-    configure_panic_hook();
-
-    let grpc_addr = env::var("GRPC_ADDR").expect("GRPC addr");
-    let grpc_x_token = Some(env::var("GRPC_X_TOKEN").expect("GRPC_X_TOKEN param"));
-    let timeouts = GrpcConnectionTimeouts {
-        connect_timeout: Duration::from_secs(5),
-        request_timeout: Duration::from_secs(5),
-        subscribe_timeout: Duration::from_secs(5),
-        receive_timeout: Duration::from_secs(5),
-    };
-    let grpc_source_config = GrpcSourceConfig::new(grpc_addr, grpc_x_token.clone(), None, timeouts);
-
-    let commitment_config = CommitmentConfig::confirmed();
-
-    let (_jh_geyser_task, mut message_channel) = create_geyser_autoconnection_task(
-        grpc_source_config.clone(),
-        GeyserFilter(commitment_config).blocks_and_txs(),
-    );
-
-    let _abort_handle = spawn_block_todisk_writer(message_channel).await;
-
-    // wait a bit
-    sleep(Duration::from_secs(10)).await;
-
-}
-
 
 
 // note: we assume that the invariants hold even right after startup
 pub async fn spawn_block_todisk_writer(
     mut block_notifier: tokio::sync::mpsc::Receiver<geyser_grpc_connector::Message>,
+    block_dump_base_directory: PathBuf,
 ) -> AbortHandle {
+    let block_dump_base_directory = block_dump_base_directory.to_path_buf();
     let join_handle = tokio::spawn(async move {
-        let blockstream_dumpdir = BlockStreamDumpOnDisk::new_with_existing_directory(Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk"));
+        let blockstream_dumpdir = BlockStreamDumpOnDisk::new_with_existing_directory(block_dump_base_directory.as_path());
         loop {
             match block_notifier.recv().await {
                 Some(message) => {
@@ -154,7 +123,7 @@ impl BlockStreamDumpOnDisk {
     pub fn new_with_existing_directory(root_path: &Path) -> Self {
         let marker = Path::new(".solana-blocks-dump");
         assert!(
-            root_path.join(marker).exists(),
+            root_path.join(marker).is_file(),
             "Expecting directory {} with marker file ({})",
             root_path.display(),
             marker.display()
