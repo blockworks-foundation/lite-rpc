@@ -71,7 +71,7 @@ impl PostgresTransaction {
                 CREATE TABLE {schema}.transaction_ids(
                     transaction_id bigserial PRIMARY KEY WITH (FILLFACTOR=90),
                     -- never put sig on TOAST
-                    signature text STORAGE PLAIN NOT NULL,
+                    signature text NOT NULL,
                     UNIQUE(signature)
                 ) WITH (FILLFACTOR=100);
 
@@ -120,9 +120,9 @@ impl PostgresTransaction {
                 cu_requested bigint,
                 prioritization_fees bigint,
                 cu_consumed bigint,
-                recent_blockhash text STORAGE PLAIN,
-                err text STORAGE PLAIN,
-                message text STORAGE PLAIN
+                recent_blockhash text,
+                err text,
+                message text
                 -- model_transaction_blockdata
             );
             TRUNCATE transaction_raw_blockdata;
