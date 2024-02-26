@@ -1211,6 +1211,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "custom-tpu-send-transactions"
+version = "0.2.4"
+dependencies = [
+ "solana-lite-rpc-core",
+ "solana-lite-rpc-services",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

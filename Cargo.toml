@@ -13,7 +13,9 @@ members = [
     "prioritization_fees",
     "bench",
     "address_lookup_tables",
-    "accounts"
+    "accounts",
+    #examples
+    "examples/custom-tpu-send-transactions",
 ]
 
 [workspace.package]
