@@ -1,7 +1,9 @@
 use std::env;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::Arc;
-use log::info;
+use log::{debug, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use tracing_subscriber::EnvFilter;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
@@ -15,6 +17,10 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
+
+    let blocks_list_file = env::var("BLOCKS_LIST_FILE").expect("env var BLOCKS_LIST_FILE is mandatory");
+    let blocks_list_path = Path::new(blocks_list_file.as_str());
+    assert!(blocks_list_path.is_file(), "File not found: {}", blocks_list_file);
 
     let no_pgconfig = env::var("PG_CONFIG").is_err();
 
@@ -33,6 +39,18 @@ async fn main() {
     let (epoch_cache, _) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();
 
     let block_storage = Arc::new(PostgresBlockStore::new(epoch_cache, pg_session_config).await);
+
+    let file = File::open(blocks_list_path).expect("file not found");
+    let reader = BufReader::new(file);
+    for line in reader.lines().map(|l| l.expect("Could not parse line")) {
+        let block_file = Path::new(line.as_str());
+        assert!(block_file.is_file(), "File not found: {}", block_file.to_str().unwrap());
+        info!("reading file {:?} with {} bytes", block_file.to_str().unwrap(), block_file.metadata().unwrap().len());
+        assert!(block_file.file_name().unwrap().to_str().unwrap().starts_with("block-"), "File name does not start with 'block-': {:?}", block_file.to_str().unwrap());
+        let produced_block = decode_from_dump(&block_file);
+        println!("block: {:?}", produced_block.blockhash);
+    }
+
 
     let block_file = Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk/blocks-000254998xxx/block-000254998544-confirmed-1708964903356.dat");
     let produced_block = decode_from_dump(&block_file);
