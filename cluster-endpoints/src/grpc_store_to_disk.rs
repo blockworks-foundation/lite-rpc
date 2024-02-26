@@ -16,12 +16,15 @@ use geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConf
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
 use tokio::io::BufWriter;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::task::JoinHandle;
+use tokio::task::{AbortHandle, JoinHandle};
 use tokio::time::{sleep, Instant};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 use yellowstone_grpc_proto::prost::Message;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
+
+
+
 
 #[tokio::main]
 pub async fn main() {
@@ -53,7 +56,6 @@ pub fn read_block_from_disk() {
 
 // e.g. block-000251395041-confirmed-1707312285514.dat
 fn parse_slot_and_timestamp_from_file(file_name: &str) -> (Slot, u64) {
-
     let slot_str = file_name.split("-").nth(1).unwrap();
     let slot = slot_str.parse::<Slot>().unwrap();
     let timestamp_str = file_name.split("-").nth(3).unwrap().split(".").next().unwrap();
@@ -77,8 +79,6 @@ async fn read_stream_and_store() {
     };
     let grpc_source_config = GrpcSourceConfig::new(grpc_addr, grpc_x_token.clone(), None, timeouts);
 
-    info!("cnofig: {:?}", grpc_x_token);
-
     let commitment_config = CommitmentConfig::confirmed();
 
     let (_jh_geyser_task, mut message_channel) = create_geyser_autoconnection_task(
@@ -86,24 +86,29 @@ async fn read_stream_and_store() {
         GeyserFilter(commitment_config).blocks_and_txs(),
     );
 
-    tokio::spawn(async move {
+    let _abort_handle = spawn_block_todisk_writer(message_channel).await;
+
+    // wait a bit
+    sleep(Duration::from_secs(10)).await;
+
+}
+
+
+
+// note: we assume that the invariants hold even right after startup
+pub async fn spawn_block_todisk_writer(
+    mut block_notifier: tokio::sync::mpsc::Receiver<geyser_grpc_connector::Message>,
+) -> AbortHandle {
+    let join_handle = tokio::spawn(async move {
         let blockstream_dumpdir = BlockStreamDumpOnDisk::new_with_existing_directory(Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk"));
         loop {
-            let now = Instant::now();
-            match message_channel.recv().await {
+            match block_notifier.recv().await {
                 Some(message) => {
                     match message {
                         geyser_grpc_connector::Message::GeyserSubscribeUpdate(subscriber_update) => {
                             if let Some(UpdateOneof::Block(block_update)) = subscriber_update.update_oneof {
                                 info!("got block update -> slot: {}", block_update.slot);
-                                let mut buf = vec![];
-                                block_update.encode(&mut buf).expect("must be able to serialize to buffer");
-                                info!("got block update - {} bytes", buf.len());
-                                let meta = BlockStorageMeta {
-                                    slot: block_update.slot,
-                                    epoch_ms: now_epoch_ms(),
-                                };
-                                blockstream_dumpdir.write_block(&meta, &block_update);
+                                blockstream_dumpdir.write_geyser_update(&block_update);
                             }
                         }
                         geyser_grpc_connector::Message::Connecting(attempt) => {
@@ -118,44 +123,7 @@ async fn read_stream_and_store() {
             }
         }
     });
-
-    // wait a bit
-    sleep(Duration::from_secs(10)).await;
-
-}
-
-
-
-// note: we assume that the invariants hold even right after startup
-pub fn spawn_block_todisk_writer(
-    mut block_notifier: BlockStream,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
-        'recv_loop: loop {
-            match block_notifier.recv().await {
-                Ok(block) => {
-                    info!("Received block #{} from notifier", block.slot);
-
-
-
-
-                }
-
-                Err(RecvError::Lagged(missed_blocks)) => {
-                    warn!(
-                        "Could not keep up with producer - missed {} blocks",
-                        missed_blocks
-                    );
-                }
-                Err(RecvError::Closed) => {
-                    info!("Channel was closed - aborting");
-                    break 'recv_loop;
-                }
-            }
-
-        } // -- END receiver loop
-        info!("Geyser block todisk task for confirmation sequence shutting down.")
-    })
+    join_handle.abort_handle()
 }
 
 
@@ -226,6 +194,16 @@ impl BlockStreamDumpOnDisk {
         new_block_file.write(block_bytes.as_slice())
             .expect("must be able to write block to disk");
         info!("Wrote block {} with {} bytes to disk: {}", meta.slot, block_bytes.len(), block_file.display());
+    }
+
+    pub fn write_geyser_update(&self, block_update: &SubscribeUpdateBlock) {
+        let mut buf = vec![];
+        block_update.encode(&mut buf).expect("must be able to serialize to buffer");
+        let meta = BlockStorageMeta {
+            slot: block_update.slot,
+            epoch_ms: now_epoch_ms(),
+        };
+        self.write_block(&meta, &block_update);
     }
 
     // 246300234 -> 246300xxx

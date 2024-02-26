@@ -30,6 +30,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = "1.*"
 tokio-stream = { version = "0.1.14" , features = ["sync"]}
+tokio-util = "0.7"
 bincode = { workspace = true }
 bs58 = { workspace = true }
 base64 = { workspace = true }
@@ -53,3 +54,4 @@ yellowstone-grpc-proto = { workspace = true }
 itertools = {workspace = true}
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
+clap = { version = "3.2.25", features = ["derive"] }
