@@ -1,17 +1,18 @@
 use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
-use jsonrpsee::core::SubscriptionResult;
+use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
+use solana_account_decoder::UiAccount;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_lite_rpc_prioritization_fees::rpc_data::{AccountPrioFeesStats, PrioFeesStats};
 use solana_rpc_client_api::config::{
-    RpcBlockSubscribeConfig, RpcBlockSubscribeFilter, RpcBlocksConfigWrapper, RpcContextConfig,
-    RpcGetVoteAccountsConfig, RpcLeaderScheduleConfig, RpcProgramAccountsConfig,
-    RpcRequestAirdropConfig, RpcSignatureStatusConfig, RpcSignatureSubscribeConfig,
-    RpcSignaturesForAddressConfig, RpcTransactionLogsConfig, RpcTransactionLogsFilter,
+    RpcAccountInfoConfig, RpcBlocksConfigWrapper, RpcContextConfig, RpcGetVoteAccountsConfig,
+    RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig,
+    RpcSignatureStatusConfig, RpcSignaturesForAddressConfig,
 };
 use solana_rpc_client_api::response::{
-    Response as RpcResponse, RpcBlockhash, RpcConfirmedTransactionStatusWithSignature,
-    RpcContactInfo, RpcPerfSample, RpcPrioritizationFee, RpcVersionInfo, RpcVoteAccountStatus,
+    OptionalContext, Response as RpcResponse, RpcBlockhash,
+    RpcConfirmedTransactionStatusWithSignature, RpcContactInfo, RpcKeyedAccount, RpcPerfSample,
+    RpcPrioritizationFee, RpcVersionInfo, RpcVoteAccountStatus,
 };
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::epoch_info::EpochInfo;
@@ -20,8 +21,6 @@ use solana_sdk::slot_history::Slot;
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 use std::collections::HashMap;
 
-pub type Result<T> = std::result::Result<T, jsonrpsee::core::Error>;
-
 #[rpc(server)]
 pub trait LiteRpc {
     // ***********************
@@ -29,7 +28,7 @@ pub trait LiteRpc {
     // ***********************
 
     #[method(name = "getBlock")]
-    async fn get_block(&self, slot: u64) -> Result<Option<UiConfirmedBlock>>;
+    async fn get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>>;
 
     #[method(name = "getBlocks")]
     async fn get_blocks(
@@ -37,14 +36,14 @@ pub trait LiteRpc {
         start_slot: Slot,
         config: Option<RpcBlocksConfigWrapper>,
         commitment: Option<CommitmentConfig>,
-    ) -> Result<Vec<Slot>>;
+    ) -> RpcResult<Vec<Slot>>;
 
     #[method(name = "getSignaturesForAddress")]
     async fn get_signatures_for_address(
         &self,
         address: String,
         config: Option<RpcSignaturesForAddressConfig>,
-    ) -> Result<Vec<RpcConfirmedTransactionStatusWithSignature>>;
+    ) -> RpcResult<Vec<RpcConfirmedTransactionStatusWithSignature>>;
 
     // issue:  solana_transaction_status::EncodedConfirmedTransactionWithStatusMeta does not implement Clone
     //
@@ -60,36 +59,36 @@ pub trait LiteRpc {
     // ***********************
 
     #[method(name = "getClusterNodes")]
-    async fn get_cluster_nodes(&self) -> Result<Vec<RpcContactInfo>>;
+    async fn get_cluster_nodes(&self) -> RpcResult<Vec<RpcContactInfo>>;
 
     // ***********************
     // Validator Domain
     // ***********************
 
     #[method(name = "getSlot")]
-    async fn get_slot(&self, config: Option<RpcContextConfig>) -> Result<Slot>;
+    async fn get_slot(&self, config: Option<RpcContextConfig>) -> RpcResult<Slot>;
 
     #[method(name = "getBlockHeight")]
-    async fn get_block_height(&self, config: Option<RpcContextConfig>) -> Result<u64>;
+    async fn get_block_height(&self, config: Option<RpcContextConfig>) -> RpcResult<u64>;
 
     #[method(name = "getBlockTime")]
-    async fn get_block_time(&self, block: u64) -> Result<u64>;
+    async fn get_block_time(&self, block: u64) -> RpcResult<u64>;
 
     #[method(name = "getFirstAvailableBlock")]
-    async fn get_first_available_block(&self) -> Result<u64>;
+    async fn get_first_available_block(&self) -> RpcResult<u64>;
 
     #[method(name = "getLatestBlockhash")]
     async fn get_latest_blockhash(
         &self,
         config: Option<RpcContextConfig>,
-    ) -> Result<RpcResponse<RpcBlockhash>>;
+    ) -> RpcResult<RpcResponse<RpcBlockhash>>;
 
     #[method(name = "isBlockhashValid")]
     async fn is_blockhash_valid(
         &self,
         blockhash: String,
         config: Option<IsBlockHashValidConfig>,
-    ) -> Result<RpcResponse<bool>>;
+    ) -> RpcResult<RpcResponse<bool>>;
 
     // BlockCommitmentArray is defined in solana/runtime/src/commitment.rs
     //
@@ -111,20 +110,20 @@ pub trait LiteRpc {
     async fn get_recent_performance_samples(
         &self,
         limit: Option<usize>,
-    ) -> Result<Vec<RpcPerfSample>>;
+    ) -> RpcResult<Vec<RpcPerfSample>>;
 
     #[method(name = "getSignatureStatuses")]
     async fn get_signature_statuses(
         &self,
         signature_strs: Vec<String>,
         config: Option<RpcSignatureStatusConfig>,
-    ) -> Result<RpcResponse<Vec<Option<TransactionStatus>>>>;
+    ) -> RpcResult<RpcResponse<Vec<Option<TransactionStatus>>>>;
 
     #[method(name = "getRecentPrioritizationFees")]
     async fn get_recent_prioritization_fees(
         &self,
         pubkey_strs: Vec<String>,
-    ) -> Result<Vec<RpcPrioritizationFee>>;
+    ) -> RpcResult<Vec<RpcPrioritizationFee>>;
 
     // ***********************
     // Send Transaction Domain
@@ -135,14 +134,14 @@ pub trait LiteRpc {
         &self,
         tx: String,
         send_transaction_config: Option<SendTransactionConfig>,
-    ) -> Result<String>;
+    ) -> RpcResult<String>;
 
     // ***********************
     // Deprecated
     // ***********************
 
     #[method(name = "getVersion")]
-    fn get_version(&self) -> Result<RpcVersionInfo>;
+    fn get_version(&self) -> RpcResult<RpcVersionInfo>;
 
     #[method(name = "requestAirdrop")]
     async fn request_airdrop(
@@ -150,87 +149,28 @@ pub trait LiteRpc {
         pubkey_str: String,
         lamports: u64,
         config: Option<RpcRequestAirdropConfig>,
-    ) -> Result<String>;
+    ) -> RpcResult<String>;
 
-    // ***********************
-    // Direct Subscription Domain
-    // ***********************
-
-    #[subscription(name = "programSubscribe" => "programNotification", unsubscribe="programUnsubscribe", item=RpcResponse<serde_json::Value>)]
-    async fn program_subscribe(
-        &self,
-        pubkey_str: String,
-        config: Option<RpcProgramAccountsConfig>,
-    ) -> SubscriptionResult;
-
-    #[subscription(name = "slotSubscribe" => "slotNotification", unsubscribe="slotUnsubscribe", item=Slot)]
-    async fn slot_subscribe(&self) -> SubscriptionResult;
-
-    #[subscription(name = "blockSubscribe" => "blockNotification", unsubscribe="blockUnsubscribe", item=RpcResponse<UiConfirmedBlock>)]
-    async fn block_subscribe(
-        &self,
-        filter: RpcBlockSubscribeFilter,
-        config: Option<RpcBlockSubscribeConfig>,
-    ) -> SubscriptionResult;
-
-    // [transactionSubscribe](https://github.com/solana-foundation/solana-improvement-documents/pull/69)
-    //
-    //#[subscription(name = "transactionSubscribe" => "transactionNotification", unsubscribe="transactionUnsubscribe", item=RpcResponse<RpcConfirmedTransactionStatusWithSignature>)]
-    //async fn transaction_subscribe(
-    //    &self,
-    //    commitment_config: CommitmentConfig,
-    //) -> SubscriptionResult;
-
-    // ***********************
-    // Indirect Subscription Domain
-    // ***********************
-
-    #[subscription(name = "logsSubscribe" => "logsNotification", unsubscribe="logsUnsubscribe", item=RpcResponse<RpcLogsResponse>)]
-    async fn logs_subscribe(
-        &self,
-        filter: RpcTransactionLogsFilter,
-        config: Option<RpcTransactionLogsConfig>,
-    ) -> SubscriptionResult;
-
-    // WARN: enable_received_notification: bool is ignored
-    #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<serde_json::Value>)]
-    async fn signature_subscribe(
-        &self,
-        signature: String,
-        config: RpcSignatureSubscribeConfig,
-    ) -> SubscriptionResult;
-
-    #[subscription(name = "slotUpdatesSubscribe" => "slotUpdatesNotification", unsubscribe="slotUpdatesUnsubscribe", item=SlotUpdate)]
-    async fn slot_updates_subscribe(&self) -> SubscriptionResult;
-
-    #[subscription(name = "voteSubscribe" => "voteNotification", unsubscribe="voteUnsubscribe", item=RpcVote)]
-    async fn vote_subscribe(&self) -> SubscriptionResult;
+    // **********************
 
     #[method(name = "getEpochInfo")]
-    async fn get_epoch_info(
-        &self,
-        config: Option<RpcContextConfig>,
-    ) -> crate::rpc::Result<EpochInfo>;
+    async fn get_epoch_info(&self, config: Option<RpcContextConfig>) -> RpcResult<EpochInfo>;
 
     #[method(name = "getLeaderSchedule")]
     async fn get_leader_schedule(
         &self,
         slot: Option<u64>,
         config: Option<RpcLeaderScheduleConfig>,
-    ) -> crate::rpc::Result<Option<HashMap<String, Vec<usize>>>>;
+    ) -> RpcResult<Option<HashMap<String, Vec<usize>>>>;
 
     #[method(name = "getSlotLeaders")]
-    async fn get_slot_leaders(
-        &self,
-        start_slot: u64,
-        limit: u64,
-    ) -> crate::rpc::Result<Vec<Pubkey>>;
+    async fn get_slot_leaders(&self, start_slot: u64, limit: u64) -> RpcResult<Vec<Pubkey>>;
 
     #[method(name = "getVoteAccounts")]
     async fn get_vote_accounts(
         &self,
         config: Option<RpcGetVoteAccountsConfig>,
-    ) -> crate::rpc::Result<RpcVoteAccountStatus>;
+    ) -> RpcResult<RpcVoteAccountStatus>;
 
     // ***********************
     // expose prio fees distribution per block
@@ -241,19 +181,37 @@ pub trait LiteRpc {
     async fn get_latest_block_priofees(
         &self,
         method: Option<PrioritizationFeeCalculationMethod>,
-    ) -> crate::rpc::Result<RpcResponse<PrioFeesStats>>;
-
-    /// subscribe to prio fees distribution per block; uses confirmation level "confirmed"
-    #[subscription(name = "blockPrioritizationFeesSubscribe" => "blockPrioritizationFeesNotification", unsubscribe="blockPrioritizationFeesUnsubscribe", item=PrioFeesStats)]
-    async fn latest_block_priofees_subscribe(&self) -> SubscriptionResult;
+    ) -> RpcResult<RpcResponse<PrioFeesStats>>;
 
     #[method(name = "getLatestAccountPrioFees")]
     async fn get_latest_account_priofees(
         &self,
         account: String,
         method: Option<PrioritizationFeeCalculationMethod>,
-    ) -> crate::rpc::Result<RpcResponse<AccountPrioFeesStats>>;
+    ) -> RpcResult<RpcResponse<AccountPrioFeesStats>>;
 
-    #[subscription(name = "accountPrioritizationFeesSubscribe" => "accountPrioritizationFeesNotification", unsubscribe="accountPrioritizationFeesUnsubscribe", item=AccountPrioFeesStats)]
-    async fn latest_account_priofees_subscribe(&self, account: String) -> SubscriptionResult;
+    // **************************
+    // Accounts
+    // **************************
+
+    #[method(name = "getAccountInfo")]
+    async fn get_account_info(
+        &self,
+        pubkey_str: String,
+        config: Option<RpcAccountInfoConfig>,
+    ) -> RpcResult<RpcResponse<Option<UiAccount>>>;
+
+    #[method(name = "getMultipleAccounts")]
+    async fn get_multiple_accounts(
+        &self,
+        pubkey_strs: Vec<String>,
+        config: Option<RpcAccountInfoConfig>,
+    ) -> RpcResult<RpcResponse<Vec<Option<UiAccount>>>>;
+
+    #[method(name = "getProgramAccounts")]
+    async fn get_program_accounts(
+        &self,
+        program_id_str: String,
+        config: Option<RpcProgramAccountsConfig>,
+    ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>>;
 }

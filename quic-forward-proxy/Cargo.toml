@@ -3,7 +3,7 @@ name = "solana-lite-rpc-quic-forward-proxy"
 version = "0.1.0"
 edition = "2021"
 description = "A staked proxy for transaction forwarding to TPU nodes"
-rust-version = "1.70.0"
+rust-version = "1.73.0"
 #default-run = "lite-rpc"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 solana-lite-rpc-core = { workspace = true }
+solana-lite-rpc-util = { workspace = true }
 solana-sdk = { workspace = true }
 solana-streamer = { workspace = true }
 solana-transaction-status = { workspace = true }

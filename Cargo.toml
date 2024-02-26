@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
     "core",
+    "util",
     "services",
     "lite-rpc",
     "quic-forward-proxy",
@@ -10,7 +11,9 @@ members = [
     "cluster-endpoints",
     "blockstore",
     "prioritization_fees",
-    "bench"
+    "bench",
+    "address_lookup_tables",
+    "accounts"
 ]
 
 [workspace.package]
@@ -33,6 +36,8 @@ solana-streamer = "~1.17.15"
 solana-account-decoder = "~1.17.15"
 solana-ledger = "~1.17.15"
 solana-program = "~1.17.15"
+solana-address-lookup-table-program = "~1.17.15"
+
 itertools = "0.10.5"
 rangetools = "0.1.4"
 serde = { version = "1.0.160", features = ["derive"] }
@@ -50,7 +55,7 @@ log = "0.4.17"
 clap = { version = "4.2.4", features = ["derive", "env"] }
 dashmap = "5.4.0"
 const_env = "0.1.2"
-jsonrpsee = { version = "0.17.0", features = ["macros", "full"] }
+jsonrpsee = { version = "0.20.0", features = ["macros", "full"] }
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
 chrono = "0.4.24"
@@ -67,10 +72,13 @@ rustls = { version = "0.21.7", default-features = false, features = ["quic"] }
 
 solana-lite-rpc-services = {path = "services", version="0.2.4"}
 solana-lite-rpc-core = {path = "core", version="0.2.4"}
+solana-lite-rpc-util = {path = "util", version="0.2.4"}
 solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.4"}
 solana-lite-rpc-blockstore = {path = "blockstore", version="0.2.4"}
 solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.4"}
 solana-lite-rpc-prioritization-fees = {path = "prioritization_fees", version="0.2.4"}
+solana-lite-rpc-address-lookup-tables = {path = "address_lookup_tables", version="0.2.4"}
+solana-lite-rpc-accounts = {path = "accounts", version = "0.2.4"}
 
 async-trait = "0.1.68"
 yellowstone-grpc-client = { version = "1.13.0+solana.1.17.15", git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.12.0+solana.1.17.15" }

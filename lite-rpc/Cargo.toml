@@ -3,7 +3,7 @@ name = "lite-rpc"
 version = "0.2.4"
 edition = "2021"
 description = "A lite version of solana rpc to send and confirm transactions"
-rust-version = "1.70.0"
+rust-version = "1.73.0"
 default-run = "lite-rpc"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
@@ -15,6 +15,8 @@ solana-rpc-client = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-transaction-status = { workspace = true }
 solana-version = { workspace = true }
+solana-account-decoder = { workspace = true }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }
@@ -22,6 +24,7 @@ bs58 = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
+futures-util = { workspace = true }
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
@@ -43,12 +46,19 @@ tokio-util = "0.7"
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 chrono = { workspace = true }
 itertools = { workspace = true }
+cap = { version = "0.1.2", features = ["stats"] }
+tower = "0.4.13"
+hyper = { version = "0.14", features = ["server", "http1", "http2"] }
+tower-http = { version = "0.4.0", features = ["full"] }
 
 solana-lite-rpc-core = { workspace = true }
+solana-lite-rpc-util = { workspace = true }
 solana-lite-rpc-services = { workspace = true }
 solana-lite-rpc-cluster-endpoints = { workspace = true }
 solana-lite-rpc-blockstore = { workspace = true }
 solana-lite-rpc-prioritization-fees = { workspace = true }
+solana-lite-rpc-address-lookup-tables = { workspace = true }
+solana-lite-rpc-accounts = { workspace = true }
 
 [dev-dependencies]
 bench = { path = "../bench" }

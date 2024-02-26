@@ -3,7 +3,7 @@ name = "solana-lite-rpc-cluster-endpoints"
 version = "0.2.4"
 edition = "2021"
 description = "Core classes and methods used by solana lite rpc"
-rust-version = "1.70.0"
+rust-version = "1.73.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
@@ -11,7 +11,7 @@ license = "AGPL"
 
 [dependencies]
 #geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.1+yellowstone.1.12+solana.1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+geyser-grpc-connector = { tag = "v0.10.2+yellowstone.1.12+solana.1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 #geyser-grpc-connector = { tag = "v1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
 solana-sdk = { workspace = true }
@@ -36,6 +36,7 @@ merge-streams = "0.1.2"
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dashmap = { workspace = true }
 quinn = { workspace = true }
@@ -45,6 +46,7 @@ async-trait = { workspace = true }
 derive_more = "0.99.17"
 async-channel = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
+solana-lite-rpc-util = { workspace = true }
 yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 itertools = {workspace = true}

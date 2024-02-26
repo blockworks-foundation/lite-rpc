@@ -1,7 +1,7 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
+use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
 use solana_lite_rpc_core::{
     structures::{
         produced_block::ProducedBlock,
@@ -286,6 +286,12 @@ pub fn from_ui_block(
                 }
             }
 
+            let address_lookup_tables = tx
+                .message
+                .address_table_lookups()
+                .map(|x| x.to_vec())
+                .unwrap_or_default();
+
             Some(TransactionInfo {
                 signature,
                 is_vote: is_vote_transaction,
@@ -297,6 +303,7 @@ pub fn from_ui_block(
                 message,
                 readable_accounts,
                 writable_accounts,
+                address_lookup_tables,
             })
         })
         .collect();
@@ -312,7 +319,7 @@ pub fn from_ui_block(
 
     let block_time = block.block_time.unwrap_or(0) as u64;
 
-    ProducedBlock {
+    let inner = ProducedBlockInner {
         transactions: txs,
         block_height,
         leader_id,
@@ -321,9 +328,9 @@ pub fn from_ui_block(
         parent_slot,
         block_time,
         slot,
-        commitment_config,
         rewards,
-    }
+    };
+    ProducedBlock::new(inner, commitment_config)
 }
 
 #[inline]

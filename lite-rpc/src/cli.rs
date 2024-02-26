@@ -1,4 +1,8 @@
+use std::borrow::Cow;
 use std::env;
+use std::fmt::{Debug, Display, Formatter};
+use std::net::SocketAddr;
+use std::str::FromStr;
 
 use crate::postgres_logger;
 use crate::{
@@ -8,6 +12,7 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
+use solana_rpc_client_api::client_error::reqwest::Url;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -64,11 +69,24 @@ pub struct Config {
     #[serde(default)]
     pub grpc_x_token4: Option<String>,
 
+    #[serde(default)]
+    pub enable_grpc_stream_inspection: bool,
+
     /// postgres config
     #[serde(default)]
     pub postgres: Option<postgres_logger::PostgresSessionConfig>,
 
+    #[serde(default)]
     pub max_number_of_connection: Option<usize>,
+
+    #[serde(default)]
+    pub address_lookup_tables_binary: Option<String>,
+
+    #[serde(default)]
+    pub enable_address_lookup_tables: Option<bool>,
+
+    #[serde(default)]
+    pub account_filters: Option<String>,
 }
 
 impl Config {
@@ -109,6 +127,9 @@ impl Config {
             env::var("LITE_RPC_HTTP_ADDR").unwrap_or(config.lite_rpc_http_addr);
 
         config.lite_rpc_ws_addr = env::var("LITE_RPC_WS_ADDR").unwrap_or(config.lite_rpc_ws_addr);
+
+        SocketAddr::from_str(&config.lite_rpc_http_addr).expect("invalid LITE_RPC_HTTP_ADDR");
+        SocketAddr::from_str(&config.lite_rpc_ws_addr).expect("invalid LITE_RPC_WS_ADDR");
 
         config.fanout_size = env::var("FANOUT_SIZE")
             .map(|size| size.parse().unwrap())
@@ -175,6 +196,10 @@ impl Config {
             .map(Some)
             .unwrap_or(config.grpc_x_token4);
 
+        config.enable_grpc_stream_inspection = env::var("ENABLE_GRPC_STREAM_INSPECTION")
+            .map(|value| value.parse::<bool>().expect("bool value"))
+            .unwrap_or(config.enable_grpc_stream_inspection);
+
         config.max_number_of_connection = env::var("MAX_NB_OF_CONNECTIONS_WITH_LEADERS")
             .map(|x| x.parse().ok())
             .unwrap_or(config.max_number_of_connection);
@@ -182,6 +207,14 @@ impl Config {
         config.postgres =
             postgres_logger::PostgresSessionConfig::new_from_env()?.or(config.postgres);
 
+        config.enable_address_lookup_tables = env::var("ENABLE_ADDRESS_LOOKUP_TABLES")
+            .map(|value| value.parse::<bool>().unwrap())
+            .ok()
+            .or(config.enable_address_lookup_tables);
+
+        config.address_lookup_tables_binary = env::var("ADDRESS_LOOKUP_TABLES_BINARY")
+            .ok()
+            .or(config.address_lookup_tables_binary);
         Ok(config)
     }
 
@@ -258,8 +291,51 @@ impl Config {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GrpcSource {
     pub addr: String,
     pub x_token: Option<String>,
+}
+
+impl Display for GrpcSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "GrpcSource {} (x-token {})",
+            url_obfuscate_api_token(&self.addr),
+            obfuscate_token(&self.x_token)
+        )
+    }
+}
+
+impl Debug for GrpcSource {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+/// obfuscate urls with api token like http://mango.rpcpool.com/a991fba00fagbad
+fn url_obfuscate_api_token(url: &str) -> Cow<str> {
+    if let Ok(mut parsed) = Url::parse(url) {
+        if parsed.path() == "/" {
+            return Cow::Borrowed(url);
+        } else {
+            parsed.set_path("omitted-secret");
+            Cow::Owned(parsed.to_string())
+        }
+    } else {
+        Cow::Borrowed(url)
+    }
+}
+
+fn obfuscate_token(token: &Option<String>) -> String {
+    match token {
+        None => "n/a".to_string(),
+        Some(token) => {
+            let mut token = token.clone();
+            token.truncate(5);
+            token += "...";
+            token
+        }
+    }
 }

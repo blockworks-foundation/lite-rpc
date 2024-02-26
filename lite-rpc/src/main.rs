@@ -4,11 +4,17 @@ use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
 use lite_rpc::bridge::LiteBridge;
+use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
+use lite_rpc::start_server::start_servers;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
 use log::{debug, info};
+use solana_lite_rpc_accounts::account_service::AccountService;
+use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
+use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
+use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_inspect::{
@@ -26,11 +32,13 @@ use solana_lite_rpc_core::stores::{
     subscription_store::SubscriptionStore,
     tx_store::TxStore,
 };
+use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
     produced_block::ProducedBlock,
 };
+use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
@@ -53,9 +61,12 @@ use solana_sdk::signer::Signer;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::EnvFilter;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -118,6 +129,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
+        enable_grpc_stream_inspection,
+        enable_address_lookup_tables,
+        address_lookup_tables_binary,
+        account_filters,
         ..
     } = args;
 
@@ -131,6 +146,13 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
+    let account_filters = if let Some(account_filters) = account_filters {
+        serde_json::from_str::<AccountFilters>(account_filters.as_str())
+            .expect("Account filters should be valid")
+    } else {
+        vec![]
+    };
+
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         info!("Creating geyser subscription...");
 
@@ -140,7 +162,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             subscribe_timeout: Duration::from_secs(5),
             receive_timeout: Duration::from_secs(5),
         };
-
         create_grpc_subscription(
             rpc_client.clone(),
             grpc_sources
@@ -149,6 +170,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                     GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
                 })
                 .collect(),
+            account_filters.clone(),
         )?
     } else {
         info!("Creating RPC poll subscription...");
@@ -160,18 +182,36 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         cluster_info_notifier,
         slot_notifier,
         vote_account_notifier,
+        processed_account_stream,
     } = subscriptions;
 
-    // note: check failes for commitment_config processed because sources might disagree on the blocks
-    debugtask_blockstream_slot_progression(
-        blocks_notifier.resubscribe(),
-        CommitmentConfig::confirmed(),
-    );
-    debugtask_blockstream_slot_progression(
-        blocks_notifier.resubscribe(),
-        CommitmentConfig::finalized(),
-    );
-    debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
+    if enable_grpc_stream_inspection {
+        setup_grpc_stream_debugging(&blocks_notifier)
+    } else {
+        info!("Disabled grpc stream inspection");
+    }
+
+    let accounts_service = if let Some(account_stream) = processed_account_stream {
+        // lets use inmemory storage for now
+        let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
+            Arc::new(InmemoryAccountStore::new());
+        const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
+        let account_service = AccountService::new(inmemory_account_storage);
+
+        account_service
+            .process_account_stream(account_stream.resubscribe(), blocks_notifier.resubscribe());
+
+        account_service
+            .populate_from_rpc(
+                rpc_client.clone(),
+                &account_filters,
+                MAX_CONNECTIONS_IN_PARALLEL,
+            )
+            .await?;
+        Some(account_service)
+    } else {
+        None
+    };
 
     info!("Waiting for first finalized block...");
     let finalized_block =
@@ -212,8 +252,37 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let (block_priofees_task, block_priofees_service) =
         start_block_priofees_task(blocks_notifier.resubscribe(), 100);
 
+    let address_lookup_tables: Option<Arc<dyn AddressLookupTableInterface>> =
+        if enable_address_lookup_tables.unwrap_or_default() {
+            log::info!("ALTs enabled");
+            let alts_store = AddressLookupTableStore::new(rpc_client.clone());
+            if let Some(address_lookup_tables_binary) = address_lookup_tables_binary {
+                match tokio::fs::File::open(address_lookup_tables_binary).await {
+                    Ok(mut alts_file) => {
+                        let mut buf = vec![];
+                        alts_file.read_to_end(&mut buf).await.unwrap();
+                        alts_store.load_binary(buf);
+
+                        log::info!("{} ALTs loaded from binary file", alts_store.map.len());
+                    }
+                    Err(e) => {
+                        log::error!("Error loading address lookup tables binary : {e:?}");
+                        anyhow::bail!(e.to_string());
+                    }
+                }
+            }
+            Some(Arc::new(alts_store))
+        } else {
+            log::info!("ALTs disabled");
+            None
+        };
+
     let (account_priofees_task, account_priofees_service) =
-        AccountPrioService::start_account_priofees_task(blocks_notifier.resubscribe(), 100);
+        AccountPrioService::start_account_priofees_task(
+            blocks_notifier.resubscribe(),
+            100,
+            address_lookup_tables,
+        );
 
     let (notification_channel, postgres) = start_postgres(postgres).await?;
 
@@ -264,20 +333,31 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let history = History::new();
 
-    let bridge_service = tokio::spawn(
-        LiteBridge::new(
-            rpc_client.clone(),
-            data_cache.clone(),
-            transaction_service,
-            history,
-            block_priofees_service,
-            account_priofees_service,
-            blocks_notifier.resubscribe(),
-        )
-        .start(lite_rpc_http_addr, lite_rpc_ws_addr),
+    let rpc_service = LiteBridge::new(
+        rpc_client.clone(),
+        data_cache.clone(),
+        transaction_service,
+        history,
+        block_priofees_service.clone(),
+        account_priofees_service.clone(),
+        accounts_service.clone(),
     );
+
+    let pubsub_service = LitePubSubBridge::new(
+        data_cache.clone(),
+        block_priofees_service,
+        account_priofees_service,
+        blocks_notifier,
+        accounts_service.clone(),
+    );
+
+    let bridge_service = tokio::spawn(start_servers(
+        rpc_service,
+        pubsub_service,
+        lite_rpc_ws_addr,
+        lite_rpc_http_addr,
+    ));
     drop(slot_notifier);
-    drop(blocks_notifier);
 
     tokio::select! {
         res = tx_service_jh => {
@@ -311,9 +391,23 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     }
 }
 
+fn setup_grpc_stream_debugging(blocks_notifier: &BlockStream) {
+    info!("Setting up grpc stream inspection");
+    // note: check failes for commitment_config processed because sources might disagree on the blocks
+    debugtask_blockstream_slot_progression(
+        blocks_notifier.resubscribe(),
+        CommitmentConfig::confirmed(),
+    );
+    debugtask_blockstream_slot_progression(
+        blocks_notifier.resubscribe(),
+        CommitmentConfig::finalized(),
+    );
+    debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    setup_tracing_subscriber();
 
     let config = Config::load().await?;
 
@@ -377,4 +471,22 @@ fn obfuscate_rpcurl(rpc_addr: &str) -> String {
         return rpc_addr.replacen(char::is_numeric, "X", 99);
     }
     rpc_addr.to_string()
+}
+
+fn setup_tracing_subscriber() {
+    let enable_instrument_tracing = std::env::var("ENABLE_INSTRUMENT_TRACING")
+        .unwrap_or("false".to_string())
+        .parse::<bool>()
+        .expect("flag must be true or false");
+
+    if enable_instrument_tracing {
+        tracing_subscriber::fmt::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            // not sure if "CLOSE" is exactly what we want
+            // ex. "close time.busy=14.7ms time.idle=14.0µs"
+            .with_span_events(FmtSpan::CLOSE)
+            .init();
+    } else {
+        tracing_subscriber::fmt::init();
+    }
 }
