@@ -31,15 +31,19 @@ pub async fn main() {
 #[test]
 pub fn read_block_from_disk() {
     tracing_subscriber::fmt::init();
-    // /Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk/blocks-000251395xxx/block-000251395041-confirmed-1707312285514.dat
 
-    let file = Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk/blocks-000251395xxx/block-000251395041-confirmed-1707312285514.dat");
+    let blockstream_dumpdir = BlockStreamDumpOnDisk::new_with_existing_directory(Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk"));
 
-    let (slot_from_file, epoch_ms) = parse_slot_and_timestamp_from_file(file.file_name().unwrap().to_str().unwrap());
+    let block_file = blockstream_dumpdir.build_path(&BlockStorageMeta {
+        slot: 251395041,
+        epoch_ms: 1707312285514,
+    });
+
+    let (slot_from_file, epoch_ms) = parse_slot_and_timestamp_from_file(block_file.file_name().unwrap().to_str().unwrap());
     info!("slot from file: {}", slot_from_file);
     info!("epochms from file: {}", epoch_ms);
 
-    let block_bytes = std::fs::read(file).unwrap();
+    let block_bytes = std::fs::read(block_file).unwrap();
     info!("read {} bytes from block file", block_bytes.len());
     let decoded = SubscribeUpdateBlock::decode(block_bytes.as_slice()).expect("Block file must be protobuf");
 
@@ -83,7 +87,7 @@ async fn read_stream_and_store() {
     );
 
     tokio::spawn(async move {
-        let blockstream_todisk = BlockStreamDumpOnDisk::create_with_root_path(Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk"));
+        let blockstream_dumpdir = BlockStreamDumpOnDisk::new_with_existing_directory(Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk"));
         loop {
             let now = Instant::now();
             match message_channel.recv().await {
@@ -99,7 +103,7 @@ async fn read_stream_and_store() {
                                     slot: block_update.slot,
                                     epoch_ms: now_epoch_ms(),
                                 };
-                                blockstream_todisk.write_block(&meta, &block_update);
+                                blockstream_dumpdir.write_block(&meta, &block_update);
                             }
                         }
                         geyser_grpc_connector::Message::Connecting(attempt) => {
@@ -178,7 +182,8 @@ impl BlockStorageMeta {
 }
 
 impl BlockStreamDumpOnDisk {
-    pub fn create_with_root_path(root_path: &Path) -> Self {
+    // note: the directory must exist and marker file must be present!
+    pub fn new_with_existing_directory(root_path: &Path) -> Self {
         let marker = Path::new(".solana-blocks-dump");
         assert!(
             root_path.join(marker).exists(),
@@ -232,22 +237,6 @@ impl BlockStreamDumpOnDisk {
 
 
 
-
-#[test]
-fn build_path() {
-    tracing_subscriber::fmt::init();
-
-    let root_path = Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk");
-    let blocks_on_disk =
-        BlockStreamDumpOnDisk::create_with_root_path(root_path);
-
-    let block_storage_meta = BlockStorageMeta::new_with_now(246300234);
-
-    let out_file = blocks_on_disk.build_path(&block_storage_meta);
-    info!("blocks_on_disk {:?}", out_file);
-
-    info!("dir: {:?}", out_file.parent().unwrap());
-}
 
 #[test]
 fn format_slot_xxx() {
