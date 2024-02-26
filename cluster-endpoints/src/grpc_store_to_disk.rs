@@ -59,9 +59,9 @@ pub async fn spawn_block_todisk_writer(
     block_dump_base_directory: PathBuf,
 ) -> AbortHandle {
     let block_dump_base_directory = block_dump_base_directory.to_path_buf();
+    let blockstream_dumpdir =
+        BlockStreamDumpOnDisk::new_with_existing_directory(block_dump_base_directory.as_path());
     let join_handle = tokio::spawn(async move {
-        let blockstream_dumpdir =
-            BlockStreamDumpOnDisk::new_with_existing_directory(block_dump_base_directory.as_path());
         loop {
             match block_notifier.recv().await {
                 Some(message) => match message {
@@ -110,9 +110,9 @@ impl BlockStreamDumpOnDisk {
         let marker = Path::new(".solana-blocks-dump");
         assert!(
             root_path.join(marker).is_file(),
-            "Expecting directory {} with marker file ({})",
-            root_path.display(),
-            marker.display()
+            "Dump directory requires marker file '{}' (directory {})",
+            marker.display(),
+            root_path.display()
         );
         Self {
             root_path: root_path.to_path_buf(),
