@@ -1,11 +1,13 @@
 use log::{error, info, warn};
 use solana_sdk::clock::Slot;
+use solana_sdk::commitment_config::CommitmentConfig;
 use std::fs::{create_dir, OpenOptions};
 use std::io;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tokio::task::AbortHandle;
+use tracing::debug;
 
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
@@ -19,10 +21,12 @@ pub fn read_block_from_disk() {
         "/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk",
     ));
 
-    let block_file = blockstream_dumpdir.build_path(&BlockStorageMeta {
+    let block_meta = BlockDumpRef {
         slot: 251395041,
         epoch_ms: 1707312285514,
-    });
+        commitment_config: CommitmentConfig::confirmed(),
+    };
+    let block_file = blockstream_dumpdir.build_path(&block_meta);
 
     let (slot_from_file, epoch_ms) =
         parse_slot_and_timestamp_from_file(block_file.file_name().unwrap().to_str().unwrap());
@@ -31,10 +35,21 @@ pub fn read_block_from_disk() {
 
     let block_bytes = std::fs::read(block_file).unwrap();
     info!("read {} bytes from block file", block_bytes.len());
-    let decoded =
-        SubscribeUpdateBlock::decode(block_bytes.as_slice()).expect("Block file must be protobuf");
+    let decoded = blockstream_dumpdir.decode_from_file(&block_meta);
 
     info!("decoded block: {}", decoded.slot);
+}
+
+fn commitment_short(commitment_config: CommitmentConfig) -> &'static str {
+    if commitment_config.is_finalized() {
+        "finalized"
+    } else if commitment_config.is_confirmed() {
+        "confirmed"
+    } else if commitment_config.is_processed() {
+        "processed"
+    } else {
+        panic!("commitment config not recognized: {:?}", commitment_config);
+    }
 }
 
 // e.g. block-000251395041-confirmed-1707312285514.dat
@@ -56,6 +71,7 @@ pub fn parse_slot_and_timestamp_from_file(file_name: &str) -> (Slot, u64) {
 // note: we assume that the invariants hold even right after startup
 pub async fn spawn_block_todisk_writer(
     mut block_notifier: tokio::sync::mpsc::Receiver<geyser_grpc_connector::Message>,
+    commitment_config: CommitmentConfig,
     block_dump_base_directory: PathBuf,
 ) -> AbortHandle {
     let block_dump_base_directory = block_dump_base_directory.to_path_buf();
@@ -70,7 +86,8 @@ pub async fn spawn_block_todisk_writer(
                             subscriber_update.update_oneof
                         {
                             info!("got block update -> slot: {}", block_update.slot);
-                            blockstream_dumpdir.write_geyser_update(&block_update);
+                            blockstream_dumpdir
+                                .write_geyser_update(&block_update, commitment_config);
                         }
                     }
                     geyser_grpc_connector::Message::Connecting(attempt) => {
@@ -99,9 +116,10 @@ pub fn now_epoch_ms() -> u64 {
         .as_millis() as u64
 }
 
-struct BlockStorageMeta {
+pub struct BlockDumpRef {
     slot: Slot,
     epoch_ms: u64,
+    commitment_config: CommitmentConfig,
 }
 
 impl BlockStreamDumpOnDisk {
@@ -120,7 +138,7 @@ impl BlockStreamDumpOnDisk {
     }
 
     // /blocks-000246300xxx/block-000246300234-confirmed-1707308047927.dat
-    fn build_path(&self, block_storage_meta: &BlockStorageMeta) -> PathBuf {
+    fn build_path(&self, block_storage_meta: &BlockDumpRef) -> PathBuf {
         self.root_path
             // pad with "0" to allow sorting
             .join(format!(
@@ -128,13 +146,14 @@ impl BlockStreamDumpOnDisk {
                 slot_xxx = Self::format_slot_1k(block_storage_meta.slot)
             ))
             .join(format!(
-                "block-{slot:0>12}-confirmed-{epoch_ms}.dat",
+                "block-{slot:0>12}-{commitment_short}-{epoch_ms}.dat",
                 slot = block_storage_meta.slot,
+                commitment_short = commitment_short(block_storage_meta.commitment_config),
                 epoch_ms = block_storage_meta.epoch_ms
             ))
     }
 
-    fn write_block(&self, meta: &BlockStorageMeta, block_protobuf: &SubscribeUpdateBlock) {
+    fn write_block(&self, meta: &BlockDumpRef, block_protobuf: &SubscribeUpdateBlock) {
         let block_file = self.build_path(meta);
         let block_dir = block_file.parent();
 
@@ -162,16 +181,29 @@ impl BlockStreamDumpOnDisk {
         );
     }
 
-    pub fn write_geyser_update(&self, block_update: &SubscribeUpdateBlock) {
+    pub fn write_geyser_update(
+        &self,
+        block_update: &SubscribeUpdateBlock,
+        commitment_config: CommitmentConfig,
+    ) {
         let mut buf = vec![];
         block_update
             .encode(&mut buf)
             .expect("must be able to serialize to buffer");
-        let meta = BlockStorageMeta {
+        let meta = BlockDumpRef {
             slot: block_update.slot,
             epoch_ms: now_epoch_ms(),
+            commitment_config,
         };
         self.write_block(&meta, block_update);
+    }
+
+    pub fn decode_from_file(&self, block_meta: &BlockDumpRef) -> SubscribeUpdateBlock {
+        let block_file = self.build_path(block_meta);
+
+        let block_bytes = std::fs::read(block_file).unwrap();
+        debug!("read {} bytes from block file", block_bytes.len());
+        SubscribeUpdateBlock::decode(block_bytes.as_slice()).expect("Block file must be protobuf")
     }
 
     // 246300234 -> 246300xxx

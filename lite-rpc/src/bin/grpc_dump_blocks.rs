@@ -50,8 +50,12 @@ pub async fn main() {
         GeyserFilter(commitment_config).blocks_and_txs(),
     );
 
-    let abort_handle =
-        grpc_store_to_disk::spawn_block_todisk_writer(message_channel, dump_directory).await;
+    let abort_handle = grpc_store_to_disk::spawn_block_todisk_writer(
+        message_channel,
+        commitment_config,
+        dump_directory,
+    )
+    .await;
 
     // wait a bit
     info!("Run dumper for {} seconds...", duration_seconds);
