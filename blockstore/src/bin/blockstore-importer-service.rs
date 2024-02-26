@@ -49,6 +49,7 @@ async fn main() {
         assert!(block_file.file_name().unwrap().to_str().unwrap().starts_with("block-"), "File name does not start with 'block-': {:?}", block_file.to_str().unwrap());
         let produced_block = decode_from_dump(&block_file);
         info!("saving block: {}", produced_block.slot);
+        block_storage.prepare_epoch_schema(produced_block.slot).await.expect("prepare must succeed");
         block_storage.save_block(&produced_block).await.expect("write must succeed");
     }
 
