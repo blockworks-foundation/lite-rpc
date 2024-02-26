@@ -48,15 +48,9 @@ async fn main() {
         info!("reading file {:?} with {} bytes", block_file.to_str().unwrap(), block_file.metadata().unwrap().len());
         assert!(block_file.file_name().unwrap().to_str().unwrap().starts_with("block-"), "File name does not start with 'block-': {:?}", block_file.to_str().unwrap());
         let produced_block = decode_from_dump(&block_file);
-        println!("block: {:?}", produced_block.blockhash);
+        info!("saving block: {}", produced_block.slot);
+        block_storage.save_block(&produced_block).await.expect("write must succeed");
     }
-
-
-    let block_file = Path::new("/Users/stefan/mango/code/lite-rpc/localdev-groovie-testing/blocks_on_disk/blocks-000254998xxx/block-000254998544-confirmed-1708964903356.dat");
-    let produced_block = decode_from_dump(&block_file);
-
-    block_storage.save_block(&produced_block).await.expect("write must succeed");
-
 
     info!("block written");
 
