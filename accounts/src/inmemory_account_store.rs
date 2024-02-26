@@ -16,6 +16,7 @@ use crate::account_store_interface::AccountStorageInterface;
 
 #[derive(Clone, Default)]
 pub struct AccountDataByCommitment {
+    pub pk: Pubkey,
     pub processed_accounts: BTreeMap<Slot, AccountData>,
     pub confirmed_account: Option<AccountData>,
     pub finalized_account: Option<AccountData>,
@@ -39,13 +40,20 @@ impl AccountDataByCommitment {
         let mut processed_accounts = BTreeMap::new();
         processed_accounts.insert(data.updated_slot, data.clone());
         AccountDataByCommitment {
+            pk: data.pubkey,
             processed_accounts,
-            confirmed_account: if commitment == Commitment::Confirmed {
+            confirmed_account: if commitment == Commitment::Confirmed
+                || commitment == Commitment::Finalized
+            {
+                Some(data.clone())
+            } else {
+                None
+            },
+            finalized_account: if commitment == Commitment::Finalized {
                 Some(data)
             } else {
                 None
             },
-            finalized_account: None,
         }
     }
 
@@ -53,6 +61,7 @@ impl AccountDataByCommitment {
         let mut processed_accounts = BTreeMap::new();
         processed_accounts.insert(data.updated_slot, data.clone());
         AccountDataByCommitment {
+            pk: data.pubkey,
             processed_accounts,
             confirmed_account: Some(data.clone()),
             finalized_account: Some(data),
@@ -81,6 +90,7 @@ impl AccountDataByCommitment {
                 .insert(data.updated_slot, data.clone());
             updated = true;
         }
+
         match commitment {
             Commitment::Confirmed => {
                 if update_confirmed {
@@ -134,22 +144,15 @@ impl AccountDataByCommitment {
                 }
                 Commitment::Finalized => {
                     // slot finalized remove data from processed
-                    while self
-                        .processed_accounts
-                        .first_key_value()
-                        .map(|(s, _)| *s)
-                        .unwrap_or(u64::MAX)
-                        <= slot
+                    while self.processed_accounts.len() > 1
+                        && self
+                            .processed_accounts
+                            .first_key_value()
+                            .map(|(s, _)| *s)
+                            .unwrap_or(u64::MAX)
+                            <= slot
                     {
                         self.processed_accounts.pop_first();
-                    }
-
-                    // processed map should not be empty
-                    if self.processed_accounts.is_empty() {
-                        log::error!(
-                            "Processed map should not be empty filling it with finalized data"
-                        );
-                        self.processed_accounts.insert(slot, account_data.clone());
                     }
 
                     if self
@@ -167,17 +170,21 @@ impl AccountDataByCommitment {
                     }
                 }
             }
-        } else {
+        } else if commitment == Commitment::Finalized {
             // remove processed slot data
-            while self
-                .processed_accounts
-                .first_key_value()
-                .map(|(s, _)| *s)
-                .unwrap_or(u64::MAX)
-                <= slot
+            while self.processed_accounts.len() > 1
+                && self
+                    .processed_accounts
+                    .first_key_value()
+                    .map(|(s, _)| *s)
+                    .unwrap_or(u64::MAX)
+                    <= slot
             {
                 self.processed_accounts.pop_first();
             }
+
+            None
+        } else {
             None
         }
     }

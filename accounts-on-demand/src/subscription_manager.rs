@@ -37,7 +37,7 @@ impl SubscriptionManger {
     ) -> Self {
         let (restart_sender, recver) = broadcast::channel(1);
         let accounts_filters = Arc::new(RwLock::new(vec![]));
-        log::error!("subtaks");
+
         let (_, mut account_stream) =
             create_grpc_account_streaming(grpc_sources, accounts_filters.clone(), recver);
 
@@ -234,10 +234,6 @@ pub fn start_account_streaming_tasks(
 
                 match restart_channel.try_recv() {
                     Ok(_) => {
-                        let _ = restart_channel.try_recv();
-                        let _ = restart_channel.try_recv();
-                        let _ = restart_channel.try_recv();
-                        let _ = restart_channel.try_recv();
                         log::info!("Restarting account subscription");
                         break;
                     }
@@ -245,9 +241,7 @@ pub fn start_account_streaming_tasks(
                         broadcast::error::TryRecvError::Empty => {}
                         broadcast::error::TryRecvError::Closed => {}
                         broadcast::error::TryRecvError::Lagged(_) => {
-                            let _ = restart_channel.try_recv();
-                            let _ = restart_channel.try_recv();
-                            let _ = restart_channel.try_recv();
+                            // remove message in the queue
                             let _ = restart_channel.try_recv();
                             break;
                         }
