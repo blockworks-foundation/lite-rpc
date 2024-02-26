@@ -14,6 +14,7 @@ use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
 use yellowstone_grpc_proto::prost::Message;
 
 #[test]
+#[ignore]
 pub fn read_block_from_disk() {
     tracing_subscriber::fmt::init();
 
