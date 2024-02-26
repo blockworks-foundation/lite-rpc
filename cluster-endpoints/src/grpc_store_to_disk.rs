@@ -154,13 +154,13 @@ impl BlockStreamDumpOnDisk {
         }
 
         let block_bytes = block_protobuf.encode_to_vec();
-        let mut new_block_file =
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(block_file.clone())
-                .expect("Must be able to create new file");
-        new_block_file.write(block_bytes.as_slice())
+        let mut new_block_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(block_file.clone())
+            .expect("Must be able to create new file");
+        new_block_file
+            .write_all(block_bytes.as_slice())
             .expect("must be able to write block to disk");
         info!("Wrote block {} with {} bytes to disk: {}", meta.slot, block_bytes.len(), block_file.display());
     }
