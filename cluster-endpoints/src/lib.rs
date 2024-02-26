@@ -7,6 +7,7 @@ pub mod grpc_subscription;
 pub mod json_rpc_leaders_getter;
 pub mod json_rpc_subscription;
 pub mod rpc_polling;
+pub mod foobar_decode_from_dump;
 
 pub use geyser_grpc_connector::grpc_subscription_autoreconnect;
 pub use yellowstone_grpc_proto::geyser::CommitmentLevel;
