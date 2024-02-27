@@ -68,7 +68,7 @@ async fn main() {
     for _ in 0..payers.len() {
         let payer = payers.get().unwrap();
         let ix =
-            system_instruction::transfer(&funded_payer.pubkey(), &payer.pubkey(), LAMPORTS_PER_SOL);
+            system_instruction::transfer(&funded_payer.pubkey(), &payer.pubkey(), LAMPORTS_PER_SOL * 0.1);
         let bh = rpc_client.get_latest_blockhash().await.unwrap();
         let transaction = Transaction::new_signed_with_payer(
             &[ix],
