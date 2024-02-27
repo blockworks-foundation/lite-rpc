@@ -584,6 +584,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "serde",
  "serde_json",
+ "solana-lite-rpc-core",
  "solana-rpc-client",
  "solana-sdk",
  "spl-memo 4.0.0",

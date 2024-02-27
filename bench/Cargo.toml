@@ -24,5 +24,7 @@ bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
 
+solana-lite-rpc-core = {workspace = true}
+
 [dev-dependencies]
 bincode = { workspace = true }

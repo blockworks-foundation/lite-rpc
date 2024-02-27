@@ -7,11 +7,15 @@ use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
 use log::{error, info, warn};
+use solana_lite_rpc_core::structures::rotating_queue::RotatingQueue;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::signature::Signature;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
     slot_history::Slot,
+};
+use solana_sdk::{
+    native_token::LAMPORTS_PER_SOL, signature::Signature, system_instruction,
+    transaction::Transaction,
 };
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -38,6 +42,10 @@ async fn main() {
 
     let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
 
+    let payers = Arc::new(RotatingQueue::<Arc<Keypair>>::new(10, || {
+        Arc::new(Keypair::new())
+    }));
+
     let transaction_size = if large_transactions {
         TransactionSize::Large
     } else {
@@ -52,11 +60,25 @@ async fn main() {
 
     let funded_payer = BenchHelper::get_payer().await.unwrap();
     info!("Payer: {}", funded_payer.pubkey());
-
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
         lite_rpc_addr.clone(),
         CommitmentConfig::confirmed(),
     ));
+    // moving 1 sol from funded payer to keypair
+    for _ in 0..payers.len() {
+        let payer = payers.get().unwrap();
+        let ix =
+            system_instruction::transfer(&funded_payer.pubkey(), &payer.pubkey(), LAMPORTS_PER_SOL);
+        let bh = rpc_client.get_latest_blockhash().await.unwrap();
+        let transaction = Transaction::new_signed_with_payer(
+            &[ix],
+            Some(&funded_payer.pubkey()),
+            &[&funded_payer],
+            bh,
+        );
+        rpc_client.send_transaction(&transaction).await.unwrap();
+    }
+
     let bh = rpc_client.get_latest_blockhash().await.unwrap();
     let slot = rpc_client.get_slot().await.unwrap();
     let block_hash: Arc<RwLock<Hash>> = Arc::new(RwLock::new(bh));
@@ -102,11 +124,11 @@ async fn main() {
     }
 
     for seed in 0..runs {
-        let funded_payer = Keypair::from_bytes(funded_payer.to_bytes().as_slice()).unwrap();
+        let payers = payers.clone();
         tasks.push(tokio::spawn(bench(
             rpc_client.clone(),
             tx_count,
-            funded_payer,
+            payers,
             seed as u64,
             block_hash.clone(),
             current_slot.clone(),
@@ -144,6 +166,19 @@ async fn main() {
     csv_writer.serialize(avg_metric).unwrap();
 
     csv_writer.flush().unwrap();
+
+    // getting back the sol to funder
+    log::info!("Moving sol back to the payer");
+    for _ in 0..payers.len() {
+        let payer = payers.get().unwrap();
+        let balance = rpc_client.get_balance(&payer.pubkey()).await.unwrap();
+        let ix =
+            system_instruction::transfer(&payer.pubkey(), &funded_payer.pubkey(), balance - 100000);
+        let bh = rpc_client.get_latest_blockhash().await.unwrap();
+        let transaction =
+            Transaction::new_signed_with_payer(&[ix], Some(&payer.pubkey()), &[&payer], bh);
+        rpc_client.send_transaction(&transaction).await.unwrap();
+    }
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -162,7 +197,7 @@ struct ApiCallerResult {
 async fn bench(
     rpc_client: Arc<RpcClient>,
     tx_count: usize,
-    funded_payer: Keypair,
+    payers: Arc<RotatingQueue<Arc<Keypair>>>,
     seed: u64,
     block_hash: Arc<RwLock<Hash>>,
     current_slot: Arc<AtomicU64>,
@@ -188,12 +223,13 @@ async fn bench(
 
             for rand_string in &rand_strings {
                 let blockhash = { *block_hash.read().await };
+                let payer = payers.get().unwrap();
                 let tx = match transaction_size {
                     TransactionSize::Small => {
-                        BenchHelper::create_memo_tx_small(rand_string, &funded_payer, blockhash)
+                        BenchHelper::create_memo_tx_small(rand_string, payer.as_ref(), blockhash)
                     }
                     TransactionSize::Large => {
-                        BenchHelper::create_memo_tx_large(rand_string, &funded_payer, blockhash)
+                        BenchHelper::create_memo_tx_large(rand_string, payer.as_ref(), blockhash)
                     }
                 };
                 let start_time = Instant::now();
