@@ -38,157 +38,6 @@ use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
 };
 use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
-use solana_lite_rpc_core::structures::produced_block::ProducedBlockInner;
-
-
-pub struct LoggingTimer {
-    pub(crate) started_at: Instant,
-    pub(crate) threshold: Duration,
-}
-
-#[allow(dead_code)]
-impl LoggingTimer {
-
-    pub fn log_if_exceed(&self, name: &str) {
-        let elapsed = self.started_at.elapsed();
-        if elapsed > self.threshold {
-            eprintln!("{} exceeded: {:?}", name, elapsed);
-        }
-
-    }
-
-    pub fn elapsed(&self) -> Duration {
-        self.started_at.elapsed()
-    }
-}
-
-
-
-/// grpc version of ProducedBlock mapping
-pub fn from_grpc_block_update(
-    block: SubscribeUpdateBlock,
-    commitment_config: CommitmentConfig,
-) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
-    let started_at = Instant::now();
-    let log_timer = LoggingTimer { started_at, threshold: Duration::from_millis(40)};
-
-    log_timer.log_if_exceed("start");
-    let txs: Vec<TransactionInfo> = block
-        .transactions
-        .into_iter()
-        .filter_map(|tx| maptx(tx))
-        .collect();
-    log_timer.log_if_exceed("after transactions");
-    println!("tx count {}", txs.len());
-
-    let rewards = block.rewards.map(|rewards| {
-        rewards
-            .rewards
-            .into_iter()
-            .map(|reward| Reward {
-                pubkey: reward.pubkey.to_owned(),
-                lamports: reward.lamports,
-                post_balance: reward.post_balance,
-                reward_type: match reward.reward_type() {
-                    yellowstone_grpc_proto::prelude::RewardType::Unspecified => None,
-                    yellowstone_grpc_proto::prelude::RewardType::Fee => Some(RewardType::Fee),
-                    yellowstone_grpc_proto::prelude::RewardType::Rent => Some(RewardType::Rent),
-                    yellowstone_grpc_proto::prelude::RewardType::Staking => {
-                        Some(RewardType::Staking)
-                    }
-                    yellowstone_grpc_proto::prelude::RewardType::Voting => Some(RewardType::Voting),
-                },
-                commission: None,
-            })
-            .collect_vec()
-    });
-    log_timer.log_if_exceed("after rewards");
-
-    let leader_id = if let Some(rewards) = &rewards {
-        rewards
-            .iter()
-            .find(|reward| Some(RewardType::Fee) == reward.reward_type)
-            .map(|leader_reward| leader_reward.pubkey.clone())
-    } else {
-        None
-    };
-    log_timer.log_if_exceed("after leader_id");
-
-    log_timer.log_if_exceed("before return");
-    let inner = ProducedBlockInner {
-        transactions: txs,
-        block_height: block
-            .block_height
-            .map(|block_height| block_height.block_height)
-            .unwrap(),
-        block_time: block.block_time.map(|time| time.timestamp).unwrap() as u64,
-        blockhash: block.blockhash,
-        previous_blockhash: block.parent_blockhash,
-        leader_id,
-        parent_slot: block.parent_slot,
-        slot: block.slot,
-        rewards,
-    };
-    ProducedBlock::new(inner, commitment_config)
-}
-
-pub fn create_grpc_subscription(
-    rpc_client: Arc<RpcClient>,
-    grpc_sources: Vec<GrpcSourceConfig>,
-    accounts_filter: AccountFilters,
-) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
-    let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(10);
-    let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
-
-    // processed slot is required to keep up with leader schedule
-    let (slot_multiplex_channel, jh_multiplex_slotstream) =
-        create_grpc_multiplex_processed_slots_subscription(grpc_sources.clone());
-
-    let (block_multiplex_channel, jh_multiplex_blockstream) =
-        create_grpc_multiplex_blocks_subscription(grpc_sources.clone());
-
-    let cluster_info_polling = poll_cluster_info(rpc_client.clone(), cluster_info_sx);
-    let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
-
-    // accounts
-    if !accounts_filter.is_empty() {
-        let (account_jh, processed_account_stream) =
-            create_grpc_account_streaming(grpc_sources, accounts_filter);
-        let streamers = EndpointStreaming {
-            blocks_notifier: block_multiplex_channel,
-            slot_notifier: slot_multiplex_channel,
-            cluster_info_notifier,
-            vote_account_notifier,
-            processed_account_stream: Some(processed_account_stream),
-        };
-
-        let endpoint_tasks = vec![
-            jh_multiplex_slotstream,
-            jh_multiplex_blockstream,
-            cluster_info_polling,
-            vote_accounts_polling,
-            account_jh,
-        ];
-        Ok((streamers, endpoint_tasks))
-    } else {
-        let streamers = EndpointStreaming {
-            blocks_notifier: block_multiplex_channel,
-            slot_notifier: slot_multiplex_channel,
-            cluster_info_notifier,
-            vote_account_notifier,
-            processed_account_stream: None,
-        };
-
-        let endpoint_tasks = vec![
-            jh_multiplex_slotstream,
-            jh_multiplex_blockstream,
-            cluster_info_polling,
-            vote_accounts_polling,
-        ];
-        Ok((streamers, endpoint_tasks))
-    }
-}
 
 
 
@@ -200,6 +49,7 @@ mod tests {
     use yellowstone_grpc_proto::prost::Message;
     use std::str::FromStr;
     use bincode::deserialize;
+    use crate::grpc_subscription::from_grpc_block_update;
 
     #[test]
     fn map_block() {
@@ -244,7 +94,7 @@ mod tests {
 
 fn maptx(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
 
-    let log_timer_tx = LoggingTimer { started_at: Instant::now(), threshold: Duration::from_micros(10) };
+    let log_timer_tx = crate::grpc_subscription::LoggingTimer { started_at: Instant::now(), threshold: Duration::from_millis(10) };
     log_timer_tx.log_if_exceed("start");
     let meta = tx.meta?;
 
