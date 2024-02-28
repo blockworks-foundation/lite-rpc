@@ -3,6 +3,7 @@ pub mod rpc_tester;
 use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
+use itertools::Itertools;
 use lite_rpc::bridge::LiteBridge;
 use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
@@ -14,6 +15,7 @@ use log::{debug, info};
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
+use solana_lite_rpc_accounts_on_demand::accounts_on_demand::AccountsOnDemand;
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
@@ -133,6 +135,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         enable_address_lookup_tables,
         address_lookup_tables_binary,
         account_filters,
+        enable_accounts_on_demand_accounts_service,
         ..
     } = args;
 
@@ -153,15 +156,26 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vec![]
     };
 
+    if enable_accounts_on_demand_accounts_service {
+        log::info!("Accounts on demand service is enabled");
+    } else {
+        log::info!("Accounts on demand service is disabled");
+    }
+
+    let timeouts = GrpcConnectionTimeouts {
+        connect_timeout: Duration::from_secs(5),
+        request_timeout: Duration::from_secs(5),
+        subscribe_timeout: Duration::from_secs(5),
+        receive_timeout: Duration::from_secs(5),
+    };
+
+    let gprc_sources = grpc_sources
+        .iter()
+        .map(|s| GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone()))
+        .collect_vec();
+
     let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
         info!("Creating geyser subscription...");
-
-        let timeouts = GrpcConnectionTimeouts {
-            connect_timeout: Duration::from_secs(5),
-            request_timeout: Duration::from_secs(5),
-            subscribe_timeout: Duration::from_secs(5),
-            receive_timeout: Duration::from_secs(5),
-        };
         create_grpc_subscription(
             rpc_client.clone(),
             grpc_sources
@@ -196,7 +210,22 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
             Arc::new(InmemoryAccountStore::new());
         const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
-        let account_service = AccountService::new(inmemory_account_storage);
+        // Accounts notifications will be spurious when slots change
+        // 256 seems very reasonable so that there are no account notification is missed and memory usage
+        let (account_notification_sender, _) = tokio::sync::broadcast::channel(256);
+
+        let account_storage = if enable_accounts_on_demand_accounts_service {
+            Arc::new(AccountsOnDemand::new(
+                rpc_client.clone(),
+                gprc_sources,
+                inmemory_account_storage,
+                account_notification_sender.clone(),
+            ))
+        } else {
+            inmemory_account_storage
+        };
+
+        let account_service = AccountService::new(account_storage, account_notification_sender);
 
         account_service
             .process_account_stream(account_stream.resubscribe(), blocks_notifier.resubscribe());

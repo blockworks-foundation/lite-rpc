@@ -22,6 +22,7 @@ pub struct MemcmpFilter {
 pub enum AccountFilterType {
     Datasize(u64),
     Memcmp(MemcmpFilter),
+    TokenAccountState,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -53,9 +54,28 @@ impl AccountFilter {
                         };
                         RpcFilterType::Memcmp(RpcMemcmp::new(memcpy.offset as usize, encoded_bytes))
                     }
+                    AccountFilterType::TokenAccountState => RpcFilterType::TokenAccountState,
                 })
                 .collect_vec()
         })
+    }
+}
+
+#[allow(deprecated)]
+impl From<&RpcFilterType> for AccountFilterType {
+    fn from(value: &RpcFilterType) -> Self {
+        match value {
+            RpcFilterType::DataSize(size) => AccountFilterType::Datasize(*size),
+            RpcFilterType::Memcmp(memcmp) => {
+                let bytes = memcmp.bytes().map(|x| (*x).clone()).unwrap_or_default();
+                let offset = memcmp.offset as u64;
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset,
+                    data: MemcmpFilterData::Bytes(bytes),
+                })
+            }
+            RpcFilterType::TokenAccountState => AccountFilterType::TokenAccountState,
+        }
     }
 }
 

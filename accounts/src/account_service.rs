@@ -29,8 +29,10 @@ pub struct AccountService {
 }
 
 impl AccountService {
-    pub fn new(account_store: Arc<dyn AccountStorageInterface>) -> Self {
-        let (account_notification_sender, _) = tokio::sync::broadcast::channel(256);
+    pub fn new(
+        account_store: Arc<dyn AccountStorageInterface>,
+        account_notification_sender: Sender<AccountNotificationMessage>,
+    ) -> Self {
         Self {
             account_store,
             account_notification_sender,
@@ -116,9 +118,9 @@ impl AccountService {
                 for (index, account) in fetch_accounts.iter().enumerate() {
                     if let Some(account) = account {
                         self.account_store
-                            .initilize_account(AccountData {
+                            .initilize_or_update_account(AccountData {
                                 pubkey: accounts[index],
-                                account: account.clone(),
+                                account: Arc::new(account.clone()),
                                 updated_slot,
                             })
                             .await;
@@ -140,13 +142,16 @@ impl AccountService {
             loop {
                 match account_stream.recv().await {
                     Ok(account_notification) => {
-                        this.account_store
+                        if this
+                            .account_store
                             .update_account(
                                 account_notification.data.clone(),
                                 account_notification.commitment,
                             )
-                            .await;
-                        let _ = this.account_notification_sender.send(account_notification);
+                            .await
+                        {
+                            let _ = this.account_notification_sender.send(account_notification);
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
                         log::error!(
@@ -183,11 +188,11 @@ impl AccountService {
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
-                        log::error!("Account Stream Lagged by {}", e);
+                        log::error!("Block Stream Lagged to update accounts by {}", e);
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        log::error!("Account Stream Broken");
+                        log::error!("Block Stream Broken");
                         break;
                     }
                 }
@@ -210,7 +215,7 @@ impl AccountService {
         let data_slice = config.as_ref().map(|c| c.data_slice).unwrap_or_default();
         UiAccount::encode(
             &account_data.pubkey,
-            &account_data.account,
+            account_data.account.as_ref(),
             encoding,
             None,
             data_slice,
@@ -230,15 +235,14 @@ impl AccountService {
         let commitment = Commitment::from(commitment);
 
         if let Some(account_data) = self.account_store.get_account(account, commitment).await {
-            let ui_account =
-                Self::convert_account_data_to_ui_account(&account_data, config.clone());
-
             // if minimum context slot is not satisfied return Null
             let minimum_context_slot = config
                 .as_ref()
                 .map(|c| c.min_context_slot.unwrap_or_default())
                 .unwrap_or_default();
             if minimum_context_slot <= account_data.updated_slot {
+                let ui_account =
+                    Self::convert_account_data_to_ui_account(&account_data, config.clone());
                 Ok((account_data.updated_slot, Some(ui_account)))
             } else {
                 Ok((account_data.updated_slot, None))

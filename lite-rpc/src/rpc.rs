@@ -214,4 +214,11 @@ pub trait LiteRpc {
         program_id_str: String,
         config: Option<RpcProgramAccountsConfig>,
     ) -> RpcResult<OptionalContext<Vec<RpcKeyedAccount>>>;
+
+    #[method(name = "getBalance")]
+    async fn get_balance(
+        &self,
+        pubkey_str: String,
+        config: Option<RpcContextConfig>,
+    ) -> RpcResult<RpcResponse<u64>>;
 }

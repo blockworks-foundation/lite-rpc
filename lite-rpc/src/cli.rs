@@ -87,6 +87,9 @@ pub struct Config {
 
     #[serde(default)]
     pub account_filters: Option<String>,
+
+    #[serde(default)]
+    pub enable_accounts_on_demand_accounts_service: bool,
 }
 
 impl Config {

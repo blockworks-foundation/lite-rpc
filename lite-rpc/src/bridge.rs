@@ -563,14 +563,11 @@ impl LiteRpcServer for LiteBridge {
                         ui_accounts.push(ui_account);
                     }
                     Err(_) => {
-                        // internal error while fetching multiple accounts
-                        return Err(jsonrpsee::types::error::ErrorCode::ServerError(
-                            RpcErrors::AccountNotFound as i32,
-                        )
-                        .into());
+                        ui_accounts.push(None);
                     }
                 }
             }
+            assert_eq!(ui_accounts.len(), pubkey_strs.len());
             Ok(RpcResponse {
                 context: RpcResponseContext {
                     slot: max_slot,
@@ -610,6 +607,44 @@ impl LiteRpcServer for LiteBridge {
                         RpcErrors::AccountNotFound as i32,
                     )
                     .into());
+                }
+            }
+        } else {
+            // accounts are disabled
+            Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
+        }
+    }
+
+    async fn get_balance(
+        &self,
+        pubkey_str: String,
+        config: Option<RpcContextConfig>,
+    ) -> RpcResult<RpcResponse<u64>> {
+        let Ok(pubkey) = Pubkey::from_str(&pubkey_str) else {
+            // pubkey is invalid
+            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
+        };
+        let config = config.map(|x| RpcAccountInfoConfig {
+            encoding: None,
+            data_slice: None,
+            commitment: x.commitment,
+            min_context_slot: x.min_context_slot,
+        });
+        if let Some(account_service) = &self.accounts_service {
+            match account_service.get_account(pubkey, config).await {
+                Ok((slot, ui_account)) => Ok(RpcResponse {
+                    context: RpcResponseContext {
+                        slot,
+                        api_version: None,
+                    },
+                    value: ui_account.map(|x| x.lamports).unwrap_or_default(),
+                }),
+                Err(_) => {
+                    // account not found
+                    Err(jsonrpsee::types::error::ErrorCode::ServerError(
+                        RpcErrors::AccountNotFound as i32,
+                    )
+                    .into())
                 }
             }
         } else {

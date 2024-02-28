@@ -2539,6 +2539,7 @@ dependencies = [
  "serde_json",
  "solana-account-decoder",
  "solana-lite-rpc-accounts",
+ "solana-lite-rpc-accounts-on-demand",
  "solana-lite-rpc-address-lookup-tables",
  "solana-lite-rpc-blockstore",
  "solana-lite-rpc-cluster-endpoints",
@@ -4379,6 +4380,49 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "solana-lite-rpc-accounts-on-demand"
+version = "0.2.4"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.7",
+ "bincode",
+ "bs58",
+ "bytes",
+ "chrono",
+ "dashmap 5.5.3",
+ "futures",
+ "itertools 0.10.5",
+ "lazy_static",
+ "log",
+ "prometheus",
+ "quinn",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "rustls",
+ "serde",
+ "serde_json",
+ "solana-account-decoder",
+ "solana-address-lookup-table-program",
+ "solana-client",
+ "solana-lite-rpc-accounts",
+ "solana-lite-rpc-cluster-endpoints",
+ "solana-lite-rpc-core",
+ "solana-net-utils",
+ "solana-pubsub-client",
+ "solana-rpc-client",
+ "solana-rpc-client-api",
+ "solana-sdk",
+ "solana-streamer",
+ "solana-transaction-status",
+ "solana-version",
+ "thiserror",
+ "tokio",
+ "yellowstone-grpc-client",
+ "yellowstone-grpc-proto",
 ]
 
 [[package]]
