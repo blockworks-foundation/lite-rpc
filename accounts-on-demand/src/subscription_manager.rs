@@ -6,6 +6,7 @@ use std::{
 
 use futures::StreamExt;
 use itertools::Itertools;
+use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::GrpcSourceConfig;
 use solana_lite_rpc_core::{
@@ -28,6 +29,14 @@ use yellowstone_grpc_proto::geyser::{
     SubscribeRequestFilterAccountsFilterMemcmp,
 };
 
+lazy_static::lazy_static! {
+static ref ON_DEMAND_SUBSCRIPTION_RESTARTED: IntGauge =
+        register_int_gauge!(opts!("literpc_count_account_on_demand_resubscribe", "Count number of account on demand has resubscribed")).unwrap();
+
+        static ref ON_DEMAND_UPDATES: IntGauge =
+        register_int_gauge!(opts!("literpc_count_account_on_demand_updates", "Count number of updates for account on demand")).unwrap();
+}
+
 pub struct SubscriptionManger {
     account_filter_watch: watch::Sender<AccountFilters>,
 }
@@ -46,6 +55,7 @@ impl SubscriptionManger {
             loop {
                 match account_stream.recv().await {
                     Ok(message) => {
+                        ON_DEMAND_UPDATES.inc();
                         let _ = account_notification_sender.send(message.clone());
                         accounts_storage
                             .update_account(message.data, message.commitment)
@@ -276,6 +286,7 @@ pub fn create_grpc_account_streaming_tasks(
             .collect_vec();
 
         'check_watch: while account_filter_watch.changed().await.is_ok() {
+            ON_DEMAND_SUBSCRIPTION_RESTARTED.inc();
             // wait for a second to get all the accounts to update
             tokio::time::sleep(Duration::from_secs(1)).await;
             let accounts_filters = account_filter_watch.borrow_and_update().clone();

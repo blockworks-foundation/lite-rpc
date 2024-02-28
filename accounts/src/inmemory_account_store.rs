@@ -4,10 +4,19 @@ use crate::account_store_interface::AccountStorageInterface;
 use async_trait::async_trait;
 use dashmap::{DashMap, DashSet};
 use itertools::Itertools;
+use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_lite_rpc_core::{commitment_utils::Commitment, structures::account_data::AccountData};
 use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use std::collections::BTreeMap;
+
+lazy_static::lazy_static! {
+    static ref ACCOUNT_STORED_IN_MEMORY: IntGauge =
+       register_int_gauge!(opts!("literpc_accounts_in_memory", "Account InMemory")).unwrap();
+
+    static ref TOTAL_PROCESSED_ACCOUNTS: IntGauge =
+        register_int_gauge!(opts!("literpc_total_processed_accounts_in_memory", "Account processed accounts InMemory")).unwrap();
+}
 
 #[derive(Default)]
 pub struct AccountDataByCommitment {
@@ -275,6 +284,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 }
             }
             dashmap::mapref::entry::Entry::Vacant(vac) => {
+                ACCOUNT_STORED_IN_MEMORY.inc();
                 self.add_account_owner(account_data.pubkey, account_data.account.owner);
                 vac.insert(AccountDataByCommitment::new(
                     account_data.clone(),
@@ -293,6 +303,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                     .await;
             }
             false => {
+                ACCOUNT_STORED_IN_MEMORY.inc();
                 self.add_account_owner(account_data.pubkey, account_data.account.owner);
                 self.account_store.insert(
                     account_data.pubkey,
@@ -383,6 +394,14 @@ impl AccountStorageInterface for InmemoryAccountStore {
                     }
                 }
             });
+
+        // update number of processed accounts in memory
+        let number_of_processed_accounts_in_memory: i64 = self
+            .account_store
+            .iter()
+            .map(|x| x.processed_accounts.len() as i64)
+            .sum();
+        TOTAL_PROCESSED_ACCOUNTS.set(number_of_processed_accounts_in_memory);
 
         updated_accounts
             .iter()

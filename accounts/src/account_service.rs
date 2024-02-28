@@ -2,6 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::bail;
 use itertools::Itertools;
+use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_account_decoder::{UiAccount, UiDataSliceConfig};
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
@@ -21,6 +22,21 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_histo
 use tokio::sync::broadcast::Sender;
 
 use crate::account_store_interface::AccountStorageInterface;
+
+lazy_static::lazy_static! {
+    static ref ACCOUNT_UPDATES: IntGauge =
+       register_int_gauge!(opts!("literpc_accounts_updates", "Account Updates by lite-rpc service")).unwrap();
+    static ref ACCOUNT_UPDATES_CONFIRMED: IntGauge =
+       register_int_gauge!(opts!("literpc_accounts_updates_confirmed", "Account Updates by lite-rpc service")).unwrap();
+    static ref ACCOUNT_UPDATES_FINALIZED: IntGauge =
+       register_int_gauge!(opts!("literpc_accounts_updates_finalized", "Account Updates by lite-rpc service")).unwrap();
+
+    static ref GET_PROGRAM_ACCOUNT_CALLED: IntGauge =
+       register_int_gauge!(opts!("literpc_gpa_called", "Account Updates by lite-rpc service")).unwrap();
+
+    static ref GET_ACCOUNT_CALLED: IntGauge =
+       register_int_gauge!(opts!("literpc_get_account_called", "Account Updates by lite-rpc service")).unwrap();
+}
 
 #[derive(Clone)]
 pub struct AccountService {
@@ -142,6 +158,7 @@ impl AccountService {
             loop {
                 match account_stream.recv().await {
                     Ok(account_notification) => {
+                        ACCOUNT_UPDATES.inc();
                         if this
                             .account_store
                             .update_account(
@@ -181,6 +198,13 @@ impl AccountService {
                             .account_store
                             .process_slot_data(block_notification.slot, commitment)
                             .await;
+
+                        if block_notification.commitment_config.is_finalized() {
+                            ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
+                        } else {
+                            ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);
+                        }
+
                         for data in updated_accounts {
                             let _ = this
                                 .account_notification_sender
@@ -227,6 +251,7 @@ impl AccountService {
         account: Pubkey,
         config: Option<RpcAccountInfoConfig>,
     ) -> anyhow::Result<(Slot, Option<UiAccount>)> {
+        GET_ACCOUNT_CALLED.inc();
         let commitment = config
             .as_ref()
             .map(|config| config.commitment.unwrap_or_default())
@@ -260,6 +285,8 @@ impl AccountService {
         program_id: Pubkey,
         config: Option<RpcProgramAccountsConfig>,
     ) -> anyhow::Result<(Slot, Vec<RpcKeyedAccount>)> {
+        GET_PROGRAM_ACCOUNT_CALLED.inc();
+
         let account_filter = config
             .as_ref()
             .map(|x| x.filters.clone())
