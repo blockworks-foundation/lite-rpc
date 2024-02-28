@@ -73,7 +73,7 @@ impl AccountsOnDemand {
             .await;
     }
 
-    pub async fn get_filters(&self) -> AccountFilters {
+    async fn get_filters(&self) -> AccountFilters {
         self.program_filters.read().await.clone()
     }
 }
@@ -102,6 +102,7 @@ impl AccountStorageInterface for AccountsOnDemand {
             None => {
                 // account does not exist in account store
                 // first check if we have already subscribed to the required account
+                // This is to avoid resetting geyser subscription because of accounts that do not exists.
                 if !self.accounts_subscribed.contains(&account_pk) {
                     // get account from rpc and create its subscription
                     self.accounts_subscribed.insert(account_pk);
