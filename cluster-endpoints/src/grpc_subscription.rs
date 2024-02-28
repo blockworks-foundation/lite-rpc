@@ -77,6 +77,7 @@ pub fn from_grpc_block_update(
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
+        // .into_par_iter() TODO
         .filter_map(|tx| maptx(tx))
         .collect();
     log_timer.log_if_exceed("after transactions");
@@ -449,4 +450,169 @@ fn maptx(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
         address_lookup_tables,
     })
 }
+
+
+
+fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
+    let log_timer_tx = LoggingTimer {
+        started_at: Instant::now(),
+        threshold: Duration::from_millis(10),
+    };
+    log_timer_tx.log_if_exceed("start");
+    let meta = tx.meta?;
+
+    let message = {
+        let transaction = tx.transaction?;
+
+        let grpc_message = transaction.message?;
+        let header = grpc_message.header?;
+
+        let account_keys: Vec<Pubkey> = grpc_message
+            .account_keys
+            .into_iter()
+            .map(|key| {
+                let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
+                Pubkey::new_from_array(bytes)
+            })
+            .collect();
+        log_timer_tx.log_if_exceed("after account keys"); // 47us
+
+        let address_table_lookups: Vec<MessageAddressTableLookup> = grpc_message
+            .address_table_lookups
+            .into_iter()
+            .map(|table| {
+                let bytes = table
+                    .account_key
+                    .as_slice()
+                    .try_into()
+                    .unwrap_or(Pubkey::default().to_bytes());
+                MessageAddressTableLookup {
+                    account_key: Pubkey::from(bytes),
+                    writable_indexes: table.writable_indexes,
+                    readonly_indexes: table.readonly_indexes,
+                }
+            })
+            .collect();
+        log_timer_tx.log_if_exceed("after address_lookup_tables");
+
+        VersionedMessage::V0(v0::Message {
+            header: MessageHeader {
+                num_required_signatures: header.num_required_signatures as u8,
+                num_readonly_signed_accounts: header.num_readonly_signed_accounts as u8,
+                num_readonly_unsigned_accounts: header.num_readonly_unsigned_accounts as u8,
+            },
+            account_keys: account_keys,
+            recent_blockhash: Hash::new(&grpc_message.recent_blockhash),
+            instructions: grpc_message
+                .instructions
+                .into_iter()
+                .map(|ix| CompiledInstruction {
+                    program_id_index: ix.program_id_index as u8,
+                    accounts: ix.accounts,
+                    data: ix.data,
+                })
+                .collect(),
+            address_table_lookups,
+        })
+    };
+    log_timer_tx.log_if_exceed("after message mapping");
+
+    let sig_bytes: [u8; 64] = tx.signature.try_into().unwrap();
+    let signature = Signature::from(sig_bytes);
+    log_timer_tx.log_if_exceed("after signature");
+
+    let err = meta.err.map(|x| {
+        bincode::deserialize::<TransactionError>(&x.err)
+            .expect("TransactionError should be deserialized")
+    });
+    log_timer_tx.log_if_exceed("after err");
+
+    // iter message instructions
+    let mut cu_requested: Option<u32> = None;
+    let mut legacy_cu_requested: Option<u32> = None;
+    let mut prioritization_fees: Option<u64> = None;
+    let mut legacy_prioritization_fees: Option<u64> = None;
+    let mut is_vote_transaction = false;
+
+    for ix in message.instructions().iter() {
+        // check vote
+        if !is_vote_transaction
+            && ix
+            .program_id(message.static_account_keys())
+            .eq(&solana_sdk::vote::program::id())
+        {
+            if let Ok(_) = limited_deserialize::<VoteInstruction>(&ix.data) {
+                // do we even need to deserialize here?
+                is_vote_transaction = true;
+                continue;
+            }
+        }
+
+        // compute budget ixs
+        if ix
+            .program_id(message.static_account_keys())
+            .eq(&compute_budget::id())
+        {
+            // cu_requested
+            if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
+                try_from_slice_unchecked(ix.data.as_slice())
+            {
+                cu_requested = Some(limit);
+                continue;
+            }
+
+            // prio fees
+            if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
+                try_from_slice_unchecked(ix.data.as_slice())
+            {
+                prioritization_fees = Some(price);
+            }
+
+            // legacy
+            if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
+                          units,
+                          additional_fee,
+                      }) = try_from_slice_unchecked(ix.data.as_slice())
+            {
+                legacy_cu_requested = Some(units);
+                if additional_fee > 0 {
+                    legacy_prioritization_fees = Some((units * 1000 / additional_fee) as u64);
+                }
+                continue;
+            }
+        }
+    }
+    log_timer_tx.log_if_exceed("after message ix mapping");
+
+    // Accounts
+    let mut readable_accounts = vec![];
+    let mut writable_accounts = vec![];
+
+    for (index, key) in message.static_account_keys().iter().enumerate() {
+        if message.is_maybe_writable(index) {
+            writable_accounts.push(*key)
+        } else {
+            readable_accounts.push(*key)
+        }
+    }
+
+    log_timer_tx.log_if_exceed("after account_keys");
+
+    // println!("elapsed: {:?} for tx", log_timer_tx.elapsed());
+    log_timer_tx.log_if_exceed("before return");
+    Some(TransactionInfo {
+        signature: signature.to_string(),
+        is_vote: is_vote_transaction,
+        err,
+        cu_requested: cu_requested.or(legacy_cu_requested),
+        prioritization_fees: prioritization_fees.or(legacy_prioritization_fees),
+        cu_consumed: meta.compute_units_consumed,
+        recent_blockhash: message.recent_blockhash().to_string(),
+        message: BASE64.encode(message.serialize()),
+        readable_accounts,
+        writable_accounts,
+        address_lookup_tables: message.address_table_lookups().unwrap().to_vec(),
+    })
+}
+
 
