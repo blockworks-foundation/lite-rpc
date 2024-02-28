@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use dashmap::DashSet;
 use itertools::Itertools;
+use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
@@ -21,6 +22,14 @@ use solana_sdk::{clock::Slot, pubkey::Pubkey};
 use tokio::sync::{broadcast::Sender, RwLock};
 
 use crate::subscription_manager::SubscriptionManger;
+
+lazy_static::lazy_static! {
+    static ref NUMBER_OF_ACCOUNTS_ON_DEMAND: IntGauge =
+       register_int_gauge!(opts!("literpc_number_of_accounts_on_demand", "Number of accounts on demand")).unwrap();
+
+    static ref NUMBER_OF_PROGRAM_FILTERS_ON_DEMAND: IntGauge =
+        register_int_gauge!(opts!("literpc_number_of_program_filters_on_demand", "Number of program filters on demand")).unwrap();
+}
 
 pub struct AccountsOnDemand {
     rpc_client: Arc<RpcClient>,
@@ -50,9 +59,10 @@ impl AccountsOnDemand {
         }
     }
 
-    pub async fn reset_subscription(&self) {
+    pub async fn refresh_subscription(&self) {
         let mut filters = self.get_filters().await;
-
+        NUMBER_OF_PROGRAM_FILTERS_ON_DEMAND.set(filters.len() as i64);
+        NUMBER_OF_ACCOUNTS_ON_DEMAND.set(self.accounts_subscribed.len() as i64);
         // add additional filters related to accounts
         for accounts in &self
             .accounts_subscribed
@@ -106,7 +116,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                 if !self.accounts_subscribed.contains(&account_pk) {
                     // get account from rpc and create its subscription
                     self.accounts_subscribed.insert(account_pk);
-                    self.reset_subscription().await;
+                    self.refresh_subscription().await;
                     let account_response = self
                         .rpc_client
                         .get_account_with_commitment(
@@ -178,7 +188,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                     let mut writelk = self.program_filters.write().await;
                     writelk.push(account_filter.clone());
                 }
-                self.reset_subscription().await;
+                self.refresh_subscription().await;
 
                 let rpc_response = self
                     .rpc_client

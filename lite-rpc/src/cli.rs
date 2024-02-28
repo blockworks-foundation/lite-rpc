@@ -89,7 +89,7 @@ pub struct Config {
     pub account_filters: Option<String>,
 
     #[serde(default)]
-    pub enable_accounts_on_demand_accounts_service: bool,
+    pub enable_accounts_on_demand_accounts_service: Option<bool>,
 }
 
 impl Config {
@@ -218,6 +218,13 @@ impl Config {
         config.address_lookup_tables_binary = env::var("ADDRESS_LOOKUP_TABLES_BINARY")
             .ok()
             .or(config.address_lookup_tables_binary);
+
+        config.account_filters = env::var("ACCOUNT_FILTERS").ok().or(config.account_filters);
+
+        config.enable_accounts_on_demand_accounts_service = env::var("ENABLE_ACCOUNT_ON_DEMAND")
+            .map(|value| value.parse::<bool>().unwrap())
+            .ok()
+            .or(config.enable_accounts_on_demand_accounts_service);
         Ok(config)
     }
 

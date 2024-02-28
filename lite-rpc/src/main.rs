@@ -156,6 +156,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         vec![]
     };
 
+    let enable_accounts_on_demand_accounts_service =
+        enable_accounts_on_demand_accounts_service.unwrap_or_default();
     if enable_accounts_on_demand_accounts_service {
         log::info!("Accounts on demand service is enabled");
     } else {
