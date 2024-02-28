@@ -205,7 +205,7 @@ pub fn start_account_streaming_task(
                     Err(status) => {
                         log::error!("Account on demand grpc error : {}", status.message());
                         continue;
-                    },
+                    }
                 };
                 let Some(update) = message.update_oneof else {
                     continue;
