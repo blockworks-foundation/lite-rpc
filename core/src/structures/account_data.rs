@@ -6,7 +6,7 @@ use tokio::sync::broadcast::Receiver;
 
 use crate::commitment_utils::Commitment;
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Debug)]
 pub struct AccountData {
     pub pubkey: Pubkey,
     pub account: Arc<Account>,
@@ -23,6 +23,14 @@ impl AccountData {
                 false
             }
         }
+    }
+}
+
+impl PartialEq for AccountData {
+    fn eq(&self, other: &Self) -> bool {
+        self.pubkey == other.pubkey
+            && *self.account == *other.account
+            && self.updated_slot == other.updated_slot
     }
 }
 

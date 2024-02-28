@@ -39,7 +39,7 @@ impl SubscriptionManger {
         let accounts_filters = Arc::new(RwLock::new(vec![]));
 
         let (_, mut account_stream) =
-            create_grpc_account_streaming(grpc_sources, accounts_filters.clone(), recver);
+            create_grpc_account_streaming_tasks(grpc_sources, accounts_filters.clone(), recver);
 
         let task_restart_sender = restart_sender.clone();
         tokio::spawn(async move {
@@ -53,14 +53,14 @@ impl SubscriptionManger {
                     }
                     Ok(Err(e)) => match e {
                         broadcast::error::RecvError::Closed => {
-                            log::error!("Account stream channel closed");
-                            break;
+                            panic!("Account stream channel is broken");
                         }
-                        broadcast::error::RecvError::Lagged(_) => {
+                        broadcast::error::RecvError::Lagged(lag) => {
+                            log::error!("Account on demand stream lagged by {lag:?}, missed some account updates; continue");
                             continue;
                         }
                     },
-                    Err(_) => {
+                    Err(_elapsed) => {
                         let _ = task_restart_sender.send(());
                     }
                 }
@@ -83,7 +83,7 @@ pub fn start_account_streaming_tasks(
     accounts_filters: Arc<RwLock<AccountFilters>>,
     mut restart_channel: broadcast::Receiver<()>,
     account_stream_sx: broadcast::Sender<AccountNotificationMessage>,
-) -> AnyhowJoinHandle {
+) {
     tokio::spawn(async move {
         'main_loop: loop {
             let processed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Processed;
@@ -95,7 +95,7 @@ pub fn start_account_streaming_tasks(
             for (index, accounts_filter) in accounts_filters.iter().enumerate() {
                 if !accounts_filter.accounts.is_empty() {
                     subscribe_accounts.insert(
-                        format!("accounts_{index:?}"),
+                        format!("accounts_on_demand_{index:?}"),
                         SubscribeRequestFilterAccounts {
                             account: accounts_filter
                                 .accounts
@@ -148,7 +148,7 @@ pub fn start_account_streaming_tasks(
                         vec![]
                     };
                     subscribe_accounts.insert(
-                        format!("accounts_{}", program_id),
+                        format!("program_accounts_on_demand_{}", program_id),
                         SubscribeRequestFilterAccounts {
                             account: vec![],
                             owner: vec![program_id.clone()],
@@ -174,13 +174,21 @@ pub fn start_account_streaming_tasks(
                 "Accounts on demand subscribing to {}",
                 grpc_config.grpc_addr
             );
-            let mut client = yellowstone_grpc_client::GeyserGrpcClient::connect(
+            let Ok(mut client) = yellowstone_grpc_client::GeyserGrpcClient::connect(
                 grpc_config.grpc_addr.clone(),
                 grpc_config.grpc_x_token.clone(),
                 None,
-            )
-            .unwrap();
-            let mut account_stream = client.subscribe_once2(subscribe_request).await.unwrap();
+            ) else {
+                // problem connecting to grpc, retry after a sec
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            };
+
+            let Ok(mut account_stream) = client.subscribe_once2(subscribe_request).await else {
+                // problem subscribing to geyser stream, retry after a sec
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            };
 
             while let Some(message) = account_stream.next().await {
                 let message = message.unwrap();
@@ -246,11 +254,10 @@ pub fn start_account_streaming_tasks(
                 }
             }
         }
-        Ok(())
-    })
+    });
 }
 
-pub fn create_grpc_account_streaming(
+pub fn create_grpc_account_streaming_tasks(
     grpc_sources: Vec<GrpcSourceConfig>,
     accounts_filters: Arc<RwLock<AccountFilters>>,
     restart_channel: broadcast::Receiver<()>,

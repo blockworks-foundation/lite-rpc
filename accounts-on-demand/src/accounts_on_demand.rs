@@ -86,8 +86,10 @@ impl AccountStorageInterface for AccountsOnDemand {
             .await
     }
 
-    async fn initilize_account(&self, account_data: AccountData) {
-        self.accounts_storage.initilize_account(account_data).await
+    async fn initilize_or_update_account(&self, account_data: AccountData) {
+        self.accounts_storage
+            .initilize_or_update_account(account_data)
+            .await
     }
 
     async fn get_account(&self, account_pk: Pubkey, commitment: Commitment) -> Option<AccountData> {

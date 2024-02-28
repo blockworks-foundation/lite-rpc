@@ -181,7 +181,7 @@ pub fn create_grpc_account_streaming(
     let jh: AnyhowJoinHandle = tokio::spawn(async move {
         loop {
             let (accounts_sx, mut accounts_rx) = tokio::sync::mpsc::unbounded_channel();
-            grpc_sources
+            let jhs = grpc_sources
                 .iter()
                 .map(|grpc_config| {
                     start_account_streaming_tasks(
@@ -207,6 +207,11 @@ pub fn create_grpc_account_streaming(
                         break;
                     }
                 }
+            }
+
+            for jh in jhs {
+                // abort previous handles
+                jh.abort();
             }
         }
     });

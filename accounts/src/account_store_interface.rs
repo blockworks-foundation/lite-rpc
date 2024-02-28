@@ -10,7 +10,7 @@ pub trait AccountStorageInterface: Send + Sync {
     // Update account and return true if the account was sucessfylly updated
     async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool;
 
-    async fn initilize_account(&self, account_data: AccountData);
+    async fn initilize_or_update_account(&self, account_data: AccountData);
 
     async fn get_account(&self, account_pk: Pubkey, commitment: Commitment) -> Option<AccountData>;
 

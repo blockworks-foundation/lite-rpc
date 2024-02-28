@@ -118,7 +118,7 @@ impl AccountService {
                 for (index, account) in fetch_accounts.iter().enumerate() {
                     if let Some(account) = account {
                         self.account_store
-                            .initilize_account(AccountData {
+                            .initilize_or_update_account(AccountData {
                                 pubkey: accounts[index],
                                 account: Arc::new(account.clone()),
                                 updated_slot,
@@ -235,15 +235,14 @@ impl AccountService {
         let commitment = Commitment::from(commitment);
 
         if let Some(account_data) = self.account_store.get_account(account, commitment).await {
-            let ui_account =
-                Self::convert_account_data_to_ui_account(&account_data, config.clone());
-
             // if minimum context slot is not satisfied return Null
             let minimum_context_slot = config
                 .as_ref()
                 .map(|c| c.min_context_slot.unwrap_or_default())
                 .unwrap_or_default();
             if minimum_context_slot <= account_data.updated_slot {
+                let ui_account =
+                    Self::convert_account_data_to_ui_account(&account_data, config.clone());
                 Ok((account_data.updated_slot, Some(ui_account)))
             } else {
                 Ok((account_data.updated_slot, None))

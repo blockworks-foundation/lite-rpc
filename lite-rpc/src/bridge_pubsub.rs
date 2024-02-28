@@ -242,14 +242,14 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         slot,
                         accounts_data,
                     })) => {
-                        if let Some(account_data) = accounts_data.get(&account) {
+                        if let Some(account_stats) = accounts_data.get(&account) {
                             let result_message =
                                 jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
                                     context: RpcResponseContext {
                                         slot,
                                         api_version: None,
                                     },
-                                    value: account_data,
+                                    value: account_stats,
                                 });
 
                             match sink.send(result_message.unwrap()).await {
@@ -276,7 +276,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         log::error!("failed to receive block, sender closed - aborting");
                         return;
                     }
-                    Err(_) => {
+                    Err(_elapsed) => {
                         // check if subscription is closed
                         if sink.is_closed() {
                             break 'recv_loop;
@@ -374,7 +374,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         );
                         return;
                     }
-                    Err(_) => {
+                    Err(_elapsed) => {
                         // on timeout check if sink is still open
                         if sink.is_closed() {
                             break;
@@ -484,7 +484,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         );
                         return;
                     }
-                    Err(_) => {
+                    Err(_elapsed) => {
                         // on timeout check if sink is still open
                         if sink.is_closed() {
                             break;

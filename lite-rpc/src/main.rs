@@ -158,6 +158,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     if enable_accounts_on_demand_accounts_service {
         log::info!("Accounts on demand service is enabled");
+    } else {
+        log::info!("Accounts on demand service is disabled");
     }
 
     let timeouts = GrpcConnectionTimeouts {
@@ -208,6 +210,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
             Arc::new(InmemoryAccountStore::new());
         const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
+        // Accounts notifications will be spurious when slots change
+        // 256 seems very reasonable so that there are no account notification is missed and memory usage
         let (account_notification_sender, _) = tokio::sync::broadcast::channel(256);
 
         let account_storage = if enable_accounts_on_demand_accounts_service {

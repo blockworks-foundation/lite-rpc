@@ -567,6 +567,7 @@ impl LiteRpcServer for LiteBridge {
                     }
                 }
             }
+            assert_eq!(ui_accounts.len(), pubkey_strs.len());
             Ok(RpcResponse {
                 context: RpcResponseContext {
                     slot: max_slot,

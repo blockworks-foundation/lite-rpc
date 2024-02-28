@@ -9,9 +9,10 @@ use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct AccountDataByCommitment {
-    pub pk: Pubkey,
+    pub pubkey: Pubkey,
+    // should have maximum 32 entries, all processed slots which are not yet finalized
     pub processed_accounts: BTreeMap<Slot, AccountData>,
     pub confirmed_account: Option<AccountData>,
     pub finalized_account: Option<AccountData>,
@@ -31,11 +32,12 @@ impl AccountDataByCommitment {
         }
     }
 
+    // Should be used when accounts is created by geyser notification
     pub fn new(data: AccountData, commitment: Commitment) -> Self {
         let mut processed_accounts = BTreeMap::new();
         processed_accounts.insert(data.updated_slot, data.clone());
         AccountDataByCommitment {
-            pk: data.pubkey,
+            pubkey: data.pubkey,
             processed_accounts,
             confirmed_account: if commitment == Commitment::Confirmed
                 || commitment == Commitment::Finalized
@@ -52,11 +54,13 @@ impl AccountDataByCommitment {
         }
     }
 
+    // should be called with finalized accounts data
+    // when accounts storage is being warmed up
     pub fn initialize(data: AccountData) -> Self {
         let mut processed_accounts = BTreeMap::new();
         processed_accounts.insert(data.updated_slot, data.clone());
         AccountDataByCommitment {
-            pk: data.pubkey,
+            pubkey: data.pubkey,
             processed_accounts,
             confirmed_account: Some(data.clone()),
             finalized_account: Some(data),
@@ -188,7 +192,7 @@ impl AccountDataByCommitment {
 pub struct InmemoryAccountStore {
     account_store: Arc<DashMap<Pubkey, AccountDataByCommitment>>,
     confirmed_slots_map: DashSet<Slot>,
-    owner_map_accounts: Arc<DashMap<Pubkey, HashSet<Pubkey>>>,
+    accounts_by_owner: Arc<DashMap<Pubkey, HashSet<Pubkey>>>,
 }
 
 impl InmemoryAccountStore {
@@ -196,12 +200,12 @@ impl InmemoryAccountStore {
         Self {
             account_store: Arc::new(DashMap::new()),
             confirmed_slots_map: DashSet::new(),
-            owner_map_accounts: Arc::new(DashMap::new()),
+            accounts_by_owner: Arc::new(DashMap::new()),
         }
     }
 
     fn add_account_owner(&self, account: Pubkey, owner: Pubkey) {
-        match self.owner_map_accounts.entry(owner) {
+        match self.accounts_by_owner.entry(owner) {
             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
                 occ.get_mut().insert(account);
             }
@@ -221,12 +225,11 @@ impl InmemoryAccountStore {
         new_account_data: &AccountData,
         commitment: Commitment,
     ) {
-        if prev_account_data.pubkey == new_account_data.pubkey
-            && prev_account_data.account.owner != new_account_data.account.owner
-        {
+        assert_eq!(prev_account_data.pubkey, new_account_data.pubkey);
+        if prev_account_data.account.owner != new_account_data.account.owner {
             if commitment == Commitment::Finalized {
                 match self
-                    .owner_map_accounts
+                    .accounts_by_owner
                     .entry(prev_account_data.account.owner)
                 {
                     dashmap::mapref::entry::Entry::Occupied(mut occ) => {
@@ -260,10 +263,16 @@ impl AccountStorageInterface for InmemoryAccountStore {
         match self.account_store.entry(account_data.pubkey) {
             dashmap::mapref::entry::Entry::Occupied(mut occ) => {
                 let prev_account = occ.get().get_account_data(commitment);
-                if let Some(prev_account) = prev_account {
-                    self.update_owner(&prev_account, &account_data, commitment);
+
+                // if account has been updated
+                if occ.get_mut().update(account_data.clone(), commitment) {
+                    if let Some(prev_account) = prev_account {
+                        self.update_owner(&prev_account, &account_data, commitment);
+                    }
+                    true
+                } else {
+                    false
                 }
-                occ.get_mut().update(account_data, commitment)
             }
             dashmap::mapref::entry::Entry::Vacant(vac) => {
                 self.add_account_owner(account_data.pubkey, account_data.account.owner);
@@ -276,7 +285,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         }
     }
 
-    async fn initilize_account(&self, account_data: AccountData) {
+    async fn initilize_or_update_account(&self, account_data: AccountData) {
         match self.account_store.contains_key(&account_data.pubkey) {
             true => {
                 // account has already been filled by an event
@@ -307,7 +316,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         account_filters: Option<Vec<RpcFilterType>>,
         commitment: Commitment,
     ) -> Option<Vec<AccountData>> {
-        if let Some(program_accounts) = self.owner_map_accounts.get(&program_pubkey) {
+        if let Some(program_accounts) = self.accounts_by_owner.get(&program_pubkey) {
             let mut return_vec = vec![];
             for program_account in program_accounts.iter() {
                 let account_data = self.get_account(*program_account, commitment).await;
@@ -444,10 +453,14 @@ mod tests {
         let pk2 = Pubkey::new_unique();
 
         let account_data_0 = create_random_account(&mut rng, 0, pk1, program);
-        store.initilize_account(account_data_0.clone()).await;
+        store
+            .initilize_or_update_account(account_data_0.clone())
+            .await;
 
         let account_data_1 = create_random_account(&mut rng, 0, pk2, program);
-        store.initilize_account(account_data_1.clone()).await;
+        store
+            .initilize_or_update_account(account_data_1.clone())
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -562,7 +575,7 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         store
-            .initilize_account(create_random_account(&mut rng, 0, pk1, program))
+            .initilize_or_update_account(create_random_account(&mut rng, 0, pk1, program))
             .await;
 
         store
