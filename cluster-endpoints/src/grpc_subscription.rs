@@ -245,7 +245,7 @@ mod tests {
 
 fn maptx(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
 
-    let log_timer_tx = LoggingTimer { started_at: Instant::now(), threshold: Duration::from_micros(10) };
+    let log_timer_tx = LoggingTimer { started_at: Instant::now(), threshold: Duration::from_millis(10) };
     log_timer_tx.log_if_exceed("start");
     let meta = tx.meta?;
 
@@ -255,7 +255,8 @@ fn maptx(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
 
     let header = message.header?;
 
-    let signatures = transaction
+    // TODO remove
+    let signatures_old = transaction
         .signatures
         .into_iter()
         .filter_map(|sig| match Signature::try_from(sig) {
@@ -277,7 +278,14 @@ fn maptx(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
     });
     log_timer_tx.log_if_exceed("after err");
 
-    let signature = signatures[0];
+    let signature = {
+        let sig_bytes: [u8; 64] = tx.signature.try_into().unwrap();
+        let signature = Signature::from(sig_bytes);
+        assert_eq!(signature, signatures_old[0]);
+        signature
+    };
+
+    // let signature = signatures_old[0];
     let compute_units_consumed = meta.compute_units_consumed;
     let account_keys: Vec<Pubkey> = message
         .account_keys
