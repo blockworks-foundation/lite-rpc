@@ -200,7 +200,13 @@ pub fn start_account_streaming_task(
             };
 
             while let Some(message) = account_stream.next().await {
-                let message = message.unwrap();
+                let message = match message {
+                    Ok(message) => message,
+                    Err(status) => {
+                        log::error!("Account on demand grpc error : {}", status.message());
+                        continue;
+                    },
+                };
                 let Some(update) = message.update_oneof else {
                     continue;
                 };
@@ -307,6 +313,7 @@ pub fn create_grpc_account_streaming_tasks(
                 .collect_vec();
 
             while !has_started_new.load(std::sync::atomic::Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
                 if elapsed_restart.elapsed() > Duration::from_secs(60) {
                     // check if time elapsed during restart is greater than 60ms
                     log::error!("Tried to restart the accounts on demand task but failed");
