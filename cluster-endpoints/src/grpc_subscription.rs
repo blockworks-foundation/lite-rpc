@@ -581,6 +581,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
             Pubkey::try_from(slice).expect("must map to pubkey")
         })
         .collect();
+    let account_keys_clone = account_keys.clone();
 
     let message = VersionedMessage::V0(v0::Message {
         header: MessageHeader {
@@ -588,7 +589,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
             num_readonly_signed_accounts: header.num_readonly_signed_accounts as u8,
             num_readonly_unsigned_accounts: header.num_readonly_unsigned_accounts as u8,
         },
-        account_keys: account_keys.clone(),
+        account_keys: account_keys,
         recent_blockhash: Hash::new(&message.recent_blockhash),
         instructions: message
             .instructions
@@ -619,11 +620,11 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
     // opt, opt
     let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
 
-    let mut readable_accounts = Vec::with_capacity(account_keys.len());
-    let mut writable_accounts = Vec::with_capacity(account_keys.len());
+    let mut readable_accounts = Vec::with_capacity(account_keys_clone.len());
+    let mut writable_accounts = Vec::with_capacity(account_keys_clone.len());
 
     // clone the vec and move the ownership instead of iterating over single elements
-    for (index, account_key) in account_keys.clone().into_iter().enumerate() {
+    for (index, account_key) in account_keys_clone.clone().into_iter().enumerate() {
         if message.is_maybe_writable(index) {
             writable_accounts.push(account_key)
         } else {
