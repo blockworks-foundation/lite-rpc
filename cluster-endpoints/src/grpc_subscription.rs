@@ -266,12 +266,15 @@ pub fn create_grpc_subscription(
 
 #[cfg(test)]
 mod tests {
+    use std::fmt;
     use super::*;
     use std::time::Instant;
     use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
     use yellowstone_grpc_proto::prost::Message;
     use std::str::FromStr;
     use bincode::deserialize;
+    use chrono::format;
+    use log::Level::Debug;
 
     #[test]
     fn map_block() {
@@ -301,7 +304,10 @@ mod tests {
         let produced_block_new = from_grpc_block_update_optimized(example_block1, CommitmentConfig::confirmed());
         let produced_block_old = from_grpc_block_update_old(example_block2, CommitmentConfig::confirmed());
 
-        assert_eq!(format!("{:?}",produced_block_old), format!("{:?}", produced_block_new));
+
+        if format!("{:?}",produced_block_old) != format!("{:?}", produced_block_new) {
+            panic!("produced_block_old != produced_block_new");
+        }
     }
 
 
