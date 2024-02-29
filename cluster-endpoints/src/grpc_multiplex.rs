@@ -1,4 +1,4 @@
-use crate::grpc_subscription::from_grpc_block_update_reimplement;
+use crate::grpc_subscription::{from_grpc_block_update_optimized, from_grpc_block_update_original, from_grpc_block_update_reimplement};
 use anyhow::{bail, Context};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
@@ -470,7 +470,23 @@ fn map_block_from_yellowstone_update(
     let _span = debug_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
-            let block = from_grpc_block_update_reimplement(update_block_message, commitment_config);
+
+            let block = if update_block_message.transactions.len() > 100 {
+                tokio::task::block_in_place(move ||
+                    from_grpc_block_update_reimplement(update_block_message, commitment_config))
+            } else {
+                from_grpc_block_update_reimplement(update_block_message, commitment_config)
+            };
+
+            // let block_old = from_grpc_block_update_original(update_block_message.clone(), commitment_config);
+
+            // let block = from_grpc_block_update_reimplement(update_block_message, commitment_config);
+            // let block = from_grpc_block_update_optimized(update_block_message, commitment_config);
+
+            // if format!("{:?}",block_old) != format!("{:?}", block) {
+            //     panic!("produced_block_old != produced_block_new");
+            // }
+
             Some((block.slot, block))
         }
         _ => None,

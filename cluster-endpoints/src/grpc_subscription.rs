@@ -43,7 +43,8 @@ use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
 };
 use yellowstone_grpc_proto::prelude::{Rewards, SubscribeUpdateBlock};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlockInner;
-
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 
 pub struct LoggingTimer {
     pub(crate) started_at: Instant,
@@ -69,23 +70,24 @@ impl LoggingTimer {
 
 
 /// grpc version of ProducedBlock mapping
+/// from_grpc_block_update_reimplement{block.slot=255548168 num_transactions=6171}: solana_lite_rpc_cluster_endpoints::grpc_subscription: close time.busy=37.9ms time.idle=5.21µs
+/// from_grpc_block_update_reimplement{block.slot=255548169 num_transactions=529}: solana_lite_rpc_cluster_endpoints::grpc_subscription: close time.busy=4.84ms time.idle=4.46µs
 pub fn from_grpc_block_update_reimplement(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
+    let num_transactions = block.transactions.len();
+    let _span = debug_span!("from_grpc_block_update_reimplement", ?block.slot, ?num_transactions).entered();
     let started_at = Instant::now();
-    let log_timer = LoggingTimer { started_at, threshold: Duration::from_millis(40)};
 
     log_timer.log_if_exceed("start");
     let txs: Vec<TransactionInfo> = block
         .transactions
-        .into_iter()
-        // .into_par_iter() TODO
+        // .into_iter()
+        .into_par_iter()
         .filter_map(|tx| maptx_reimplemented(tx))
         .collect();
     log_timer.log_if_exceed("after transactions");
-    println!("tx count {}", txs.len());
 
     let (rewards, leader_id) = if let Some(rewards) = block.rewards {
         let (rewards, leader_id_opt) = map_rewards(&rewards);
@@ -148,7 +150,7 @@ pub fn from_grpc_block_update_optimized(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
+    let _span = debug_span!("from_grpc_block_update_optimized", ?block.slot).entered();
     let started_at = Instant::now();
     let log_timer = LoggingTimer { started_at, threshold: Duration::from_millis(40)};
 
@@ -275,7 +277,7 @@ pub fn from_grpc_block_update_original(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
+    let _span = debug_span!("from_grpc_block_update_original", ?block.slot).entered();
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
