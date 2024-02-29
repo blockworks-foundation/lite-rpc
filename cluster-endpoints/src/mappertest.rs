@@ -49,7 +49,7 @@ mod tests {
     use yellowstone_grpc_proto::prost::Message;
     use std::str::FromStr;
     use bincode::deserialize;
-    use crate::grpc_subscription::from_grpc_block_update_reimplement;
+    use crate::grpc_subscription::{from_grpc_block_update_original, from_grpc_block_update_reimplement};
 
     #[test]
     fn map_block() {
@@ -89,5 +89,26 @@ mod tests {
             .map(|(_, pk)| *pk)
             .collect();
         println!("elapsed: {:?}", started_at.elapsed());
+    }
+
+
+    #[test]
+    fn compare_old_new() {
+        // version yellowstone.1.12+solana.1.17.15
+        let raw_block = include_bytes!("block-000251402816-confirmed-1707315774189.dat");
+
+        let example_block1 = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
+        let example_block2 = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
+        // info!("example_block: {:?}", example_block);
+
+        let started_at = Instant::now();
+        println!("from_grpc_block_update mapping took: {:?}", started_at.elapsed());
+        let produced_block_old = from_grpc_block_update_original(example_block1, CommitmentConfig::confirmed());
+        let produced_block_new = from_grpc_block_update_reimplement(example_block2, CommitmentConfig::confirmed());
+
+
+        if format!("{:?}",produced_block_old) != format!("{:?}", produced_block_new) {
+            panic!("produced_block_old != produced_block_new");
+        }
     }
 }

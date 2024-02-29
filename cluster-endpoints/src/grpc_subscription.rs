@@ -1,5 +1,6 @@
 use std::cell::OnceCell;
 use std::io::Error;
+use std::num::{NonZeroU32, NonZeroU64};
 use crate::endpoint_stremers::EndpointStreaming;
 use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc_multiplex::{
@@ -33,7 +34,7 @@ use solana_sdk::{
 use solana_transaction_status::{Reward, RewardType};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::{debug, info};
+use log::{debug, info, trace};
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateTransactionInfo;
 
@@ -648,7 +649,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
     });
     log_timer_tx.log_if_exceed("after message mapping");
 
-
+    // opt, opt
     let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
 
     let readable_accounts = account_keys
@@ -716,43 +717,45 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
 
 // refactored using "extract method"
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
+    let _span = debug_span!("map_compute_budget_instructions").entered();
 
-    let legacy_cell =  OnceCell::new();;
-    let cu_limit_cell =  OnceCell::new();;
-    let cu_price_cell =  OnceCell::new();;
+    let legacy_cell: OnceCell<(Option<u32>, Option<u64>)> = OnceCell::new();
+    let cu_requested_cell: OnceCell<Option<u32>> = OnceCell::new();
+    let prioritization_fees_cell: OnceCell<Option<u64>> = OnceCell::new();
 
     for compute_budget_ins in message.instructions().iter()
         .filter(|instruction| {
             instruction.program_id(message.static_account_keys()).eq(&compute_budget::id())}) {
 
-        // ComputeBudgetInstruction - TODO move to filter
         if let Ok(cbi) = try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice()) {
-
             match cbi {
-                ComputeBudgetInstruction::RequestUnitsDeprecated { units, additional_fee } => {
-                    let val = if additional_fee > 0 {
-                        (Some(units), Some(((units * 1000) / additional_fee) as u64))
-                    } else {
-                        (Some(units), None)
-                    };
-                    legacy_cell.set(val).expect("legacy must be set only once"); // TODO this might not hold!
-                }
+                // aka cu requested
                 ComputeBudgetInstruction::SetComputeUnitLimit(limit) => {
-                    cu_limit_cell.set(Some(limit)).expect("cu_limit must be set only once");
+                    // note: not use if the exactly-once invariant holds
+                    cu_requested_cell.set(Some(limit)).expect("cu_limit must be set only once");
                 }
+                // aka prio fees
                 ComputeBudgetInstruction::SetComputeUnitPrice(price) => {
-                    cu_price_cell.set(Some(price)).expect("cu_price must be set only once");
+                    // note: not use if the exactly-once invariant holds
+                    let _was_set = prioritization_fees_cell.set(Some(price));
+                }
+                ComputeBudgetInstruction::RequestUnitsDeprecated { units, additional_fee } => {
+                    cu_requested_cell.set(Some(units));
+                    if additional_fee > 0 {
+                        let _was_set = prioritization_fees_cell.set(Some(((units * 1000) / additional_fee) as u64));
+                    };
                 }
                 _ => {
-                    debug!("skip instruction");
+                    trace!("skip instruction");
                 }
             }
 
         }
     }
 
-    let cu_requested = *cu_limit_cell.get().unwrap_or(&legacy_cell.get().and_then(|x| x.0));
-    let prioritization_fees = *cu_price_cell.get().unwrap_or(&legacy_cell.get().and_then(|x| x.1));
+    let legacy = legacy_cell.into_inner();
+    let cu_requested = cu_requested_cell.into_inner().unwrap_or(legacy.and_then(|x| x.0));
+    let prioritization_fees = prioritization_fees_cell.into_inner().unwrap_or(legacy.and_then(|x| x.1));
     (cu_requested, prioritization_fees)
 }
 
