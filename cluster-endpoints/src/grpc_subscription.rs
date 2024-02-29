@@ -714,7 +714,7 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
                 // aka cu requested
                 ComputeBudgetInstruction::SetComputeUnitLimit(limit) => {
                     // note: not use if the exactly-once invariant holds
-                    cu_requested_cell.set(Some(limit)).expect("cu_limit must be set only once");
+                    let _was_set = cu_requested_cell.set(Some(limit)).expect("cu_limit must be set only once");
                 }
                 // aka prio fees
                 ComputeBudgetInstruction::SetComputeUnitPrice(price) => {
@@ -722,7 +722,7 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
                     let _was_set = prioritization_fees_cell.set(Some(price));
                 }
                 ComputeBudgetInstruction::RequestUnitsDeprecated { units, additional_fee } => {
-                    cu_requested_cell.set(Some(units));
+                    let _was_set = cu_requested_cell.set(Some(units));
                     if additional_fee > 0 {
                         let _was_set = prioritization_fees_cell.set(Some(((units * 1000) / additional_fee) as u64));
                     };
