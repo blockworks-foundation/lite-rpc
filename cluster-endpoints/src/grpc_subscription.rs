@@ -44,7 +44,6 @@ pub fn from_grpc_block_update(
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
     let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
-    let instant = tokio::time::Instant::now();
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
@@ -270,8 +269,6 @@ pub fn from_grpc_block_update(
         slot: block.slot,
         rewards,
     };
-
-    log::info!("Block processing took : {}", instant.elapsed().as_millis());
     ProducedBlock::new(inner, commitment_config)
 }
 
