@@ -471,14 +471,14 @@ fn map_block_from_yellowstone_update(
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
 
-            let block = if update_block_message.transactions.len() > 100 {
-                tokio::task::block_in_place(move ||
-                    from_grpc_block_update_reimplement(update_block_message, commitment_config))
-            } else {
-                from_grpc_block_update_reimplement(update_block_message, commitment_config)
-            };
+            // let block = if update_block_message.transactions.len() > 100 {
+            //     tokio::task::block_in_place(move ||
+            //         from_grpc_block_update_reimplement(update_block_message, commitment_config))
+            // } else {
+            //     from_grpc_block_update_reimplement(update_block_message, commitment_config)
+            // };
 
-            // let block_old = from_grpc_block_update_original(update_block_message.clone(), commitment_config);
+            let block = from_grpc_block_update_original(update_block_message.clone(), commitment_config);
 
             // let block = from_grpc_block_update_reimplement(update_block_message, commitment_config);
             // let block = from_grpc_block_update_optimized(update_block_message, commitment_config);
