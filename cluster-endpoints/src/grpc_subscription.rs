@@ -648,70 +648,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
     log_timer_tx.log_if_exceed("after message mapping");
 
 
-
-    let legacy_compute_budget: Option<(u32, Option<u64>)> =
-        message.instructions().iter().find_map(|i| {
-            if i.program_id(message.static_account_keys())
-                .eq(&compute_budget::id())
-            {
-                if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                              units,
-                              additional_fee,
-                          }) = try_from_slice_unchecked(i.data.as_slice())
-                {
-                    if additional_fee > 0 {
-                        return Some((
-                            units,
-                            Some(((units * 1000) / additional_fee) as u64),
-                        ));
-                    } else {
-                        return Some((units, None));
-                    }
-                }
-            }
-            None
-        });
-    log_timer_tx.log_if_exceed("after legacy_compute_budget");
-
-    let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
-    let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
-
-    let cu_requested = message
-        .instructions()
-        .iter()
-        .find_map(|i| {
-            if i.program_id(message.static_account_keys())
-                .eq(&compute_budget::id())
-            {
-                if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                    try_from_slice_unchecked(i.data.as_slice())
-                {
-                    return Some(limit);
-                }
-            }
-            None
-        })
-        .or(legacy_cu_requested);
-    log_timer_tx.log_if_exceed("after cu_requested");
-
-    let prioritization_fees = message
-        .instructions()
-        .iter()
-        .find_map(|i| {
-            if i.program_id(message.static_account_keys())
-                .eq(&compute_budget::id())
-            {
-                if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                    try_from_slice_unchecked(i.data.as_slice())
-                {
-                    return Some(price);
-                }
-            }
-
-            None
-        })
-        .or(legacy_prioritization_fees);
-    log_timer_tx.log_if_exceed("after prioritization_fees");
+    let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
 
     let readable_accounts = account_keys
         .iter()
@@ -776,6 +713,68 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
     })
 }
 
+// refactored using "extract method"
+fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
+    let legacy_compute_budget: Option<(u32, Option<u64>)> =
+        message.instructions().iter().find_map(|i| {
+            if i.program_id(message.static_account_keys())
+                .eq(&compute_budget::id())
+            {
+                if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
+                              units,
+                              additional_fee,
+                          }) = try_from_slice_unchecked(i.data.as_slice())
+                {
+                    if additional_fee > 0 {
+                        return Some((
+                            units,
+                            Some(((units * 1000) / additional_fee) as u64),
+                        ));
+                    } else {
+                        return Some((units, None));
+                    }
+                }
+            }
+            None
+        });
+    let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
+    let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
+
+    let cu_requested = message
+        .instructions()
+        .iter()
+        .find_map(|i| {
+            if i.program_id(message.static_account_keys())
+                .eq(&compute_budget::id())
+            {
+                if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
+                    try_from_slice_unchecked(i.data.as_slice())
+                {
+                    return Some(limit);
+                }
+            }
+            None
+        })
+        .or(legacy_cu_requested);
+    let prioritization_fees = message
+        .instructions()
+        .iter()
+        .find_map(|i| {
+            if i.program_id(message.static_account_keys())
+                .eq(&compute_budget::id())
+            {
+                if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
+                    try_from_slice_unchecked(i.data.as_slice())
+                {
+                    return Some(price);
+                }
+            }
+
+            None
+        })
+        .or(legacy_prioritization_fees);
+    (cu_requested, prioritization_fees)
+}
 
 
 fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
