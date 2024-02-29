@@ -68,6 +68,7 @@ prometheus = "0.13.3"
 lazy_static = "1.4.0"
 dotenv = "0.15.0"
 async-channel = "1.8.0"
+merge-streams = "0.1.2"
 
 quinn = "0.10.2"
 quinn-proto = "0.10.5"
