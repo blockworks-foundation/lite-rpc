@@ -320,6 +320,9 @@ mod tests {
     use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::signature::Signature;
     use std::str::FromStr;
+    use solana_sdk::message::{MessageHeader, v0, VersionedMessage};
+    use solana_sdk::pubkey::Pubkey;
+    use solana_sdk::transaction::VersionedTransaction;
 
     #[tokio::test]
     #[ignore]
@@ -388,10 +391,21 @@ mod tests {
             prioritization_fees: Some(5000),
             cu_consumed: Some(32000),
             recent_blockhash: "recent_blockhash".to_string(),
-            message: "some message".to_string(),
+            message: create_test_message(),
             writable_accounts: vec![],
             readable_accounts: vec![],
             address_lookup_tables: vec![],
         }
+    }
+
+    fn create_test_message() -> VersionedMessage {
+        VersionedMessage::V0(v0::Message {
+            header: MessageHeader {
+                num_required_signatures: 1,
+                ..MessageHeader::default()
+            },
+            account_keys: vec![Pubkey::new_unique()],
+            ..v0::Message::default()
+        })
     }
 }
