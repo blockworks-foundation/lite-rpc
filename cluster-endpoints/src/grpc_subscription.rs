@@ -35,7 +35,7 @@ use solana_transaction_status::{Reward, RewardType};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use log::{debug, info, trace};
-use tracing::debug_span;
+use tracing::{debug_span, trace_span};
 use yellowstone_grpc_proto::geyser::SubscribeUpdateTransactionInfo;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
@@ -652,15 +652,17 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
     // opt, opt
     let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
 
-    let readable_accounts = account_keys
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| !message.is_maybe_writable(*index))
-        .map(|(_, pk)| *pk)
-        .collect();
-    log_timer_tx.log_if_exceed("after readable_accounts"); // 80us
+    let mut readable_accounts = Vec::with_capacity(account_keys.len());
+    let mut writable_accounts = Vec::with_capacity(account_keys.len());
 
-
+    // clone the vec and move the ownership instead of iterating over single elements
+    for (index, account_key) in account_keys.clone().into_iter().enumerate() {
+        if message.is_maybe_writable(index) {
+            writable_accounts.push(account_key)
+        } else {
+            readable_accounts.push(account_key)
+        }
+    }
 
     let is_vote_transaction = message.instructions().iter().any(|i| {
         i.program_id(message.static_account_keys())
@@ -670,26 +672,6 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
             .unwrap_or(false)
     });
     log_timer_tx.log_if_exceed("after is_vote_transaction");
-
-    let readable_accounts2: Vec<Pubkey> = account_keys
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| !message.is_maybe_writable(*index))
-        .map(|(_, pk)| *pk)
-        .collect();
-    log_timer_tx.log_if_exceed("after readable_accounts2"); // 80us
-
-
-
-
-
-    let writable_accounts = account_keys
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| message.is_maybe_writable(*index))
-        .map(|(_, pk)| *pk)
-        .collect();
-    log_timer_tx.log_if_exceed("after writable_accounts");
 
     let address_lookup_tables = message
         .address_table_lookups()
@@ -717,7 +699,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
 
 // refactored using "extract method"
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
-    let _span = debug_span!("map_compute_budget_instructions").entered();
+    let _span = trace_span!("map_compute_budget_instructions").entered();
 
     let legacy_cell: OnceCell<(Option<u32>, Option<u64>)> = OnceCell::new();
     let cu_requested_cell: OnceCell<Option<u32>> = OnceCell::new();
