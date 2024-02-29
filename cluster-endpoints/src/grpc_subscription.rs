@@ -601,10 +601,13 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
     let compute_units_consumed = meta.compute_units_consumed;
     let account_keys: Vec<Pubkey> = message
         .account_keys
-        .into_iter()
-        .map(|key| {
-            let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
-            Pubkey::new_from_array(bytes)
+        .iter()
+        .map(|key_bytes| {
+            // caution:this changed
+            // let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
+            // Pubkey::new_from_array(bytes)
+            let slice: &[u8] = key_bytes.as_slice();
+            Pubkey::try_from(slice).expect("must map to pubkey")
         })
         .collect();
     log_timer_tx.log_if_exceed("after account keys"); // 47us
