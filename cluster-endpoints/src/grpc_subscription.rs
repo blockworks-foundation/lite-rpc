@@ -46,28 +46,6 @@ use solana_lite_rpc_core::structures::produced_block::ProducedBlockInner;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
-pub struct LoggingTimer {
-    pub(crate) started_at: Instant,
-    pub(crate) threshold: Duration,
-}
-
-#[allow(dead_code)]
-impl LoggingTimer {
-
-    pub fn log_if_exceed(&self, name: &str) {
-        let elapsed = self.started_at.elapsed();
-        if elapsed > self.threshold {
-            eprintln!("{} exceeded: {:?}", name, elapsed);
-        }
-
-    }
-
-    pub fn elapsed(&self) -> Duration {
-        self.started_at.elapsed()
-    }
-}
-
-
 
 /// grpc version of ProducedBlock mapping
 /// from_grpc_block_update_reimplement{block.slot=255548168 num_transactions=6171}: solana_lite_rpc_cluster_endpoints::grpc_subscription: close time.busy=37.9ms time.idle=5.21µs
@@ -80,14 +58,12 @@ pub fn from_grpc_block_update_reimplement(
     let _span = debug_span!("from_grpc_block_update_reimplement", ?block.slot, ?num_transactions).entered();
     let started_at = Instant::now();
 
-    log_timer.log_if_exceed("start");
     let txs: Vec<TransactionInfo> = block
         .transactions
         // .into_iter()
         .into_par_iter()
         .filter_map(|tx| maptx_reimplemented(tx))
         .collect();
-    log_timer.log_if_exceed("after transactions");
 
     let (rewards, leader_id) = if let Some(rewards) = block.rewards {
         let (rewards, leader_id_opt) = map_rewards(&rewards);
@@ -96,9 +72,6 @@ pub fn from_grpc_block_update_reimplement(
         (None, None)
     };
 
-    log_timer.log_if_exceed("after leader_id");
-
-    log_timer.log_if_exceed("before return");
     let inner = ProducedBlockInner {
         transactions: txs,
         block_height: block
@@ -152,17 +125,13 @@ pub fn from_grpc_block_update_optimized(
 ) -> ProducedBlock {
     let _span = debug_span!("from_grpc_block_update_optimized", ?block.slot).entered();
     let started_at = Instant::now();
-    let log_timer = LoggingTimer { started_at, threshold: Duration::from_millis(40)};
 
-    log_timer.log_if_exceed("start");
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
         // .into_par_iter() TODO
         .filter_map(|tx| maptxoptimized(tx))
         .collect();
-    log_timer.log_if_exceed("after transactions");
-    println!("tx count {}", txs.len());
 
     let rewards = block.rewards.map(|rewards| {
         rewards
@@ -185,7 +154,6 @@ pub fn from_grpc_block_update_optimized(
             })
             .collect_vec()
     });
-    log_timer.log_if_exceed("after rewards");
 
     let leader_id = if let Some(rewards) = &rewards {
         rewards
@@ -195,9 +163,7 @@ pub fn from_grpc_block_update_optimized(
     } else {
         None
     };
-    log_timer.log_if_exceed("after leader_id");
 
-    log_timer.log_if_exceed("before return");
     let inner = ProducedBlockInner {
         transactions: txs,
         block_height: block
@@ -583,8 +549,6 @@ mod tests {
 
 fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
 
-    let log_timer_tx = LoggingTimer { started_at: Instant::now(), threshold: Duration::from_millis(10) };
-    log_timer_tx.log_if_exceed("start");
     let meta = tx.meta?;
 
     let transaction = tx.transaction?;
@@ -593,13 +557,10 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
 
     let header = message.header?;
 
-    log_timer_tx.log_if_exceed("after signatures");
-
     let err = meta.err.map(|x| {
         bincode::deserialize::<TransactionError>(&x.err)
             .expect("TransactionError should be deserialized")
     });
-    log_timer_tx.log_if_exceed("after err");
 
     // let signature = signatures_old[0];
     let signature = {
@@ -620,7 +581,6 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
             Pubkey::try_from(slice).expect("must map to pubkey")
         })
         .collect();
-    log_timer_tx.log_if_exceed("after account keys"); // 47us
 
     let message = VersionedMessage::V0(v0::Message {
         header: MessageHeader {
@@ -655,7 +615,6 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
             })
             .collect(),
     });
-    log_timer_tx.log_if_exceed("after message mapping");
 
     // opt, opt
     let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
@@ -679,16 +638,13 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
             .map(|vi| vi.is_simple_vote())
             .unwrap_or(false)
     });
-    log_timer_tx.log_if_exceed("after is_vote_transaction");
 
     let address_lookup_tables = message
         .address_table_lookups()
         .map(|x| x.to_vec())
         .unwrap_or_default();
-    log_timer_tx.log_if_exceed("after address_lookup_tables");
 
 
-    log_timer_tx.log_if_exceed("before return");
     Some(TransactionInfo {
         signature: signature.to_string(),
         is_vote: is_vote_transaction,
@@ -750,11 +706,6 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
 
 
 fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
-    let log_timer_tx = LoggingTimer {
-        started_at: Instant::now(),
-        threshold: Duration::from_millis(10),
-    };
-    log_timer_tx.log_if_exceed("start");
     let meta = tx.meta?;
 
     let message = {
@@ -771,7 +722,6 @@ fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo>
                 Pubkey::new_from_array(bytes)
             })
             .collect();
-        log_timer_tx.log_if_exceed("after account keys"); // 47us
 
         let address_table_lookups: Vec<MessageAddressTableLookup> = grpc_message
             .address_table_lookups
@@ -789,7 +739,6 @@ fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo>
                 }
             })
             .collect();
-        log_timer_tx.log_if_exceed("after address_lookup_tables");
 
         VersionedMessage::V0(v0::Message {
             header: MessageHeader {
@@ -811,17 +760,14 @@ fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo>
             address_table_lookups,
         })
     };
-    log_timer_tx.log_if_exceed("after message mapping");
 
     let sig_bytes: [u8; 64] = tx.signature.try_into().unwrap();
     let signature = Signature::from(sig_bytes);
-    log_timer_tx.log_if_exceed("after signature");
 
     let err = meta.err.map(|x| {
         bincode::deserialize::<TransactionError>(&x.err)
             .expect("TransactionError should be deserialized")
     });
-    log_timer_tx.log_if_exceed("after err");
 
     // iter message instructions
     let mut cu_requested: Option<u32> = None;
@@ -878,7 +824,6 @@ fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo>
             }
         }
     }
-    log_timer_tx.log_if_exceed("after message ix mapping");
 
     // Accounts
     let mut readable_accounts = vec![];
@@ -892,10 +837,6 @@ fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo>
         }
     }
 
-    log_timer_tx.log_if_exceed("after account_keys");
-
-    // println!("elapsed: {:?} for tx", log_timer_tx.elapsed());
-    log_timer_tx.log_if_exceed("before return");
     Some(TransactionInfo {
         signature: signature.to_string(),
         is_vote: is_vote_transaction,
