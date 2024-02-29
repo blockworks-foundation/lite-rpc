@@ -565,7 +565,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
 
     // let signature = signatures_old[0];
     let signature = {
-        let sig_bytes: [u8; 64] = tx.signature.try_into().unwrap();
+        let sig_bytes: [u8; 64] = tx.signature.try_into().expect("must map to signature");
         let signature = Signature::from(sig_bytes);
         signature
     };
@@ -605,12 +605,10 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
             .address_table_lookups
             .into_iter()
             .map(|table| {
-                let bytes: [u8; 32] = table
-                    .account_key
-                    .try_into()
-                    .unwrap_or(Pubkey::default().to_bytes());
+                let slice: &[u8] = table.account_key.as_slice();
+                let account_key = Pubkey::try_from(slice).expect("must map to pubkey");
                 MessageAddressTableLookup {
-                    account_key: Pubkey::new_from_array(bytes),
+                    account_key,
                     writable_indexes: table.writable_indexes,
                     readonly_indexes: table.readonly_indexes,
                 }
