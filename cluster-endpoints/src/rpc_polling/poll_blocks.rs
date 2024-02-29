@@ -265,7 +265,7 @@ pub fn from_ui_block(
             };
 
             let blockhash = tx.message.recent_blockhash().to_string();
-            let message = BinaryEncoding::Base64.encode(tx.message.serialize());
+            // let message = BinaryEncoding::Base64.encode(tx.message.serialize());
 
             let is_vote_transaction = tx.message.instructions().iter().any(|i| {
                 i.program_id(tx.message.static_account_keys())
@@ -300,10 +300,10 @@ pub fn from_ui_block(
                 prioritization_fees,
                 cu_consumed,
                 recent_blockhash: blockhash,
-                message,
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,
+                message: tx.message,
             })
         })
         .collect();

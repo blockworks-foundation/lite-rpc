@@ -38,7 +38,7 @@ impl PostgresTransaction {
             prioritization_fees: value.prioritization_fees.map(|x| x as i64),
             cu_consumed: value.cu_consumed.map(|x| x as i64),
             recent_blockhash: value.recent_blockhash.clone(),
-            message: value.message.clone(),
+            message: BASE64.serialize(&value.message).expect("serialize message for database"),
             slot: slot as i64,
         }
     }
@@ -54,12 +54,12 @@ impl PostgresTransaction {
             prioritization_fees: self.prioritization_fees.map(|x| x as u64),
             cu_consumed: self.cu_consumed.map(|x| x as u64),
             recent_blockhash: self.recent_blockhash.clone(),
-            message: self.message.clone(),
             // TODO readable_accounts etc.
             readable_accounts: vec![],
             writable_accounts: vec![],
             is_vote: false,
             address_lookup_tables: vec![],
+            message: BASE64.deserialize(&self.message).expect("deserialize message from database"),
         }
     }
 

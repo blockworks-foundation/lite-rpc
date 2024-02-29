@@ -6,6 +6,7 @@ use solana_transaction_status::Reward;
 use std::fmt::{Debug, Display};
 use std::ops::Deref;
 use std::sync::Arc;
+use solana_sdk::message::VersionedMessage;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
@@ -16,10 +17,10 @@ pub struct TransactionInfo {
     pub prioritization_fees: Option<u64>,
     pub cu_consumed: Option<u64>,
     pub recent_blockhash: String,
-    pub message: String,
     pub writable_accounts: Vec<Pubkey>,
     pub readable_accounts: Vec<Pubkey>,
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
+    pub message: VersionedMessage,
 }
 
 #[derive(Debug, Clone)]

@@ -76,11 +76,11 @@ mod tests {
         let raw_block = include_bytes!("block-000251402816-confirmed-1707315774189.dat");
         let example_block = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
         let produced_block = from_grpc_block_update_reimplement(example_block, CommitmentConfig::confirmed());
-        let raw = &produced_block.transactions[0].message;
+        // let raw = &produced_block.transactions[0].message;
         // BASE64.encode(message.serialize())
-        let vec: Vec<u8> = BASE64.decode(raw).unwrap();
-        let message: VersionedMessage = deserialize::<VersionedMessage>(&vec).unwrap();
-
+        // let vec: Vec<u8> = BASE64.decode(raw).unwrap();
+        // let message: VersionedMessage = deserialize::<VersionedMessage>(&vec).unwrap();
+        let message = &produced_block.transactions[0].message;
         let started_at = Instant::now();
         let _readable_accounts: Vec<Pubkey> = vec![key1, key2, key3]
             .iter()

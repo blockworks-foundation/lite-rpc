@@ -442,7 +442,7 @@ pub fn from_grpc_block_update_original(
                 prioritization_fees,
                 cu_consumed: compute_units_consumed,
                 recent_blockhash: message.recent_blockhash().to_string(),
-                message: BASE64.encode(message.serialize()),
+                message,
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,
@@ -557,10 +557,10 @@ mod tests {
         let raw_block = include_bytes!("block-000251402816-confirmed-1707315774189.dat");
         let example_block = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
         let produced_block = from_grpc_block_update_reimplement(example_block, CommitmentConfig::confirmed());
-        let raw = &produced_block.transactions[0].message;
+        let message: &VersionedMessage = &produced_block.transactions[0].message;
         // BASE64.encode(message.serialize())
-        let vec: Vec<u8> = BASE64.decode(raw).unwrap();
-        let message: VersionedMessage = deserialize::<VersionedMessage>(&vec).unwrap();
+        // let vec: Vec<u8> = BASE64.decode(raw).unwrap();
+        // let message: VersionedMessage = deserialize::<VersionedMessage>(&vec).unwrap();
 
         let started_at = Instant::now();
         let _readable_accounts: Vec<Pubkey> = vec![key1, key2, key3]
@@ -680,7 +680,6 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
     log_timer_tx.log_if_exceed("after address_lookup_tables");
 
 
-    // println!("elapsed: {:?} for tx", log_timer_tx.elapsed());
     log_timer_tx.log_if_exceed("before return");
     Some(TransactionInfo {
         signature: signature.to_string(),
@@ -690,7 +689,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
         prioritization_fees,
         cu_consumed: compute_units_consumed,
         recent_blockhash: message.recent_blockhash().to_string(),
-        message: BASE64.encode(message.serialize()),
+        message,
         readable_accounts,
         writable_accounts,
         address_lookup_tables,
@@ -897,10 +896,10 @@ fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo>
         prioritization_fees: prioritization_fees.or(legacy_prioritization_fees),
         cu_consumed: meta.compute_units_consumed,
         recent_blockhash: message.recent_blockhash().to_string(),
-        message: BASE64.encode(message.serialize()),
+        address_lookup_tables: message.address_table_lookups().unwrap().to_vec(),
+        message,
         readable_accounts,
         writable_accounts,
-        address_lookup_tables: message.address_table_lookups().unwrap().to_vec(),
     })
 }
 
