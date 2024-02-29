@@ -1,5 +1,10 @@
 use futures::StreamExt;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use merge_streams::MergeStreams;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
@@ -29,23 +34,16 @@ pub fn start_account_streaming_tasks(
         'main_loop: loop {
             let processed_commitment = yellowstone_grpc_proto::geyser::CommitmentLevel::Processed;
 
-            let mut subscribe_accounts: HashMap<String, SubscribeRequestFilterAccounts> =
+            let mut subscribe_programs: HashMap<String, SubscribeRequestFilterAccounts> =
                 HashMap::new();
+
+            let mut accounts_to_subscribe = HashSet::new();
 
             for (index, accounts_filter) in accounts_filters.iter().enumerate() {
                 if !accounts_filter.accounts.is_empty() {
-                    subscribe_accounts.insert(
-                        format!("accounts_{index:?}"),
-                        SubscribeRequestFilterAccounts {
-                            account: accounts_filter
-                                .accounts
-                                .iter()
-                                .map(|x| x.to_string())
-                                .collect_vec(),
-                            owner: vec![],
-                            filters: vec![],
-                        },
-                    );
+                    accounts_filter.accounts.iter().for_each(|account| {
+                        accounts_to_subscribe.insert(account.clone());
+                    });
                 }
                 if let Some(program_id) = &accounts_filter.program_id {
                     let filters = if let Some(filters) = &accounts_filter.filters {
@@ -87,8 +85,8 @@ pub fn start_account_streaming_tasks(
                     } else {
                         vec![]
                     };
-                    subscribe_accounts.insert(
-                        format!("accounts_{}", program_id),
+                    subscribe_programs.insert(
+                        format!("program_accounts_{}", index),
                         SubscribeRequestFilterAccounts {
                             account: vec![],
                             owner: vec![program_id.clone()],
@@ -98,8 +96,8 @@ pub fn start_account_streaming_tasks(
                 }
             }
 
-            let subscribe_request = SubscribeRequest {
-                accounts: subscribe_accounts,
+            let program_subscription = SubscribeRequest {
+                accounts: subscribe_programs,
                 slots: Default::default(),
                 transactions: Default::default(),
                 blocks: Default::default(),
@@ -116,9 +114,51 @@ pub fn start_account_streaming_tasks(
                 None,
             )
             .unwrap();
-            let mut account_stream = client.subscribe_once2(subscribe_request).await.unwrap();
+            let account_stream = client.subscribe_once2(program_subscription).await.unwrap();
 
-            while let Some(message) = account_stream.next().await {
+            // each account subscription batch will require individual stream
+            let mut subscriptions = vec![account_stream];
+            let mut index = 0;
+            for accounts_chunk in accounts_to_subscribe.iter().collect_vec().chunks(100) {
+                let mut accounts_subscription: HashMap<String, SubscribeRequestFilterAccounts> =
+                    HashMap::new();
+                index += 1;
+                accounts_subscription.insert(
+                    format!("account_sub_{}", index),
+                    SubscribeRequestFilterAccounts {
+                        account: accounts_chunk
+                            .iter()
+                            .map(|acc| (*acc).clone())
+                            .collect_vec(),
+                        owner: vec![],
+                        filters: vec![],
+                    },
+                );
+                let mut client = yellowstone_grpc_client::GeyserGrpcClient::connect(
+                    grpc_config.grpc_addr.clone(),
+                    grpc_config.grpc_x_token.clone(),
+                    None,
+                )
+                .unwrap();
+
+                let account_request = SubscribeRequest {
+                    accounts: accounts_subscription,
+                    slots: Default::default(),
+                    transactions: Default::default(),
+                    blocks: Default::default(),
+                    blocks_meta: Default::default(),
+                    entry: Default::default(),
+                    commitment: Some(processed_commitment.into()),
+                    accounts_data_slice: Default::default(),
+                    ping: None,
+                };
+
+                let account_stream = client.subscribe_once2(account_request).await.unwrap();
+                subscriptions.push(account_stream);
+            }
+            let mut merged_stream = subscriptions.merge();
+
+            while let Some(message) = merged_stream.next().await {
                 let message = message.unwrap();
                 let Some(update) = message.update_oneof else {
                     continue;
