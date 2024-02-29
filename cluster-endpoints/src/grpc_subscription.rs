@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::io::Error;
 use crate::endpoint_stremers::EndpointStreaming;
 use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
@@ -32,7 +33,7 @@ use solana_sdk::{
 use solana_transaction_status::{Reward, RewardType};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::info;
+use log::{debug, info};
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateTransactionInfo;
 
@@ -715,64 +716,43 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
 
 // refactored using "extract method"
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
-    let legacy_compute_budget: Option<(u32, Option<u64>)> =
-        message.instructions().iter().find_map(|i| {
-            if i.program_id(message.static_account_keys())
-                .eq(&compute_budget::id())
-            {
-                if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                              units,
-                              additional_fee,
-                          }) = try_from_slice_unchecked(i.data.as_slice())
-                {
-                    if additional_fee > 0 {
-                        return Some((
-                            units,
-                            Some(((units * 1000) / additional_fee) as u64),
-                        ));
+
+    let legacy_cell =  OnceCell::new();;
+    let cu_limit_cell =  OnceCell::new();;
+    let cu_price_cell =  OnceCell::new();;
+
+    for compute_budget_ins in message.instructions().iter()
+        .filter(|instruction| {
+            instruction.program_id(message.static_account_keys()).eq(&compute_budget::id())}) {
+
+        // ComputeBudgetInstruction - TODO move to filter
+        if let Ok(cbi) = try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice()) {
+
+            match cbi {
+                ComputeBudgetInstruction::RequestUnitsDeprecated { units, additional_fee } => {
+                    let val = if additional_fee > 0 {
+                        (Some(units), Some(((units * 1000) / additional_fee) as u64))
                     } else {
-                        return Some((units, None));
-                    }
+                        (Some(units), None)
+                    };
+                    legacy_cell.set(val).expect("legacy must be set only once"); // TODO this might not hold!
                 }
-            }
-            None
-        });
-    let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
-    let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
-
-    let cu_requested = message
-        .instructions()
-        .iter()
-        .find_map(|i| {
-            if i.program_id(message.static_account_keys())
-                .eq(&compute_budget::id())
-            {
-                if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                    try_from_slice_unchecked(i.data.as_slice())
-                {
-                    return Some(limit);
+                ComputeBudgetInstruction::SetComputeUnitLimit(limit) => {
+                    cu_limit_cell.set(Some(limit)).expect("cu_limit must be set only once");
                 }
-            }
-            None
-        })
-        .or(legacy_cu_requested);
-    let prioritization_fees = message
-        .instructions()
-        .iter()
-        .find_map(|i| {
-            if i.program_id(message.static_account_keys())
-                .eq(&compute_budget::id())
-            {
-                if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                    try_from_slice_unchecked(i.data.as_slice())
-                {
-                    return Some(price);
+                ComputeBudgetInstruction::SetComputeUnitPrice(price) => {
+                    cu_price_cell.set(Some(price)).expect("cu_price must be set only once");
+                }
+                _ => {
+                    debug!("skip instruction");
                 }
             }
 
-            None
-        })
-        .or(legacy_prioritization_fees);
+        }
+    }
+
+    let cu_requested = *cu_limit_cell.get().unwrap_or(&legacy_cell.get().and_then(|x| x.0));
+    let prioritization_fees = *cu_price_cell.get().unwrap_or(&legacy_cell.get().and_then(|x| x.1));
     (cu_requested, prioritization_fees)
 }
 
