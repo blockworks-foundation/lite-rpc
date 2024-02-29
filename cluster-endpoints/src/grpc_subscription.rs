@@ -243,7 +243,8 @@ pub fn from_grpc_block_update_original(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update_original", ?block.slot).entered();
+    let num_transactions = block.transactions.len();
+    let _span = debug_span!("from_grpc_block_update_original", ?block.slot, ?num_transactions).entered();
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
