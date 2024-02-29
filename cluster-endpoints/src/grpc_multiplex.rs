@@ -1,4 +1,4 @@
-use crate::grpc_subscription::from_grpc_block_update;
+use crate::grpc_subscription::from_grpc_block_update_old;
 use anyhow::{bail, Context};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
@@ -470,7 +470,7 @@ fn map_block_from_yellowstone_update(
     let _span = debug_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
-            let block = from_grpc_block_update(update_block_message, commitment_config);
+            let block = from_grpc_block_update_old(update_block_message, commitment_config);
             Some((block.slot, block))
         }
         _ => None,

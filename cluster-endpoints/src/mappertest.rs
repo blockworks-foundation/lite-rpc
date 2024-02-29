@@ -49,7 +49,7 @@ mod tests {
     use yellowstone_grpc_proto::prost::Message;
     use std::str::FromStr;
     use bincode::deserialize;
-    use crate::grpc_subscription::from_grpc_block_update;
+    use crate::grpc_subscription::from_grpc_block_update_old;
 
     #[test]
     fn map_block() {
@@ -60,7 +60,7 @@ mod tests {
         // info!("example_block: {:?}", example_block);
 
         let started_at = Instant::now();
-        let _produced_block = from_grpc_block_update(example_block, CommitmentConfig::confirmed());
+        let _produced_block = from_grpc_block_update_old(example_block, CommitmentConfig::confirmed());
         println!("from_grpc_block_update mapping took: {:?}", started_at.elapsed());
     }
 
@@ -75,7 +75,7 @@ mod tests {
 
         let raw_block = include_bytes!("block-000251402816-confirmed-1707315774189.dat");
         let example_block = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
-        let produced_block = from_grpc_block_update(example_block, CommitmentConfig::confirmed());
+        let produced_block = from_grpc_block_update_old(example_block, CommitmentConfig::confirmed());
         let raw = &produced_block.transactions[0].message;
         // BASE64.encode(message.serialize())
         let vec: Vec<u8> = BASE64.decode(raw).unwrap();

@@ -1,3 +1,4 @@
+use std::io::Error;
 use crate::endpoint_stremers::EndpointStreaming;
 use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc_multiplex::{
@@ -31,6 +32,7 @@ use solana_sdk::{
 use solana_transaction_status::{Reward, RewardType};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use log::info;
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::SubscribeUpdateTransactionInfo;
 
@@ -65,7 +67,7 @@ impl LoggingTimer {
 
 
 /// grpc version of ProducedBlock mapping
-pub fn from_grpc_block_update(
+pub fn from_grpc_block_update_old(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
@@ -78,7 +80,76 @@ pub fn from_grpc_block_update(
         .transactions
         .into_iter()
         // .into_par_iter() TODO
-        .filter_map(|tx| maptx(tx))
+        .filter_map(|tx| maptx_old(tx))
+        .collect();
+    log_timer.log_if_exceed("after transactions");
+    println!("tx count {}", txs.len());
+
+    let rewards = block.rewards.map(|rewards| {
+        rewards
+            .rewards
+            .into_iter()
+            .map(|reward| Reward {
+                pubkey: reward.pubkey.to_owned(),
+                lamports: reward.lamports,
+                post_balance: reward.post_balance,
+                reward_type: match reward.reward_type() {
+                    yellowstone_grpc_proto::prelude::RewardType::Unspecified => None,
+                    yellowstone_grpc_proto::prelude::RewardType::Fee => Some(RewardType::Fee),
+                    yellowstone_grpc_proto::prelude::RewardType::Rent => Some(RewardType::Rent),
+                    yellowstone_grpc_proto::prelude::RewardType::Staking => {
+                        Some(RewardType::Staking)
+                    }
+                    yellowstone_grpc_proto::prelude::RewardType::Voting => Some(RewardType::Voting),
+                },
+                commission: None,
+            })
+            .collect_vec()
+    });
+    log_timer.log_if_exceed("after rewards");
+
+    let leader_id = if let Some(rewards) = &rewards {
+        rewards
+            .iter()
+            .find(|reward| Some(RewardType::Fee) == reward.reward_type)
+            .map(|leader_reward| leader_reward.pubkey.clone())
+    } else {
+        None
+    };
+    log_timer.log_if_exceed("after leader_id");
+
+    log_timer.log_if_exceed("before return");
+    let inner = ProducedBlockInner {
+        transactions: txs,
+        block_height: block
+            .block_height
+            .map(|block_height| block_height.block_height)
+            .unwrap(),
+        block_time: block.block_time.map(|time| time.timestamp).unwrap() as u64,
+        blockhash: block.blockhash,
+        previous_blockhash: block.parent_blockhash,
+        leader_id,
+        parent_slot: block.parent_slot,
+        slot: block.slot,
+        rewards,
+    };
+    ProducedBlock::new(inner, commitment_config)
+}
+
+pub fn from_grpc_block_update_optimized(
+    block: SubscribeUpdateBlock,
+    commitment_config: CommitmentConfig,
+) -> ProducedBlock {
+    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
+    let started_at = Instant::now();
+    let log_timer = LoggingTimer { started_at, threshold: Duration::from_millis(40)};
+
+    log_timer.log_if_exceed("start");
+    let txs: Vec<TransactionInfo> = block
+        .transactions
+        .into_iter()
+        // .into_par_iter() TODO
+        .filter_map(|tx| maptxoptimized(tx))
         .collect();
     log_timer.log_if_exceed("after transactions");
     println!("tx count {}", txs.len());
@@ -211,9 +282,28 @@ mod tests {
         // info!("example_block: {:?}", example_block);
 
         let started_at = Instant::now();
-        let _produced_block = from_grpc_block_update(example_block, CommitmentConfig::confirmed());
+        let _produced_block = from_grpc_block_update_old(example_block, CommitmentConfig::confirmed());
         println!("from_grpc_block_update mapping took: {:?}", started_at.elapsed());
     }
+
+
+    #[test]
+    fn compare_old_new() {
+        // version yellowstone.1.12+solana.1.17.15
+        let raw_block = include_bytes!("block-000251402816-confirmed-1707315774189.dat");
+
+        let example_block1 = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
+        let example_block2 = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
+        // info!("example_block: {:?}", example_block);
+
+        let started_at = Instant::now();
+        println!("from_grpc_block_update mapping took: {:?}", started_at.elapsed());
+        let produced_block_new = from_grpc_block_update_optimized(example_block1, CommitmentConfig::confirmed());
+        let produced_block_old = from_grpc_block_update_old(example_block2, CommitmentConfig::confirmed());
+
+        assert_eq!(format!("{:?}",produced_block_old), format!("{:?}", produced_block_new));
+    }
+
 
     #[test]
     fn mappaccount() {
@@ -226,7 +316,7 @@ mod tests {
 
         let raw_block = include_bytes!("block-000251402816-confirmed-1707315774189.dat");
         let example_block = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
-        let produced_block = from_grpc_block_update(example_block, CommitmentConfig::confirmed());
+        let produced_block = from_grpc_block_update_old(example_block, CommitmentConfig::confirmed());
         let raw = &produced_block.transactions[0].message;
         // BASE64.encode(message.serialize())
         let vec: Vec<u8> = BASE64.decode(raw).unwrap();
@@ -243,7 +333,7 @@ mod tests {
     }
 }
 
-fn maptx(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
+fn maptx_old(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
 
     let log_timer_tx = LoggingTimer { started_at: Instant::now(), threshold: Duration::from_millis(10) };
     log_timer_tx.log_if_exceed("start");
@@ -331,6 +421,8 @@ fn maptx(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
             .collect(),
     });
     log_timer_tx.log_if_exceed("after message mapping");
+
+
 
     let legacy_compute_budget: Option<(u32, Option<u64>)> =
         message.instructions().iter().find_map(|i| {
