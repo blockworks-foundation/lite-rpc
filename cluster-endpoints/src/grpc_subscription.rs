@@ -1,6 +1,5 @@
 use std::cell::OnceCell;
-use std::io::Error;
-use std::num::{NonZeroU32, NonZeroU64};
+
 use crate::endpoint_stremers::EndpointStreaming;
 use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc_multiplex::{
@@ -11,7 +10,6 @@ use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
-    encoding::BASE64,
     structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
 };
@@ -34,8 +32,8 @@ use solana_sdk::{
 use solana_transaction_status::{Reward, RewardType};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::{debug, info, trace};
-use tracing::{debug_span, trace_span};
+use log::{trace};
+use tracing::{debug_span};
 use yellowstone_grpc_proto::geyser::SubscribeUpdateTransactionInfo;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
@@ -47,7 +45,26 @@ use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 
 
+
+pub struct LoggingTimer {
+    pub(crate) started_at: Instant,
+    pub(crate) threshold: Duration,
+}
+
+#[allow(dead_code)]
+impl LoggingTimer {
+    pub fn log_if_exceed(&self, name: &str) {
+        let elapsed = self.started_at.elapsed();
+        if elapsed > self.threshold {
+            eprintln!("{} exceeded: {:?}", name, elapsed);
+        }
+    }
+}
+    
+    
 /// grpc version of ProducedBlock mapping
+///
+/// caution: this implementation uses rayon for parallel processing
 /// from_grpc_block_update_reimplement{block.slot=255548168 num_transactions=6171}: solana_lite_rpc_cluster_endpoints::grpc_subscription: close time.busy=37.9ms time.idle=5.21µs
 /// from_grpc_block_update_reimplement{block.slot=255548169 num_transactions=529}: solana_lite_rpc_cluster_endpoints::grpc_subscription: close time.busy=4.84ms time.idle=4.46µs
 pub fn from_grpc_block_update_reimplement(
@@ -57,10 +74,13 @@ pub fn from_grpc_block_update_reimplement(
     let num_transactions = block.transactions.len();
     let _span = debug_span!("from_grpc_block_update_reimplement", ?block.slot, ?num_transactions).entered();
     let started_at = Instant::now();
+    let log = LoggingTimer {
+        started_at: Instant::now(),
+        threshold: Duration::from_millis(2),
+    };
 
     let txs: Vec<TransactionInfo> = block
         .transactions
-        // .into_iter()
         .into_par_iter()
         .filter_map(|tx| maptx_reimplemented(tx))
         .collect();
@@ -89,7 +109,9 @@ pub fn from_grpc_block_update_reimplement(
     ProducedBlock::new(inner, commitment_config)
 }
 
+#[inline]
 fn map_rewards(in_rewards: &Rewards) -> (Vec<Reward>, Option<String>) {
+    // mostly only one fee reward expected
     let mut out_rewards = Vec::with_capacity(in_rewards.rewards.len());
     let leader_id = OnceCell::new();
     for reward in &in_rewards.rewards {
@@ -533,10 +555,6 @@ mod tests {
         let example_block = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
         let produced_block = from_grpc_block_update_reimplement(example_block, CommitmentConfig::confirmed());
         let message: &VersionedMessage = &produced_block.transactions[0].message;
-        // BASE64.encode(message.serialize())
-        // let vec: Vec<u8> = BASE64.decode(raw).unwrap();
-        // let message: VersionedMessage = deserialize::<VersionedMessage>(&vec).unwrap();
-
         let started_at = Instant::now();
         let _readable_accounts: Vec<Pubkey> = vec![key1, key2, key3]
             .iter()
@@ -548,8 +566,8 @@ mod tests {
     }
 }
 
+#[inline]
 fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo> {
-
     let meta = tx.meta?;
 
     let transaction = tx.transaction?;
@@ -563,7 +581,6 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
             .expect("TransactionError should be deserialized")
     });
 
-    // let signature = signatures_old[0];
     let signature = {
         let sig_bytes: [u8; 64] = tx.signature.try_into().expect("must map to signature");
         let signature = Signature::from(sig_bytes);
@@ -575,9 +592,6 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
         .account_keys
         .iter()
         .map(|key_bytes| {
-            // caution:this changed
-            // let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
-            // Pubkey::new_from_array(bytes)
             let slice: &[u8] = key_bytes.as_slice();
             Pubkey::try_from(slice).expect("must map to pubkey")
         })
@@ -644,7 +658,6 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
         .map(|x| x.to_vec())
         .unwrap_or_default();
 
-
     Some(TransactionInfo {
         signature: signature.to_string(),
         is_vote: is_vote_transaction,
@@ -661,6 +674,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
 }
 
 // refactored using "extract method"
+#[inline]
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
     let cu_requested_cell: OnceCell<Option<u32>> = OnceCell::new();
     let prioritization_fees_cell: OnceCell<Option<u64>> = OnceCell::new();
@@ -671,8 +685,8 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
         .filter(|instruction| {
             instruction.program_id(message.static_account_keys()).eq(&compute_budget::id())}) {
 
-        if let Ok(cbi) = try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice()) {
-            match cbi {
+        if let Ok(budget_ins) = try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice()) {
+            match budget_ins {
                 // aka cu requested
                 ComputeBudgetInstruction::SetComputeUnitLimit(limit) => {
                     // note: not use if the exactly-once invariant holds
