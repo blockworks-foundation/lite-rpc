@@ -41,7 +41,7 @@ use yellowstone_grpc_proto::geyser::SubscribeUpdateTransactionInfo;
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
 };
-use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
+use yellowstone_grpc_proto::prelude::{Rewards, SubscribeUpdateBlock};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlockInner;
 
 
@@ -87,37 +87,13 @@ pub fn from_grpc_block_update_reimplement(
     log_timer.log_if_exceed("after transactions");
     println!("tx count {}", txs.len());
 
-    let rewards = block.rewards.map(|rewards| {
-        rewards
-            .rewards
-            .into_iter()
-            .map(|reward| Reward {
-                pubkey: reward.pubkey.to_owned(),
-                lamports: reward.lamports,
-                post_balance: reward.post_balance,
-                reward_type: match reward.reward_type() {
-                    yellowstone_grpc_proto::prelude::RewardType::Unspecified => None,
-                    yellowstone_grpc_proto::prelude::RewardType::Fee => Some(RewardType::Fee),
-                    yellowstone_grpc_proto::prelude::RewardType::Rent => Some(RewardType::Rent),
-                    yellowstone_grpc_proto::prelude::RewardType::Staking => {
-                        Some(RewardType::Staking)
-                    }
-                    yellowstone_grpc_proto::prelude::RewardType::Voting => Some(RewardType::Voting),
-                },
-                commission: None,
-            })
-            .collect_vec()
-    });
-    log_timer.log_if_exceed("after rewards");
-
-    let leader_id = if let Some(rewards) = &rewards {
-        rewards
-            .iter()
-            .find(|reward| Some(RewardType::Fee) == reward.reward_type)
-            .map(|leader_reward| leader_reward.pubkey.clone())
+    let (rewards, leader_id) = if let Some(rewards) = block.rewards {
+        let (rewards, leader_id_opt) = map_rewards(&rewards);
+        (Some(rewards), leader_id_opt)
     } else {
-        None
+        (None, None)
     };
+
     log_timer.log_if_exceed("after leader_id");
 
     log_timer.log_if_exceed("before return");
@@ -136,6 +112,36 @@ pub fn from_grpc_block_update_reimplement(
         rewards,
     };
     ProducedBlock::new(inner, commitment_config)
+}
+
+fn map_rewards(in_rewards: &Rewards) -> (Vec<Reward>, Option<String>) {
+    let mut out_rewards = Vec::with_capacity(in_rewards.rewards.len());
+    let leader_id = OnceCell::new();
+    for reward in &in_rewards.rewards {
+        let reward_type = match reward.reward_type() {
+            yellowstone_grpc_proto::prelude::RewardType::Unspecified => None,
+            yellowstone_grpc_proto::prelude::RewardType::Fee => Some(RewardType::Fee),
+            yellowstone_grpc_proto::prelude::RewardType::Rent => Some(RewardType::Rent),
+            yellowstone_grpc_proto::prelude::RewardType::Staking => {
+                Some(RewardType::Staking)
+            }
+            yellowstone_grpc_proto::prelude::RewardType::Voting => Some(RewardType::Voting),
+        };
+        // check if leader
+        if reward_type == Some(RewardType::Fee) {
+            leader_id.set(reward.pubkey.clone()).expect("only one fee reward expected");
+        }
+        let r = Reward {
+            pubkey: reward.pubkey.to_owned(),
+            lamports: reward.lamports,
+            post_balance: reward.post_balance,
+            reward_type: reward_type,
+            commission: None,
+        };
+        out_rewards.push(r);
+
+    }
+    (out_rewards, leader_id.into_inner())
 }
 
 pub fn from_grpc_block_update_optimized(
