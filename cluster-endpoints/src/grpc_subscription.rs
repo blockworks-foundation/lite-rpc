@@ -664,11 +664,10 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
 
 // refactored using "extract method"
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
-    let _span = trace_span!("map_compute_budget_instructions").entered();
-
-    let legacy_cell: OnceCell<(Option<u32>, Option<u64>)> = OnceCell::new();
     let cu_requested_cell: OnceCell<Option<u32>> = OnceCell::new();
     let prioritization_fees_cell: OnceCell<Option<u64>> = OnceCell::new();
+    // (cu_requested, prio_fees)
+    let legacy_cell: OnceCell<(Option<u32>, Option<u64>)> = OnceCell::new();
 
     for compute_budget_ins in message.instructions().iter()
         .filter(|instruction| {
@@ -687,10 +686,12 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
                     let _was_set = prioritization_fees_cell.set(Some(price));
                 }
                 ComputeBudgetInstruction::RequestUnitsDeprecated { units, additional_fee } => {
-                    let _was_set = cu_requested_cell.set(Some(units));
-                    if additional_fee > 0 {
-                        let _was_set = prioritization_fees_cell.set(Some(((units * 1000) / additional_fee) as u64));
+                    let val = if additional_fee > 0 {
+                        (Some(units), Some(((units * 1000) / additional_fee) as u64))
+                    } else {
+                        (Some(units), None)
                     };
+                    legacy_cell.set(val).expect("legacy must be set only once");
                 }
                 _ => {
                     trace!("skip instruction");
