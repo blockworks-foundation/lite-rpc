@@ -470,15 +470,13 @@ fn map_block_from_yellowstone_update(
     let _span = debug_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
+            let update_block_message2 = update_block_message.clone();
+            let update_block_message3 = update_block_message.clone();
 
-            let block = if update_block_message.transactions.len() > 1000000 {
-                tokio::task::block_in_place(move ||
-                    from_grpc_block_update_reimplement(update_block_message, commitment_config))
-            } else {
-                from_grpc_block_update_reimplement(update_block_message, commitment_config)
-            };
+            let block = from_grpc_block_update_reimplement(update_block_message, commitment_config);
 
-            // let block = from_grpc_block_update_original(update_block_message.clone(), commitment_config);
+            let _block_original = from_grpc_block_update_original(update_block_message2, commitment_config);
+            let _block_lou = from_grpc_block_update_optimized(update_block_message3, commitment_config);
 
             // let block = from_grpc_block_update_reimplement(update_block_message, commitment_config);
             // let block = from_grpc_block_update_optimized(update_block_message, commitment_config);
