@@ -1,7 +1,10 @@
+use std::str::FromStr;
+
 use futures_util::pin_mut;
 use log::debug;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
+use solana_sdk::signature::Signature;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::TransactionError;
 use tokio::time::Instant;
@@ -28,7 +31,7 @@ pub struct PostgresTransaction {
 impl PostgresTransaction {
     pub fn new(value: &TransactionInfo, slot: Slot) -> Self {
         Self {
-            signature: value.signature.clone(),
+            signature: value.signature.to_string(),
             err: value
                 .err
                 .clone()
@@ -45,7 +48,7 @@ impl PostgresTransaction {
 
     pub fn to_transaction_info(&self) -> TransactionInfo {
         TransactionInfo {
-            signature: self.signature.clone(),
+            signature: Signature::from_str(self.signature.as_str()).unwrap(),
             err: self
                 .err
                 .as_ref()

@@ -55,7 +55,7 @@ impl SubscriptionStore {
     ) {
         if let Some((_sig, (sink, _))) = self
             .signature_subscribers
-            .remove(&(transaction_info.signature.clone(), commitment_config))
+            .remove(&(transaction_info.signature.to_string(), commitment_config))
         {
             // none if transaction succeeded
             sink.send(slot, serde_json::json!({ "err": transaction_info.err }))

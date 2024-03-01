@@ -60,8 +60,8 @@ impl LoggingTimer {
         }
     }
 }
-    
-    
+
+
 /// grpc version of ProducedBlock mapping
 ///
 /// caution: this implementation uses rayon for parallel processing
@@ -267,6 +267,7 @@ pub fn from_grpc_block_update_original(
 ) -> ProducedBlock {
     let num_transactions = block.transactions.len();
     let _span = debug_span!("from_grpc_block_update_original", ?block.slot, ?num_transactions).entered();
+    let instant = tokio::time::Instant::now();
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
@@ -282,15 +283,9 @@ pub fn from_grpc_block_update_original(
             let signatures = transaction
                 .signatures
                 .into_iter()
-                .filter_map(|sig| match Signature::try_from(sig) {
-                    Ok(sig) => Some(sig),
-                    Err(_) => {
-                        log::warn!(
-                            "Failed to read signature from transaction in block {} - skipping",
-                            block.blockhash
-                        );
-                        None
-                    }
+                .map(|sig| {
+                    let sig:[u8; 64] = sig[0..64].try_into().unwrap();
+                    Signature::from(sig)
                 })
                 .collect_vec();
 
@@ -432,7 +427,7 @@ pub fn from_grpc_block_update_original(
                 .unwrap_or_default();
 
             Some(TransactionInfo {
-                signature: signature.to_string(),
+                signature,
                 is_vote: is_vote_transaction,
                 err,
                 cu_requested,
@@ -492,6 +487,7 @@ pub fn from_grpc_block_update_original(
         slot: block.slot,
         rewards,
     };
+    log::error!("block processing took {} ms", instant.elapsed().as_millis());
     ProducedBlock::new(inner, commitment_config)
 }
 
@@ -659,7 +655,7 @@ fn maptx_reimplemented(tx: SubscribeUpdateTransactionInfo) -> Option<Transaction
         .unwrap_or_default();
 
     Some(TransactionInfo {
-        signature: signature.to_string(),
+        signature: signature,
         is_vote: is_vote_transaction,
         err,
         cu_requested,
@@ -853,7 +849,7 @@ fn maptxoptimized(tx: SubscribeUpdateTransactionInfo) -> Option<TransactionInfo>
     }
 
     Some(TransactionInfo {
-        signature: signature.to_string(),
+        signature: signature,
         is_vote: is_vote_transaction,
         err,
         cu_requested: cu_requested.or(legacy_cu_requested),
