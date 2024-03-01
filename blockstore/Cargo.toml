@@ -30,6 +30,7 @@ native-tls = { workspace = true }
 postgres-native-tls = { workspace = true }
 anyhow = { workspace = true }
 log = {workspace = true}
+tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 chrono = {workspace = true}
 serde = { workspace = true }
