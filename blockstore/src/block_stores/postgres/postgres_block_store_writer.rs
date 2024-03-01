@@ -366,8 +366,8 @@ mod tests {
 
         let inner = ProducedBlockInner {
             block_height: 42,
-            blockhash: "blockhash".to_string(),
-            previous_blockhash: "previous_blockhash".to_string(),
+            blockhash: solana_sdk::hash::Hash::new_unique(),
+            previous_blockhash: solana_sdk::hash::Hash::new_unique(),
             parent_slot: 666,
             slot: 223555999,
             transactions: vec![create_test_tx(sig1), create_test_tx(sig2)],
@@ -387,7 +387,7 @@ mod tests {
             cu_requested: Some(40000),
             prioritization_fees: Some(5000),
             cu_consumed: Some(32000),
-            recent_blockhash: "recent_blockhash".to_string(),
+            recent_blockhash: solana_sdk::hash::Hash::new_unique(),
             message: "some message".to_string(),
             writable_accounts: vec![],
             readable_accounts: vec![],

@@ -127,7 +127,7 @@ impl TransactionService {
             ..
         }) = self
             .block_information_store
-            .get_block_info(&tx.get_recent_blockhash().to_string())
+            .get_block_info(tx.get_recent_blockhash())
         else {
             bail!("Blockhash not found in block store".to_string());
         };

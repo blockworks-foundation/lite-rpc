@@ -30,6 +30,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_histo
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 
 use solana_lite_rpc_blockstore::history::History;
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::{
     encoding,
     stores::{block_information_store::BlockInformation, data_cache::DataCache},
@@ -211,7 +212,7 @@ impl LiteRpcServer for LiteBridge {
                 api_version: None,
             },
             value: RpcBlockhash {
-                blockhash,
+                blockhash: blockhash.to_string(),
                 last_valid_block_height: block_height + 150,
             },
         })
@@ -230,7 +231,10 @@ impl LiteRpcServer for LiteBridge {
         let (is_valid, slot) = self
             .data_cache
             .block_information_store
-            .is_blockhash_valid(&blockhash, commitment)
+            .is_blockhash_valid(
+                &hash_from_str(&blockhash).expect("valid blockhash"),
+                commitment,
+            )
             .await;
 
         Ok(RpcResponse {

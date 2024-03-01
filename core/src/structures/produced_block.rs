@@ -1,4 +1,5 @@
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::hash::Hash;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
@@ -16,7 +17,7 @@ pub struct TransactionInfo {
     pub cu_requested: Option<u32>,
     pub prioritization_fees: Option<u64>,
     pub cu_consumed: Option<u64>,
-    pub recent_blockhash: String,
+    pub recent_blockhash: Hash,
     pub message: String,
     pub writable_accounts: Vec<Pubkey>,
     pub readable_accounts: Vec<Pubkey>,
@@ -61,12 +62,12 @@ impl Deref for ProducedBlock {
 pub struct ProducedBlockInner {
     pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
-    pub blockhash: String,
+    pub blockhash: Hash,
     pub block_height: u64,
     pub slot: Slot,
     pub parent_slot: Slot,
     pub block_time: u64,
-    pub previous_blockhash: String,
+    pub previous_blockhash: Hash,
     pub rewards: Option<Vec<Reward>>,
 }
 

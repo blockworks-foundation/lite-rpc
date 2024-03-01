@@ -1,6 +1,7 @@
 use super::postgres_epoch::PostgresEpoch;
 use super::postgres_session::PostgresSession;
 use log::{debug, warn};
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
@@ -31,12 +32,12 @@ impl From<&ProducedBlock> for PostgresBlock {
             .unwrap_or(None);
 
         Self {
-            blockhash: value.blockhash.clone(),
+            blockhash: value.blockhash.to_string(),
             block_height: value.block_height as i64,
             slot: value.slot as i64,
             parent_slot: value.parent_slot as i64,
             block_time: value.block_time as i64,
-            previous_blockhash: value.previous_blockhash.clone(),
+            previous_blockhash: value.previous_blockhash.to_string(),
             // TODO add leader_id, etc.
             rewards,
             leader_id: value.leader_id.clone(),
@@ -60,12 +61,12 @@ impl PostgresBlock {
             // TODO implement
             transactions: transaction_infos,
             leader_id: None,
-            blockhash: self.blockhash.clone(),
+            blockhash: hash_from_str(&self.blockhash).expect("valid blockhash"),
             block_height: self.block_height as u64,
             slot: self.slot as Slot,
             parent_slot: self.parent_slot as Slot,
             block_time: self.block_time as u64,
-            previous_blockhash: self.previous_blockhash.clone(),
+            previous_blockhash: hash_from_str(&self.previous_blockhash).expect("valid blockhash"),
             rewards: rewards_vec,
         };
         ProducedBlock::new(inner, commitment_config)
@@ -221,7 +222,7 @@ mod tests {
             cu_requested: None,
             prioritization_fees: None,
             cu_consumed: None,
-            recent_blockhash: "recent_blockhash".to_string(),
+            recent_blockhash: solana_sdk::hash::Hash::new_unique(),
             message: "message".to_string(),
             writable_accounts: vec![],
             readable_accounts: vec![],

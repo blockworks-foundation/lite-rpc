@@ -35,6 +35,7 @@ use tracing::debug_span;
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
 };
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlockInner;
 use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
 
@@ -202,7 +203,7 @@ pub fn from_grpc_block_update(
                 cu_requested,
                 prioritization_fees,
                 cu_consumed: compute_units_consumed,
-                recent_blockhash: message.recent_blockhash().to_string(),
+                recent_blockhash: *message.recent_blockhash(),
                 message: BASE64.encode(message.serialize()),
                 readable_accounts,
                 writable_accounts,
@@ -249,8 +250,8 @@ pub fn from_grpc_block_update(
             .map(|block_height| block_height.block_height)
             .unwrap(),
         block_time: block.block_time.map(|time| time.timestamp).unwrap() as u64,
-        blockhash: block.blockhash,
-        previous_blockhash: block.parent_blockhash,
+        blockhash: hash_from_str(&block.blockhash).expect("valid blockhash"),
+        previous_blockhash: hash_from_str(&block.parent_blockhash).expect("valid blockhash"),
         leader_id,
         parent_slot: block.parent_slot,
         slot: block.slot,

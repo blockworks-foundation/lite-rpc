@@ -10,6 +10,7 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
@@ -134,7 +135,8 @@ fn create_grpc_multiplex_block_meta_task(
                                     tip = proposed_slot;
                                     let block_meta = BlockMeta {
                                         slot: proposed_slot,
-                                        blockhash: block_meta.blockhash,
+                                        blockhash: hash_from_str(&block_meta.blockhash)
+                                            .expect("valid blockhash"),
                                     };
 
                                     let send_started_at = Instant::now();
@@ -246,7 +248,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             // by blockhash
             // this map consumes sigificant amount of memory constrainted by CLEANUP_SLOTS_BEHIND_FINALIZED
-            let mut recent_processed_blocks = HashMap::<String, ProducedBlock>::new();
+            let mut recent_processed_blocks =
+                HashMap::<solana_sdk::hash::Hash, ProducedBlock>::new();
 
             let mut cleanup_tick = tokio::time::interval(Duration::from_secs(5));
             let mut last_finalized_slot: Slot = 0;
@@ -254,7 +257,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let mut cleanup_without_recv_full_blocks: u8 = 0;
             let mut cleanup_without_confirmed_recv_blocks_meta: u8 = 0;
             let mut cleanup_without_finalized_recv_blocks_meta: u8 = 0;
-            let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
+            let mut confirmed_block_not_yet_processed = HashSet::<solana_sdk::hash::Hash>::new();
 
             //  start logging errors when we recieve first finalized block
             let mut startup_completed = false;
@@ -280,7 +283,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                     warn!("produced block channel has no receivers while trying to send confirmed block {e:?}");
                                 }
                             }
-                            recent_processed_blocks.insert(processed_block.blockhash.clone(), processed_block);
+                            recent_processed_blocks.insert(processed_block.blockhash, processed_block);
                         },
                         meta_confirmed = block_meta_reciever_confirmed.recv() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
@@ -294,7 +297,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                     warn!("confirmed block channel has no receivers {e:?}");
                                 }
                             } else {
-                                confirmed_block_not_yet_processed.insert(blockhash.clone());
+                                confirmed_block_not_yet_processed.insert(blockhash);
                                 log::debug!("backlog of not yet confirmed blocks: {}; recent blocks map size: {}",
                                 confirmed_block_not_yet_processed.len(), recent_processed_blocks.len());
                             }
@@ -435,7 +438,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
 #[allow(dead_code)]
 struct BlockMeta {
     pub slot: Slot,
-    pub blockhash: String,
+    pub blockhash: solana_sdk::hash::Hash,
 }
 
 struct BlockMetaExtractor(CommitmentConfig);
@@ -448,7 +451,7 @@ impl FromYellowstoneExtractor for BlockMetaExtractor {
                 block_meta.slot,
                 BlockMeta {
                     slot: block_meta.slot,
-                    blockhash: block_meta.blockhash,
+                    blockhash: hash_from_str(&block_meta.blockhash).unwrap(),
                 },
             )),
             _ => None,
