@@ -190,10 +190,10 @@ impl PostgresBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use solana_sdk::hash::Hash;
     use solana_sdk::message::{v0, MessageHeader, VersionedMessage};
     use solana_sdk::pubkey::Pubkey;
     use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
-    use solana_sdk::hash::Hash;
 
     #[test]
     fn map_postgresblock_to_produced_block() {
