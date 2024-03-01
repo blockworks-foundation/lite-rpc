@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -229,6 +230,14 @@ pub struct PostgresSessionCache {
     config: PostgresSessionConfig,
 }
 
+impl Debug for PostgresSessionCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PostgresSessionCache")
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 impl PostgresSessionCache {
     pub async fn new(config: PostgresSessionConfig) -> anyhow::Result<Self> {
         let session = PostgresSession::new(config.clone()).await?;
@@ -255,6 +264,14 @@ impl PostgresSessionCache {
 pub struct PostgresWriteSession {
     session: Arc<RwLock<PostgresSession>>,
     pub pg_session_config: PostgresSessionConfig,
+}
+
+impl Debug for PostgresWriteSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PostgresWriteSession")
+            .field("pg_session_config", &self.pg_session_config)
+            .finish()
+    }
 }
 
 impl PostgresWriteSession {

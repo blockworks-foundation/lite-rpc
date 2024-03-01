@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
@@ -18,7 +19,7 @@ pub struct TransactionInfo {
 }
 
 // TODO try to remove Clone
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ProducedBlock {
     pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
@@ -30,6 +31,16 @@ pub struct ProducedBlock {
     pub commitment_config: CommitmentConfig,
     pub previous_blockhash: String,
     pub rewards: Option<Vec<Reward>>,
+}
+
+impl Debug for ProducedBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ProducedBlock {{ slot: {}, blockhash: {}, commitment: {} }}",
+            self.slot, self.blockhash, self.commitment_config.commitment
+        )
+    }
 }
 
 impl ProducedBlock {

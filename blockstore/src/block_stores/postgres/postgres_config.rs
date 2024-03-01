@@ -1,14 +1,25 @@
 use anyhow::Context;
 use std::env;
+use std::fmt::Debug;
+use itertools::Itertools;
 use tokio_postgres::config::SslMode;
 
-#[derive(serde::Deserialize, Debug, Clone)]
+#[derive(serde::Deserialize, Clone)]
 pub struct PostgresSessionConfig {
     pub pg_config: String,
     pub ssl: Option<PostgresSessionSslConfig>,
 }
 
-#[derive(serde::Deserialize, Debug, Clone)]
+impl Debug for PostgresSessionConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let pg_config_parsed = self.pg_config.parse::<tokio_postgres::Config>().unwrap();
+        write!(f, "PostgresSessionConfig {{ host: {:?}, dbname: {:?} }}",
+               pg_config_parsed.get_hosts(),
+               pg_config_parsed.get_dbname())
+    }
+}
+
+#[derive(serde::Deserialize, Clone)]
 pub struct PostgresSessionSslConfig {
     pub ca_pem_b64: String,
     pub client_pks_b64: String,
