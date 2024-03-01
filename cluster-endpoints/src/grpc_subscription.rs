@@ -204,10 +204,11 @@ pub fn from_grpc_block_update(
 }
 
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
-    let cu_requested_cell: OnceCell<Option<u32>> = OnceCell::new();
-    let prioritization_fees_cell: OnceCell<Option<u64>> = OnceCell::new();
-    // (cu_requested, prio_fees)
-    let legacy_cell: OnceCell<(Option<u32>, Option<u64>)> = OnceCell::new();
+    let cu_requested_cell: OnceCell<u32> = OnceCell::new();
+    let legacy_cu_requested_cell: OnceCell<u32> = OnceCell::new();
+
+    let prioritization_fees_cell: OnceCell<u64> = OnceCell::new();
+    let legacy_prio_fees_cell: OnceCell<u64> = OnceCell::new();
 
     for compute_budget_ins in message.instructions().iter().filter(|instruction| {
         instruction
@@ -221,27 +222,24 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
                 // aka cu requested
                 ComputeBudgetInstruction::SetComputeUnitLimit(limit) => {
                     cu_requested_cell
-                        .set(Some(limit))
+                        .set(limit)
                         .expect("cu_limit must be set only once");
                 }
                 // aka prio fees
                 ComputeBudgetInstruction::SetComputeUnitPrice(price) => {
                     prioritization_fees_cell
-                        .set(Some(price))
+                        .set(price)
                         .expect("prioritization_fees must be set only once");
                 }
+                // legacy
                 ComputeBudgetInstruction::RequestUnitsDeprecated {
                     units,
                     additional_fee,
                 } => {
-                    let val = if additional_fee > 0 {
-                        (Some(units), Some(((units * 1000) / additional_fee) as u64))
-                    } else {
-                        (Some(units), None)
+                    let _ = legacy_cu_requested_cell.set(units);
+                    if additional_fee > 0 {
+                        let _ = legacy_prio_fees_cell.set(((units * 1000) / additional_fee) as u64);
                     };
-                    legacy_cell
-                        .set(val)
-                        .expect("legacy price+fees must be set only once");
                 }
                 _ => {
                     trace!("skip compute budget instruction");
@@ -250,13 +248,14 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
         }
     }
 
-    let legacy = legacy_cell.into_inner();
     let cu_requested = cu_requested_cell
-        .into_inner()
-        .unwrap_or(legacy.and_then(|x| x.0));
+        .get()
+        .or(legacy_cu_requested_cell.get())
+        .cloned();
     let prioritization_fees = prioritization_fees_cell
-        .into_inner()
-        .unwrap_or(legacy.and_then(|x| x.1));
+        .get()
+        .or(legacy_prio_fees_cell.get())
+        .cloned();
     (cu_requested, prioritization_fees)
 }
 
