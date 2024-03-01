@@ -30,7 +30,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::sync::Arc;
-use tracing::debug_span;
+use tracing::trace_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
@@ -43,7 +43,7 @@ pub fn from_grpc_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
+    let _span = trace_span!("from_grpc_block_update", ?block.slot).entered();
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()

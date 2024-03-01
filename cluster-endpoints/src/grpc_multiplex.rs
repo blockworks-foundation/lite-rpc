@@ -15,7 +15,7 @@ use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
 use tokio::time::{sleep, Instant};
-use tracing::debug_span;
+use tracing::trace_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
@@ -302,7 +302,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         meta_finalized = block_meta_reciever_finalized.recv() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
                             let meta_finalized = meta_finalized.expect("finalized block meta from stream");
-                            // let _span = debug_span!("sequence_block_meta_finalized", ?meta_finalized.slot).entered();
                             let blockhash = meta_finalized.blockhash;
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
@@ -384,7 +383,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                     Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
-                            let _span = debug_span!("grpc_multiplex_processed_slots_stream", ?slot)
+                            let _span = trace_span!("grpc_multiplex_processed_slots_stream", ?slot)
                                 .entered();
                             let send_started_at = Instant::now();
                             let send_result = multiplexed_messages_sender
@@ -467,7 +466,7 @@ fn map_block_from_yellowstone_update(
     update: SubscribeUpdate,
     commitment_config: CommitmentConfig,
 ) -> Option<(Slot, ProducedBlock)> {
-    let _span = debug_span!("map_block_from_yellowstone_update").entered();
+    let _span = trace_span!("map_block_from_yellowstone_update").entered();
     match update.update_oneof {
         Some(UpdateOneof::Block(update_block_message)) => {
             let block = from_grpc_block_update(update_block_message, commitment_config);
