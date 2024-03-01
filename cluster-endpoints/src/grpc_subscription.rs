@@ -5,6 +5,7 @@ use crate::grpc_multiplex::{
 };
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
+use log::trace;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
@@ -28,8 +29,9 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solana_transaction_status::{Reward, RewardType};
+use std::cell::OnceCell;
 use std::sync::Arc;
-use tracing::debug_span;
+use tracing::trace_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
@@ -43,7 +45,8 @@ pub fn from_grpc_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
+    let num_transactions = block.transactions.len();
+    let _span = trace_span!("from_grpc_block_update", ?block.slot, ?num_transactions).entered();
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
@@ -108,66 +111,7 @@ pub fn from_grpc_block_update(
                     .collect(),
             });
 
-            let legacy_compute_budget: Option<(u32, Option<u64>)> =
-                message.instructions().iter().find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
-                    {
-                        if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                            units,
-                            additional_fee,
-                        }) = try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            if additional_fee > 0 {
-                                return Some((
-                                    units,
-                                    Some(((units * 1000) / additional_fee) as u64),
-                                ));
-                            } else {
-                                return Some((units, None));
-                            }
-                        }
-                    }
-                    None
-                });
-
-            let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
-            let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
-
-            let cu_requested = message
-                .instructions()
-                .iter()
-                .find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
-                    {
-                        if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                            try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            return Some(limit);
-                        }
-                    }
-                    None
-                })
-                .or(legacy_cu_requested);
-
-            let prioritization_fees = message
-                .instructions()
-                .iter()
-                .find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
-                    {
-                        if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                            try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            return Some(price);
-                        }
-                    }
-
-                    None
-                })
-                .or(legacy_prioritization_fees);
+            let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
 
             let is_vote_transaction = message.instructions().iter().any(|i| {
                 i.program_id(message.static_account_keys())
@@ -257,6 +201,63 @@ pub fn from_grpc_block_update(
         rewards,
     };
     ProducedBlock::new(inner, commitment_config)
+}
+
+fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
+    let cu_requested_cell: OnceCell<Option<u32>> = OnceCell::new();
+    let prioritization_fees_cell: OnceCell<Option<u64>> = OnceCell::new();
+    // (cu_requested, prio_fees)
+    let legacy_cell: OnceCell<(Option<u32>, Option<u64>)> = OnceCell::new();
+
+    for compute_budget_ins in message.instructions().iter().filter(|instruction| {
+        instruction
+            .program_id(message.static_account_keys())
+            .eq(&compute_budget::id())
+    }) {
+        if let Ok(budget_ins) =
+            try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice())
+        {
+            match budget_ins {
+                // aka cu requested
+                ComputeBudgetInstruction::SetComputeUnitLimit(limit) => {
+                    cu_requested_cell
+                        .set(Some(limit))
+                        .expect("cu_limit must be set only once");
+                }
+                // aka prio fees
+                ComputeBudgetInstruction::SetComputeUnitPrice(price) => {
+                    prioritization_fees_cell
+                        .set(Some(price))
+                        .expect("prioritization_fees must be set only once");
+                }
+                ComputeBudgetInstruction::RequestUnitsDeprecated {
+                    units,
+                    additional_fee,
+                } => {
+                    let val = if additional_fee > 0 {
+                        (Some(units), Some(((units * 1000) / additional_fee) as u64))
+                    } else {
+                        (Some(units), None)
+                    };
+                    legacy_cell
+                        .set(val)
+                        .expect("legacy price+fees must be set only once");
+                }
+                _ => {
+                    trace!("skip compute budget instruction");
+                }
+            }
+        }
+    }
+
+    let legacy = legacy_cell.into_inner();
+    let cu_requested = cu_requested_cell
+        .into_inner()
+        .unwrap_or(legacy.and_then(|x| x.0));
+    let prioritization_fees = prioritization_fees_cell
+        .into_inner()
+        .unwrap_or(legacy.and_then(|x| x.1));
+    (cu_requested, prioritization_fees)
 }
 
 pub fn create_grpc_subscription(
