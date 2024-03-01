@@ -56,34 +56,23 @@ pub fn from_grpc_block_update(
 
             let header = message.header?;
 
-            let signatures = transaction
-                .signatures
-                .into_iter()
-                .filter_map(|sig| match Signature::try_from(sig) {
-                    Ok(sig) => Some(sig),
-                    Err(_) => {
-                        log::warn!(
-                            "Failed to read signature from transaction in block {} - skipping",
-                            block.blockhash
-                        );
-                        None
-                    }
-                })
-                .collect_vec();
+            let signature = {
+                let sig_bytes: [u8; 64] = tx.signature.try_into().expect("must map to signature");
+                Signature::from(sig_bytes)
+            };
 
             let err = meta.err.map(|x| {
                 bincode::deserialize::<TransactionError>(&x.err)
                     .expect("TransactionError should be deserialized")
             });
 
-            let signature = signatures[0];
             let compute_units_consumed = meta.compute_units_consumed;
             let account_keys: Vec<Pubkey> = message
                 .account_keys
                 .into_iter()
-                .map(|key| {
-                    let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
-                    Pubkey::new_from_array(bytes)
+                .map(|key_bytes| {
+                    let slice: &[u8] = key_bytes.as_slice();
+                    Pubkey::try_from(slice).expect("must map to pubkey")
                 })
                 .collect();
 
@@ -108,12 +97,10 @@ pub fn from_grpc_block_update(
                     .address_table_lookups
                     .into_iter()
                     .map(|table| {
-                        let bytes: [u8; 32] = table
-                            .account_key
-                            .try_into()
-                            .unwrap_or(Pubkey::default().to_bytes());
+                        let slice: &[u8] = table.account_key.as_slice();
+                        let account_key = Pubkey::try_from(slice).expect("must map to pubkey");
                         MessageAddressTableLookup {
-                            account_key: Pubkey::new_from_array(bytes),
+                            account_key,
                             writable_indexes: table.writable_indexes,
                             readonly_indexes: table.readonly_indexes,
                         }
