@@ -1,6 +1,9 @@
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::hash::Hash;
 use solana_sdk::message::v0::MessageAddressTableLookup;
+use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signature;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
 use solana_transaction_status::Reward;
 use std::fmt::Debug;
@@ -9,14 +12,14 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
-    pub signature: String,
+    pub signature: Signature,
     pub is_vote: bool,
     pub err: Option<TransactionError>,
     pub cu_requested: Option<u32>,
     pub prioritization_fees: Option<u64>,
     pub cu_consumed: Option<u64>,
-    pub recent_blockhash: String,
-    pub message: String,
+    pub recent_blockhash: Hash,
+    pub message: VersionedMessage,
     pub writable_accounts: Vec<Pubkey>,
     pub readable_accounts: Vec<Pubkey>,
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
@@ -60,12 +63,12 @@ impl Deref for ProducedBlock {
 pub struct ProducedBlockInner {
     pub transactions: Vec<TransactionInfo>,
     pub leader_id: Option<String>,
-    pub blockhash: String,
+    pub blockhash: Hash,
     pub block_height: u64,
     pub slot: Slot,
     pub parent_slot: Slot,
     pub block_time: u64,
-    pub previous_blockhash: String,
+    pub previous_blockhash: Hash,
     pub rewards: Option<Vec<Reward>>,
 }
 

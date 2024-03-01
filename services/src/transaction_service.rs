@@ -127,14 +127,14 @@ impl TransactionService {
             ..
         }) = self
             .block_information_store
-            .get_block_info(&tx.get_recent_blockhash().to_string())
+            .get_block_info(tx.get_recent_blockhash())
         else {
             bail!("Blockhash not found in block store".to_string());
         };
 
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         let transaction_info = SentTransactionInfo {
-            signature: signature.to_string(),
+            signature,
             last_valid_block_height: last_valid_blockheight,
             slot,
             transaction: raw_tx,

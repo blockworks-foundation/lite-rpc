@@ -318,6 +318,8 @@ mod tests {
     use super::*;
     use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
     use solana_sdk::commitment_config::CommitmentConfig;
+    use solana_sdk::message::{v0, MessageHeader, VersionedMessage};
+    use solana_sdk::pubkey::Pubkey;
     use solana_sdk::signature::Signature;
     use std::str::FromStr;
 
@@ -366,8 +368,8 @@ mod tests {
 
         let inner = ProducedBlockInner {
             block_height: 42,
-            blockhash: "blockhash".to_string(),
-            previous_blockhash: "previous_blockhash".to_string(),
+            blockhash: solana_sdk::hash::Hash::new_unique(),
+            previous_blockhash: solana_sdk::hash::Hash::new_unique(),
             parent_slot: 666,
             slot: 223555999,
             transactions: vec![create_test_tx(sig1), create_test_tx(sig2)],
@@ -381,17 +383,28 @@ mod tests {
 
     fn create_test_tx(signature: Signature) -> TransactionInfo {
         TransactionInfo {
-            signature: signature.to_string(),
+            signature,
             is_vote: false,
             err: None,
             cu_requested: Some(40000),
             prioritization_fees: Some(5000),
             cu_consumed: Some(32000),
-            recent_blockhash: "recent_blockhash".to_string(),
-            message: "some message".to_string(),
+            recent_blockhash: solana_sdk::hash::Hash::new_unique(),
+            message: create_test_message(),
             writable_accounts: vec![],
             readable_accounts: vec![],
             address_lookup_tables: vec![],
         }
+    }
+
+    fn create_test_message() -> VersionedMessage {
+        VersionedMessage::V0(v0::Message {
+            header: MessageHeader {
+                num_required_signatures: 1,
+                ..MessageHeader::default()
+            },
+            account_keys: vec![Pubkey::new_unique()],
+            ..v0::Message::default()
+        })
     }
 }

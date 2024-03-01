@@ -6,7 +6,6 @@ use solana_sdk::signature::Signature;
 use std::fmt;
 use std::fmt::Display;
 use std::net::SocketAddr;
-use std::str::FromStr;
 
 ///
 /// lite-rpc to proxy wire format
@@ -18,8 +17,8 @@ const FORMAT_VERSION1: u16 = 2500;
 pub struct TxData(Signature, Vec<u8>);
 
 impl TxData {
-    pub fn new(sig: String, tx_raw: Vec<u8>) -> Self {
-        TxData(Signature::from_str(sig.as_str()).unwrap(), tx_raw)
+    pub fn new(signature: Signature, tx_raw: Vec<u8>) -> Self {
+        TxData(signature, tx_raw)
     }
 }
 

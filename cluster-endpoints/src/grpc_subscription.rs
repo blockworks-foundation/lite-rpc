@@ -5,10 +5,10 @@ use crate::grpc_multiplex::{
 };
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
+use log::trace;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
-    encoding::BASE64,
     structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
 };
@@ -29,12 +29,14 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solana_transaction_status::{Reward, RewardType};
+use std::cell::OnceCell;
 use std::sync::Arc;
-use tracing::debug_span;
+use tracing::trace_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
 };
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlockInner;
 use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
 
@@ -43,7 +45,8 @@ pub fn from_grpc_block_update(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update", ?block.slot).entered();
+    let num_transactions = block.transactions.len();
+    let _span = trace_span!("from_grpc_block_update", ?block.slot, ?num_transactions).entered();
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
@@ -56,34 +59,23 @@ pub fn from_grpc_block_update(
 
             let header = message.header?;
 
-            let signatures = transaction
-                .signatures
-                .into_iter()
-                .filter_map(|sig| match Signature::try_from(sig) {
-                    Ok(sig) => Some(sig),
-                    Err(_) => {
-                        log::warn!(
-                            "Failed to read signature from transaction in block {} - skipping",
-                            block.blockhash
-                        );
-                        None
-                    }
-                })
-                .collect_vec();
+            let signature = {
+                let sig_bytes: [u8; 64] = tx.signature.try_into().expect("must map to signature");
+                Signature::from(sig_bytes)
+            };
 
             let err = meta.err.map(|x| {
                 bincode::deserialize::<TransactionError>(&x.err)
                     .expect("TransactionError should be deserialized")
             });
 
-            let signature = signatures[0];
             let compute_units_consumed = meta.compute_units_consumed;
             let account_keys: Vec<Pubkey> = message
                 .account_keys
                 .into_iter()
-                .map(|key| {
-                    let bytes: [u8; 32] = key.try_into().unwrap_or(Pubkey::default().to_bytes());
-                    Pubkey::new_from_array(bytes)
+                .map(|key_bytes| {
+                    let slice: &[u8] = key_bytes.as_slice();
+                    Pubkey::try_from(slice).expect("must map to pubkey")
                 })
                 .collect();
 
@@ -108,12 +100,10 @@ pub fn from_grpc_block_update(
                     .address_table_lookups
                     .into_iter()
                     .map(|table| {
-                        let bytes: [u8; 32] = table
-                            .account_key
-                            .try_into()
-                            .unwrap_or(Pubkey::default().to_bytes());
+                        let slice: &[u8] = table.account_key.as_slice();
+                        let account_key = Pubkey::try_from(slice).expect("must map to pubkey");
                         MessageAddressTableLookup {
-                            account_key: Pubkey::new_from_array(bytes),
+                            account_key,
                             writable_indexes: table.writable_indexes,
                             readonly_indexes: table.readonly_indexes,
                         }
@@ -121,66 +111,7 @@ pub fn from_grpc_block_update(
                     .collect(),
             });
 
-            let legacy_compute_budget: Option<(u32, Option<u64>)> =
-                message.instructions().iter().find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
-                    {
-                        if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                            units,
-                            additional_fee,
-                        }) = try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            if additional_fee > 0 {
-                                return Some((
-                                    units,
-                                    Some(((units * 1000) / additional_fee) as u64),
-                                ));
-                            } else {
-                                return Some((units, None));
-                            }
-                        }
-                    }
-                    None
-                });
-
-            let legacy_cu_requested = legacy_compute_budget.map(|x| x.0);
-            let legacy_prioritization_fees = legacy_compute_budget.map(|x| x.1).unwrap_or(None);
-
-            let cu_requested = message
-                .instructions()
-                .iter()
-                .find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
-                    {
-                        if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(limit)) =
-                            try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            return Some(limit);
-                        }
-                    }
-                    None
-                })
-                .or(legacy_cu_requested);
-
-            let prioritization_fees = message
-                .instructions()
-                .iter()
-                .find_map(|i| {
-                    if i.program_id(message.static_account_keys())
-                        .eq(&compute_budget::id())
-                    {
-                        if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(price)) =
-                            try_from_slice_unchecked(i.data.as_slice())
-                        {
-                            return Some(price);
-                        }
-                    }
-
-                    None
-                })
-                .or(legacy_prioritization_fees);
+            let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
 
             let is_vote_transaction = message.instructions().iter().any(|i| {
                 i.program_id(message.static_account_keys())
@@ -209,14 +140,14 @@ pub fn from_grpc_block_update(
                 .unwrap_or_default();
 
             Some(TransactionInfo {
-                signature: signature.to_string(),
+                signature,
                 is_vote: is_vote_transaction,
                 err,
                 cu_requested,
                 prioritization_fees,
                 cu_consumed: compute_units_consumed,
-                recent_blockhash: message.recent_blockhash().to_string(),
-                message: BASE64.encode(message.serialize()),
+                recent_blockhash: *message.recent_blockhash(),
+                message,
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,
@@ -262,14 +193,70 @@ pub fn from_grpc_block_update(
             .map(|block_height| block_height.block_height)
             .unwrap(),
         block_time: block.block_time.map(|time| time.timestamp).unwrap() as u64,
-        blockhash: block.blockhash,
-        previous_blockhash: block.parent_blockhash,
+        blockhash: hash_from_str(&block.blockhash).expect("valid blockhash"),
+        previous_blockhash: hash_from_str(&block.parent_blockhash).expect("valid blockhash"),
         leader_id,
         parent_slot: block.parent_slot,
         slot: block.slot,
         rewards,
     };
     ProducedBlock::new(inner, commitment_config)
+}
+
+fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
+    let cu_requested_cell: OnceCell<u32> = OnceCell::new();
+    let legacy_cu_requested_cell: OnceCell<u32> = OnceCell::new();
+
+    let prioritization_fees_cell: OnceCell<u64> = OnceCell::new();
+    let legacy_prio_fees_cell: OnceCell<u64> = OnceCell::new();
+
+    for compute_budget_ins in message.instructions().iter().filter(|instruction| {
+        instruction
+            .program_id(message.static_account_keys())
+            .eq(&compute_budget::id())
+    }) {
+        if let Ok(budget_ins) =
+            try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice())
+        {
+            match budget_ins {
+                // aka cu requested
+                ComputeBudgetInstruction::SetComputeUnitLimit(limit) => {
+                    cu_requested_cell
+                        .set(limit)
+                        .expect("cu_limit must be set only once");
+                }
+                // aka prio fees
+                ComputeBudgetInstruction::SetComputeUnitPrice(price) => {
+                    prioritization_fees_cell
+                        .set(price)
+                        .expect("prioritization_fees must be set only once");
+                }
+                // legacy
+                ComputeBudgetInstruction::RequestUnitsDeprecated {
+                    units,
+                    additional_fee,
+                } => {
+                    let _ = legacy_cu_requested_cell.set(units);
+                    if additional_fee > 0 {
+                        let _ = legacy_prio_fees_cell.set(((units * 1000) / additional_fee) as u64);
+                    };
+                }
+                _ => {
+                    trace!("skip compute budget instruction");
+                }
+            }
+        }
+    }
+
+    let cu_requested = cu_requested_cell
+        .get()
+        .or(legacy_cu_requested_cell.get())
+        .cloned();
+    let prioritization_fees = prioritization_fees_cell
+        .get()
+        .or(legacy_prio_fees_cell.get())
+        .cloned();
+    (cu_requested, prioritization_fees)
 }
 
 pub fn create_grpc_subscription(

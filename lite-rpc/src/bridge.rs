@@ -25,10 +25,12 @@ use solana_rpc_client_api::{
     },
 };
 use solana_sdk::epoch_info::EpochInfo;
+use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 
 use solana_lite_rpc_blockstore::history::History;
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::{
     encoding,
     stores::{block_information_store::BlockInformation, data_cache::DataCache},
@@ -210,7 +212,7 @@ impl LiteRpcServer for LiteBridge {
                 api_version: None,
             },
             value: RpcBlockhash {
-                blockhash,
+                blockhash: blockhash.to_string(),
                 last_valid_block_height: block_height + 150,
             },
         })
@@ -229,7 +231,10 @@ impl LiteRpcServer for LiteBridge {
         let (is_valid, slot) = self
             .data_cache
             .block_information_store
-            .is_blockhash_valid(&blockhash, commitment)
+            .is_blockhash_valid(
+                &hash_from_str(&blockhash).expect("valid blockhash"),
+                commitment,
+            )
             .await;
 
         Ok(RpcResponse {
@@ -281,7 +286,8 @@ impl LiteRpcServer for LiteBridge {
 
         let sig_statuses = sigs
             .iter()
-            .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status))
+            .map(|sig| Signature::from_str(sig).expect("signature must be valid"))
+            .map(|sig| self.data_cache.txs.get(&sig).and_then(|v| v.status))
             .collect();
 
         Ok(RpcResponse {

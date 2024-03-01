@@ -745,7 +745,7 @@ pub fn build_raw_sample_tx(i: u32) -> SentTransactionInfo {
         bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx");
 
     SentTransactionInfo {
-        signature: tx.get_signature().to_string(),
+        signature: *tx.get_signature(),
         slot: 1,
         transaction,
         last_valid_block_height: 300,

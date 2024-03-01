@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::structures::produced_block::ProducedBlock;
+use solana_sdk::hash::Hash;
 
 #[derive(Clone, Debug)]
 pub struct BlockInformation {
@@ -14,7 +15,7 @@ pub struct BlockInformation {
     pub block_height: u64,
     pub last_valid_blockheight: u64,
     pub cleanup_slot: Slot,
-    pub blockhash: String,
+    pub blockhash: Hash,
     pub commitment_config: CommitmentConfig,
     pub block_time: u64,
 }
@@ -26,7 +27,7 @@ impl BlockInformation {
             block_height: block.block_height,
             last_valid_blockheight: block.block_height + MAX_RECENT_BLOCKHASHES as u64,
             cleanup_slot: block.block_height + 1000,
-            blockhash: block.blockhash.clone(),
+            blockhash: block.blockhash,
             commitment_config: block.commitment_config,
             block_time: block.block_time,
         }
@@ -40,7 +41,7 @@ impl BlockInformation {
 #[derive(Clone)]
 pub struct BlockInformationStore {
     // maps Block Hash -> Block information
-    blocks: Arc<DashMap<String, BlockInformation>>,
+    blocks: Arc<DashMap<Hash, BlockInformation>>,
     latest_confirmed_block: Arc<RwLock<BlockInformation>>,
     latest_finalized_block: Arc<RwLock<BlockInformation>>,
 }
@@ -50,7 +51,7 @@ impl BlockInformationStore {
         let blocks = Arc::new(DashMap::new());
 
         blocks.insert(
-            latest_finalized_block.blockhash.clone(),
+            latest_finalized_block.blockhash,
             latest_finalized_block.clone(),
         );
 
@@ -61,7 +62,7 @@ impl BlockInformationStore {
         }
     }
 
-    pub fn get_block_info(&self, blockhash: &str) -> Option<BlockInformation> {
+    pub fn get_block_info(&self, blockhash: &Hash) -> Option<BlockInformation> {
         let info = self.blocks.get(blockhash)?;
 
         Some(info.value().to_owned())
@@ -78,12 +79,11 @@ impl BlockInformationStore {
         }
     }
 
-    pub async fn get_latest_blockhash(&self, commitment_config: CommitmentConfig) -> String {
+    pub async fn get_latest_blockhash(&self, commitment_config: CommitmentConfig) -> Hash {
         self.get_latest_block_arc(commitment_config)
             .read()
             .await
             .blockhash
-            .clone()
     }
 
     pub async fn get_latest_block_info(
@@ -126,8 +126,7 @@ impl BlockInformationStore {
                 *prev_block_info = block_info.clone();
             }
             None => {
-                self.blocks
-                    .insert(block_info.blockhash.clone(), block_info.clone());
+                self.blocks.insert(block_info.blockhash, block_info.clone());
             }
         }
 
@@ -159,7 +158,7 @@ impl BlockInformationStore {
 
     pub async fn is_blockhash_valid(
         &self,
-        blockhash: &String,
+        blockhash: &Hash,
         commitment_config: CommitmentConfig,
     ) -> (bool, Slot) {
         let latest_block = self.get_latest_block(commitment_config).await;

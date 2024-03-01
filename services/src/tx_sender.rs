@@ -79,7 +79,7 @@ impl TxSender {
         for transaction_info in transaction_infos.iter() {
             trace!("sending transaction {}", transaction_info.signature);
             txs_sent.insert(
-                transaction_info.signature.clone(),
+                transaction_info.signature,
                 TxProps {
                     status: None,
                     last_valid_blockheight: transaction_info.last_valid_block_height,
@@ -105,7 +105,7 @@ impl TxSender {
                 .iter()
                 .enumerate()
                 .map(|(index, transaction_info)| TransactionNotification {
-                    signature: transaction_info.signature.clone(),
+                    signature: transaction_info.signature,
                     recent_slot: transaction_info.slot,
                     forwarded_slot,
                     forwarded_local_time,

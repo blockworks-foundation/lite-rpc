@@ -1,10 +1,11 @@
 use chrono::{DateTime, Utc};
+use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentLevel, transaction::TransactionError};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 #[derive(Debug)]
 pub struct TransactionNotification {
-    pub signature: String,                   // 88 bytes
+    pub signature: Signature,                // 88 bytes
     pub recent_slot: u64,                    // 8 bytes
     pub forwarded_slot: u64,                 // 8 bytes
     pub forwarded_local_time: DateTime<Utc>, // 8 bytes

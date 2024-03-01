@@ -29,6 +29,7 @@ use solana_rpc_client_api::{
     response::{Response as RpcResponse, RpcKeyedAccount, RpcResponseContext, SlotInfo},
 };
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signature;
 
 lazy_static::lazy_static! {
     static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
@@ -136,7 +137,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
     async fn signature_subscribe(
         &self,
         pending: PendingSubscriptionSink,
-        signature: String,
+        signature: Signature,
         config: RpcSignatureSubscribeConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
