@@ -209,7 +209,7 @@ pub fn from_ui_block(
                 return None;
             };
 
-            let signature = tx.signatures[0].to_string();
+            let signature = tx.signatures[0];
             let cu_consumed = match compute_units_consumed {
                 OptionSerializer::Some(cu_consumed) => Some(cu_consumed),
                 _ => None,

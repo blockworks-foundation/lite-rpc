@@ -381,7 +381,7 @@ mod tests {
 
     fn create_test_tx(signature: Signature) -> TransactionInfo {
         TransactionInfo {
-            signature: signature.to_string(),
+            signature: signature,
             is_vote: false,
             err: None,
             cu_requested: Some(40000),
