@@ -196,7 +196,7 @@ pub fn from_grpc_block_update(
                 .unwrap_or_default();
 
             Some(TransactionInfo {
-                signature: signature.to_string(),
+                signature,
                 is_vote: is_vote_transaction,
                 err,
                 cu_requested,

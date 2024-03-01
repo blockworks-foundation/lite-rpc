@@ -189,7 +189,7 @@ impl PostgresBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use solana_sdk::commitment_config::CommitmentConfig;
+    use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
 
     #[test]
     fn map_postgresblock_to_produced_block() {
@@ -215,7 +215,7 @@ mod tests {
 
     fn create_tx_info() -> TransactionInfo {
         TransactionInfo {
-            signature: "signature".to_string(),
+            signature: Signature::new_unique(),
             is_vote: false,
             err: None,
             cu_requested: None,

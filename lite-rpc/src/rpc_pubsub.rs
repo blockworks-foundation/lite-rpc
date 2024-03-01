@@ -5,6 +5,7 @@ use solana_rpc_client_api::config::{
     RpcProgramAccountsConfig, RpcSignatureSubscribeConfig, RpcTransactionLogsConfig,
     RpcTransactionLogsFilter,
 };
+use solana_sdk::signature::Signature;
 
 pub type Result<T> = std::result::Result<T, jsonrpsee::core::Error>;
 
@@ -47,7 +48,7 @@ pub trait LiteRpcPubSub {
     #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<serde_json::Value>)]
     async fn signature_subscribe(
         &self,
-        signature: String,
+        signature: Signature,
         config: RpcSignatureSubscribeConfig,
     ) -> SubscriptionResult;
 

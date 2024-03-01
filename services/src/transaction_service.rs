@@ -134,7 +134,7 @@ impl TransactionService {
 
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         let transaction_info = SentTransactionInfo {
-            signature: signature.to_string(),
+            signature,
             last_valid_block_height: last_valid_blockheight,
             slot,
             transaction: raw_tx,

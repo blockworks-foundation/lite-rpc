@@ -25,6 +25,7 @@ use solana_rpc_client_api::{
     },
 };
 use solana_sdk::epoch_info::EpochInfo;
+use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 
@@ -281,7 +282,8 @@ impl LiteRpcServer for LiteBridge {
 
         let sig_statuses = sigs
             .iter()
-            .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status))
+            .map(|sig| Signature::from_str(sig).expect("signature must be valid"))
+            .map(|sig| self.data_cache.txs.get(&sig).and_then(|v| v.status))
             .collect();
 
         Ok(RpcResponse {

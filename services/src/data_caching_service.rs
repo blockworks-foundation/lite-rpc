@@ -86,7 +86,7 @@ impl DataCachingService {
                     };
 
                     if data_cache.txs.update_status(
-                        &tx.signature,
+                        tx.signature,
                         TransactionStatus {
                             slot: block.slot,
                             confirmations: None,

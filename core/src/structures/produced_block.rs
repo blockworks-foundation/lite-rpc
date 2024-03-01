@@ -1,6 +1,7 @@
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::message::v0::MessageAddressTableLookup;
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signature;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
 use solana_transaction_status::Reward;
 use std::fmt::Debug;
@@ -9,7 +10,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
-    pub signature: String,
+    pub signature: Signature,
     pub is_vote: bool,
     pub err: Option<TransactionError>,
     pub cu_requested: Option<u32>,

@@ -53,7 +53,7 @@ impl SchemaSize for PostgresTx {
 impl From<&TransactionNotification> for PostgresTx {
     fn from(value: &TransactionNotification) -> Self {
         Self {
-            signature: value.signature.clone(),
+            signature: value.signature.to_string(),
             recent_slot: value.recent_slot as i64,
             forwarded_slot: value.forwarded_slot as i64,
             forwarded_local_time: value.forwarded_local_time,
