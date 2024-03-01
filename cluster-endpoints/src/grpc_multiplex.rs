@@ -472,12 +472,15 @@ fn map_block_from_yellowstone_update(
         Some(UpdateOneof::Block(update_block_message)) => {
             let update_block_message2 = update_block_message.clone();
             let update_block_message3 = update_block_message.clone();
+            let update_block_message4 = update_block_message.clone();
 
             let block = from_grpc_block_update_reimplement(update_block_message, commitment_config);
 
             let _block_original = from_grpc_block_update_original(update_block_message2, commitment_config);
             let _block_lou = from_grpc_block_update_optimized(update_block_message3, commitment_config);
 
+            // run again to prevent warmup costs
+            let _block_reimplement = from_grpc_block_update_reimplement(update_block_message4, commitment_config);
             // let block = from_grpc_block_update_reimplement(update_block_message, commitment_config);
             // let block = from_grpc_block_update_optimized(update_block_message, commitment_config);
 

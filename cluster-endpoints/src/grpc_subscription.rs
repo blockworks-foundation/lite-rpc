@@ -145,8 +145,8 @@ pub fn from_grpc_block_update_optimized(
     block: SubscribeUpdateBlock,
     commitment_config: CommitmentConfig,
 ) -> ProducedBlock {
-    let _span = debug_span!("from_grpc_block_update_optimized", ?block.slot).entered();
-    let started_at = Instant::now();
+    let num_transactions = block.transactions.len();
+    let _span = debug_span!("from_grpc_block_update_optimized", ?block.slot, ?num_transactions).entered();
 
     let txs: Vec<TransactionInfo> = block
         .transactions
