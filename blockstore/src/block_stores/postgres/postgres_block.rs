@@ -193,16 +193,17 @@ mod tests {
     use solana_sdk::message::{v0, MessageHeader, VersionedMessage};
     use solana_sdk::pubkey::Pubkey;
     use solana_sdk::{commitment_config::CommitmentConfig, signature::Signature};
+    use solana_sdk::hash::Hash;
 
     #[test]
     fn map_postgresblock_to_produced_block() {
         let block = PostgresBlock {
             slot: 5050505,
-            blockhash: "blockhash".to_string(),
+            blockhash: Hash::new_unique().to_string(),
             block_height: 4040404,
             parent_slot: 5050500,
             block_time: 12121212,
-            previous_blockhash: "previous_blockhash".to_string(),
+            previous_blockhash: Hash::new_unique().to_string(),
             rewards: None,
             leader_id: None,
         };
