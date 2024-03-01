@@ -8,7 +8,6 @@ use itertools::Itertools;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
-    encoding::BASE64,
     structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
 };
@@ -204,7 +203,7 @@ pub fn from_grpc_block_update(
                 prioritization_fees,
                 cu_consumed: compute_units_consumed,
                 recent_blockhash: *message.recent_blockhash(),
-                message: BASE64.encode(message.serialize()),
+                message,
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,

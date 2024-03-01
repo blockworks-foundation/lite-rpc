@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use futures_util::pin_mut;
 use log::debug;
+use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
@@ -42,7 +43,7 @@ impl PostgresTransaction {
             prioritization_fees: value.prioritization_fees.map(|x| x as i64),
             cu_consumed: value.cu_consumed.map(|x| x as i64),
             recent_blockhash: value.recent_blockhash.to_string(),
-            message: value.message.clone(),
+            message: BinaryEncoding::Base64.encode(value.message.serialize()),
             slot: slot as i64,
         }
     }
@@ -58,7 +59,9 @@ impl PostgresTransaction {
             prioritization_fees: self.prioritization_fees.map(|x| x as u64),
             cu_consumed: self.cu_consumed.map(|x| x as u64),
             recent_blockhash: hash_from_str(&self.recent_blockhash).expect("valid blockhash"),
-            message: self.message.clone(),
+            message: BinaryEncoding::Base64
+                .deserialize(&self.message)
+                .expect("serialized message"),
             // TODO readable_accounts etc.
             readable_accounts: vec![],
             writable_accounts: vec![],

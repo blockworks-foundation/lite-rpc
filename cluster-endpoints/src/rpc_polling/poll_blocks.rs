@@ -1,6 +1,5 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
 use solana_lite_rpc_core::{
@@ -266,7 +265,6 @@ pub fn from_ui_block(
             };
 
             let blockhash = tx.message.recent_blockhash();
-            let message = BinaryEncoding::Base64.encode(tx.message.serialize());
 
             let is_vote_transaction = tx.message.instructions().iter().any(|i| {
                 i.program_id(tx.message.static_account_keys())
@@ -301,7 +299,7 @@ pub fn from_ui_block(
                 prioritization_fees,
                 cu_consumed,
                 recent_blockhash: *blockhash,
-                message,
+                message: tx.message,
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,

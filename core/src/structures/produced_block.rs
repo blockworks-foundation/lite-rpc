@@ -1,6 +1,7 @@
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::Hash;
 use solana_sdk::message::v0::MessageAddressTableLookup;
+use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
@@ -18,7 +19,7 @@ pub struct TransactionInfo {
     pub prioritization_fees: Option<u64>,
     pub cu_consumed: Option<u64>,
     pub recent_blockhash: Hash,
-    pub message: String,
+    pub message: VersionedMessage,
     pub writable_accounts: Vec<Pubkey>,
     pub readable_accounts: Vec<Pubkey>,
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
