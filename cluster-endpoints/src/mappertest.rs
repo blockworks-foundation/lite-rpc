@@ -49,19 +49,29 @@ mod tests {
     use yellowstone_grpc_proto::prost::Message;
     use std::str::FromStr;
     use bincode::deserialize;
-    use crate::grpc_subscription::{from_grpc_block_update_original, from_grpc_block_update_reimplement};
+    use crate::grpc_subscription::{from_grpc_block_update_optimized, from_grpc_block_update_original, from_grpc_block_update_reimplement};
 
     #[test]
     fn map_block() {
         // version yellowstone.1.12+solana.1.17.15
         let raw_block = include_bytes!("block-000251402816-confirmed-1707315774189.dat");
 
-        let example_block = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
-        // info!("example_block: {:?}", example_block);
+        let example_block1 = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
+        let example_block2 = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
+        let example_block3 = SubscribeUpdateBlock::decode(raw_block.as_slice()).expect("Block file must be protobuf");
 
         let started_at = Instant::now();
-        let _produced_block = from_grpc_block_update_reimplement(example_block, CommitmentConfig::confirmed());
-        println!("from_grpc_block_update mapping took: {:?}", started_at.elapsed());
+        let _produced_block = from_grpc_block_update_reimplement(example_block1, CommitmentConfig::confirmed());
+        println!("from_grpc_block_update_reimplement mapping took: {:?}", started_at.elapsed());
+
+        let started_at = Instant::now();
+        let _produced_block = from_grpc_block_update_original(example_block2, CommitmentConfig::confirmed());
+        println!("from_grpc_block_update_original mapping took: {:?}", started_at.elapsed());
+
+        let started_at = Instant::now();
+        let _produced_block = from_grpc_block_update_optimized(example_block3, CommitmentConfig::confirmed());
+        println!("from_grpc_block_update_optimized mapping took: {:?}", started_at.elapsed());
+
     }
 
     #[test]
