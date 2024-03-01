@@ -390,8 +390,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     ));
     drop(slot_notifier);
 
-    println!("LiteRPC started");
-
     tokio::select! {
         res = tx_service_jh => {
             anyhow::bail!("Tx Services {res:?}")
