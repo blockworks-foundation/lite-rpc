@@ -23,7 +23,9 @@ mod integration_tests {
     use tokio::task::JoinHandle;
     use tokio::time::sleep;
     use tokio_util::sync::CancellationToken;
+    use tracing::Span;
     use tracing_subscriber::EnvFilter;
+    use tracing_subscriber::fmt::format::FmtSpan;
 
     const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 
@@ -33,6 +35,7 @@ mod integration_tests {
         // RUST_LOG=info,storage_integration_tests=debug,solana_lite_rpc_blockstore=trace
         tracing_subscriber::fmt()
             .with_env_filter(EnvFilter::from_default_env())
+            .with_span_events(FmtSpan::CLOSE)
             .init();
         configure_panic_hook();
 

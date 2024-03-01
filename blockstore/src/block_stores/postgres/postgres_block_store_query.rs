@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
 use anyhow::{bail, Result};
 use itertools::Itertools;
+use jsonrpsee::tracing::trace_span;
 use log::{debug, info, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
@@ -44,6 +45,7 @@ impl PostgresQueryBlockStore {
             .expect("should get new postgres session")
     }
 
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     pub async fn is_block_in_range(&self, slot: Slot) -> bool {
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
         let ranges = self.get_slot_range_by_epoch().await;
@@ -54,6 +56,7 @@ impl PostgresQueryBlockStore {
             .is_some()
     }
 
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     pub async fn query_block(&self, slot: Slot) -> Result<ProducedBlock> {
         let started_at = Instant::now();
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
@@ -144,6 +147,7 @@ impl PostgresQueryBlockStore {
         Ok(produced_block)
     }
 
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     async fn check_query_role(session_cache: &PostgresSessionCache) {
         let role = LITERPC_QUERY_ROLE;
         let statement = format!("SELECT 1 FROM pg_roles WHERE rolname='{role}'");
@@ -167,6 +171,7 @@ impl PostgresQueryBlockStore {
 }
 
 impl PostgresQueryBlockStore {
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     pub async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         let map_epoch_to_slot_range = self.get_slot_range_by_epoch().await;
 
@@ -188,6 +193,7 @@ impl PostgresQueryBlockStore {
         RangeInclusive::new(*slot_min, *slot_max)
     }
 
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<Slot>> {
         let started = Instant::now();
         let session = self.get_session().await;

@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::time::{Duration, Instant};
 
 use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
@@ -25,6 +26,15 @@ pub struct PostgresBlockStore {
     // use this session only for the write path!
     write_sessions: Vec<PostgresWriteSession>,
     epoch_schedule: EpochCache,
+}
+
+impl Debug for PostgresBlockStore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PostgresBlockStore")
+            .field("session_cache", &self.session_cache)
+            .field("write_sessions", &self.write_sessions.len())
+            .finish()
+    }
 }
 
 impl PostgresBlockStore {
@@ -79,6 +89,7 @@ impl PostgresBlockStore {
     }
 
     // return true if schema was actually created
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     async fn start_new_epoch_if_necessary(&self, epoch: EpochRef) -> Result<bool> {
         // create schema for new epoch
         let schema_name = PostgresEpoch::build_schema_name(epoch);
@@ -157,6 +168,7 @@ impl PostgresBlockStore {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     pub async fn save_block(&self, block: &ProducedBlock) -> Result<()> {
         self.progress_block_commitment_level(block).await?;
 
@@ -227,6 +239,7 @@ impl PostgresBlockStore {
     }
 
     // ATM we focus on blocks as this table gets INSERTS and does deduplication checks (i.e. heavy reads on index pk_block_slot)
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     pub async fn optimize_blocks_table(&self, slot: Slot) -> Result<()> {
         let started = Instant::now();
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
@@ -264,6 +277,7 @@ impl PostgresBlockStore {
 
     // create current + next epoch
     // true if anything was created; false if a NOOP
+    #[tracing::instrument(skip_all, level = tracing::Level::TRACE)]
     pub async fn prepare_epoch_schema(&self, slot: Slot) -> anyhow::Result<bool> {
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
         let current_epoch = epoch.into();
