@@ -10,6 +10,7 @@ use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
+use tracing_subscriber::fmt::format;
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -165,8 +166,15 @@ impl PostgresQueryBlockStore {
     }
 
     async fn check_postgresql_version(session_cache: &PostgresSessionCache) {
-        // TODO implement
-        // info!("PostgreSQL version: {}", version);
+        let statement = r#"SELECT version(), current_setting('server_version_num')::integer > 150005 AS is_v15_or_higher"#;
+        let row = session_cache
+            .get_session().await
+            .query_one(&statement, &[]).await
+            .expect("must execute query to check for role");
+        let is_v15_or_higher = row.get::<&str, bool>("is_v15_or_higher");
+        let version_string = row.get::<&str, &str>("version");
+        assert!(is_v15_or_higher, "Postgres version must be 15 or higher, found: {}", version_string);
+        info!("Self check - found postgres version: {}", version_string);
     }
 }
 
