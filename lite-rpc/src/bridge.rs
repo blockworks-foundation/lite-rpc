@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use jsonrpsee::core::RpcResult;
+use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
 use solana_lite_rpc_accounts::account_service::AccountService;
@@ -98,8 +99,13 @@ impl LiteBridge {
 
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-    async fn get_block(&self, _slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
-        // let block = self.blockstore.block_storage.query_block(slot).await;
+    async fn get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
+        let blockinfo = self.data_cache.block_information_store.get_block_info_by_slot(slot);
+
+        info!("WIP: got {}", blockinfo.is_some());
+
+        return RpcResult::Ok(None);
+
         // if block.is_ok() {
         //     // TO DO Convert to UIConfirmed Block
         //     Err(jsonrpsee::core::Error::HttpNotImplemented)

@@ -7,11 +7,11 @@ use itertools::Itertools;
 use lite_rpc::bridge::LiteBridge;
 use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
-use lite_rpc::postgres_logger::PostgresLogger;
+use lite_rpc::postgres_logger::{PostgresLogger, PostgresSessionConfig};
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
-use log::{debug, info};
+use log::{debug, info, warn};
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
@@ -69,6 +69,9 @@ use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -263,7 +266,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         txs: TxStore {
             store: Arc::new(DashMap::new()),
         },
-        epoch_data,
+        epoch_data: epoch_data.clone(),
         leader_schedule: Arc::new(RwLock::new(CalculatedSchedule::default())),
     };
 
@@ -361,6 +364,23 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     );
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
+
+    {
+        warn!("TEST CODE - TODO REMOVE");
+        // FIXME: hardcoded
+        let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig::new_for_tests();
+        let persistent_store = PostgresQueryBlockStore::new(epoch_data.clone(), pg_session_config).await;
+        let multi_store = MultipleStrategyBlockStorage::new(
+            persistent_store.clone(),
+            None, // not supported
+        );
+        let block = multi_store.query_block(256320140).await;
+        info!("queried block: {:?}", block);
+        for tx in block.unwrap().transactions.iter().take(10) {
+            info!("- tx: {:?}", tx.signature);
+        }
+    }
+
 
     let history = History::new();
 
