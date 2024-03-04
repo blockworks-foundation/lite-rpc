@@ -1,3 +1,5 @@
+/// block_information_store is intended for used to track block progression for send_tx
+
 use dashmap::DashMap;
 use log::info;
 
@@ -79,6 +81,7 @@ impl BlockInformationStore {
         }
     }
 
+    // unused
     pub async fn get_latest_blockhash(&self, commitment_config: CommitmentConfig) -> Hash {
         self.get_latest_block_arc(commitment_config)
             .read()
@@ -152,10 +155,12 @@ impl BlockInformationStore {
         );
     }
 
+    // unused
     pub fn number_of_blocks_in_store(&self) -> usize {
         self.blocks.len()
     }
 
+    // note: can only answer correctly if the block is in the store
     pub async fn is_blockhash_valid(
         &self,
         blockhash: &Hash,
