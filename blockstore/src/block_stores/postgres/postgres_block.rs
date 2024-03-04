@@ -89,7 +89,8 @@ impl PostgresBlock {
                 rewards TEXT,
                 CONSTRAINT pk_block_slot PRIMARY KEY(slot)
             ) WITH (FILLFACTOR=90);
-            CLUSTER {schema}.blocks USING pk_block_slot;
+            ALTER TABLE {schema}.blocks ALTER COLUMN blockhash SET STORAGE MAIN;
+            ALTER TABLE {schema}.blocks ALTER COLUMN recent_blockhash SET STORAGE MAIN;
         "#,
             schema = schema
         )

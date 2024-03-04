@@ -78,10 +78,11 @@ impl PostgresTransaction {
                 -- no updates or deletes, only INSERTs
                 CREATE TABLE {schema}.transaction_ids(
                     transaction_id bigserial PRIMARY KEY WITH (FILLFACTOR=90),
-                    -- never put sig on TOAST
-                    signature text STORAGE PLAIN NOT NULL,
+                    signature text NOT NULL,
                     UNIQUE(signature)
                 ) WITH (FILLFACTOR=100);
+                -- never put sig on TOAST
+                ALTER TABLE {schema}.transaction_ids ALTER COLUMN signature SET STORAGE MAIN;
 
                 -- parameter 'schema' is something like 'rpc2a_epoch_592'
                 CREATE TABLE IF NOT EXISTS {schema}.transaction_blockdata(
@@ -96,6 +97,7 @@ impl PostgresTransaction {
                     message text NOT NULL
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
+                ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE MAIN;
                 CREATE INDEX idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
             "#,
             schema = schema
@@ -128,9 +130,9 @@ impl PostgresTransaction {
                 cu_requested bigint,
                 prioritization_fees bigint,
                 cu_consumed bigint,
-                recent_blockhash text STORAGE PLAIN,
-                err text STORAGE PLAIN,
-                message text STORAGE PLAIN
+                recent_blockhash text,
+                err text,
+                message text
                 -- model_transaction_blockdata
             );
             TRUNCATE transaction_raw_blockdata;
