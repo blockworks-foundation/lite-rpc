@@ -159,7 +159,7 @@ impl PostgresBlock {
                 // check if monotonic
                 let prev_max_slot = row.get::<&str, Option<i64>>("prev_max_slot");
                 // None -> no previous rows
-                debug!("Inserted block {}", self.slot,);
+                debug!("Inserted block {}, epoch={}", self.slot, epoch);
                 if let Some(prev_max_slot) = prev_max_slot {
                     if prev_max_slot > self.slot {
                         // note: unclear if this is desired behavior!

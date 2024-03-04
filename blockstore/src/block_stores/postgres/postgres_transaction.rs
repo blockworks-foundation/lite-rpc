@@ -22,11 +22,11 @@ pub struct PostgresTransaction {
     pub signature: String,
     // TODO clarify
     pub slot: i64,
-    pub err: Option<String>,
+    pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
     pub prioritization_fees: Option<i64>,
-    pub cu_consumed: Option<i64>,
     pub recent_blockhash: String,
+    pub err: Option<String>,
     pub message: String,
 }
 
@@ -34,31 +34,31 @@ impl PostgresTransaction {
     pub fn new(value: &TransactionInfo, slot: Slot) -> Self {
         Self {
             signature: value.signature.to_string(),
+            slot: slot as i64,
+            cu_consumed: value.cu_consumed.map(|x| x as i64),
+            cu_requested: value.cu_requested.map(|x| x as i64),
+            prioritization_fees: value.prioritization_fees.map(|x| x as i64),
+            recent_blockhash: value.recent_blockhash.to_string(),
             err: value
                 .err
                 .clone()
                 .map(|x| BASE64.serialize(&x).ok())
                 .unwrap_or(None),
-            cu_requested: value.cu_requested.map(|x| x as i64),
-            prioritization_fees: value.prioritization_fees.map(|x| x as i64),
-            cu_consumed: value.cu_consumed.map(|x| x as i64),
-            recent_blockhash: value.recent_blockhash.to_string(),
             message: BinaryEncoding::Base64.encode(value.message.serialize()),
-            slot: slot as i64,
         }
     }
 
     pub fn to_transaction_info(&self) -> TransactionInfo {
         TransactionInfo {
             signature: Signature::from_str(self.signature.as_str()).unwrap(),
+            cu_consumed: self.cu_consumed.map(|x| x as u64),
+            cu_requested: self.cu_requested.map(|x| x as u32),
+            prioritization_fees: self.prioritization_fees.map(|x| x as u64),
+            recent_blockhash: hash_from_str(&self.recent_blockhash).expect("valid blockhash"),
             err: self
                 .err
                 .as_ref()
                 .and_then(|x| BASE64.deserialize::<TransactionError>(x).ok()),
-            cu_requested: self.cu_requested.map(|x| x as u32),
-            prioritization_fees: self.prioritization_fees.map(|x| x as u64),
-            cu_consumed: self.cu_consumed.map(|x| x as u64),
-            recent_blockhash: hash_from_str(&self.recent_blockhash).expect("valid blockhash"),
             message: BinaryEncoding::Base64
                 .deserialize(&self.message)
                 .expect("serialized message"),
@@ -89,15 +89,16 @@ impl PostgresTransaction {
                     -- transaction_id must exist in the transaction_ids table
                     transaction_id bigint PRIMARY KEY WITH (FILLFACTOR=90),
                     slot bigint NOT NULL,
+                    cu_consumed bigint NOT NULL,
                     cu_requested bigint,
                     prioritization_fees bigint,
-                    cu_consumed bigint,
                     recent_blockhash text NOT NULL,
                     err text,
                     message text NOT NULL
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE MAIN;
+                ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN message SET STORAGE EXTENDED;
                 CREATE INDEX idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
             "#,
             schema = schema
@@ -125,12 +126,12 @@ impl PostgresTransaction {
 
         let statmement = r#"
             CREATE TEMP TABLE IF NOT EXISTS transaction_raw_blockdata(
-                signature text,
-                slot bigint,
+                slot bigint NOT NULL,
+                cu_consumed bigint NOT NULL,
                 cu_requested bigint,
                 prioritization_fees bigint,
-                cu_consumed bigint,
-                recent_blockhash text,
+                signature text NOT NULL,
+                recent_blockhash text NOT NULL,
                 err text,
                 message text
                 -- model_transaction_blockdata
@@ -141,11 +142,11 @@ impl PostgresTransaction {
 
         let statement = r#"
             COPY transaction_raw_blockdata(
-                signature,
                 slot,
+                cu_consumed,
                 cu_requested,
                 prioritization_fees,
-                cu_consumed,
+                signature,
                 recent_blockhash,
                 err,
                 message
@@ -157,27 +158,27 @@ impl PostgresTransaction {
         let writer = BinaryCopyInWriter::new(
             sink,
             &[
-                Type::TEXT,
-                Type::INT8,
-                Type::INT8,
-                Type::INT8,
-                Type::INT8,
-                Type::TEXT,
-                Type::TEXT,
-                Type::TEXT, // model_transaction_blockdata
+                Type::INT8, // slot
+                Type::INT8, // cu_consumed
+                Type::INT8, // cu_requested
+                Type::INT8, // prioritization_fees
+                Type::TEXT, // signature
+                Type::TEXT, // recent_blockhash
+                Type::TEXT, // err
+                Type::TEXT, // message
             ],
         );
         pin_mut!(writer);
 
         for tx in transactions {
             let PostgresTransaction {
-                signature,
                 slot,
+                cu_consumed,
                 cu_requested,
                 prioritization_fees,
-                cu_consumed,
-                err,
+                signature,
                 recent_blockhash,
+                err,
                 message,
                 // model_transaction_blockdata
             } = tx;
@@ -185,13 +186,13 @@ impl PostgresTransaction {
             writer
                 .as_mut()
                 .write(&[
-                    &signature,
                     &slot,
+                    &cu_consumed,
                     &cu_requested,
                     &prioritization_fees,
-                    &cu_consumed,
-                    &err,
+                    &signature,
                     &recent_blockhash,
+                    &err,
                     &message,
                     // model_transaction_blockdata
                 ])
@@ -226,11 +227,11 @@ impl PostgresTransaction {
                 SELECT
                     ( SELECT transaction_id FROM {schema}.transaction_ids tx_lkup WHERE tx_lkup.signature = transaction_raw_blockdata.signature ),
                     slot,
+                    cu_consumed,
                     cu_requested,
                     prioritization_fees,
-                    cu_consumed,
-                    err,
                     recent_blockhash,
+                    err,
                     message
                     -- model_transaction_blockdata
                 FROM transaction_raw_blockdata
@@ -253,9 +254,9 @@ impl PostgresTransaction {
             r#"
                 SELECT
                     (SELECT signature FROM {schema}.transaction_ids tx_ids WHERE tx_ids.transaction_id = transaction_blockdata.transaction_id),
+                    cu_consumed,
                     cu_requested,
                     prioritization_fees,
-                    cu_consumed,
                     err,
                     recent_blockhash,
                     message
