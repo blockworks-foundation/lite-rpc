@@ -90,7 +90,7 @@ impl PostgresBlock {
                 CONSTRAINT pk_block_slot PRIMARY KEY(slot)
             ) WITH (FILLFACTOR=90);
             ALTER TABLE {schema}.blocks ALTER COLUMN blockhash SET STORAGE MAIN;
-            ALTER TABLE {schema}.blocks ALTER COLUMN recent_blockhash SET STORAGE MAIN;
+            ALTER TABLE {schema}.blocks ALTER COLUMN previous_blockhash SET STORAGE MAIN;
         "#,
             schema = schema
         )
