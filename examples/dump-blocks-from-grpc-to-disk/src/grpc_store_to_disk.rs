@@ -54,6 +54,7 @@ fn commitment_short(commitment_config: CommitmentConfig) -> &'static str {
 }
 
 // e.g. block-000251395041-confirmed-1707312285514.dat
+#[allow(dead_code)]
 pub fn parse_slot_and_timestamp_from_file(file_name: &str) -> (Slot, u64) {
     let slot_str = file_name.split('-').nth(1).unwrap();
     let slot = slot_str.parse::<Slot>().unwrap();
@@ -199,6 +200,7 @@ impl BlockStreamDumpOnDisk {
         self.write_block(&meta, block_update);
     }
 
+    #[allow(dead_code)]
     pub fn decode_from_file(&self, block_meta: &BlockDumpRef) -> SubscribeUpdateBlock {
         let block_file = self.build_path(block_meta);
 
