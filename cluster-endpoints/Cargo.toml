@@ -7,8 +7,6 @@ rust-version = "1.73.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
-[lib]
-
 [dependencies]
 #geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
 geyser-grpc-connector = { tag = "v0.10.2+yellowstone.1.12+solana.1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
