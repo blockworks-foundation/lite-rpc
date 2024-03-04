@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use anyhow::bail;
 
 use itertools::Itertools;
 use jsonrpsee::core::RpcResult;
@@ -132,66 +133,70 @@ impl LiteRpcServer for LiteBridge {
 
         // FIXME
         let block = self.multiple_strategy_block_storage.as_ref().unwrap().query_block(slot).await;
-        if let Ok(block) = block {
-            let transactions: Option<Vec<EncodedTransactionWithStatusMeta>> = match config
-                .transaction_details
-            {
-                Some(transaction_details) => {
-                    let (is_full, include_rewards, include_accounts) = match transaction_details {
-                        solana_transaction_status::TransactionDetails::Full => (true, true, true),
-                        solana_transaction_status::TransactionDetails::Signatures => {
-                            (false, false, false)
-                        }
-                        solana_transaction_status::TransactionDetails::None => {
-                            (false, false, false)
-                        }
-                        solana_transaction_status::TransactionDetails::Accounts => {
-                            (false, false, true)
-                        }
-                    };
-
-                    if is_full || include_accounts || include_rewards {
-                        Some(block.transactions.iter().map(|transaction_info| {
-                            EncodedTransactionWithStatusMeta {
-                                version: None,
-                                meta: Some(UiTransactionStatusMeta {
-                                    err: transaction_info.err.clone(),
-                                    status: transaction_info.err.clone().map_or(Ok(()), Err),
-                                    fee: 0,
-                                    pre_balances: vec![],
-                                    post_balances: vec![],
-                                    inner_instructions: OptionSerializer::None,
-                                    log_messages: OptionSerializer::None,
-                                    pre_token_balances: OptionSerializer::None,
-                                    post_token_balances: OptionSerializer::None,
-                                    rewards: OptionSerializer::None,
-                                    loaded_addresses: OptionSerializer::None,
-                                    return_data: OptionSerializer::None,
-                                    compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None,OptionSerializer::Some),
-                                }),
-                                transaction: solana_transaction_status::EncodedTransaction::Binary(
-                                    BASE64.serialize(&transaction_info.message).unwrap(),
-                                    solana_transaction_status::TransactionBinaryEncoding::Base64)
+        match block {
+            Ok(block) => {
+                let transactions: Option<Vec<EncodedTransactionWithStatusMeta>> = match config
+                    .transaction_details
+                {
+                    Some(transaction_details) => {
+                        let (is_full, include_rewards, include_accounts) = match transaction_details {
+                            solana_transaction_status::TransactionDetails::Full => (true, true, true),
+                            solana_transaction_status::TransactionDetails::Signatures => {
+                                (false, false, false)
                             }
-                        }).collect_vec())
-                    } else {
-                        None
+                            solana_transaction_status::TransactionDetails::None => {
+                                (false, false, false)
+                            }
+                            solana_transaction_status::TransactionDetails::Accounts => {
+                                (false, false, true)
+                            }
+                        };
+
+                        if is_full || include_accounts || include_rewards {
+                            Some(block.transactions.iter().map(|transaction_info| {
+                                EncodedTransactionWithStatusMeta {
+                                    version: None,
+                                    meta: Some(UiTransactionStatusMeta {
+                                        err: transaction_info.err.clone(),
+                                        status: transaction_info.err.clone().map_or(Ok(()), Err),
+                                        fee: 0,
+                                        pre_balances: vec![],
+                                        post_balances: vec![],
+                                        inner_instructions: OptionSerializer::None,
+                                        log_messages: OptionSerializer::None,
+                                        pre_token_balances: OptionSerializer::None,
+                                        post_token_balances: OptionSerializer::None,
+                                        rewards: OptionSerializer::None,
+                                        loaded_addresses: OptionSerializer::None,
+                                        return_data: OptionSerializer::None,
+                                        compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None,OptionSerializer::Some),
+                                    }),
+                                    transaction: solana_transaction_status::EncodedTransaction::Binary(
+                                        BASE64.serialize(&transaction_info.message).unwrap(),
+                                        solana_transaction_status::TransactionBinaryEncoding::Base64)
+                                }
+                            }).collect_vec())
+                        } else {
+                            None
+                        }
                     }
-                }
-                None => None,
-            };
-            Ok(Some(UiConfirmedBlock {
-                previous_blockhash: block.previous_blockhash.to_string(),
-                blockhash: block.blockhash.to_string(),
-                parent_slot: block.parent_slot,
-                transactions,
-                signatures: None,
-                rewards: block.rewards.clone(),
-                block_time: Some(block.block_time as i64),
-                block_height: Some(block.block_height),
-            }))
-        } else {
-            Ok(None)
+                    None => None,
+                };
+                Ok(Some(UiConfirmedBlock {
+                    previous_blockhash: block.previous_blockhash.to_string(),
+                    blockhash: block.blockhash.to_string(),
+                    parent_slot: block.parent_slot,
+                    transactions,
+                    signatures: None,
+                    rewards: block.rewards.clone(),
+                    block_time: Some(block.block_time as i64),
+                    block_height: Some(block.block_height),
+                }))
+            }
+            Err(err) => {
+                // FIXME
+                panic!("Block {} not found - {}", slot, err);
+            }
         }
     }
 

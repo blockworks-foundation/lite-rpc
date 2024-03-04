@@ -112,7 +112,7 @@ impl MultipleStrategyBlockStorage {
                     .block_storage_query
                     .query_block(slot)
                     .await
-                    .context(format!("block {} not found although it was in range", slot));
+                    .context(format!("query block {} from postgres", slot));
 
                 return lookup.map(|b| BlockStorageData {
                     block: b,
