@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use solana_sdk::signature::Signature;
 use solana_transaction_status::TransactionStatus;
 use std::sync::Arc;
 
@@ -13,22 +14,22 @@ pub struct TxProps {
 
 #[derive(Clone, Debug)]
 pub struct TxStore {
-    pub store: Arc<DashMap<String, TxProps>>,
+    pub store: Arc<DashMap<Signature, TxProps>>,
 }
 
 impl TxStore {
     pub fn update_status(
         &self,
-        signature: &String,
+        signature: Signature,
         transaction_status: TransactionStatus,
         last_valid_blockheight: u64,
     ) -> bool {
-        if let Some(mut meta) = self.store.get_mut(signature) {
+        if let Some(mut meta) = self.store.get_mut(&signature) {
             meta.status = Some(transaction_status);
             meta.value().sent_by_lite_rpc
         } else {
             self.store.insert(
-                signature.clone(),
+                signature,
                 TxProps {
                     status: Some(transaction_status),
                     last_valid_blockheight,
@@ -39,7 +40,7 @@ impl TxStore {
         }
     }
 
-    pub fn insert(&self, signature: String, props: TxProps) -> Option<TxProps> {
+    pub fn insert(&self, signature: Signature, props: TxProps) -> Option<TxProps> {
         self.store.insert(signature, props)
     }
 
@@ -51,11 +52,11 @@ impl TxStore {
         self.store.is_empty()
     }
 
-    pub fn contains_key(&self, signature: &String) -> bool {
+    pub fn contains_key(&self, signature: &Signature) -> bool {
         self.store.contains_key(signature)
     }
 
-    pub fn get(&self, signature: &String) -> Option<TxProps> {
+    pub fn get(&self, signature: &Signature) -> Option<TxProps> {
         self.store.get(signature).map(|x| x.value().clone())
     }
 
@@ -69,7 +70,7 @@ impl TxStore {
         );
     }
 
-    pub fn is_transaction_confirmed(&self, signature: &String) -> bool {
+    pub fn is_transaction_confirmed(&self, signature: &Signature) -> bool {
         match self.store.get(signature) {
             Some(props) => props.status.is_some(),
             None => false,

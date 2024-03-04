@@ -1,19 +1,13 @@
 [package]
-name = "solana-lite-rpc-cluster-endpoints"
+name = "solana-lite-rpc-accounts-on-demand"
 version = "0.2.4"
 edition = "2021"
-description = "Core classes and methods used by solana lite rpc"
+description = "Library which implements accounts on demand service in lite-rpc. Whenever account is not available it will fetch from rpc and create a geyser stream to update it automatically."
 rust-version = "1.73.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
-[lib]
-
 [dependencies]
-#geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.2+yellowstone.1.12+solana.1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
-#geyser-grpc-connector = { tag = "v1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
-
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
 solana-transaction-status = { workspace = true }
@@ -21,35 +15,39 @@ solana-version = { workspace = true }
 solana-client = { workspace = true }
 solana-net-utils = { workspace = true }
 solana-pubsub-client = { workspace = true }
+solana-rpc-client = { workspace = true }
 solana-streamer = { workspace = true }
+solana-account-decoder = { workspace = true }
+solana-address-lookup-table-program = { workspace = true }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = "1.*"
-tokio-stream = { version = "0.1.14" , features = ["sync"]}
-tokio-util = "0.7"
 bincode = { workspace = true }
 bs58 = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
-merge-streams = { workspace = true }
 bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 dashmap = { workspace = true }
 quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
-derive_more = "0.99.17"
-async-channel = { workspace = true }
-solana-lite-rpc-core = { workspace = true }
-solana-lite-rpc-util = { workspace = true }
-yellowstone-grpc-client = { workspace = true }
-yellowstone-grpc-proto = { workspace = true }
-itertools = {workspace = true}
+itertools = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
-clap = { version = "3.2.25", features = ["derive"] }
+merge-streams = { workspace = true }
+
+solana-lite-rpc-core = { workspace = true }
+solana-lite-rpc-accounts = { workspace = true }
+solana-lite-rpc-cluster-endpoints = { workspace = true }
+
+yellowstone-grpc-client = { workspace = true }
+yellowstone-grpc-proto = { workspace = true }
+
+[dev-dependencies]
+rand = "0.8.5"
+rand_chacha = "0.3.1"

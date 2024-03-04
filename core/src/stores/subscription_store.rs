@@ -1,5 +1,6 @@
 use crate::{structures::produced_block::TransactionInfo, types::SubscptionHanderSink};
 use dashmap::DashMap;
+use solana_sdk::signature::Signature;
 use solana_sdk::{
     commitment_config::{CommitmentConfig, CommitmentLevel},
     slot_history::Slot,
@@ -10,7 +11,7 @@ use tokio::time::Instant;
 #[derive(Clone, Default)]
 pub struct SubscriptionStore {
     pub signature_subscribers:
-        Arc<DashMap<(String, CommitmentConfig), (SubscptionHanderSink, Instant)>>,
+        Arc<DashMap<(Signature, CommitmentConfig), (SubscptionHanderSink, Instant)>>,
 }
 
 impl SubscriptionStore {
@@ -32,7 +33,7 @@ impl SubscriptionStore {
 
     pub fn signature_subscribe(
         &self,
-        signature: String,
+        signature: Signature,
         commitment_config: CommitmentConfig,
         sink: SubscptionHanderSink,
     ) {
@@ -41,7 +42,11 @@ impl SubscriptionStore {
             .insert((signature, commitment_config), (sink, Instant::now()));
     }
 
-    pub fn signature_un_subscribe(&self, signature: String, commitment_config: CommitmentConfig) {
+    pub fn signature_un_subscribe(
+        &self,
+        signature: Signature,
+        commitment_config: CommitmentConfig,
+    ) {
         let commitment_config = Self::get_supported_commitment_config(commitment_config);
         self.signature_subscribers
             .remove(&(signature, commitment_config));
@@ -55,7 +60,7 @@ impl SubscriptionStore {
     ) {
         if let Some((_sig, (sink, _))) = self
             .signature_subscribers
-            .remove(&(transaction_info.signature.clone(), commitment_config))
+            .remove(&(transaction_info.signature, commitment_config))
         {
             // none if transaction succeeded
             sink.send(slot, serde_json::json!({ "err": transaction_info.err }))

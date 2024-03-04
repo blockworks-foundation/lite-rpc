@@ -75,7 +75,7 @@ impl DataCache {
         Self {
             block_information_store: BlockInformationStore::new(BlockInformation {
                 block_height: 0,
-                blockhash: Hash::new_unique().to_string(),
+                blockhash: Hash::new_unique(),
                 cleanup_slot: 1000,
                 commitment_config: CommitmentConfig::finalized(),
                 last_valid_blockheight: 300,

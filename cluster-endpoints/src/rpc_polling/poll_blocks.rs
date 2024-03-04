@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_lite_rpc_core::encoding::BinaryEncoding;
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
 use solana_lite_rpc_core::{
     structures::{
@@ -184,8 +184,8 @@ pub fn from_ui_block(
     let block_height = block.block_height.unwrap_or_default();
     let txs = block.transactions.unwrap_or_default();
 
-    let blockhash = block.blockhash;
-    let previous_blockhash = block.previous_blockhash;
+    let blockhash = hash_from_str(&block.blockhash).expect("valid blockhash");
+    let previous_blockhash = hash_from_str(&block.previous_blockhash).expect("valid blockhash");
     let parent_slot = block.parent_slot;
     let rewards = block.rewards.clone();
 
@@ -209,7 +209,7 @@ pub fn from_ui_block(
                 return None;
             };
 
-            let signature = tx.signatures[0].to_string();
+            let signature = tx.signatures[0];
             let cu_consumed = match compute_units_consumed {
                 OptionSerializer::Some(cu_consumed) => Some(cu_consumed),
                 _ => None,
@@ -264,8 +264,7 @@ pub fn from_ui_block(
                 }
             };
 
-            let blockhash = tx.message.recent_blockhash().to_string();
-            let message = BinaryEncoding::Base64.encode(tx.message.serialize());
+            let blockhash = tx.message.recent_blockhash();
 
             let is_vote_transaction = tx.message.instructions().iter().any(|i| {
                 i.program_id(tx.message.static_account_keys())
@@ -299,8 +298,8 @@ pub fn from_ui_block(
                 cu_requested,
                 prioritization_fees,
                 cu_consumed,
-                recent_blockhash: blockhash,
-                message,
+                recent_blockhash: *blockhash,
+                message: tx.message,
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,

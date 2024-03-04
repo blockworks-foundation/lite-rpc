@@ -2,7 +2,7 @@ use crate::stores::block_information_store::BlockInformation;
 use crate::stores::data_cache::DataCache;
 use serde::Serialize;
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::hash::Hash;
+use solana_sdk::hash::{Hash, ParseHashError};
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::{uses_durable_nonce, Transaction, VersionedTransaction};
 
@@ -43,4 +43,20 @@ pub async fn get_current_confirmed_slot(data_cache: &DataCache) -> u64 {
         .get_latest_block(commitment)
         .await;
     slot
+}
+
+// shameless copy from Hash::from_str which is declared private
+const MAX_BASE58_LEN: usize = 44;
+pub fn hash_from_str(s: &str) -> Result<Hash, ParseHashError> {
+    if s.len() > MAX_BASE58_LEN {
+        return Err(ParseHashError::WrongSize);
+    }
+    let bytes = bs58::decode(s)
+        .into_vec()
+        .map_err(|_| ParseHashError::Invalid)?;
+    if bytes.len() != std::mem::size_of::<Hash>() {
+        Err(ParseHashError::WrongSize)
+    } else {
+        Ok(Hash::new(&bytes))
+    }
 }

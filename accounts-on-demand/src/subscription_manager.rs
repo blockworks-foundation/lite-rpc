@@ -1,13 +1,15 @@
-use futures::StreamExt;
-use merge_streams::MergeStreams;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
     time::Duration,
 };
 
-use geyser_grpc_connector::GrpcSourceConfig;
+use futures::StreamExt;
 use itertools::Itertools;
+use merge_streams::MergeStreams;
+use prometheus::{opts, register_int_gauge, IntGauge};
+use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::GrpcSourceConfig;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
@@ -17,7 +19,10 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_sdk::{account::Account, pubkey::Pubkey};
-use tokio::sync::broadcast;
+use tokio::sync::{
+    broadcast::{self, Sender},
+    watch, Notify,
+};
 use yellowstone_grpc_proto::geyser::{
     subscribe_request_filter_accounts_filter::Filter,
     subscribe_request_filter_accounts_filter_memcmp::Data, subscribe_update::UpdateOneof,
@@ -25,10 +30,70 @@ use yellowstone_grpc_proto::geyser::{
     SubscribeRequestFilterAccountsFilterMemcmp,
 };
 
-pub fn start_account_streaming_tasks(
+lazy_static::lazy_static! {
+static ref ON_DEMAND_SUBSCRIPTION_RESTARTED: IntGauge =
+        register_int_gauge!(opts!("literpc_count_account_on_demand_resubscribe", "Count number of account on demand has resubscribed")).unwrap();
+
+        static ref ON_DEMAND_UPDATES: IntGauge =
+        register_int_gauge!(opts!("literpc_count_account_on_demand_updates", "Count number of updates for account on demand")).unwrap();
+}
+
+pub struct SubscriptionManger {
+    account_filter_watch: watch::Sender<AccountFilters>,
+}
+
+impl SubscriptionManger {
+    pub fn new(
+        grpc_sources: Vec<GrpcSourceConfig>,
+        accounts_storage: Arc<dyn AccountStorageInterface>,
+        account_notification_sender: Sender<AccountNotificationMessage>,
+    ) -> Self {
+        let (account_filter_watch, reciever) = watch::channel::<AccountFilters>(vec![]);
+
+        let (_, mut account_stream) = create_grpc_account_streaming_tasks(grpc_sources, reciever);
+
+        tokio::spawn(async move {
+            loop {
+                match account_stream.recv().await {
+                    Ok(message) => {
+                        ON_DEMAND_UPDATES.inc();
+                        let _ = account_notification_sender.send(message.clone());
+                        accounts_storage
+                            .update_account(message.data, message.commitment)
+                            .await;
+                    }
+                    Err(e) => match e {
+                        broadcast::error::RecvError::Closed => {
+                            panic!("Account stream channel is broken");
+                        }
+                        broadcast::error::RecvError::Lagged(lag) => {
+                            log::error!("Account on demand stream lagged by {lag:?}, missed some account updates; continue");
+                            continue;
+                        }
+                    },
+                }
+            }
+        });
+        Self {
+            account_filter_watch,
+        }
+    }
+
+    pub async fn update_subscriptions(&self, filters: AccountFilters) {
+        if let Err(e) = self.account_filter_watch.send(filters) {
+            log::error!(
+                "Error updating accounts on demand subscription with {}",
+                e.to_string()
+            );
+        }
+    }
+}
+
+pub fn start_account_streaming_task(
     grpc_config: GrpcSourceConfig,
     accounts_filters: AccountFilters,
-    account_stream_sx: tokio::sync::mpsc::UnboundedSender<AccountNotificationMessage>,
+    account_stream_sx: broadcast::Sender<AccountNotificationMessage>,
+    has_started: Arc<Notify>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
         'main_loop: loop {
@@ -86,7 +151,7 @@ pub fn start_account_streaming_tasks(
                         vec![]
                     };
                     subscribe_programs.insert(
-                        format!("program_accounts_{}", index),
+                        format!("program_accounts_on_demand_{}", index),
                         SubscribeRequestFilterAccounts {
                             account: vec![],
                             owner: vec![program_id.clone()],
@@ -96,7 +161,7 @@ pub fn start_account_streaming_tasks(
                 }
             }
 
-            let program_subscription = SubscribeRequest {
+            let program_subscribe_request = SubscribeRequest {
                 accounts: subscribe_programs,
                 slots: Default::default(),
                 transactions: Default::default(),
@@ -108,13 +173,25 @@ pub fn start_account_streaming_tasks(
                 ping: None,
             };
 
-            let mut client = yellowstone_grpc_client::GeyserGrpcClient::connect(
+            log::info!(
+                "Accounts on demand subscribing to {}",
+                grpc_config.grpc_addr
+            );
+            let Ok(mut client) = yellowstone_grpc_client::GeyserGrpcClient::connect(
                 grpc_config.grpc_addr.clone(),
                 grpc_config.grpc_x_token.clone(),
                 None,
-            )
-            .unwrap();
-            let account_stream = client.subscribe_once2(program_subscription).await.unwrap();
+            ) else {
+                // problem connecting to grpc, retry after a sec
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            };
+
+            let Ok(account_stream) = client.subscribe_once2(program_subscribe_request).await else {
+                // problem subscribing to geyser stream, retry after a sec
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            };
 
             // each account subscription batch will require individual stream
             let mut subscriptions = vec![account_stream];
@@ -159,10 +236,18 @@ pub fn start_account_streaming_tasks(
             let mut merged_stream = subscriptions.merge();
 
             while let Some(message) = merged_stream.next().await {
-                let message = message.unwrap();
+                let message = match message {
+                    Ok(message) => message,
+                    Err(status) => {
+                        log::error!("Account on demand grpc error : {}", status.message());
+                        continue;
+                    }
+                };
                 let Some(update) = message.update_oneof else {
                     continue;
                 };
+
+                has_started.notify_one();
 
                 match update {
                     UpdateOneof::Account(account) => {
@@ -205,55 +290,79 @@ pub fn start_account_streaming_tasks(
                     }
                 };
             }
-            log::error!("Grpc account subscription broken (resubscribing)");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
         Ok(())
     })
 }
 
-pub fn create_grpc_account_streaming(
+pub fn create_grpc_account_streaming_tasks(
     grpc_sources: Vec<GrpcSourceConfig>,
-    accounts_filters: AccountFilters,
+    mut account_filter_watch: watch::Receiver<AccountFilters>,
 ) -> (AnyhowJoinHandle, AccountStream) {
-    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(1024);
+    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(128);
 
     let jh: AnyhowJoinHandle = tokio::spawn(async move {
-        loop {
-            let (accounts_sx, mut accounts_rx) = tokio::sync::mpsc::unbounded_channel();
-            let jhs = grpc_sources
+        match account_filter_watch.changed().await {
+            Ok(_) => {
+                // do nothing
+            }
+            Err(e) => {
+                log::error!("account filter watch failed with error {}", e);
+                anyhow::bail!("Accounts on demand task failed");
+            }
+        }
+        let accounts_filters = account_filter_watch.borrow_and_update().clone();
+
+        let has_started = Arc::new(tokio::sync::Notify::new());
+
+        let mut current_tasks = grpc_sources
+            .iter()
+            .map(|grpc_config| {
+                start_account_streaming_task(
+                    grpc_config.clone(),
+                    accounts_filters.clone(),
+                    account_sender.clone(),
+                    has_started.clone(),
+                )
+            })
+            .collect_vec();
+
+        while account_filter_watch.changed().await.is_ok() {
+            ON_DEMAND_SUBSCRIPTION_RESTARTED.inc();
+            // wait for a second to get all the accounts to update
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let accounts_filters = account_filter_watch.borrow_and_update().clone();
+
+            let has_started = Arc::new(tokio::sync::Notify::new());
+
+            let new_tasks = grpc_sources
                 .iter()
                 .map(|grpc_config| {
-                    start_account_streaming_tasks(
+                    start_account_streaming_task(
                         grpc_config.clone(),
                         accounts_filters.clone(),
-                        accounts_sx.clone(),
+                        account_sender.clone(),
+                        has_started.clone(),
                     )
                 })
                 .collect_vec();
-            drop(accounts_sx);
 
-            loop {
-                match tokio::time::timeout(Duration::from_secs(60), accounts_rx.recv()).await {
-                    Ok(Some(data)) => {
-                        let _ = account_sender.send(data);
-                    }
-                    Ok(None) => {
-                        log::error!("All grpc accounts channels close; restarting subscription");
-                        break;
-                    }
-                    Err(_elapsed) => {
-                        log::error!("No accounts data for a minute; restarting subscription");
-                        break;
-                    }
-                }
+            if let Err(_elapsed) =
+                tokio::time::timeout(Duration::from_secs(60), has_started.notified()).await
+            {
+                // check if time elapsed during restart is greater than 60ms
+                log::error!("Tried to restart the accounts on demand task but failed");
+                new_tasks.iter().for_each(|x| x.abort());
+                continue;
             }
 
-            for jh in jhs {
-                // abort previous handles
-                jh.abort();
-            }
+            // abort previous tasks
+            current_tasks.iter().for_each(|x| x.abort());
+
+            current_tasks = new_tasks;
         }
+        log::error!("Accounts on demand task stopped");
+        anyhow::bail!("Accounts on demand task stopped");
     });
 
     (jh, accounts_stream)

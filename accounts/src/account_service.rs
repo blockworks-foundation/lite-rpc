@@ -2,6 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::bail;
 use itertools::Itertools;
+use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_account_decoder::{UiAccount, UiDataSliceConfig};
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
@@ -22,6 +23,21 @@ use tokio::sync::broadcast::Sender;
 
 use crate::account_store_interface::AccountStorageInterface;
 
+lazy_static::lazy_static! {
+    static ref ACCOUNT_UPDATES: IntGauge =
+       register_int_gauge!(opts!("literpc_accounts_updates", "Account Updates by lite-rpc service")).unwrap();
+    static ref ACCOUNT_UPDATES_CONFIRMED: IntGauge =
+       register_int_gauge!(opts!("literpc_accounts_updates_confirmed", "Account Updates by lite-rpc service")).unwrap();
+    static ref ACCOUNT_UPDATES_FINALIZED: IntGauge =
+       register_int_gauge!(opts!("literpc_accounts_updates_finalized", "Account Updates by lite-rpc service")).unwrap();
+
+    static ref GET_PROGRAM_ACCOUNT_CALLED: IntGauge =
+       register_int_gauge!(opts!("literpc_gpa_called", "Account Updates by lite-rpc service")).unwrap();
+
+    static ref GET_ACCOUNT_CALLED: IntGauge =
+       register_int_gauge!(opts!("literpc_get_account_called", "Account Updates by lite-rpc service")).unwrap();
+}
+
 #[derive(Clone)]
 pub struct AccountService {
     account_store: Arc<dyn AccountStorageInterface>,
@@ -29,8 +45,10 @@ pub struct AccountService {
 }
 
 impl AccountService {
-    pub fn new(account_store: Arc<dyn AccountStorageInterface>) -> Self {
-        let (account_notification_sender, _) = tokio::sync::broadcast::channel(256);
+    pub fn new(
+        account_store: Arc<dyn AccountStorageInterface>,
+        account_notification_sender: Sender<AccountNotificationMessage>,
+    ) -> Self {
         Self {
             account_store,
             account_notification_sender,
@@ -116,9 +134,9 @@ impl AccountService {
                 for (index, account) in fetch_accounts.iter().enumerate() {
                     if let Some(account) = account {
                         self.account_store
-                            .initilize_account(AccountData {
+                            .initilize_or_update_account(AccountData {
                                 pubkey: accounts[index],
-                                account: account.clone(),
+                                account: Arc::new(account.clone()),
                                 updated_slot,
                             })
                             .await;
@@ -140,13 +158,17 @@ impl AccountService {
             loop {
                 match account_stream.recv().await {
                     Ok(account_notification) => {
-                        this.account_store
+                        ACCOUNT_UPDATES.inc();
+                        if this
+                            .account_store
                             .update_account(
                                 account_notification.data.clone(),
                                 account_notification.commitment,
                             )
-                            .await;
-                        let _ = this.account_notification_sender.send(account_notification);
+                            .await
+                        {
+                            let _ = this.account_notification_sender.send(account_notification);
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
                         log::error!(
@@ -176,6 +198,13 @@ impl AccountService {
                             .account_store
                             .process_slot_data(block_notification.slot, commitment)
                             .await;
+
+                        if block_notification.commitment_config.is_finalized() {
+                            ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
+                        } else {
+                            ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);
+                        }
+
                         for data in updated_accounts {
                             let _ = this
                                 .account_notification_sender
@@ -183,11 +212,11 @@ impl AccountService {
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
-                        log::error!("Account Stream Lagged by {}", e);
+                        log::error!("Block Stream Lagged to update accounts by {}", e);
                         continue;
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        log::error!("Account Stream Broken");
+                        log::error!("Block Stream Broken");
                         break;
                     }
                 }
@@ -210,7 +239,7 @@ impl AccountService {
         let data_slice = config.as_ref().map(|c| c.data_slice).unwrap_or_default();
         UiAccount::encode(
             &account_data.pubkey,
-            &account_data.account,
+            account_data.account.as_ref(),
             encoding,
             None,
             data_slice,
@@ -222,6 +251,7 @@ impl AccountService {
         account: Pubkey,
         config: Option<RpcAccountInfoConfig>,
     ) -> anyhow::Result<(Slot, Option<UiAccount>)> {
+        GET_ACCOUNT_CALLED.inc();
         let commitment = config
             .as_ref()
             .map(|config| config.commitment.unwrap_or_default())
@@ -230,15 +260,14 @@ impl AccountService {
         let commitment = Commitment::from(commitment);
 
         if let Some(account_data) = self.account_store.get_account(account, commitment).await {
-            let ui_account =
-                Self::convert_account_data_to_ui_account(&account_data, config.clone());
-
             // if minimum context slot is not satisfied return Null
             let minimum_context_slot = config
                 .as_ref()
                 .map(|c| c.min_context_slot.unwrap_or_default())
                 .unwrap_or_default();
             if minimum_context_slot <= account_data.updated_slot {
+                let ui_account =
+                    Self::convert_account_data_to_ui_account(&account_data, config.clone());
                 Ok((account_data.updated_slot, Some(ui_account)))
             } else {
                 Ok((account_data.updated_slot, None))
@@ -256,6 +285,8 @@ impl AccountService {
         program_id: Pubkey,
         config: Option<RpcProgramAccountsConfig>,
     ) -> anyhow::Result<(Slot, Vec<RpcKeyedAccount>)> {
+        GET_PROGRAM_ACCOUNT_CALLED.inc();
+
         let account_filter = config
             .as_ref()
             .map(|x| x.filters.clone())

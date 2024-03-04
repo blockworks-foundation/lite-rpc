@@ -25,10 +25,12 @@ use solana_rpc_client_api::{
     },
 };
 use solana_sdk::epoch_info::EpochInfo;
+use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
 
 use solana_lite_rpc_blockstore::history::History;
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::{
     encoding,
     stores::{block_information_store::BlockInformation, data_cache::DataCache},
@@ -210,7 +212,7 @@ impl LiteRpcServer for LiteBridge {
                 api_version: None,
             },
             value: RpcBlockhash {
-                blockhash,
+                blockhash: blockhash.to_string(),
                 last_valid_block_height: block_height + 150,
             },
         })
@@ -229,7 +231,10 @@ impl LiteRpcServer for LiteBridge {
         let (is_valid, slot) = self
             .data_cache
             .block_information_store
-            .is_blockhash_valid(&blockhash, commitment)
+            .is_blockhash_valid(
+                &hash_from_str(&blockhash).expect("valid blockhash"),
+                commitment,
+            )
             .await;
 
         Ok(RpcResponse {
@@ -281,7 +286,8 @@ impl LiteRpcServer for LiteBridge {
 
         let sig_statuses = sigs
             .iter()
-            .map(|sig| self.data_cache.txs.get(sig).and_then(|v| v.status))
+            .map(|sig| Signature::from_str(sig).expect("signature must be valid"))
+            .map(|sig| self.data_cache.txs.get(&sig).and_then(|v| v.status))
             .collect();
 
         Ok(RpcResponse {
@@ -563,14 +569,11 @@ impl LiteRpcServer for LiteBridge {
                         ui_accounts.push(ui_account);
                     }
                     Err(_) => {
-                        // internal error while fetching multiple accounts
-                        return Err(jsonrpsee::types::error::ErrorCode::ServerError(
-                            RpcErrors::AccountNotFound as i32,
-                        )
-                        .into());
+                        ui_accounts.push(None);
                     }
                 }
             }
+            assert_eq!(ui_accounts.len(), pubkey_strs.len());
             Ok(RpcResponse {
                 context: RpcResponseContext {
                     slot: max_slot,
@@ -610,6 +613,44 @@ impl LiteRpcServer for LiteBridge {
                         RpcErrors::AccountNotFound as i32,
                     )
                     .into());
+                }
+            }
+        } else {
+            // accounts are disabled
+            Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
+        }
+    }
+
+    async fn get_balance(
+        &self,
+        pubkey_str: String,
+        config: Option<RpcContextConfig>,
+    ) -> RpcResult<RpcResponse<u64>> {
+        let Ok(pubkey) = Pubkey::from_str(&pubkey_str) else {
+            // pubkey is invalid
+            return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
+        };
+        let config = config.map(|x| RpcAccountInfoConfig {
+            encoding: None,
+            data_slice: None,
+            commitment: x.commitment,
+            min_context_slot: x.min_context_slot,
+        });
+        if let Some(account_service) = &self.accounts_service {
+            match account_service.get_account(pubkey, config).await {
+                Ok((slot, ui_account)) => Ok(RpcResponse {
+                    context: RpcResponseContext {
+                        slot,
+                        api_version: None,
+                    },
+                    value: ui_account.map(|x| x.lamports).unwrap_or_default(),
+                }),
+                Err(_) => {
+                    // account not found
+                    Err(jsonrpsee::types::error::ErrorCode::ServerError(
+                        RpcErrors::AccountNotFound as i32,
+                    )
+                    .into())
                 }
             }
         } else {

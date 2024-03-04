@@ -1,7 +1,12 @@
+use std::str::FromStr;
+
 use futures_util::pin_mut;
 use log::debug;
+use solana_lite_rpc_core::encoding::BinaryEncoding;
+use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
+use solana_sdk::signature::Signature;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::TransactionError;
 use tokio::time::Instant;
@@ -28,7 +33,7 @@ pub struct PostgresTransaction {
 impl PostgresTransaction {
     pub fn new(value: &TransactionInfo, slot: Slot) -> Self {
         Self {
-            signature: value.signature.clone(),
+            signature: value.signature.to_string(),
             err: value
                 .err
                 .clone()
@@ -37,15 +42,15 @@ impl PostgresTransaction {
             cu_requested: value.cu_requested.map(|x| x as i64),
             prioritization_fees: value.prioritization_fees.map(|x| x as i64),
             cu_consumed: value.cu_consumed.map(|x| x as i64),
-            recent_blockhash: value.recent_blockhash.clone(),
-            message: value.message.clone(),
+            recent_blockhash: value.recent_blockhash.to_string(),
+            message: BinaryEncoding::Base64.encode(value.message.serialize()),
             slot: slot as i64,
         }
     }
 
     pub fn to_transaction_info(&self) -> TransactionInfo {
         TransactionInfo {
-            signature: self.signature.clone(),
+            signature: Signature::from_str(self.signature.as_str()).unwrap(),
             err: self
                 .err
                 .as_ref()
@@ -53,8 +58,10 @@ impl PostgresTransaction {
             cu_requested: self.cu_requested.map(|x| x as u32),
             prioritization_fees: self.prioritization_fees.map(|x| x as u64),
             cu_consumed: self.cu_consumed.map(|x| x as u64),
-            recent_blockhash: self.recent_blockhash.clone(),
-            message: self.message.clone(),
+            recent_blockhash: hash_from_str(&self.recent_blockhash).expect("valid blockhash"),
+            message: BinaryEncoding::Base64
+                .deserialize(&self.message)
+                .expect("serialized message"),
             // TODO readable_accounts etc.
             readable_accounts: vec![],
             writable_accounts: vec![],

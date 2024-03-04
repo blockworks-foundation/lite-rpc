@@ -13,8 +13,8 @@ use solana_transaction_status::Reward;
 pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> ProducedBlock {
     let inner = ProducedBlockInner {
         block_height: slot,
-        blockhash: Hash::new_unique().to_string(),
-        previous_blockhash: Hash::new_unique().to_string(),
+        blockhash: Hash::new_unique(),
+        previous_blockhash: Hash::new_unique(),
         parent_slot: slot - 1,
         transactions: vec![],
         block_time: 0,

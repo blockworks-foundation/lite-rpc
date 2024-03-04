@@ -3,6 +3,7 @@ use log::{debug, info, warn};
 use solana_lite_rpc_core::types::BlockStream;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::hash::Hash;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -236,7 +237,7 @@ pub fn debugtask_blockstream_slot_progression(
     let last_slot_seen = latest_slot_seen_shared.clone();
     tokio::spawn(async move {
         let mut last_highest_slot_number = 0;
-        let mut last_blockhash: Option<String> = None;
+        let mut last_blockhash: Option<Hash> = None;
 
         'recv_loop: loop {
             match block_notifier.recv().await {
@@ -290,7 +291,7 @@ pub fn debugtask_blockstream_slot_progression(
                                 block.slot, block.blockhash, block.previous_blockhash, last_blockhash);
                         }
                     }
-                    last_blockhash = Some(block.blockhash.to_string());
+                    last_blockhash = Some(block.blockhash);
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     // very unlikely to happen

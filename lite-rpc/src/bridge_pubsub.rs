@@ -4,7 +4,7 @@ use solana_lite_rpc_core::{
     commitment_utils::Commitment, stores::data_cache::DataCache,
     structures::account_data::AccountNotificationMessage, types::BlockStream,
 };
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 
 use crate::{
@@ -29,6 +29,7 @@ use solana_rpc_client_api::{
     response::{Response as RpcResponse, RpcKeyedAccount, RpcResponseContext, SlotInfo},
 };
 use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signature;
 
 lazy_static::lazy_static! {
     static ref RPC_SIGNATURE_SUBSCRIBE: IntCounter =
@@ -136,7 +137,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
     async fn signature_subscribe(
         &self,
         pending: PendingSubscriptionSink,
-        signature: String,
+        signature: Signature,
         config: RpcSignatureSubscribeConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
@@ -236,19 +237,20 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
             RPC_BLOCK_PRIOFEES_SUBSCRIBE.inc();
 
             'recv_loop: loop {
-                match account_fees_stream.recv().await {
-                    Ok(AccountPrioFeesUpdateMessage {
+                match tokio::time::timeout(Duration::from_secs(1), account_fees_stream.recv()).await
+                {
+                    Ok(Ok(AccountPrioFeesUpdateMessage {
                         slot,
                         accounts_data,
-                    }) => {
-                        if let Some(account_data) = accounts_data.get(&account) {
+                    })) => {
+                        if let Some(account_stats) = accounts_data.get(&account) {
                             let result_message =
                                 jsonrpsee::SubscriptionMessage::from_json(&RpcResponse {
                                     context: RpcResponseContext {
                                         slot,
                                         api_version: None,
                                     },
-                                    value: account_data,
+                                    value: account_stats,
                                 });
 
                             match sink.send(result_message.unwrap()).await {
@@ -263,7 +265,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                             };
                         }
                     }
-                    Err(Lagged(lagged)) => {
+                    Ok(Err(Lagged(lagged))) => {
                         // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
                         log::warn!(
                             "subscriber laggs some({}) priofees update messages - continue",
@@ -271,9 +273,15 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         );
                         continue 'recv_loop;
                     }
-                    Err(Closed) => {
+                    Ok(Err(Closed)) => {
                         log::error!("failed to receive block, sender closed - aborting");
                         return;
+                    }
+                    Err(_elapsed) => {
+                        // check if subscription is closed
+                        if sink.is_closed() {
+                            break 'recv_loop;
+                        }
                     }
                 }
             }
@@ -297,6 +305,11 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                 "Accounts service not configured".to_string(),
             ));
         };
+
+        let account_config = config.clone().unwrap_or_default();
+        let config_commitment = account_config.commitment.unwrap_or_default();
+        let min_context_slot = account_config.min_context_slot.unwrap_or_default();
+
         let sink = pending.accept().await?;
         let mut accounts_stream = accounts_service.account_notification_sender.subscribe();
 
@@ -304,8 +317,8 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
             RPC_ACCOUNT_SUBSCRIBE.inc();
 
             loop {
-                match accounts_stream.recv().await {
-                    Ok(AccountNotificationMessage { data, commitment }) => {
+                match tokio::time::timeout(Duration::from_secs(1), accounts_stream.recv()).await {
+                    Ok(Ok(AccountNotificationMessage { data, commitment })) => {
                         if sink.is_closed() {
                             // sink is already closed
                             return;
@@ -315,9 +328,6 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                             // notification is different account
                             continue;
                         }
-                        let account_config = config.clone().unwrap_or_default();
-                        let config_commitment = account_config.commitment.unwrap_or_default();
-                        let min_context_slot = account_config.min_context_slot.unwrap_or_default();
                         // check config
                         // check if commitment match
                         if Commitment::from(config_commitment) != commitment {
@@ -351,7 +361,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                             }
                         };
                     }
-                    Err(Lagged(lagged)) => {
+                    Ok(Err(Lagged(lagged))) => {
                         // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
                         log::warn!(
                             "subscriber laggs some({}) accounts messages - continue",
@@ -359,11 +369,17 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         );
                         continue;
                     }
-                    Err(Closed) => {
+                    Ok(Err(Closed)) => {
                         log::error!(
                             "failed to receive account notifications, sender closed - aborting"
                         );
                         return;
+                    }
+                    Err(_elapsed) => {
+                        // on timeout check if sink is still open
+                        if sink.is_closed() {
+                            break;
+                        }
                     }
                 }
             }
@@ -390,12 +406,19 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
         let sink = pending.accept().await?;
         let mut accounts_stream = accounts_service.account_notification_sender.subscribe();
 
+        let program_config = config.clone().unwrap_or_default();
+        let config_commitment = program_config.account_config.commitment.unwrap_or_default();
+        let min_context_slot = program_config
+            .account_config
+            .min_context_slot
+            .unwrap_or_default();
+
         tokio::spawn(async move {
             RPC_ACCOUNT_SUBSCRIBE.inc();
 
             loop {
-                match accounts_stream.recv().await {
-                    Ok(AccountNotificationMessage { data, commitment }) => {
+                match tokio::time::timeout(Duration::from_secs(1), accounts_stream.recv()).await {
+                    Ok(Ok(AccountNotificationMessage { data, commitment })) => {
                         if sink.is_closed() {
                             // sink is already closed
                             return;
@@ -404,14 +427,6 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                             // wrong program owner
                             continue;
                         }
-
-                        let program_config = config.clone().unwrap_or_default();
-                        let config_commitment =
-                            program_config.account_config.commitment.unwrap_or_default();
-                        let min_context_slot = program_config
-                            .account_config
-                            .min_context_slot
-                            .unwrap_or_default();
                         // check config
                         // check if commitment match
                         if Commitment::from(config_commitment) != commitment {
@@ -422,7 +437,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                             continue;
                         }
                         // check filters
-                        if let Some(filters) = program_config.filters {
+                        if let Some(filters) = &program_config.filters {
                             if filters.iter().any(|filter| !data.allows(filter)) {
                                 // filters not stasfied
                                 continue;
@@ -445,7 +460,6 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                                 },
                                 value,
                             });
-
                         match sink.send(result_message.unwrap()).await {
                             Ok(()) => {
                                 // success
@@ -457,7 +471,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                             }
                         };
                     }
-                    Err(Lagged(lagged)) => {
+                    Ok(Err(Lagged(lagged))) => {
                         // this usually happens if there is one "slow receiver", see https://docs.rs/tokio/latest/tokio/sync/broadcast/index.html#lagging
                         log::warn!(
                             "subscriber laggs some({}) program accounts messages - continue",
@@ -465,11 +479,17 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         );
                         continue;
                     }
-                    Err(Closed) => {
+                    Ok(Err(Closed)) => {
                         log::error!(
                             "failed to receive account notifications, sender closed - aborting"
                         );
                         return;
+                    }
+                    Err(_elapsed) => {
+                        // on timeout check if sink is still open
+                        if sink.is_closed() {
+                            break;
+                        }
                     }
                 }
             }
