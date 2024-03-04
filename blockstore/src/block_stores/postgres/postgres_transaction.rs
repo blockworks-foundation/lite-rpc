@@ -83,6 +83,15 @@ impl PostgresTransaction {
                 ) WITH (FILLFACTOR=100);
                 -- never put sig on TOAST
                 ALTER TABLE {schema}.transaction_ids ALTER COLUMN signature SET STORAGE MAIN;
+                ALTER TABLE {schema}.transaction_ids
+                    SET (
+                        autovacuum_vacuum_scale_factor=0,
+                        autovacuum_vacuum_threshold=1000,
+                        autovacuum_vacuum_insert_scale_factor=0,
+                        autovacuum_vacuum_insert_threshold=1000,
+                        autovacuum_analyze_scale_factor=0,
+                        autovacuum_analyze_threshold=1000
+                        );
 
                 -- parameter 'schema' is something like 'rpc2a_epoch_592'
                 CREATE TABLE IF NOT EXISTS {schema}.transaction_blockdata(
@@ -99,6 +108,15 @@ impl PostgresTransaction {
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE MAIN;
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN message SET STORAGE EXTENDED;
+                ALTER TABLE {schema}.transaction_blockdata
+                    SET (
+                        autovacuum_vacuum_scale_factor=0,
+                        autovacuum_vacuum_threshold=1000,
+                        autovacuum_vacuum_insert_scale_factor=0,
+                        autovacuum_vacuum_insert_threshold=1000,
+                        autovacuum_analyze_scale_factor=0,
+                        autovacuum_analyze_threshold=1000
+                        );
                 CREATE INDEX idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
             "#,
             schema = schema
