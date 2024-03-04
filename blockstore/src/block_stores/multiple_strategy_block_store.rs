@@ -7,6 +7,7 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
 use std::ops::{Deref, RangeInclusive};
 use std::sync::Arc;
+use jsonrpsee::tracing::trace_span;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {

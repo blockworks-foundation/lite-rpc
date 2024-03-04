@@ -11,7 +11,7 @@ use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::config::RpcAccountInfoConfig;
+use solana_rpc_client_api::config::{RpcAccountInfoConfig, RpcBlockConfig};
 use solana_rpc_client_api::response::{OptionalContext, RpcKeyedAccount};
 use solana_rpc_client_api::{
     config::{
@@ -28,7 +28,9 @@ use solana_rpc_client_api::{
 use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
-use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
+use solana_transaction_status::{EncodedTransaction, EncodedTransactionWithStatusMeta, TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta};
+use solana_transaction_status::option_serializer::OptionSerializer;
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
 
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
@@ -36,6 +38,8 @@ use solana_lite_rpc_core::{
     encoding,
     stores::{block_information_store::BlockInformation, data_cache::DataCache},
 };
+use solana_lite_rpc_core::encoding::BASE64;
+use solana_lite_rpc_core::structures::produced_block::{ProducedBlock, TransactionInfo};
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
@@ -69,7 +73,7 @@ pub struct LiteBridge {
     rpc_client: Arc<RpcClient>,
     data_cache: DataCache,
     transaction_service: TransactionService,
-    history: History,
+    multiple_strategy_block_storage: MultipleStrategyBlockStorage,
     prio_fees_service: PrioFeesService,
     account_priofees_service: AccountPrioService,
     accounts_service: Option<AccountService>,
@@ -80,7 +84,7 @@ impl LiteBridge {
         rpc_client: Arc<RpcClient>,
         data_cache: DataCache,
         transaction_service: TransactionService,
-        history: History,
+        multiple_strategy_block_storage: MultipleStrategyBlockStorage,
         prio_fees_service: PrioFeesService,
         account_priofees_service: AccountPrioService,
         accounts_service: Option<AccountService>,
@@ -89,7 +93,7 @@ impl LiteBridge {
             rpc_client,
             data_cache,
             transaction_service,
-            history,
+            multiple_strategy_block_storage,
             prio_fees_service,
             account_priofees_service,
             accounts_service,
@@ -97,27 +101,129 @@ impl LiteBridge {
     }
 }
 
+// fn map_ui_confirmed_block(produced_block: &ProducedBlock) -> UiConfirmedBlock {
+//     UiConfirmedBlock {
+//         blockhash: produced_block.blockhash.to_string(),
+//         previous_blockhash: produced_block.previous_blockhash.to_string(),
+//         parent_slot: produced_block.parent_slot as u64,
+//         signatures: Some(produced_block.transactions.iter().map(|tx| tx.signature.to_string()).collect_vec()),
+//         transactions: Some(produced_block.transactions.iter().map(|tx| map_ui_transaction(tx)).collect_vec()),
+//         rewards: None, // TODO
+//         block_time: None, // TODO
+//         block_height: None, // TODO
+//     }
+// }
+//
+// fn map_ui_transaction(tx: &TransactionInfo) -> EncodedTransactionWithStatusMeta {
+//     EncodedTransactionWithStatusMeta {
+//             transaction: "".to_string(),
+//             meta: "".to_string(),
+//         }
+//     }
+// }
+
+
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
+
     async fn get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
-        let blockinfo = self.data_cache.block_information_store.get_block_info_by_slot(slot);
+        // let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
+        // let block = self.history.block_storage.get(slot, config).await;
+        // FIXME
+        let config = RpcBlockConfig::default();
 
-        info!("WIP: got {}", blockinfo.is_some());
+        let block = self.multiple_strategy_block_storage.query_block(slot).await;
+        if let Ok(block) = block {
+            let transactions: Option<Vec<EncodedTransactionWithStatusMeta>> = match config
+                .transaction_details
+            {
+                Some(transaction_details) => {
+                    let (is_full, include_rewards, include_accounts) = match transaction_details {
+                        solana_transaction_status::TransactionDetails::Full => (true, true, true),
+                        solana_transaction_status::TransactionDetails::Signatures => {
+                            (false, false, false)
+                        }
+                        solana_transaction_status::TransactionDetails::None => {
+                            (false, false, false)
+                        }
+                        solana_transaction_status::TransactionDetails::Accounts => {
+                            (false, false, true)
+                        }
+                    };
 
-        return RpcResult::Ok(None);
-
-        // if block.is_ok() {
-        //     // TO DO Convert to UIConfirmed Block
-        //     Err(jsonrpsee::core::Error::HttpNotImplemented)
-        // } else {
-        //     Ok(None)
-        // }
-
-        // TODO get_block might deserve different implementation based on whether we serve from "blockstore module" vs. from "send tx module"
-
-        // under progress
-        Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
+                    if is_full || include_accounts || include_rewards {
+                        Some(block.transactions.iter().map(|transaction_info| {
+                            EncodedTransactionWithStatusMeta {
+                                version: None,
+                                meta: Some(UiTransactionStatusMeta {
+                                    err: transaction_info.err.clone(),
+                                    status: transaction_info.err.clone().map_or(Ok(()), Err),
+                                    fee: 0,
+                                    pre_balances: vec![],
+                                    post_balances: vec![],
+                                    inner_instructions: OptionSerializer::None,
+                                    log_messages: OptionSerializer::None,
+                                    pre_token_balances: OptionSerializer::None,
+                                    post_token_balances: OptionSerializer::None,
+                                    rewards: OptionSerializer::None,
+                                    loaded_addresses: OptionSerializer::None,
+                                    return_data: OptionSerializer::None,
+                                    compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None,OptionSerializer::Some),
+                                }),
+                                transaction: solana_transaction_status::EncodedTransaction::Binary(
+                                    BASE64.serialize(&transaction_info.message).unwrap(),
+                                    solana_transaction_status::TransactionBinaryEncoding::Base64)
+                            }
+                        }).collect_vec())
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            };
+            Ok(Some(UiConfirmedBlock {
+                previous_blockhash: block.previous_blockhash.to_string(),
+                blockhash: block.blockhash.to_string(),
+                parent_slot: block.parent_slot,
+                transactions,
+                signatures: None,
+                rewards: block.rewards.clone(),
+                block_time: Some(block.block_time as i64),
+                block_height: Some(block.block_height),
+            }))
+        } else {
+            Ok(None)
+        }
     }
+
+
+    // async fn __get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
+    //     let blockinfo = self.data_cache.block_information_store.get_block_info_by_slot(slot);
+    //
+    //     if let Some(blockinfo) = blockinfo {
+    //         info!("block_information_store got {:?}", blockinfo);
+    //     }
+    //
+    //     if let Ok(block_from_storage) = self.multiple_strategy_block_storage.query_block(slot).await {
+    //         info!("block_from_storage got {:?}", block_from_storage.block);
+    //         info!("block_from_storage block source {:?}", block_from_storage.result_source);
+    //     }
+    //
+    //
+    //     return RpcResult::Ok(None);
+    //
+    //     // if block.is_ok() {
+    //     //     // TO DO Convert to UIConfirmed Block
+    //     //     Err(jsonrpsee::core::Error::HttpNotImplemented)
+    //     // } else {
+    //     //     Ok(None)
+    //     // }
+    //
+    //     // TODO get_block might deserve different implementation based on whether we serve from "blockstore module" vs. from "send tx module"
+    //
+    //     // under progress
+    //     Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
+    // }
 
     async fn get_blocks(
         &self,

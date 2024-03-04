@@ -69,6 +69,7 @@ use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store;
 use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
@@ -365,7 +366,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
-    {
+    let multiple_strategy_block_store = {
         warn!("TEST CODE - TODO REMOVE");
         // FIXME: hardcoded
         let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig::new_for_tests();
@@ -374,21 +375,22 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             persistent_store.clone(),
             None, // not supported
         );
-        let block = multi_store.query_block(256320140).await;
-        info!("queried block: {:?}", block);
-        for tx in block.unwrap().transactions.iter().take(10) {
-            info!("- tx: {:?}", tx.signature);
-        }
-    }
+        // let block = multi_store.query_block(256320140).await;
+        // info!("queried block: {:?}", block);
+        // for tx in block.unwrap().transactions.iter().take(10) {
+        //     info!("- tx: {:?}", tx.signature);
+        // }
+        multi_store
+    };
 
 
-    let history = History::new();
+    // let history = History::new();
 
     let rpc_service = LiteBridge::new(
         rpc_client.clone(),
         data_cache.clone(),
         transaction_service,
-        history,
+        multiple_strategy_block_store,
         block_priofees_service.clone(),
         account_priofees_service.clone(),
         accounts_service.clone(),

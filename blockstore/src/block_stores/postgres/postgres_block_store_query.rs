@@ -10,6 +10,7 @@ use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
+use tokio_postgres::{Error, Row};
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -239,11 +240,21 @@ impl PostgresQueryBlockStore {
             inner = inner
         );
 
-        let rows_minmax = session.query_list(&query, &[]).await.unwrap();
+        let rows_minmax = session.query_list(&query, &[]).await;
 
-        if rows_minmax.is_empty() {
-            return HashMap::new();
-        }
+        match rows_minmax {
+            Ok(ref rows_minmax) => {
+                if rows_minmax.is_empty() {
+                    return HashMap::new();
+                }
+            }
+            Err(err) => {
+                warn!("Skipping query slot range by epoch: {:?}", err);
+                return HashMap::new();
+            }
+        };
+
+        let rows_minmax = rows_minmax.unwrap();
 
         let mut map_epoch_to_slot_range = rows_minmax
             .iter()
