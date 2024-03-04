@@ -1,0 +1,24 @@
+[package]
+name = "dump-blocks-from-grpc-to-disk"
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "dump-blocks-from-grpc-to-disk"
+path = "src/grpc_dump_blocks.rs"
+
+[dependencies]
+solana-sdk = { workspace = true }
+
+solana-lite-rpc-cluster-endpoints = { workspace = true }
+
+log = { workspace = true }
+clap = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { version = "1.28.2"}
+tokio-util = "0.7"
+chrono = { workspace = true }
+itertools = { workspace = true }
