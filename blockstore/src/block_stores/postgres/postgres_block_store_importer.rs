@@ -1,16 +1,13 @@
+use crate::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
+use log::{debug, info, warn};
+
+use solana_lite_rpc_core::types::BlockStream;
+use solana_sdk::commitment_config::CommitmentConfig;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use log::{debug, info, warn};
-use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::broadcast::Receiver;
-use tokio::task::{AbortHandle, JoinHandle};
-use tokio::time::sleep;
-use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_lite_rpc_core::types::BlockStream;
-use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
-use crate::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 
+use tokio::task::JoinHandle;
 
 const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 /// run the optimizer at least every n slots
@@ -73,8 +70,8 @@ pub fn start_postgres_block_store_importer_task(
                     // debounce for 4 slots but run at least every 10 slots
                     if block.slot > last_optimizer_run + OPTIMIZE_EVERY_N_SLOTS
                         || block.slot > last_optimizer_run + OPTIMIZE_DEBOUNCE_SLOTS
-                        && started.elapsed() < Duration::from_millis(200)
-                        && block_notifier.is_empty()
+                            && started.elapsed() < Duration::from_millis(200)
+                            && block_notifier.is_empty()
                     {
                         debug!(
                             "Use extra time to do some optimization (slot {})",
@@ -102,4 +99,3 @@ pub fn start_postgres_block_store_importer_task(
         }
     })
 }
-

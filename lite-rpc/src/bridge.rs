@@ -1,7 +1,7 @@
+use anyhow::bail;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use anyhow::bail;
 
 use itertools::Itertools;
 use jsonrpsee::core::RpcResult;
@@ -9,10 +9,13 @@ use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
 use solana_lite_rpc_accounts::account_service::AccountService;
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::config::{RpcAccountInfoConfig, RpcBlockConfig, RpcEncodingConfigWrapper};
+use solana_rpc_client_api::config::{
+    RpcAccountInfoConfig, RpcBlockConfig, RpcEncodingConfigWrapper,
+};
 use solana_rpc_client_api::response::{OptionalContext, RpcKeyedAccount};
 use solana_rpc_client_api::{
     config::{
@@ -29,18 +32,19 @@ use solana_rpc_client_api::{
 use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
-use solana_transaction_status::{EncodedTransaction, EncodedTransactionWithStatusMeta, TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta};
 use solana_transaction_status::option_serializer::OptionSerializer;
-use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
+use solana_transaction_status::{
+    EncodedTransactionWithStatusMeta, TransactionStatus, UiConfirmedBlock,
+    UiTransactionStatusMeta,
+};
 
-use solana_lite_rpc_blockstore::history::History;
+use solana_lite_rpc_core::encoding::BASE64;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
+
 use solana_lite_rpc_core::{
     encoding,
     stores::{block_information_store::BlockInformation, data_cache::DataCache},
 };
-use solana_lite_rpc_core::encoding::BASE64;
-use solana_lite_rpc_core::structures::produced_block::{ProducedBlock, TransactionInfo};
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
@@ -123,24 +127,33 @@ impl LiteBridge {
 //     }
 // }
 
-
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
-
-    async fn get_block(&self, slot: u64,
-       config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>) -> RpcResult<Option<UiConfirmedBlock>> {
+    async fn get_block(
+        &self,
+        slot: u64,
+        config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
+    ) -> RpcResult<Option<UiConfirmedBlock>> {
         let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
 
         // FIXME
-        let block = self.multiple_strategy_block_storage.as_ref().unwrap().query_block(slot).await;
+        let block = self
+            .multiple_strategy_block_storage
+            .as_ref()
+            .unwrap()
+            .query_block(slot)
+            .await;
         match block {
             Ok(block) => {
                 let transactions: Option<Vec<EncodedTransactionWithStatusMeta>> = match config
                     .transaction_details
                 {
                     Some(transaction_details) => {
-                        let (is_full, include_rewards, include_accounts) = match transaction_details {
-                            solana_transaction_status::TransactionDetails::Full => (true, true, true),
+                        let (is_full, include_rewards, include_accounts) = match transaction_details
+                        {
+                            solana_transaction_status::TransactionDetails::Full => {
+                                (true, true, true)
+                            }
                             solana_transaction_status::TransactionDetails::Signatures => {
                                 (false, false, false)
                             }
@@ -199,7 +212,6 @@ impl LiteRpcServer for LiteBridge {
             }
         }
     }
-
 
     // async fn __get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
     //     let blockinfo = self.data_cache.block_information_store.get_block_info_by_slot(slot);

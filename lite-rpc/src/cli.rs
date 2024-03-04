@@ -99,7 +99,6 @@ pub struct Config {
     /// write/import blocks to postgres blockstore
     #[serde(default)]
     pub enable_postgres_block_store_importer: bool,
-
 }
 
 impl Config {
@@ -240,9 +239,10 @@ impl Config {
             .map(|value| value.parse::<bool>().unwrap())
             .unwrap_or(config.use_postgres_blockstore);
 
-        config.enable_postgres_block_store_importer = env::var("ENABLE_POSTGRES_BLOCK_STORE_IMPORTER")
-            .map(|value| value.parse::<bool>().unwrap())
-            .unwrap_or(config.enable_postgres_block_store_importer);
+        config.enable_postgres_block_store_importer =
+            env::var("ENABLE_POSTGRES_BLOCK_STORE_IMPORTER")
+                .map(|value| value.parse::<bool>().unwrap())
+                .unwrap_or(config.enable_postgres_block_store_importer);
 
         Ok(config)
     }

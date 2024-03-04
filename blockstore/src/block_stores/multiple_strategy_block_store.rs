@@ -1,13 +1,12 @@
 use crate::block_stores::faithful_history::faithful_block_store::FaithfulBlockStore;
 use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use anyhow::{bail, Context, Result};
+
 use log::{debug, info, trace};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+
 use solana_sdk::slot_history::Slot;
 use std::ops::{Deref, RangeInclusive};
-use std::sync::Arc;
-use jsonrpsee::tracing::trace_span;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {
@@ -42,11 +41,11 @@ pub struct MultipleStrategyBlockStorage {
 }
 
 impl MultipleStrategyBlockStorage {
-    pub fn new(
-        block_storage_query: PostgresQueryBlockStore,
-    ) -> Self {
-
-        info!("Initializing MultipleStrategyBlockStorage {} faithful history storage", "without");
+    pub fn new(block_storage_query: PostgresQueryBlockStore) -> Self {
+        info!(
+            "Initializing MultipleStrategyBlockStorage {} faithful history storage",
+            "without"
+        );
 
         Self {
             block_storage_query,

@@ -52,6 +52,11 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
 use lite_rpc::postgres_logger;
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store;
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_importer::start_postgres_block_store_importer_task;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
@@ -69,11 +74,6 @@ use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
-use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store;
-use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
-use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_importer::start_postgres_block_store_importer_task;
-use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
-use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 
 async fn get_latest_block(
     mut block_stream: BlockStream,
@@ -369,14 +369,16 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
-
     // Block store importer
     if enable_postgres_block_store_importer {
         // FIXME hardcoded
         let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig::new_for_tests();
         let postgres_block_store =
             Arc::new(PostgresBlockStore::new(epoch_data.clone(), pg_session_config.clone()).await);
-        let _jh_task = start_postgres_block_store_importer_task(blocks_notifier.resubscribe(), postgres_block_store);
+        let _jh_task = start_postgres_block_store_importer_task(
+            blocks_notifier.resubscribe(),
+            postgres_block_store,
+        );
     } else {
         info!("Disable block store importer");
     };
@@ -386,14 +388,14 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         warn!("TODO make multiple_strategy_block_store configurable");
         // FIXME: hardcoded
         let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig::new_for_tests();
-        let persistent_store = PostgresQueryBlockStore::new(epoch_data.clone(), pg_session_config).await;
+        let persistent_store =
+            PostgresQueryBlockStore::new(epoch_data.clone(), pg_session_config).await;
         let multi_store = MultipleStrategyBlockStorage::new(persistent_store.clone());
         Some(multi_store)
     } else {
         info!("Disable multiple-strategy blockstore");
         None
     };
-
 
     // let history = History::new();
 

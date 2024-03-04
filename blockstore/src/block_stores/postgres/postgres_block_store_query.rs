@@ -10,7 +10,6 @@ use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
-use tokio_postgres::{Error, Row};
 
 use super::postgres_block::*;
 use super::postgres_config::*;
