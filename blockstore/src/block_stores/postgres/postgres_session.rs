@@ -11,7 +11,7 @@ use tokio_postgres::{
     Socket,
 };
 
-use super::postgres_config::{PostgresSessionConfig, PostgresSessionSslConfig};
+use super::postgres_config::{BlockstorePostgresSessionConfig, PostgresSessionSslConfig};
 
 #[derive(Clone)]
 pub struct PostgresSession {
@@ -20,14 +20,13 @@ pub struct PostgresSession {
 
 impl PostgresSession {
     pub async fn new_from_env() -> anyhow::Result<Self> {
-        let pg_session_config = PostgresSessionConfig::new_from_env()
-            .expect("failed to start Postgres Client")
-            .expect("Postgres not enabled (use PG_ENABLED)");
+        let pg_session_config = BlockstorePostgresSessionConfig::new_from_env()
+            .expect("Blockstore PostgreSQL Configuration from env");
         PostgresSession::new(pg_session_config).await
     }
 
     pub async fn new(
-        PostgresSessionConfig { pg_config, ssl }: PostgresSessionConfig,
+        BlockstorePostgresSessionConfig { pg_config, ssl }: BlockstorePostgresSessionConfig,
     ) -> anyhow::Result<Self> {
         let pg_config = pg_config.parse::<tokio_postgres::Config>()?;
 
@@ -226,11 +225,11 @@ impl PostgresSession {
 #[derive(Clone)]
 pub struct PostgresSessionCache {
     session: Arc<RwLock<PostgresSession>>,
-    config: PostgresSessionConfig,
+    config: BlockstorePostgresSessionConfig,
 }
 
 impl PostgresSessionCache {
-    pub async fn new(config: PostgresSessionConfig) -> anyhow::Result<Self> {
+    pub async fn new(config: BlockstorePostgresSessionConfig) -> anyhow::Result<Self> {
         let session = PostgresSession::new(config.clone()).await?;
         Ok(Self {
             session: Arc::new(RwLock::new(session)),
@@ -252,20 +251,19 @@ impl PostgresSessionCache {
 }
 
 #[derive(Clone)]
-pub struct PostgresWriteSession {
+pub struct BlockstorePostgresWriteSession {
     session: Arc<RwLock<PostgresSession>>,
-    pub pg_session_config: PostgresSessionConfig,
+    pub pg_session_config: BlockstorePostgresSessionConfig,
 }
 
-impl PostgresWriteSession {
+impl BlockstorePostgresWriteSession {
     pub async fn new_from_env() -> anyhow::Result<Self> {
-        let pg_session_config = PostgresSessionConfig::new_from_env()
-            .expect("failed to start Postgres Client")
-            .expect("Postgres not enabled (use PG_ENABLED)");
+        let pg_session_config = BlockstorePostgresSessionConfig::new_from_env()
+            .expect("Blockstore PostgreSQL Configuration from env");
         Self::new(pg_session_config).await
     }
 
-    pub async fn new(pg_session_config: PostgresSessionConfig) -> anyhow::Result<Self> {
+    pub async fn new(pg_session_config: BlockstorePostgresSessionConfig) -> anyhow::Result<Self> {
         let session = PostgresSession::new(pg_session_config.clone()).await?;
 
         let statement = r#"
@@ -293,6 +291,7 @@ impl PostgresWriteSession {
             *lock = session.clone();
             session
         } else {
+            session.clear_session().await;
             session.clone()
         }
     }
