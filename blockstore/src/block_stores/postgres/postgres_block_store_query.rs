@@ -24,11 +24,12 @@ pub struct PostgresQueryBlockStore {
 }
 
 impl PostgresQueryBlockStore {
-    pub async fn new(epoch_schedule: EpochCache, pg_session_config: PostgresSessionConfig) -> Self {
+    pub async fn new(epoch_schedule: EpochCache, pg_session_config: BlockstorePostgresSessionConfig) -> Self {
         let session_cache = PostgresSessionCache::new(pg_session_config.clone())
             .await
             .unwrap();
 
+        Self::check_postgresql_version(&session_cache).await;
         Self::check_query_role(&session_cache).await;
 
         Self {
@@ -41,7 +42,6 @@ impl PostgresQueryBlockStore {
         self.session_cache
             .get_session()
             .await
-            .expect("should get new postgres session")
     }
 
     pub async fn is_block_in_range(&self, slot: Slot) -> bool {
@@ -150,7 +150,6 @@ impl PostgresQueryBlockStore {
         let count = session_cache
             .get_session()
             .await
-            .expect("must get session")
             .execute(&statement, &[])
             .await
             .expect("must execute query to check for role");
@@ -163,6 +162,11 @@ impl PostgresQueryBlockStore {
         } else {
             info!("Self check - found postgres role '{}'", role);
         }
+    }
+
+    async fn check_postgresql_version(session_cache: &PostgresSessionCache) {
+        // TODO implement
+        // info!("PostgreSQL version: {}", version);
     }
 }
 

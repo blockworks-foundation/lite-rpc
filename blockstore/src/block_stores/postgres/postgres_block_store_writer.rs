@@ -23,19 +23,19 @@ const MIN_WRITE_CHUNK_SIZE: usize = 500;
 pub struct PostgresBlockStore {
     session_cache: PostgresSessionCache,
     // use this session only for the write path!
-    write_sessions: Vec<PostgresWriteSession>,
+    write_sessions: Vec<BlockstorePostgresWriteSession>,
     epoch_schedule: EpochCache,
 }
 
 impl PostgresBlockStore {
-    pub async fn new(epoch_schedule: EpochCache, pg_session_config: PostgresSessionConfig) -> Self {
+    pub async fn new(epoch_schedule: EpochCache, pg_session_config: BlockstorePostgresSessionConfig) -> Self {
         let session_cache = PostgresSessionCache::new(pg_session_config.clone())
             .await
             .unwrap();
         let mut write_sessions = Vec::new();
         for _i in 0..PARALLEL_WRITE_SESSIONS {
             write_sessions.push(
-                PostgresWriteSession::new(pg_session_config.clone())
+                BlockstorePostgresWriteSession::new(pg_session_config.clone())
                     .await
                     .unwrap(),
             );
@@ -60,7 +60,6 @@ impl PostgresBlockStore {
         let count = session_cache
             .get_session()
             .await
-            .expect("must get session")
             .execute(&statement, &[])
             .await
             .expect("must execute query to check for role");
@@ -140,32 +139,18 @@ impl PostgresBlockStore {
         self.session_cache
             .get_session()
             .await
-            .expect("should get new postgres session")
     }
 
-    // optimistically try to progress commitment level for a block that is already stored
-    pub async fn progress_block_commitment_level(&self, block: &ProducedBlock) -> Result<()> {
-        // ATM we only support updating confirmed block to finalized
-        if block.commitment_config.commitment == CommitmentLevel::Finalized {
-            debug!(
-                "Checking block {} if we can progress it to finalized ...",
-                block.slot
-            );
-
-            // TODO model commitment levels in new table
-        }
-        Ok(())
-    }
-
-    pub async fn save_block(&self, block: &ProducedBlock) -> Result<()> {
-        self.progress_block_commitment_level(block).await?;
+    /// allow confirmed+finalized blocks
+    pub async fn save_confirmed_block(&self, block: &ProducedBlock) -> Result<()> {
+        assert_eq!(block.commitment_config.commitment, CommitmentLevel::Confirmed);
 
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
         trace!(
             "Saving block {}@{} to postgres storage...",
             block.slot,
-            block.commitment_config.commitment
+            block.commitment_config.commitment // always confimred
         );
         let slot = block.slot;
         let transactions = block
@@ -177,6 +162,7 @@ impl PostgresBlockStore {
 
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
 
+        // TODO write parallel to transaction
         let write_session_single = self.write_sessions[0].get_write_session().await;
 
         let started_block = Instant::now();
@@ -214,10 +200,10 @@ impl PostgresBlockStore {
         let elapsed_txs_insert = started_txs.elapsed();
 
         info!(
-            "Saving block {}@{} to postgres took {:.2}ms for block and {:.2}ms for {} transactions ({}x{} chunks)",
+            "Saving block {}@{} to postgres took {:.2?} for block and {:.2?} for {} transactions ({}x{} chunks)",
             slot, block.commitment_config.commitment,
-            elapsed_block_insert.as_secs_f64() * 1000.0,
-            elapsed_txs_insert.as_secs_f64() * 1000.0,
+            elapsed_block_insert,
+            elapsed_txs_insert,
             transactions.len(),
             chunks.len(),
             chunk_size,
@@ -248,14 +234,14 @@ impl PostgresBlockStore {
                 .unwrap();
             let elapsed = started.elapsed();
             debug!(
-                "Postgres analyze of blocks table took {:.2}ms",
-                elapsed.as_secs_f64() * 1000.0
+                "Postgres analyze of blocks table took {:.2?}",
+                elapsed
             );
             if elapsed > Duration::from_millis(500) {
                 warn!(
-                    "Very slow postgres ANALYZE on slot {} - took {:.2}ms",
+                    "Very slow postgres ANALYZE on slot {} - took {:.2?}",
                     slot,
-                    elapsed.as_secs_f64() * 1000.0
+                    elapsed
                 );
             }
         });
@@ -326,7 +312,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_write_session() {
-        let write_session = PostgresWriteSession::new_from_env().await.unwrap();
+        let write_session = BlockstorePostgresWriteSession::new_from_env().await.unwrap();
 
         let row_role = write_session
             .get_write_session()
@@ -342,7 +328,7 @@ mod tests {
     async fn test_save_block() {
         tracing_subscriber::fmt::init();
 
-        let pg_session_config = PostgresSessionConfig {
+        let pg_session_config = BlockstorePostgresSessionConfig {
             pg_config: "host=localhost dbname=literpc3 user=literpc_app password=litelitesecret"
                 .to_string(),
             ssl: None,
@@ -357,7 +343,7 @@ mod tests {
             PostgresBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await;
 
         postgres_block_store
-            .save_block(&create_test_block())
+            .save_confirmed_block(&create_test_block())
             .await
             .unwrap();
     }

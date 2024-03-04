@@ -1,13 +1,15 @@
 use crate::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use log::{debug, info, warn};
 
-use solana_lite_rpc_core::types::BlockStream;
+use solana_lite_rpc_core::types::{BlockStream, SlotStream};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
 
-use tokio::task::JoinHandle;
+use tokio::task::{AbortHandle, JoinHandle};
+use tokio_util::sync::CancellationToken;
+use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 
 const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 /// run the optimizer at least every n slots
@@ -54,7 +56,7 @@ pub fn start_postgres_block_store_importer_task(
 
                     // avoid backpressure here!
 
-                    block_storage.save_block(&block).await.unwrap();
+                    block_storage.save_confirmed_block(&block).await.unwrap();
 
                     // we should be faster than 150ms here
                     let elapsed = started.elapsed();
@@ -98,4 +100,42 @@ pub fn start_postgres_block_store_importer_task(
             // ...
         }
     })
+}
+
+pub fn storage_prepare_epoch_schema(
+    slot_notifier: SlotStream,
+    postgres_storage: Arc<PostgresBlockStore>,
+) -> (AbortHandle, CancellationToken) {
+    let mut debounce_slot = 0;
+    let building_epoch_schema = CancellationToken::new();
+    let first_run_signal = building_epoch_schema.clone();
+    let join_handle = tokio::spawn(async move {
+        let mut slot_notifier = slot_notifier;
+        loop {
+            match slot_notifier.recv().await {
+                Ok(SlotNotification { processed_slot, .. }) => {
+                    if processed_slot >= debounce_slot {
+                        let created = postgres_storage
+                            .prepare_epoch_schema(processed_slot)
+                            .await
+                            .unwrap();
+                        first_run_signal.cancel();
+                        debounce_slot = processed_slot + 64; // wait a bit before hammering the DB again
+                        if created {
+                            debug!("Async job prepared schema at slot {}", processed_slot);
+                        } else {
+                            debug!(
+                                "Async job for preparing schema at slot {} was a noop",
+                                processed_slot
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    warn!("Error receiving slot - continue");
+                }
+            }
+        }
+    });
+    (join_handle.abort_handle(), building_epoch_schema)
 }

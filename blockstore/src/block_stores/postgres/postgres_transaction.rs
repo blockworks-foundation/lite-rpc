@@ -143,7 +143,7 @@ impl PostgresTransaction {
         let schema = PostgresEpoch::build_schema_name(epoch);
 
         let statement = r#"
-            CREATE TEMP TABLE IF NOT EXISTS transaction_raw_blockdata(
+            CREATE TEMP TABLE transaction_raw_blockdata(
                 slot bigint NOT NULL,
                 cu_consumed bigint NOT NULL,
                 cu_requested bigint,
@@ -154,7 +154,6 @@ impl PostgresTransaction {
                 message text
                 -- model_transaction_blockdata
             );
-            TRUNCATE transaction_raw_blockdata;
         "#;
         postgres_session.execute_multiple(statement).await?;
 
@@ -219,9 +218,9 @@ impl PostgresTransaction {
 
         let num_rows = writer.finish().await?;
         debug!(
-            "inserted {} raw transaction data rows into temp table in {}ms",
+            "inserted {} raw transaction data rows into temp table in {:.2?}",
             num_rows,
-            started_at.elapsed().as_millis()
+            started_at.elapsed()
         );
 
         let statement = format!(
@@ -234,9 +233,9 @@ impl PostgresTransaction {
         let started_at = Instant::now();
         let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
         debug!(
-            "inserted {} signatures into transaction_ids table in {}ms",
+            "inserted {} signatures into transaction_ids table in {:.2?}",
             num_rows,
-            started_at.elapsed().as_millis()
+            started_at.elapsed()
         );
 
         let statement = format!(
@@ -259,9 +258,9 @@ impl PostgresTransaction {
         let started_at = Instant::now();
         let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
         debug!(
-            "inserted {} rows into transaction block table in {}ms",
+            "inserted {} rows into transaction block table in {:.2?}",
             num_rows,
-            started_at.elapsed().as_millis()
+            started_at.elapsed()
         );
 
         Ok(())

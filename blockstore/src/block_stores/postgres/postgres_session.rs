@@ -237,15 +237,17 @@ impl PostgresSessionCache {
         })
     }
 
-    pub async fn get_session(&self) -> anyhow::Result<PostgresSession> {
+    pub async fn get_session(&self) -> PostgresSession {
         let session = self.session.read().await;
-        if session.client.is_closed() {
+        if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
             drop(session);
-            let session = PostgresSession::new(self.config.clone()).await?;
+            let session = PostgresSession::new(self.config.clone()).await
+                .expect("should have created new postgres session");
             *self.session.write().await = session.clone();
-            Ok(session)
+            session
         } else {
-            Ok(session.clone())
+            session.clear_session().await;
+            session.clone()
         }
     }
 }
@@ -284,6 +286,7 @@ impl BlockstorePostgresWriteSession {
         let session = self.session.read().await;
 
         if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
+            drop(session);
             let session = PostgresSession::new(self.pg_session_config.clone())
                 .await
                 .expect("should have created new postgres session");
