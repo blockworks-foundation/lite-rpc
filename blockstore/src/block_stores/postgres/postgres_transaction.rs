@@ -142,7 +142,7 @@ impl PostgresTransaction {
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
 
-        let statmement = r#"
+        let statement = r#"
             CREATE TEMP TABLE IF NOT EXISTS transaction_raw_blockdata(
                 slot bigint NOT NULL,
                 cu_consumed bigint NOT NULL,
@@ -156,7 +156,7 @@ impl PostgresTransaction {
             );
             TRUNCATE transaction_raw_blockdata;
         "#;
-        postgres_session.execute_multiple(statmement).await?;
+        postgres_session.execute_multiple(statement).await?;
 
         let statement = r#"
             COPY transaction_raw_blockdata(
