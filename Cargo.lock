@@ -1452,6 +1452,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
+name = "dump-blocks-from-grpc-to-disk"
+version = "0.2.4"
+dependencies = [
+ "chrono",
+ "clap 4.4.18",
+ "geyser-grpc-connector",
+ "itertools 0.10.5",
+ "log",
+ "solana-lite-rpc-cluster-endpoints",
+ "solana-sdk",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "yellowstone-grpc-proto",
+]
+
+[[package]]
 name = "eager"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,3 +1,5 @@
+mod grpc_store_to_disk;
+
 use std::path::{PathBuf};
 use std::time::Duration;
 use clap::Parser;
@@ -6,7 +8,6 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use tokio::time::sleep;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{GeyserFilter, GrpcConnectionTimeouts, GrpcSourceConfig};
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task;
-use solana_lite_rpc_cluster_endpoints::grpc_store_to_disk;
 
 #[derive(Parser)]
 pub struct Args {
