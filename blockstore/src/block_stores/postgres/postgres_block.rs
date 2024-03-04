@@ -80,12 +80,12 @@ impl PostgresBlock {
             r#"
             CREATE TABLE IF NOT EXISTS {schema}.blocks (
                 slot BIGINT NOT NULL,
-                blockhash TEXT NOT NULL,
-                leader_id TEXT,
                 block_height BIGINT NOT NULL,
                 parent_slot BIGINT NOT NULL,
                 block_time BIGINT NOT NULL,
+                blockhash TEXT NOT NULL,
                 previous_blockhash TEXT NOT NULL,
+                leader_id TEXT,
                 rewards TEXT,
                 CONSTRAINT pk_block_slot PRIMARY KEY(slot)
             ) WITH (FILLFACTOR=90);
@@ -124,7 +124,7 @@ impl PostgresBlock {
 
         let statement = format!(
             r#"
-                INSERT INTO {schema}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards, leader_id)
+                INSERT INTO {schema}.blocks (slot, block_height, parent_slot, block_time, blockhash, previous_blockhash, leader_id, rewards)
                 VALUES {}
                 -- prevent updates
                 ON CONFLICT DO NOTHING
@@ -141,13 +141,13 @@ impl PostgresBlock {
 
         let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS);
         args.push(&self.slot);
-        args.push(&self.blockhash);
         args.push(&self.block_height);
         args.push(&self.parent_slot);
         args.push(&self.block_time);
+        args.push(&self.blockhash);
         args.push(&self.previous_blockhash);
-        args.push(&self.rewards);
         args.push(&self.leader_id);
+        args.push(&self.rewards);
 
         let returning = postgres_session
             .execute_and_return(&statement, &args)
