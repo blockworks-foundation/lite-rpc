@@ -140,6 +140,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         address_lookup_tables_binary,
         account_filters,
         enable_accounts_on_demand_accounts_service,
+        use_postgres_blockstore,
+        enable_postgres_block_store_importer,
         ..
     } = args;
 
@@ -366,21 +368,17 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
-    let multiple_strategy_block_store = {
-        warn!("TEST CODE - TODO REMOVE");
+    // Block store
+    let multiple_strategy_block_store = if use_postgres_blockstore {
+        warn!("TODO make multiple_strategy_block_store configurable");
         // FIXME: hardcoded
         let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig::new_for_tests();
         let persistent_store = PostgresQueryBlockStore::new(epoch_data.clone(), pg_session_config).await;
-        let multi_store = MultipleStrategyBlockStorage::new(
-            persistent_store.clone(),
-            None, // not supported
-        );
-        // let block = multi_store.query_block(256320140).await;
-        // info!("queried block: {:?}", block);
-        // for tx in block.unwrap().transactions.iter().take(10) {
-        //     info!("- tx: {:?}", tx.signature);
-        // }
-        multi_store
+        let multi_store = MultipleStrategyBlockStorage::new(persistent_store.clone());
+        Some(multi_store)
+    } else {
+        info!("Disable multiple-strategy blockstore");
+        None
     };
 
 

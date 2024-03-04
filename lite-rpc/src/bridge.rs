@@ -11,7 +11,7 @@ use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::config::{RpcAccountInfoConfig, RpcBlockConfig};
+use solana_rpc_client_api::config::{RpcAccountInfoConfig, RpcBlockConfig, RpcEncodingConfigWrapper};
 use solana_rpc_client_api::response::{OptionalContext, RpcKeyedAccount};
 use solana_rpc_client_api::{
     config::{
@@ -73,7 +73,7 @@ pub struct LiteBridge {
     rpc_client: Arc<RpcClient>,
     data_cache: DataCache,
     transaction_service: TransactionService,
-    multiple_strategy_block_storage: MultipleStrategyBlockStorage,
+    multiple_strategy_block_storage: Option<MultipleStrategyBlockStorage>,
     prio_fees_service: PrioFeesService,
     account_priofees_service: AccountPrioService,
     accounts_service: Option<AccountService>,
@@ -84,7 +84,7 @@ impl LiteBridge {
         rpc_client: Arc<RpcClient>,
         data_cache: DataCache,
         transaction_service: TransactionService,
-        multiple_strategy_block_storage: MultipleStrategyBlockStorage,
+        multiple_strategy_block_storage: Option<MultipleStrategyBlockStorage>,
         prio_fees_service: PrioFeesService,
         account_priofees_service: AccountPrioService,
         accounts_service: Option<AccountService>,
@@ -126,13 +126,12 @@ impl LiteBridge {
 #[jsonrpsee::core::async_trait]
 impl LiteRpcServer for LiteBridge {
 
-    async fn get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
-        // let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
-        // let block = self.history.block_storage.get(slot, config).await;
-        // FIXME
-        let config = RpcBlockConfig::default();
+    async fn get_block(&self, slot: u64,
+       config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>) -> RpcResult<Option<UiConfirmedBlock>> {
+        let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
 
-        let block = self.multiple_strategy_block_storage.query_block(slot).await;
+        // FIXME
+        let block = self.multiple_strategy_block_storage.as_ref().unwrap().query_block(slot).await;
         if let Ok(block) = block {
             let transactions: Option<Vec<EncodedTransactionWithStatusMeta>> = match config
                 .transaction_details

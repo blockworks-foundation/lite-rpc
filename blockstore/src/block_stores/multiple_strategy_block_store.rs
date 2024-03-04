@@ -1,7 +1,7 @@
 use crate::block_stores::faithful_history::faithful_block_store::FaithfulBlockStore;
 use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use anyhow::{bail, Context, Result};
-use log::{debug, trace};
+use log::{debug, info, trace};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::slot_history::Slot;
@@ -33,6 +33,7 @@ impl Deref for BlockStorageData {
 }
 
 // you might need to add a read-cache instead
+#[derive(Clone)]
 pub struct MultipleStrategyBlockStorage {
     block_storage_query: PostgresQueryBlockStore,
     // note supported ATM
@@ -43,8 +44,10 @@ pub struct MultipleStrategyBlockStorage {
 impl MultipleStrategyBlockStorage {
     pub fn new(
         block_storage_query: PostgresQueryBlockStore,
-        _faithful_rpc_client: Option<Arc<RpcClient>>,
     ) -> Self {
+
+        info!("Initializing MultipleStrategyBlockStorage {} faithful history storage", "without");
+
         Self {
             block_storage_query,
             // faithful_history not used ATM

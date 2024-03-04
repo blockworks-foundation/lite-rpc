@@ -4,11 +4,7 @@ use jsonrpsee::proc_macros::rpc;
 use solana_account_decoder::UiAccount;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_lite_rpc_prioritization_fees::rpc_data::{AccountPrioFeesStats, PrioFeesStats};
-use solana_rpc_client_api::config::{
-    RpcAccountInfoConfig, RpcBlocksConfigWrapper, RpcContextConfig, RpcGetVoteAccountsConfig,
-    RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig,
-    RpcSignatureStatusConfig, RpcSignaturesForAddressConfig,
-};
+use solana_rpc_client_api::config::{RpcAccountInfoConfig, RpcBlocksConfigWrapper, RpcContextConfig, RpcGetVoteAccountsConfig, RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig, RpcSignatureStatusConfig, RpcSignaturesForAddressConfig, RpcBlockConfig, RpcEncodingConfigWrapper};
 use solana_rpc_client_api::response::{
     OptionalContext, Response as RpcResponse, RpcBlockhash,
     RpcConfirmedTransactionStatusWithSignature, RpcContactInfo, RpcKeyedAccount, RpcPerfSample,
@@ -28,7 +24,7 @@ pub trait LiteRpc {
     // ***********************
 
     #[method(name = "getBlock")]
-    async fn get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>>;
+    async fn get_block(&self, slot: u64, config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>) -> RpcResult<Option<UiConfirmedBlock>>;
 
     #[method(name = "getBlocks")]
     async fn get_blocks(

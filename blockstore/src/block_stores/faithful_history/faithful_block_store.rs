@@ -10,6 +10,7 @@ use solana_transaction_status::{TransactionDetails, UiTransactionEncoding};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct FaithfulBlockStore {
     faithful_rpc_client: Arc<RpcClient>, // to fetch legacy blocks from faithful_history
 }
