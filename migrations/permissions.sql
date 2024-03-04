@@ -20,4 +20,4 @@ GRANT CONNECT, CREATE ON DATABASE my_literpc_database TO r_literpc; -- TODO adju
 CREATE ROLE ro_literpc;
 GRANT ro_literpc TO literpc_app;
 
-GRANT CONNECT ON DATABASE literpc_integrationtest TO ro_literpc; -- TODO adjust database name
+GRANT CONNECT ON DATABASE my_literpc_database TO ro_literpc; -- TODO adjust database name
