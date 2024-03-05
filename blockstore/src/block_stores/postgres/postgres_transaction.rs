@@ -209,7 +209,7 @@ impl PostgresTransaction {
                 cu_consumed bigint NOT NULL,
                 cu_requested bigint,
                 prioritization_fees bigint,
-                signature text NOT NULL,
+                signature varchar(88) NOT NULL,
                 recent_blockhash text NOT NULL,
                 err text,
                 message text
