@@ -1,6 +1,8 @@
+use std::collections::HashSet;
 use std::str::FromStr;
 
 use futures_util::pin_mut;
+use itertools::Itertools;
 use log::debug;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
@@ -78,7 +80,7 @@ impl PostgresTransaction {
                 -- no updates or deletes, only INSERTs
                 CREATE TABLE {schema}.transaction_ids(
                     transaction_id bigserial PRIMARY KEY WITH (FILLFACTOR=90),
-                    signature text NOT NULL,
+                    signature varchar(88) NOT NULL,
                     UNIQUE(signature)
                 ) WITH (FILLFACTOR=100);
                 -- never put sig on TOAST
@@ -135,10 +137,69 @@ impl PostgresTransaction {
         )
     }
 
+    pub async fn __create_transaction_ids(postgres_session: &PostgresSession,
+                                        epoch: EpochRef,
+                                        signatures: &[&str]) -> anyhow::Result<()> {
+        postgres_session
+            .execute(
+                format!(
+                    r#"
+        CREATE TEMP TABLE transaction_ids_temp(
+            signature varchar(88) NOT NULL
+        );
+        "#
+                )
+                    .as_str(),
+                &[],
+            )
+            .await?;
+
+        let statement = format!(
+            r#"
+            COPY transaction_ids_temp(
+                signature
+            ) FROM STDIN BINARY
+        "#
+        );
+        let started_at = Instant::now();
+        let sink: CopyInSink<bytes::Bytes> = postgres_session.copy_in(statement.as_str()).await?;
+        let writer = BinaryCopyInWriter::new(sink, &[Type::TEXT]);
+        pin_mut!(writer);
+        for signature in signatures {
+            writer.as_mut().write(&[&signature]).await?;
+        }
+        let num_rows = writer.finish().await?;
+        debug!(
+            "inserted {} signatures into temp table in {}ms",
+            num_rows,
+            started_at.elapsed().as_millis()
+        );
+
+        let statement = format!(
+            r#"
+        INSERT INTO {schema}.transaction_ids(signature)
+        SELECT signature FROM transaction_ids_temp
+        --ORDER BY signature
+        ON CONFLICT(signature) DO NOTHING
+        "#,
+            schema = PostgresEpoch::build_schema_name(epoch),
+        );
+        let started_at = Instant::now();
+        let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
+        debug!(
+            "inserted {} signatures in transactions table in {}ms",
+            num_rows,
+            started_at.elapsed().as_millis()
+        );
+
+        // self.drop_temp_table(temp_table).await?;
+        Ok(())
+    }
+
     pub async fn save_transactions_from_block(
         postgres_session: &PostgresSession,
         epoch: EpochRef,
-        transactions: &[Self],
+        transactions: &[PostgresTransaction],
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
 
@@ -223,20 +284,82 @@ impl PostgresTransaction {
             started_at.elapsed()
         );
 
-        let statement = format!(
-            r#"
-            INSERT INTO {schema}.transaction_ids(signature)
-            SELECT signature from transaction_raw_blockdata
-            ON CONFLICT DO NOTHING
-            "#,
+        // look Ma, no clone
+        // create_transaction_ids(postgres_session, epoch, &transactions.iter().map(|tx| tx.signature.as_str()).unique().collect_vec()).await?;
+
+        let signatures = &transactions.iter().map(|tx| tx.signature.as_str()).unique().collect_vec();
+        {
+            postgres_session
+                .execute(
+                    format!(
+                        r#"
+        CREATE TEMP TABLE transaction_ids_temp(
+            signature varchar(88) NOT NULL
         );
-        let started_at = Instant::now();
-        let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
-        debug!(
-            "inserted {} signatures into transaction_ids table in {:.2?}",
+        "#
+                    )
+                        .as_str(),
+                    &[],
+                )
+                .await?;
+
+            let statement = format!(
+                r#"
+            COPY transaction_ids_temp(
+                signature
+            ) FROM STDIN BINARY
+        "#
+            );
+            let started_at = Instant::now();
+            let sink: CopyInSink<bytes::Bytes> = postgres_session.copy_in(statement.as_str()).await?;
+            let writer = BinaryCopyInWriter::new(sink, &[Type::TEXT]);
+            pin_mut!(writer);
+            for signature in signatures {
+                writer.as_mut().write(&[&signature]).await?;
+            }
+            let num_rows = writer.finish().await?;
+            debug!(
+            "inserted {} signatures into temp table in {}ms",
             num_rows,
-            started_at.elapsed()
+            started_at.elapsed().as_millis()
         );
+
+            let statement = format!(
+                r#"
+            INSERT INTO {schema}.transaction_ids(signature)
+            SELECT signature FROM transaction_ids_temp
+            ORDER BY signature
+            ON CONFLICT(signature) DO NOTHING
+            "#,
+                    schema = PostgresEpoch::build_schema_name(epoch),
+                );
+                let started_at = Instant::now();
+                let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
+                debug!(
+                "inserted {} signatures in transactions table in {}ms",
+                num_rows,
+                started_at.elapsed().as_millis()
+            );
+
+            // self.drop_temp_table(temp_table).await?;
+            // Ok(())
+        }
+
+        //
+        // let statement = format!(
+        //     r#"
+        //     INSERT INTO {schema}.transaction_ids(signature)
+        //     SELECT signature from transaction_raw_blockdata
+        //     ON CONFLICT DO NOTHING
+        //     "#,
+        // );
+        // let started_at = Instant::now();
+        // let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
+        // debug!(
+        //     "inserted {} signatures into transaction_ids table in {:.2?}",
+        //     num_rows,
+        //     started_at.elapsed()
+        // );
 
         let statement = format!(
             r#"
@@ -286,3 +409,11 @@ impl PostgresTransaction {
         )
     }
 }
+
+
+async fn create_transaction_ids(postgres_session: &PostgresSession,
+                                    epoch: EpochRef,
+                                    signatures: &[&str]) -> anyhow::Result<()> {
+    Ok(())
+}
+

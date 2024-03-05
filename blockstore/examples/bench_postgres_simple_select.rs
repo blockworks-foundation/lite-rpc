@@ -16,7 +16,7 @@ pub async fn main() -> anyhow::Result<()> {
         .await
         .unwrap();
     // run one query
-    query_database_simple(single_session).await;
+    query_database_simple(&single_session).await;
     info!("single query test ... done");
 
     // run parallel queries
@@ -56,7 +56,7 @@ async fn parallel_queries(pg_session_config: BlockstorePostgresSessionConfig) {
 
     let futures = (0..many_sessions.len())
         .map(|si| {
-            let session = many_sessions[si].clone();
+            let session = &many_sessions[si];
             query_database_simple(session)
         })
         .collect_vec();
@@ -64,7 +64,7 @@ async fn parallel_queries(pg_session_config: BlockstorePostgresSessionConfig) {
     futures_util::future::join_all(futures).await;
 }
 
-async fn query_database_simple(postgres_session: PostgresSession) {
+async fn query_database_simple(postgres_session: &PostgresSession) {
     let statement = "SELECT 1";
 
     let started = tokio::time::Instant::now();

@@ -157,6 +157,7 @@ impl PostgresBlockStore {
             block.commitment_config.commitment // always confimred
         );
 
+        // TODO implement reconnect if closed
         join_all(self.write_sessions.iter().map(|session| session.clear_session())).await;
 
         let slot = block.slot;
@@ -194,7 +195,7 @@ impl PostgresBlockStore {
             chunks.len() <= self.write_sessions.len(),
             "cannot have more chunks than session"
         );
-        for (i, chunk) in chunks.iter().enumerate() {
+        for (i, chunk) in chunks.into_iter().enumerate() {
             let session = &self.write_sessions[i];
             let future =
                 PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
@@ -213,7 +214,8 @@ impl PostgresBlockStore {
             elapsed_block_insert,
             elapsed_txs_insert,
             transactions.len(),
-            chunks.len(),
+            // chunks.len(),
+            999,
             chunk_size,
         );
 
@@ -312,22 +314,6 @@ mod tests {
     use solana_sdk::pubkey::Pubkey;
     use solana_sdk::signature::Signature;
     use std::str::FromStr;
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_write_session() {
-        let write_session = BlockstorePostgresWriteSession::new_from_env()
-            .await
-            .unwrap();
-
-        let row_role = write_session
-            .get_write_session()
-            .await
-            .query_one("SELECT current_role", &[])
-            .await
-            .unwrap();
-        info!("row: {:?}", row_role);
-    }
 
     #[tokio::test]
     #[ignore]
