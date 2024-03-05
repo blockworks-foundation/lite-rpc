@@ -7,9 +7,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast::error::RecvError;
 
+use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 use tokio::task::{AbortHandle, JoinHandle};
 use tokio_util::sync::CancellationToken;
-use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
 
 const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 /// run the optimizer at least every n slots

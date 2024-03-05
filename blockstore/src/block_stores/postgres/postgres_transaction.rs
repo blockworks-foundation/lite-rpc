@@ -136,7 +136,7 @@ impl PostgresTransaction {
     }
 
     pub async fn save_transactions_from_block(
-        postgres_session: PostgresSession,
+        postgres_session: &PostgresSession,
         epoch: EpochRef,
         transactions: &[Self],
     ) -> anyhow::Result<()> {

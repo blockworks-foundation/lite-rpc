@@ -34,8 +34,7 @@ use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status::{
-    EncodedTransactionWithStatusMeta, TransactionStatus, UiConfirmedBlock,
-    UiTransactionStatusMeta,
+    EncodedTransactionWithStatusMeta, TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta,
 };
 
 use solana_lite_rpc_core::encoding::BASE64;

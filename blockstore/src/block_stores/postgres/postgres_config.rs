@@ -17,7 +17,8 @@ pub struct PostgresSessionSslConfig {
 
 impl BlockstorePostgresSessionConfig {
     pub fn new_from_env() -> anyhow::Result<Self> {
-        let env_pg_config = env::var("BLOCKSTOREDB_PG_CONFIG").context("BLOCKSTOREDB_PG_CONFIG not found")?;
+        let env_pg_config =
+            env::var("BLOCKSTOREDB_PG_CONFIG").context("BLOCKSTOREDB_PG_CONFIG not found")?;
 
         let ssl_config = if env_pg_config
             .parse::<tokio_postgres::Config>()?
@@ -26,11 +27,12 @@ impl BlockstorePostgresSessionConfig {
         {
             None
         } else {
-            let env_ca_pem_b64 = env::var("BLOCKSTOREDB_CA_PEM_B64").context("BLOCKSTOREDB_CA_PEM_B64 not found")?;
-            let env_client_pks_b64 =
-                env::var("BLOCKSTOREDB_CLIENT_PKS_B64").context("BLOCKSTOREDB_CLIENT_PKS_B64 not found")?;
-            let env_client_pks_pass =
-                env::var("BLOCKSTOREDB_CLIENT_PKS_PASS").context("BLOCKSTOREDB_CLIENT_PKS_PASS not found")?;
+            let env_ca_pem_b64 =
+                env::var("BLOCKSTOREDB_CA_PEM_B64").context("BLOCKSTOREDB_CA_PEM_B64 not found")?;
+            let env_client_pks_b64 = env::var("BLOCKSTOREDB_CLIENT_PKS_B64")
+                .context("BLOCKSTOREDB_CLIENT_PKS_B64 not found")?;
+            let env_client_pks_pass = env::var("BLOCKSTOREDB_CLIENT_PKS_PASS")
+                .context("BLOCKSTOREDB_CLIENT_PKS_PASS not found")?;
 
             Some(PostgresSessionSslConfig {
                 ca_pem_b64: env_ca_pem_b64,

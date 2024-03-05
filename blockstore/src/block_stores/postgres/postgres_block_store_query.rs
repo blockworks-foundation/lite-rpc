@@ -1,5 +1,7 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
@@ -10,7 +12,6 @@ use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
-use tracing_subscriber::fmt::format;
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -18,32 +19,38 @@ use super::postgres_epoch::*;
 use super::postgres_session::*;
 use super::postgres_transaction::*;
 
-#[derive(Clone)]
-pub struct PostgresQueryBlockStore {
-    session_cache: PostgresSessionCache,
+// clonable
+pub type PostgresQueryBlockStore = Arc<PostgresQueryBlockStoreInner>;
+
+pub struct PostgresQueryBlockStoreInner {
+    session: PostgresSession,
     epoch_schedule: EpochCache,
 }
 
-impl PostgresQueryBlockStore {
-    pub async fn new(epoch_schedule: EpochCache, pg_session_config: BlockstorePostgresSessionConfig) -> Self {
-        let session_cache = PostgresSessionCache::new(pg_session_config.clone())
-            .await
-            .unwrap();
+impl PostgresQueryBlockStoreInner {
+    pub async fn new(
+        epoch_schedule: EpochCache,
+        pg_session_config: BlockstorePostgresSessionConfig,
+    ) -> Self {
+        // let session_cache = PostgresSessionCache::new(pg_session_config.clone())
+        //     .await
+        //     .unwrap();
+        let session = PostgresSession::new(pg_session_config.clone()).await.unwrap();
 
-        Self::check_postgresql_version(&session_cache).await;
-        Self::check_query_role(&session_cache).await;
+        Self::check_postgresql_version(&session).await;
+        Self::check_query_role(&session).await;
 
         Self {
-            session_cache,
+            session,
             epoch_schedule,
         }
     }
 
-    async fn get_session(&self) -> PostgresSession {
-        self.session_cache
-            .get_session()
-            .await
-    }
+    // async fn get_session(&self) -> PostgresSession {
+    //     self.session_cache
+    //         .get_session()
+    //         .await
+    // }
 
     pub async fn is_block_in_range(&self, slot: Slot) -> bool {
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
@@ -60,9 +67,7 @@ impl PostgresQueryBlockStore {
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
 
         let statement = PostgresBlock::build_query_statement(epoch, slot);
-        let block_row = self
-            .get_session()
-            .await
+        let block_row = self.session
             .query_opt(&statement, &[])
             .await
             .unwrap();
@@ -72,9 +77,7 @@ impl PostgresQueryBlockStore {
         }
 
         let statement = PostgresTransaction::build_query_statement(epoch, slot);
-        let transaction_rows = self
-            .get_session()
-            .await
+        let transaction_rows = self.session
             .query_list(&statement, &[])
             .await
             .unwrap();
@@ -145,12 +148,10 @@ impl PostgresQueryBlockStore {
         Ok(produced_block)
     }
 
-    async fn check_query_role(session_cache: &PostgresSessionCache) {
+    async fn check_query_role(session: &PostgresSession) {
         let role = LITERPC_QUERY_ROLE;
         let statement = format!("SELECT 1 FROM pg_roles WHERE rolname='{role}'");
-        let count = session_cache
-            .get_session()
-            .await
+        let count = session
             .execute(&statement, &[])
             .await
             .expect("must execute query to check for role");
@@ -165,20 +166,24 @@ impl PostgresQueryBlockStore {
         }
     }
 
-    async fn check_postgresql_version(session_cache: &PostgresSessionCache) {
+    async fn check_postgresql_version(session: &PostgresSession) {
         let statement = r#"SELECT version(), current_setting('server_version_num')::integer > 150005 AS is_v15_or_higher"#;
-        let row = session_cache
-            .get_session().await
-            .query_one(&statement, &[]).await
+        let row = session
+            .query_one(statement, &[])
+            .await
             .expect("must execute query to check for role");
         let is_v15_or_higher = row.get::<&str, bool>("is_v15_or_higher");
         let version_string = row.get::<&str, &str>("version");
-        assert!(is_v15_or_higher, "Postgres version must be 15 or higher, found: {}", version_string);
+        assert!(
+            is_v15_or_higher,
+            "Postgres version must be 15 or higher, found: {}",
+            version_string
+        );
         info!("Self check - found postgres version: {}", version_string);
     }
 }
 
-impl PostgresQueryBlockStore {
+impl PostgresQueryBlockStoreInner {
     pub async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         let map_epoch_to_slot_range = self.get_slot_range_by_epoch().await;
 
@@ -202,7 +207,7 @@ impl PostgresQueryBlockStore {
 
     pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<Slot>> {
         let started = Instant::now();
-        let session = self.get_session().await;
+        // let session = self.get_session().await;
         // e.g. "rpc2a_epoch_552"
         let query = format!(
             r#"
@@ -213,7 +218,7 @@ impl PostgresQueryBlockStore {
             "#,
             schema_prefix = EPOCH_SCHEMA_PREFIX
         );
-        let result = session.query_list(&query, &[]).await.unwrap();
+        let result = self.session.query_list(&query, &[]).await.unwrap();
 
         let epoch_schemas = result
             .iter()
@@ -251,7 +256,7 @@ impl PostgresQueryBlockStore {
             inner = inner
         );
 
-        let rows_minmax = session.query_list(&query, &[]).await;
+        let rows_minmax = self.session.query_list(&query, &[]).await;
 
         match rows_minmax {
             Ok(ref rows_minmax) => {

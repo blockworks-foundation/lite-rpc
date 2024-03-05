@@ -19,19 +19,23 @@ use super::postgres_transaction::*;
 const PARALLEL_WRITE_SESSIONS: usize = 4;
 const MIN_WRITE_CHUNK_SIZE: usize = 500;
 
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct PostgresBlockStore {
-    session_cache: PostgresSessionCache,
+    session: PostgresSession,
     // use this session only for the write path!
-    write_sessions: Vec<BlockstorePostgresWriteSession>,
+    write_sessions: Vec<BlockstorePostgresWriteSession>, // TODO
     epoch_schedule: EpochCache,
 }
 
 impl PostgresBlockStore {
-    pub async fn new(epoch_schedule: EpochCache, pg_session_config: BlockstorePostgresSessionConfig) -> Self {
-        let session_cache = PostgresSessionCache::new(pg_session_config.clone())
-            .await
-            .unwrap();
+    pub async fn new(
+        epoch_schedule: EpochCache,
+        pg_session_config: BlockstorePostgresSessionConfig,
+    ) -> Self {
+        let session = PostgresSession::new(pg_session_config.clone()).await.unwrap();
+        // let session_cache = PostgresSessionCache::new(pg_session_config.clone())
+        //     .await
+        //     .unwrap();
         let mut write_sessions = Vec::new();
         for _i in 0..PARALLEL_WRITE_SESSIONS {
             write_sessions.push(
@@ -45,21 +49,19 @@ impl PostgresBlockStore {
             "must have at least one write session"
         );
 
-        Self::check_write_role(&session_cache).await;
+        Self::check_write_role(&session).await;
 
         Self {
-            session_cache,
+            session,
             write_sessions,
             epoch_schedule,
         }
     }
 
-    async fn check_write_role(session_cache: &PostgresSessionCache) {
+    async fn check_write_role(session: &PostgresSession) {
         let role = LITERPC_ROLE;
         let statement = format!("SELECT 1 FROM pg_roles WHERE rolname='{role}'");
-        let count = session_cache
-            .get_session()
-            .await
+        let count = session
             .execute(&statement, &[])
             .await
             .expect("must execute query to check for role");
@@ -81,11 +83,11 @@ impl PostgresBlockStore {
     async fn start_new_epoch_if_necessary(&self, epoch: EpochRef) -> Result<bool> {
         // create schema for new epoch
         let schema_name = PostgresEpoch::build_schema_name(epoch);
-        let session = self.get_session().await;
+        // let session = self.get_session().await;
 
         let statement = PostgresEpoch::build_create_schema_statement(epoch);
         // note: requires GRANT CREATE ON DATABASE xyz
-        let result_create_schema = session.execute_multiple(&statement).await;
+        let result_create_schema = self.session.execute_multiple(&statement).await;
         if let Err(err) = result_create_schema {
             if err
                 .code()
@@ -105,28 +107,28 @@ impl PostgresBlockStore {
 
         // set permissions for new schema
         let statement = build_assign_permissions_statements(epoch);
-        session
+        self.session
             .execute_multiple(&statement)
             .await
             .context("Set postgres permissions for new schema")?;
 
         // Create blocks table
         let statement = PostgresBlock::build_create_table_statement(epoch);
-        session
+        self.session
             .execute_multiple(&statement)
             .await
             .context("create blocks table for new epoch")?;
 
         // create transaction table
         let statement = PostgresTransaction::build_create_table_statement(epoch);
-        session
+        self.session
             .execute_multiple(&statement)
             .await
             .context("create transaction table for new epoch")?;
 
         // add foreign key constraint between transactions and blocks
         let statement = PostgresTransaction::build_foreign_key_statement(epoch);
-        session
+        self.session
             .execute_multiple(&statement)
             .await
             .context("create foreign key constraint between transactions and blocks")?;
@@ -135,15 +137,16 @@ impl PostgresBlockStore {
         Ok(true)
     }
 
-    async fn get_session(&self) -> PostgresSession {
-        self.session_cache
-            .get_session()
-            .await
-    }
+    // async fn get_session(&self) -> PostgresSession {
+    //     self.session_cache.get_session().await
+    // }
 
     /// allow confirmed+finalized blocks
     pub async fn save_confirmed_block(&self, block: &ProducedBlock) -> Result<()> {
-        assert_eq!(block.commitment_config.commitment, CommitmentLevel::Confirmed);
+        assert_eq!(
+            block.commitment_config.commitment,
+            CommitmentLevel::Confirmed
+        );
 
         // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
 
@@ -163,7 +166,8 @@ impl PostgresBlockStore {
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
 
         // TODO write parallel to transaction
-        let write_session_single = self.write_sessions[0].get_write_session().await;
+        // let write_session_single = self.write_sessions[0].get_write_session().await;
+        let write_session_single = &self.session;
 
         let started_block = Instant::now();
         let inserted = postgres_block
@@ -178,24 +182,25 @@ impl PostgresBlockStore {
 
         let started_txs = Instant::now();
 
-        let mut queries_fut = Vec::new();
-        let chunk_size =
-            div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
-        let chunks = transactions.chunks(chunk_size).collect_vec();
-        assert!(
-            chunks.len() <= self.write_sessions.len(),
-            "cannot have more chunks than session"
-        );
-        for (i, chunk) in chunks.iter().enumerate() {
-            let session = self.write_sessions[i].get_write_session().await.clone();
-            let future =
-                PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
-            queries_fut.push(future);
-        }
-        let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;
-        for result in all_results {
-            result.expect("Save query must succeed");
-        }
+        PostgresTransaction::save_transactions_from_block(&self.session, epoch.into(), &transactions).await;
+        // let mut queries_fut = Vec::new();
+        // let chunk_size =
+        //     div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
+        // let chunks = transactions.chunks(chunk_size).collect_vec();
+        // assert!(
+        //     chunks.len() <= self.write_sessions.len(),
+        //     "cannot have more chunks than session"
+        // );
+        // for (i, chunk) in chunks.iter().enumerate() {
+        //     let session = self.write_sessions[i].get_write_session().await.clone();
+        //     let future =
+        //         PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
+        //     queries_fut.push(future);
+        // }
+        // let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;
+        // for result in all_results {
+        //     result.expect("Save query must succeed");
+        // }
 
         let elapsed_txs_insert = started_txs.elapsed();
 
@@ -205,8 +210,9 @@ impl PostgresBlockStore {
             elapsed_block_insert,
             elapsed_txs_insert,
             transactions.len(),
-            chunks.len(),
-            chunk_size,
+            99,99
+            // chunks.len(),
+            // chunk_size,
         );
 
         Ok(())
@@ -214,37 +220,33 @@ impl PostgresBlockStore {
 
     // ATM we focus on blocks as this table gets INSERTS and does deduplication checks (i.e. heavy reads on index pk_block_slot)
     pub async fn optimize_blocks_table(&self, slot: Slot) -> Result<()> {
-        let started = Instant::now();
-        let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
-        let random_session = slot as usize % self.write_sessions.len();
-        let write_session_single = self.write_sessions[random_session]
-            .get_write_session()
-            .await;
-        let statement = format!(
-            r#"
-                ANALYZE (SKIP_LOCKED) {schema}.blocks;
-            "#,
-            schema = PostgresEpoch::build_schema_name(epoch),
-        );
-
-        tokio::spawn(async move {
-            write_session_single
-                .execute_multiple(&statement)
-                .await
-                .unwrap();
-            let elapsed = started.elapsed();
-            debug!(
-                "Postgres analyze of blocks table took {:.2?}",
-                elapsed
-            );
-            if elapsed > Duration::from_millis(500) {
-                warn!(
-                    "Very slow postgres ANALYZE on slot {} - took {:.2?}",
-                    slot,
-                    elapsed
-                );
-            }
-        });
+        // let started = Instant::now();
+        // let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
+        // let random_session = slot as usize % self.write_sessions.len();
+        // let write_session_single = self.write_sessions[random_session]
+        //     .get_write_session()
+        //     .await;
+        // let statement = format!(
+        //     r#"
+        //         ANALYZE (SKIP_LOCKED) {schema}.blocks;
+        //     "#,
+        //     schema = PostgresEpoch::build_schema_name(epoch),
+        // );
+        //
+        // tokio::spawn(async move {
+        //     write_session_single
+        //         .execute_multiple(&statement)
+        //         .await
+        //         .unwrap();
+        //     let elapsed = started.elapsed();
+        //     debug!("Postgres analyze of blocks table took {:.2?}", elapsed);
+        //     if elapsed > Duration::from_millis(500) {
+        //         warn!(
+        //             "Very slow postgres ANALYZE on slot {} - took {:.2?}",
+        //             slot, elapsed
+        //         );
+        //     }
+        // });
         Ok(())
     }
 
@@ -263,10 +265,10 @@ impl PostgresBlockStore {
     pub async fn drop_epoch_schema(&self, epoch: EpochRef) -> anyhow::Result<()> {
         // create schema for new epoch
         let schema_name = PostgresEpoch::build_schema_name(epoch);
-        let session = self.get_session().await;
+        // let session = self.get_session().await;
 
         let statement = PostgresEpoch::build_drop_schema_statement(epoch);
-        let result_drop_schema = session.execute_multiple(&statement).await;
+        let result_drop_schema = self.session.execute_multiple(&statement).await;
         match result_drop_schema {
             Ok(_) => {
                 warn!("Dropped schema {}", schema_name);
@@ -312,7 +314,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_write_session() {
-        let write_session = BlockstorePostgresWriteSession::new_from_env().await.unwrap();
+        let write_session = BlockstorePostgresWriteSession::new_from_env()
+            .await
+            .unwrap();
 
         let row_role = write_session
             .get_write_session()

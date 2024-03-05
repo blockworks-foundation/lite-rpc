@@ -1,5 +1,4 @@
 /// block_information_store is intended for used to track block progression for send_tx
-
 use dashmap::DashMap;
 use log::info;
 
@@ -16,7 +15,6 @@ pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
     pub last_valid_blockheight: u64,
-    pub cleanup_slot: Slot,
     pub blockhash: Hash,
     pub commitment_config: CommitmentConfig,
     pub block_time: u64,
@@ -28,7 +26,6 @@ impl BlockInformation {
             slot: block.slot,
             block_height: block.block_height,
             last_valid_blockheight: block.block_height + MAX_RECENT_BLOCKHASHES as u64,
-            cleanup_slot: block.block_height + 1000,
             blockhash: block.blockhash,
             commitment_config: block.commitment_config,
             block_time: block.block_time,
