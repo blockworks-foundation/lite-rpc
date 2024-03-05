@@ -149,8 +149,6 @@ impl PostgresBlockStore {
             CommitmentLevel::Confirmed
         );
 
-        // let PostgresData { current_epoch, .. } = { *self.postgres_data.read().await };
-
         trace!(
             "Saving block {}@{} to postgres storage...",
             block.slot,

@@ -80,7 +80,7 @@ impl PostgresTransaction {
                 -- no updates or deletes, only INSERTs
                 CREATE TABLE {schema}.transaction_ids(
                     transaction_id bigserial PRIMARY KEY WITH (FILLFACTOR=90),
-                    signature varchar(88) NOT NULL,
+                    signature varchar(88) signature NOT NULL,
                     UNIQUE(signature)
                 ) WITH (FILLFACTOR=100);
                 -- never put sig on TOAST
@@ -103,9 +103,9 @@ impl PostgresTransaction {
                     cu_consumed bigint NOT NULL,
                     cu_requested bigint,
                     prioritization_fees bigint,
-                    recent_blockhash text NOT NULL,
-                    err text,
-                    message text NOT NULL
+                    recent_blockhash text COMPRESSION lz4 NOT NULL,
+                    err text COMPRESSION lz4,
+                    message text COMPRESSION lz4 NOT NULL
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
@@ -151,8 +151,8 @@ impl PostgresTransaction {
                 cu_consumed bigint NOT NULL,
                 cu_requested bigint,
                 prioritization_fees bigint,
-                signature varchar(88) NOT NULL,
-                recent_blockhash text NOT NULL,
+                signature varchar(88) COMPRESSION lz4 NOT NULL,
+                recent_blockhash text COMPRESSION lz4 NOT NULL,
                 err text,
                 message text
                 -- model_transaction_blockdata

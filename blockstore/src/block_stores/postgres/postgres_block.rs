@@ -83,12 +83,12 @@ impl PostgresBlock {
                 block_height BIGINT NOT NULL,
                 parent_slot BIGINT NOT NULL,
                 block_time BIGINT NOT NULL,
-                blockhash TEXT NOT NULL,
-                previous_blockhash TEXT NOT NULL,
-                leader_id TEXT,
-                rewards TEXT,
+                blockhash TEXT COMPRESSION lz4 NOT NULL,
+                previous_blockhash TEXT COMPRESSION lz4 NOT NULL,
+                leader_id TEXT COMPRESSION lz4,
+                rewards TEXT COMPRESSION lz4,
                 CONSTRAINT pk_block_slot PRIMARY KEY(slot)
-            ) WITH (FILLFACTOR=90);
+            ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
             ALTER TABLE {schema}.blocks ALTER COLUMN blockhash SET STORAGE MAIN;
             ALTER TABLE {schema}.blocks ALTER COLUMN previous_blockhash SET STORAGE MAIN;
             ALTER TABLE {schema}.blocks
