@@ -166,7 +166,7 @@ impl PostgresQueryBlockStore {
     }
 
     async fn check_postgresql_version(session: &PostgresSession) {
-        let statement = r#"SELECT version(), current_setting('server_version_num')::integer > 150005 AS is_v15_or_higher"#;
+        let statement = r#"SELECT version(), current_setting('server_version_num')::integer >= 150000 AS is_v15_or_higher"#;
         let row = session
             .query_one(statement, &[])
             .await
