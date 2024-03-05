@@ -32,7 +32,7 @@ impl Deref for BlockStorageData {
 }
 
 // you might need to add a read-cache instead
-#[derive(Clone)]
+// #[derive(Clone)]
 pub struct MultipleStrategyBlockStorage {
     block_storage_query: PostgresQueryBlockStore,
     // note supported ATM

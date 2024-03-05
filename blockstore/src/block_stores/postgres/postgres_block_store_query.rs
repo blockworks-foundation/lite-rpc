@@ -19,15 +19,14 @@ use super::postgres_epoch::*;
 use super::postgres_session::*;
 use super::postgres_transaction::*;
 
-// clonable
-pub type PostgresQueryBlockStore = Arc<PostgresQueryBlockStoreInner>;
 
-pub struct PostgresQueryBlockStoreInner {
+// no clone/sync/send
+pub struct PostgresQueryBlockStore {
     session: PostgresSession,
     epoch_schedule: EpochCache,
 }
 
-impl PostgresQueryBlockStoreInner {
+impl PostgresQueryBlockStore {
     pub async fn new(
         epoch_schedule: EpochCache,
         pg_session_config: BlockstorePostgresSessionConfig,
@@ -183,7 +182,7 @@ impl PostgresQueryBlockStoreInner {
     }
 }
 
-impl PostgresQueryBlockStoreInner {
+impl PostgresQueryBlockStore {
     pub async fn get_slot_range(&self) -> RangeInclusive<Slot> {
         let map_epoch_to_slot_range = self.get_slot_range_by_epoch().await;
 

@@ -56,7 +56,7 @@ use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::Mul
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_importer::{
     start_postgres_block_store_importer_task, storage_prepare_epoch_schema,
 };
-use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::{PostgresQueryBlockStore, PostgresQueryBlockStoreInner};
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::{PostgresQueryBlockStore};
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
@@ -397,8 +397,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig::new_from_env()
             .expect("Blockstore PostgreSQL Configuration from env");
         let persistent_store =
-            PostgresQueryBlockStoreInner::new(epoch_data.clone(), pg_session_config).await;
-        let multi_store = MultipleStrategyBlockStorage::new(PostgresQueryBlockStore::new(persistent_store));
+            PostgresQueryBlockStore::new(epoch_data.clone(), pg_session_config).await;
+        let multi_store = MultipleStrategyBlockStorage::new(persistent_store);
         Some(multi_store)
     } else {
         info!("Disable multiple-strategy blockstore");
