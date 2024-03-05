@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 use anyhow::{bail, Context, Result};
+use futures_util::future::join_all;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
@@ -23,7 +24,7 @@ const MIN_WRITE_CHUNK_SIZE: usize = 500;
 pub struct PostgresBlockStore {
     session: PostgresSession,
     // use this session only for the write path!
-    write_sessions: Vec<BlockstorePostgresWriteSession>, // TODO
+    write_sessions: Vec<PostgresSession>, // TODO
     epoch_schedule: EpochCache,
 }
 
@@ -39,7 +40,7 @@ impl PostgresBlockStore {
         let mut write_sessions = Vec::new();
         for _i in 0..PARALLEL_WRITE_SESSIONS {
             write_sessions.push(
-                BlockstorePostgresWriteSession::new(pg_session_config.clone())
+                PostgresSession::new(pg_session_config.clone())
                     .await
                     .unwrap(),
             );
@@ -155,6 +156,9 @@ impl PostgresBlockStore {
             block.slot,
             block.commitment_config.commitment // always confimred
         );
+
+        join_all(self.write_sessions.iter().map(|session| session.clear_session())).await;
+
         let slot = block.slot;
         let transactions = block
             .transactions
@@ -182,25 +186,24 @@ impl PostgresBlockStore {
 
         let started_txs = Instant::now();
 
-        PostgresTransaction::save_transactions_from_block(&self.session, epoch.into(), &transactions).await;
-        // let mut queries_fut = Vec::new();
-        // let chunk_size =
-        //     div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
-        // let chunks = transactions.chunks(chunk_size).collect_vec();
-        // assert!(
-        //     chunks.len() <= self.write_sessions.len(),
-        //     "cannot have more chunks than session"
-        // );
-        // for (i, chunk) in chunks.iter().enumerate() {
-        //     let session = self.write_sessions[i].get_write_session().await.clone();
-        //     let future =
-        //         PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
-        //     queries_fut.push(future);
-        // }
-        // let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;
-        // for result in all_results {
-        //     result.expect("Save query must succeed");
-        // }
+        let mut queries_fut = Vec::new();
+        let chunk_size =
+            div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
+        let chunks = transactions.chunks(chunk_size).collect_vec();
+        assert!(
+            chunks.len() <= self.write_sessions.len(),
+            "cannot have more chunks than session"
+        );
+        for (i, chunk) in chunks.iter().enumerate() {
+            let session = &self.write_sessions[i];
+            let future =
+                PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
+            queries_fut.push(future);
+        }
+        let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;
+        for result in all_results {
+            result.expect("Save query must succeed");
+        }
 
         let elapsed_txs_insert = started_txs.elapsed();
 
@@ -210,9 +213,8 @@ impl PostgresBlockStore {
             elapsed_block_insert,
             elapsed_txs_insert,
             transactions.len(),
-            99,99
-            // chunks.len(),
-            // chunk_size,
+            chunks.len(),
+            chunk_size,
         );
 
         Ok(())

@@ -57,6 +57,18 @@ impl PostgresSession {
         Ok(Self(client))
     }
 
+    pub async fn new_writer(pg_config: BlockstorePostgresSessionConfig) -> anyhow::Result<Self> {
+        let write_session = Self::new(pg_config).await?;
+        let statement = r#"
+                SET SESSION application_name='postgres-blockstore-write-session';
+                -- default: 64MB
+                SET SESSION maintenance_work_mem = '256MB';
+            "#;
+
+        write_session.execute_multiple(statement).await.unwrap();
+        Ok(write_session)
+    }
+
     async fn spawn_connection<T>(
         pg_config: tokio_postgres::Config,
         connector: T,
@@ -251,53 +263,53 @@ impl PostgresSessionCache {
     // }
 }
 
-#[derive(Clone)]
-pub struct BlockstorePostgresWriteSession {
-    session: Arc<RwLock<PostgresSession>>,
-    pub pg_session_config: BlockstorePostgresSessionConfig,
-}
-
-impl BlockstorePostgresWriteSession {
-    pub async fn new_from_env() -> anyhow::Result<Self> {
-        let pg_session_config = BlockstorePostgresSessionConfig::new_from_env()
-            .expect("Blockstore PostgreSQL Configuration from env");
-        Self::new(pg_session_config).await
-    }
-
-    pub async fn new(pg_session_config: BlockstorePostgresSessionConfig) -> anyhow::Result<Self> {
-        let session = PostgresSession::new(pg_session_config.clone()).await?;
-
-        let statement = r#"
-                SET SESSION application_name='postgres-blockstore-write-session';
-                -- default: 64MB
-                SET SESSION maintenance_work_mem = '256MB';
-            "#;
-
-        session.execute_multiple(statement).await.unwrap();
-
-        Ok(Self {
-            session: Arc::new(RwLock::new(session)),
-            pg_session_config,
-        })
-    }
-
-    // pub async fn get_write_session(&self) -> PostgresSession {
-    //     let session = self.session.read().await;
-    //
-    //     if session.0.is_closed() || session.0.execute(";", &[]).await.is_err() {
-    //         drop(session);
-    //         let session = PostgresSession::new(self.pg_session_config.clone())
-    //             .await
-    //             .expect("should have created new postgres session");
-    //         let mut lock = self.session.write().await;
-    //         *lock = session.clone();
-    //         session
-    //     } else {
-    //         session.clear_session().await;
-    //         session.clone()
-    //     }
-    // }
-}
+// #[derive(Clone)]
+// pub struct BlockstorePostgresWriteSession {
+//     session: Arc<RwLock<PostgresSession>>,
+//     // pub pg_session_config: BlockstorePostgresSessionConfig,
+// }
+//
+// impl BlockstorePostgresWriteSession {
+//     pub async fn new_from_env() -> anyhow::Result<Self> {
+//         let pg_session_config = BlockstorePostgresSessionConfig::new_from_env()
+//             .expect("Blockstore PostgreSQL Configuration from env");
+//         Self::new(pg_session_config).await
+//     }
+//
+//     pub async fn new(pg_session_config: BlockstorePostgresSessionConfig) -> anyhow::Result<Self> {
+//         let session = PostgresSession::new(pg_session_config.clone()).await?;
+//
+//         let statement = r#"
+//                 SET SESSION application_name='postgres-blockstore-write-session';
+//                 -- default: 64MB
+//                 SET SESSION maintenance_work_mem = '256MB';
+//             "#;
+//
+//         session.execute_multiple(statement).await.unwrap();
+//
+//         Ok(Self {
+//             session: Arc::new(RwLock::new(session)),
+//             // pg_session_config,
+//         })
+//     }
+//
+//     // pub async fn get_write_session(&self) -> PostgresSession {
+//     //     let session = self.session.read().await;
+//     //
+//     //     if session.0.is_closed() || session.0.execute(";", &[]).await.is_err() {
+//     //         drop(session);
+//     //         let session = PostgresSession::new(self.pg_session_config.clone())
+//     //             .await
+//     //             .expect("should have created new postgres session");
+//     //         let mut lock = self.session.write().await;
+//     //         *lock = session.clone();
+//     //         session
+//     //     } else {
+//     //         session.clear_session().await;
+//     //         session.clone()
+//     //     }
+//     // }
+// }
 
 #[test]
 fn multiline_query_test() {

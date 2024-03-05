@@ -2,7 +2,7 @@ pub mod postgres_block_store_importer;
 pub mod postgres_block_store_query;
 pub mod postgres_block_store_writer;
 pub use postgres_config::BlockstorePostgresSessionConfig;
-pub use postgres_session::BlockstorePostgresWriteSession;
+// pub use postgres_session::BlockstorePostgresWriteSession;
 pub use postgres_session::PostgresSession;
 
 mod postgres_block;
