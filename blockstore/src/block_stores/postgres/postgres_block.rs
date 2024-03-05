@@ -83,8 +83,8 @@ impl PostgresBlock {
                 block_height BIGINT NOT NULL,
                 parent_slot BIGINT NOT NULL,
                 block_time BIGINT NOT NULL,
-                blockhash TEXT COMPRESSION lz4 NOT NULL,
-                previous_blockhash TEXT COMPRESSION lz4 NOT NULL,
+                blockhash varchar(44) COMPRESSION lz4 NOT NULL,
+                previous_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                 leader_id TEXT COMPRESSION lz4,
                 rewards TEXT COMPRESSION lz4,
                 CONSTRAINT pk_block_slot PRIMARY KEY(slot)

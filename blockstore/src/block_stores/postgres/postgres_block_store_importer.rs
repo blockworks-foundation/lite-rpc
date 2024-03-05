@@ -27,7 +27,7 @@ pub fn start_postgres_block_store_importer_task(
         let mut last_optimizer_run = 0;
         let mut block_notifier = block_notifier;
         // this is the critical write loop
-        loop {
+        'recv_loop: loop {
             match block_notifier.recv().await {
                 Ok(block) => {
                     if block.commitment_config != CommitmentConfig::confirmed() {
@@ -56,7 +56,14 @@ pub fn start_postgres_block_store_importer_task(
 
                     // avoid backpressure here!
 
-                    block_storage.save_confirmed_block(&block).await.unwrap();
+                    match block_storage.save_confirmed_block(&block).await {
+                        Ok(_ok) => {}
+                        Err(err) => {
+                            warn!("Error saving block {}@{} to postgres: {:?}",
+                                block.slot, block.commitment_config.commitment, err);
+                            continue 'recv_loop;
+                        }
+                    }
 
                     // we should be faster than 150ms here
                     let elapsed = started.elapsed();
@@ -98,7 +105,7 @@ pub fn start_postgres_block_store_importer_task(
             }
 
             // ...
-        }
+        } // -- END recv_loop
     })
 }
 

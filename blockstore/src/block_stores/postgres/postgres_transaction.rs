@@ -103,7 +103,7 @@ impl PostgresTransaction {
                     cu_consumed bigint NOT NULL,
                     cu_requested bigint,
                     prioritization_fees bigint,
-                    recent_blockhash text COMPRESSION lz4 NOT NULL,
+                    recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                     err text COMPRESSION lz4,
                     message text COMPRESSION lz4 NOT NULL
                     -- model_transaction_blockdata
@@ -152,7 +152,7 @@ impl PostgresTransaction {
                 cu_requested bigint,
                 prioritization_fees bigint,
                 signature varchar(88) COMPRESSION lz4 NOT NULL,
-                recent_blockhash text COMPRESSION lz4 NOT NULL,
+                recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                 err text,
                 message text
                 -- model_transaction_blockdata
@@ -182,8 +182,8 @@ impl PostgresTransaction {
                 Type::INT8, // cu_consumed
                 Type::INT8, // cu_requested
                 Type::INT8, // prioritization_fees
-                Type::TEXT, // signature
-                Type::TEXT, // recent_blockhash
+                Type::VARCHAR, // signature
+                Type::VARCHAR, // recent_blockhash
                 Type::TEXT, // err
                 Type::TEXT, // message
             ],
