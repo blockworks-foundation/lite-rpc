@@ -80,7 +80,7 @@ impl PostgresTransaction {
                 -- no updates or deletes, only INSERTs
                 CREATE TABLE {schema}.transaction_ids(
                     transaction_id bigserial PRIMARY KEY WITH (FILLFACTOR=90),
-                    signature varchar(88) signature NOT NULL,
+                    signature varchar(88) COMPRESSION lz4 NOT NULL,
                     UNIQUE(signature)
                 ) WITH (FILLFACTOR=100);
                 -- never put sig on TOAST
