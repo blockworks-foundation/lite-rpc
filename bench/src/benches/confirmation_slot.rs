@@ -1,4 +1,5 @@
 use anyhow::Context;
+use bench_lib::config::BenchConfig;
 use bench_lib::tx_size::TxSize;
 use bench_lib::{create_memo_tx, create_rng, send_and_confirm_transactions, Rng8};
 use log::info;
@@ -10,18 +11,17 @@ use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 /// send 2 txs (one via LiteRPC, one via Solana RPC) and compare confirmation slot (=slot distance)
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let lite_rpc_addr = "http://0.0.0.0:8890".to_string();
-    let rpc_addr = "https://api.mainnet-beta.solana.com/".to_string();
-    let payer_path = "/path/to/id.json";
-    let tx_size = TxSize::Small;
+    let config = BenchConfig::load().unwrap();
+    let tx_size = config.confirmation_slot.tx_size;
 
-    let lite_rpc = RpcClient::new(lite_rpc_addr.clone());
-    let rpc = RpcClient::new(rpc_addr.clone());
-    info!("Lite RPC: {}", lite_rpc_addr);
-    info!("RPC: {}", rpc_addr);
+    let lite_rpc = RpcClient::new(config.lite_rpc_url.clone());
+    info!("Lite RPC: {}", lite_rpc.url());
+
+    let rpc = RpcClient::new(config.rpc_url.clone());
+    info!("RPC: {}", rpc.url());
 
     let mut rng = create_rng(None);
-    let payer = read_keypair_file(&payer_path).unwrap();
+    let payer = read_keypair_file(&config.payer_path).unwrap();
     info!("Payer: {}", payer.pubkey().to_string());
 
     let rpc_tx = create_tx(&rpc, &payer, &mut rng, tx_size).await?;
@@ -32,8 +32,8 @@ async fn main() -> anyhow::Result<()> {
         send_transaction_and_get_slot(&lite_rpc, lite_rpc_tx)
     );
 
-    println!("rpc_slot: {}", rpc_slot?);
-    println!("lite_rpc_slot: {}", lite_rpc_slot?);
+    info!("rpc_slot: {}", rpc_slot?);
+    info!("lite_rpc_slot: {}", lite_rpc_slot?);
 
     Ok(())
 }

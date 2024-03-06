@@ -20,6 +20,7 @@ use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
 
+pub mod config;
 pub mod tx_size;
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";

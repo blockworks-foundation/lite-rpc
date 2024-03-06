@@ -1,4 +1,5 @@
 use anyhow::{bail, Error};
+use bench_lib::config::{BenchConfig, ConfirmationRateConfig};
 use bench_lib::tx_size::TxSize;
 use bench_lib::{create_rng, generate_txs};
 use futures::future::join_all;
@@ -32,26 +33,27 @@ pub struct RpcStat {
 /// send multiple runs of num_txns, measure the confirmation rate
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let lite_rpc_addr = "http://0.0.0.0:8890".to_string();
-    let payer_path = "/path/to/id.json";
-    let tx_size = TxSize::Small;
-    let num_txns = 1;
-    let runs = 2;
+    let config = BenchConfig::load().unwrap();
+    let ConfirmationRateConfig {
+        tx_size,
+        num_txns,
+        num_runs,
+    } = config.confirmation_rate;
 
-    let rpc_client = RpcClient::new(lite_rpc_addr.clone());
-    info!("RPC: {}", lite_rpc_addr);
+    let rpc = Arc::new(RpcClient::new(config.lite_rpc_url.clone()));
+    info!("RPC: {}", rpc.as_ref().url());
 
-    let payer = read_keypair_file(&payer_path).unwrap();
+    let payer: Arc<Keypair> = Arc::new(read_keypair_file(&config.payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
 
-    let mut rpc_results = Vec::with_capacity(runs);
+    let mut rpc_results = Vec::with_capacity(num_runs);
 
-    for _ in 0..runs {
-        let stat: RpcStat = send_bulk_txs_and_wait(&rpc_client, &payer, num_txns, tx_size).await?;
+    for _ in 0..num_runs {
+        let stat: RpcStat = send_bulk_txs_and_wait(&rpc, &payer, num_txns, tx_size).await?;
         rpc_results.push(stat);
     }
 
-    println!("avg_rpc: {:?}", calc_stats_avg(&rpc_results));
+    info!("avg_rpc: {:?}", calc_stats_avg(&rpc_results));
     Ok(())
 }
 

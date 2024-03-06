@@ -1,4 +1,4 @@
-use bench_lib::create_memo_tx_small;
+use bench_lib::{config::BenchConfig, create_memo_tx_small};
 use log::info;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -10,24 +10,23 @@ use solana_sdk::signature::{read_keypair_file, Keypair, Signer};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let rpc_addr = "http://0.0.0.0:8890".to_string();
-    let payer_path = "/path/to/id.json";
-    let time_ms = 3000;
+    let config = BenchConfig::load().unwrap();
 
-    let rpc = Arc::new(RpcClient::new(rpc_addr.clone()));
-    info!("RPC: {}", rpc_addr);
+    let rpc = Arc::new(RpcClient::new(config.lite_rpc_url.clone()));
+    info!("RPC: {}", rpc.as_ref().url());
 
-    let payer: Arc<Keypair> = Arc::new(read_keypair_file(&payer_path).unwrap());
+    let payer: Arc<Keypair> = Arc::new(read_keypair_file(&config.payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
 
     let mut txs = 0;
     let failed = Arc::new(AtomicUsize::new(0));
     let success = Arc::new(AtomicUsize::new(0));
 
-    let time = tokio::time::Instant::now();
     let hash = rpc.get_latest_blockhash().await?;
+    let time_ms = config.api_load.time_ms;
+    let time = tokio::time::Instant::now();
 
-    while time.elapsed().as_millis() < time_ms {
+    while time.elapsed().as_millis() < time_ms.into() {
         let rpc = rpc.clone();
         let payer = payer.clone();
 
@@ -38,9 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
         tokio::spawn(async move {
             let msg = msg.as_bytes();
-
             let tx = create_memo_tx_small(msg, &payer, hash);
-
             match rpc.send_transaction(&tx).await {
                 Ok(_) => success.fetch_add(1, Ordering::Relaxed),
                 Err(_) => failed.fetch_add(1, Ordering::Relaxed),
@@ -51,9 +48,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let calls_per_second = txs as f64 / (time_ms as f64 * 1000.0);
-    println!("calls_per_second: {}", calls_per_second);
-    println!("failed: {}", failed.load(Ordering::Relaxed));
-    println!("success: {}", success.load(Ordering::Relaxed));
+    info!("calls_per_second: {}", calls_per_second);
+    info!("failed: {}", failed.load(Ordering::Relaxed));
+    info!("success: {}", success.load(Ordering::Relaxed));
 
     Ok(())
 }

@@ -39,6 +39,7 @@ dashmap = { workspace = true }
 bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
+toml = "0.8.10"
 
 [dev-dependencies]
 bincode = { workspace = true }
