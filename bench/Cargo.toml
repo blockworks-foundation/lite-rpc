@@ -3,6 +3,23 @@ name = "bench"
 version = "0.2.4"
 edition = "2021"
 
+[lib]
+name = "bench_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "api_load"
+path = "src/benches/api_load.rs"
+
+[[bin]]
+name = "confirmation_slot"
+path = "src/benches/confirmation_slot.rs"
+
+[[bin]]
+name = "confirmation_rate"
+path = "src/benches/confirmation_rate.rs"
+
+
 [dependencies]
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
@@ -13,20 +30,15 @@ tracing = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-clap = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
-csv = "1.2.1"
-dirs = "5.0.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 futures = { workspace = true }
 dashmap = { workspace = true }
-lazy_static = "1.4.0"
 bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
-async-trait = { workspace = true }
 
 [dev-dependencies]
 bincode = { workspace = true }
