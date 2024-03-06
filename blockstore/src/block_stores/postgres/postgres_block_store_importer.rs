@@ -99,8 +99,9 @@ pub fn start_postgres_block_store_importer_task(
                         missed_blocks
                     );
                 }
-                Err(other_err) => {
-                    warn!("Error receiving block: {:?}", other_err);
+                Err(RecvError::Closed) => {
+                    warn!("Error receiving block as source channel was closed - aborting");
+                    break 'recv_loop;
                 }
             }
 
