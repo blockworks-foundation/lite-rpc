@@ -212,8 +212,7 @@ impl PostgresBlockStore {
             elapsed_block_insert,
             elapsed_txs_insert,
             transactions.len(),
-            // chunks.len(),
-            999,
+            chunks.len(),
             chunk_size,
         );
 

@@ -41,7 +41,7 @@ async fn storage_test() {
         BlockstorePostgresSessionConfig::new_for_tests()
     } else {
         info!("PG_CONFIG env defined");
-        BlockstorePostgresSessionConfig::new_from_env().unwrap()
+        BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB").unwrap()
     };
 
     let rpc_url = std::env::var("RPC_URL").expect("env var RPC_URL is mandatory");

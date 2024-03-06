@@ -36,7 +36,7 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
 async fn test_in_multiple_stategy_block_store() {
     tracing_subscriber::fmt::init();
 
-    let pg_session_config = BlockstorePostgresSessionConfig::new_from_env().unwrap();
+    let pg_session_config = BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB").unwrap();
     let epoch_cache = EpochCache::new_for_tests();
     let persistent_store =
         PostgresBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await;

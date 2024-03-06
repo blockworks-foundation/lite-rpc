@@ -18,7 +18,7 @@ pub struct PostgresSession(tokio_postgres::Client);
 
 impl PostgresSession {
     pub async fn new_from_env() -> anyhow::Result<Self> {
-        let pg_session_config = BlockstorePostgresSessionConfig::new_from_env()
+        let pg_session_config = BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB")
             .expect("Blockstore PostgreSQL Configuration from env");
         PostgresSession::new(pg_session_config).await
     }

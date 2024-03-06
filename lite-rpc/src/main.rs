@@ -373,7 +373,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     // Block store importer
     if enable_postgres_block_store_importer {
         // TODO use dedicated database for block store
-        let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig::new_from_env()
+        let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB")
             .expect("Blockstore PostgreSQL Configuration from env");
         let postgres_block_store =
             Arc::new(PostgresBlockStore::new(epoch_data.clone(), pg_session_config).await);
@@ -394,7 +394,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let multiple_strategy_block_store = if use_postgres_blockstore {
         warn!("TODO make multiple_strategy_block_store configurable");
         // TODO use dedicated database for block store
-        let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig::new_from_env()
+        let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB")
             .expect("Blockstore PostgreSQL Configuration from env");
         let persistent_store =
             PostgresQueryBlockStore::new(epoch_data.clone(), pg_session_config).await;
