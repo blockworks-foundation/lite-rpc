@@ -65,6 +65,7 @@ impl PostgresQueryBlockStore {
         let started_at = Instant::now();
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
 
+        // TODO could we use join! here?
         let statement = PostgresBlock::build_query_statement(epoch, slot);
         let block_row = self.session
             .query_opt(&statement, &[])
