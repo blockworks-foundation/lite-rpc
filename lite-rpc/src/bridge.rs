@@ -4,7 +4,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use itertools::Itertools;
-use jsonrpsee::core::RpcResult;
+use jsonrpsee::core::{Error, RpcResult};
+use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
 use log::info;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
@@ -29,13 +30,13 @@ use solana_rpc_client_api::{
         RpcVoteAccountStatus,
     },
 };
+use solana_rpc_client_api::custom_error::RpcCustomError;
+use solana_rpc_client_api::custom_error::RpcCustomError::BlockNotAvailable;
 use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::option_serializer::OptionSerializer;
-use solana_transaction_status::{
-    EncodedTransactionWithStatusMeta, TransactionStatus, UiConfirmedBlock, UiTransactionStatusMeta,
-};
+use solana_transaction_status::{BlockEncodingOptions, EncodedTransactionWithStatusMeta, TransactionDetails, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta};
 
 use solana_lite_rpc_core::encoding::BASE64;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
@@ -55,6 +56,7 @@ use crate::{
 };
 use solana_lite_rpc_prioritization_fees::rpc_data::{AccountPrioFeesStats, PrioFeesStats};
 use solana_lite_rpc_prioritization_fees::PrioFeesService;
+use crate::rpc_custom_errors::map_rpc_custom_error;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -133,7 +135,24 @@ impl LiteRpcServer for LiteBridge {
         slot: u64,
         config: Option<RpcEncodingConfigWrapper<RpcBlockConfig>>,
     ) -> RpcResult<Option<UiConfirmedBlock>> {
-        let config = config.map_or(RpcBlockConfig::default(), |x| x.convert_to_current());
+        let config = config
+            .map(|config| config.convert_to_current())
+            .unwrap_or_default();
+        let encoding = config.encoding.unwrap_or(UiTransactionEncoding::Json);
+        let encoding_options = BlockEncodingOptions {
+            transaction_details: config.transaction_details.unwrap_or_default(),
+            show_rewards: config.rewards.unwrap_or(true),
+            max_supported_transaction_version: config.max_supported_transaction_version,
+        };
+        let commitment = config.commitment.unwrap_or_default();
+
+        if !commitment.is_at_least_confirmed() {
+            return Err(jsonrpsee::types::error::ErrorObject::owned(INVALID_PARAMS_CODE, "Method does not support commitment below `confirmed`", None::<()>));
+        }
+
+        let transaction_details =
+            config.transaction_details
+                .unwrap_or(TransactionDetails::Full);
 
         // FIXME
         let block = self
@@ -142,74 +161,74 @@ impl LiteRpcServer for LiteBridge {
             .unwrap()
             .query_block(slot)
             .await;
-        match block {
-            Ok(block) => {
-                let transactions: Option<Vec<EncodedTransactionWithStatusMeta>> = match config
-                    .transaction_details
-                {
-                    Some(transaction_details) => {
-                        let (is_full, include_rewards, include_accounts) = match transaction_details
-                        {
-                            solana_transaction_status::TransactionDetails::Full => {
-                                (true, true, true)
-                            }
-                            solana_transaction_status::TransactionDetails::Signatures => {
-                                (false, false, false)
-                            }
-                            solana_transaction_status::TransactionDetails::None => {
-                                (false, false, false)
-                            }
-                            solana_transaction_status::TransactionDetails::Accounts => {
-                                (false, false, true)
-                            }
-                        };
 
-                        if is_full || include_accounts || include_rewards {
-                            Some(block.transactions.iter().map(|transaction_info| {
-                                EncodedTransactionWithStatusMeta {
-                                    version: None,
-                                    meta: Some(UiTransactionStatusMeta {
-                                        err: transaction_info.err.clone(),
-                                        status: transaction_info.err.clone().map_or(Ok(()), Err),
-                                        fee: 0,
-                                        pre_balances: vec![],
-                                        post_balances: vec![],
-                                        inner_instructions: OptionSerializer::None,
-                                        log_messages: OptionSerializer::None,
-                                        pre_token_balances: OptionSerializer::None,
-                                        post_token_balances: OptionSerializer::None,
-                                        rewards: OptionSerializer::None,
-                                        loaded_addresses: OptionSerializer::None,
-                                        return_data: OptionSerializer::None,
-                                        compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None,OptionSerializer::Some),
-                                    }),
-                                    transaction: solana_transaction_status::EncodedTransaction::Binary(
-                                        BASE64.serialize(&transaction_info.message).unwrap(),
-                                        solana_transaction_status::TransactionBinaryEncoding::Base64)
-                                }
-                            }).collect_vec())
-                        } else {
-                            None
-                        }
+        let block = block.map_err(|err| {
+            log::error!("Error looking up block {slot} : {err:?}");
+            map_rpc_custom_error(RpcCustomError::BlockNotAvailable { slot })
+            // jsonrpsee::types::error::ErrorObject::owned(INTERNAL_ERROR_CODE, "failed to load block", None::<()>)
+        })?;
+
+        let (is_full, include_rewards, include_accounts) = match transaction_details
+        {
+            solana_transaction_status::TransactionDetails::Full => {
+                (true, true, true)
+            }
+            solana_transaction_status::TransactionDetails::Signatures => {
+                (false, false, false)
+            }
+            solana_transaction_status::TransactionDetails::None => {
+                (false, false, false)
+            }
+            solana_transaction_status::TransactionDetails::Accounts => {
+                (false, false, true)
+            }
+        };
+
+        let (full_transactions, only_signatures) =
+            if transaction_details == TransactionDetails::Full || transaction_details == TransactionDetails::Accounts {
+                // TODO minimize allocations
+                let full = block.transactions.iter().map(|transaction_info| {
+                    EncodedTransactionWithStatusMeta {
+                        version: None,
+                        meta: Some(UiTransactionStatusMeta {
+                            err: transaction_info.err.clone(),
+                            status: transaction_info.err.clone().map_or(Ok(()), Err),
+                            fee: 0,
+                            pre_balances: vec![],
+                            post_balances: vec![],
+                            inner_instructions: OptionSerializer::None,
+                            log_messages: OptionSerializer::None,
+                            pre_token_balances: OptionSerializer::None,
+                            post_token_balances: OptionSerializer::None,
+                            rewards: OptionSerializer::None,
+                            loaded_addresses: OptionSerializer::None,
+                            return_data: OptionSerializer::None,
+                            compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None,OptionSerializer::Some),
+                        }),
+                        transaction: solana_transaction_status::EncodedTransaction::Binary(
+                            BASE64.serialize(&transaction_info.message).unwrap(),
+                            solana_transaction_status::TransactionBinaryEncoding::Base64)
                     }
-                    None => None,
-                };
-                Ok(Some(UiConfirmedBlock {
-                    previous_blockhash: block.previous_blockhash.to_string(),
-                    blockhash: block.blockhash.to_string(),
-                    parent_slot: block.parent_slot,
-                    transactions,
-                    signatures: None,
-                    rewards: block.rewards.clone(),
-                    block_time: Some(block.block_time as i64),
-                    block_height: Some(block.block_height),
-                }))
-            }
-            Err(err) => {
-                // FIXME
-                panic!("Block {} not found - {}", slot, err);
-            }
-        }
+                }).collect_vec();
+                (Some(full), None)
+            } else if transaction_details == TransactionDetails::Signatures {
+                let signatures = block.transactions.iter().map(|td| td.signature.to_string()).collect_vec();
+                // TODO map signatures
+                (None, Some(signatures))
+            } else {
+                (None, None)
+            };
+        Ok(Some(UiConfirmedBlock {
+            previous_blockhash: block.previous_blockhash.to_string(),
+            blockhash: block.blockhash.to_string(),
+            parent_slot: block.parent_slot,
+            transactions: full_transactions,
+            signatures: only_signatures,
+            rewards: block.rewards.clone(),
+            block_time: Some(block.block_time as i64),
+            block_height: Some(block.block_height),
+        }))
+
     }
 
     // async fn __get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
