@@ -176,7 +176,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
-        receive_timeout: Duration::from_secs(5),
+        receive_timeout: Duration::from_secs(15),
     };
 
     let gprc_sources = grpc_sources
