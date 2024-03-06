@@ -1,7 +1,5 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::sync::Arc;
 use std::time::Instant;
 
 use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
@@ -89,9 +87,11 @@ impl PostgresQueryBlockStore {
 
         let tx_infos = transaction_rows
             .iter()
+            // TODO check why we map to PostgresTransaction and then to TransactionInfo
             .map(|tx_row| {
-                let postgres_transaction = PostgresTransaction {
+                PostgresTransaction {
                     slot: slot as i64,
+                    idx_in_block: tx_row.get("idx"),
                     signature: tx_row.get("signature"),
                     err: tx_row.get("err"),
                     cu_requested: tx_row.get("cu_requested"),
@@ -99,11 +99,12 @@ impl PostgresQueryBlockStore {
                     cu_consumed: tx_row.get("cu_consumed"),
                     recent_blockhash: tx_row.get("recent_blockhash"),
                     message: tx_row.get("message"),
-                };
-
-                postgres_transaction.to_transaction_info()
+                }
             })
+            .sorted_by(|a, b| a.idx_in_block.cmp(&b.idx_in_block))
+            .map(|pt| pt.to_transaction_info())
             .collect_vec();
+
 
         let row = block_row.unwrap();
         // meta data

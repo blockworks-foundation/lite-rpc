@@ -13,6 +13,8 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
+use solana_sdk::signature::Signature;
+use solana_transaction_status::TransactionDetails::Signatures;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
 use tokio::time::{sleep, Instant};

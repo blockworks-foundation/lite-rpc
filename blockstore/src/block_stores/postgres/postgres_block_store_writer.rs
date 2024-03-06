@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::{Instant};
 
 use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 use anyhow::{bail, Context, Result};
@@ -127,13 +127,6 @@ impl PostgresBlockStore {
             .await
             .context("create transaction table for new epoch")?;
 
-        // add foreign key constraint between transactions and blocks
-        let statement = PostgresTransaction::build_foreign_key_statement(epoch);
-        self.session
-            .execute_multiple(&statement)
-            .await
-            .context("create foreign key constraint between transactions and blocks")?;
-
         info!("Start new epoch in postgres schema {}", schema_name);
         Ok(true)
     }
@@ -162,7 +155,7 @@ impl PostgresBlockStore {
         let transactions = block
             .transactions
             .iter()
-            .map(|x| PostgresTransaction::new(x, slot))
+            .map(|tx| PostgresTransaction::new(tx, slot))
             .collect_vec();
         let postgres_block = PostgresBlock::from(block);
 

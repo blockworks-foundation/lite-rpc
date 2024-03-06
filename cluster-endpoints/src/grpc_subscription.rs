@@ -50,6 +50,7 @@ pub fn from_grpc_block_update(
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
+        .sorted_by_key(|tx| tx.index)
         .filter_map(|tx| {
             let meta = tx.meta?;
 
@@ -141,6 +142,7 @@ pub fn from_grpc_block_update(
 
             Some(TransactionInfo {
                 signature,
+                index: tx.index as i32,
                 is_vote: is_vote_transaction,
                 err,
                 cu_requested,

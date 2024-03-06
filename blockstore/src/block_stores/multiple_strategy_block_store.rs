@@ -18,7 +18,6 @@ pub enum BlockSource {
 
 #[derive(Debug, Clone)]
 pub struct BlockStorageData {
-    // note: commitment_config is the actual commitment level
     pub block: ProducedBlock,
     // meta data
     pub result_source: BlockSource,

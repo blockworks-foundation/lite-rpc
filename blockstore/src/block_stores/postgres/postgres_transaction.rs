@@ -1,8 +1,6 @@
-use std::collections::HashSet;
 use std::str::FromStr;
 
 use futures_util::pin_mut;
-use itertools::Itertools;
 use log::debug;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
@@ -22,8 +20,8 @@ use super::postgres_session::*;
 #[derive(Debug)]
 pub struct PostgresTransaction {
     pub signature: String,
-    // TODO clarify
     pub slot: i64,
+    pub idx_in_block: i32,
     pub cu_consumed: Option<i64>,
     pub cu_requested: Option<i64>,
     pub prioritization_fees: Option<i64>,
@@ -37,6 +35,7 @@ impl PostgresTransaction {
         Self {
             signature: value.signature.to_string(),
             slot: slot as i64,
+            idx_in_block: value.index,
             cu_consumed: value.cu_consumed.map(|x| x as i64),
             cu_requested: value.cu_requested.map(|x| x as i64),
             prioritization_fees: value.prioritization_fees.map(|x| x as i64),
@@ -53,6 +52,7 @@ impl PostgresTransaction {
     pub fn to_transaction_info(&self) -> TransactionInfo {
         TransactionInfo {
             signature: Signature::from_str(self.signature.as_str()).unwrap(),
+            index: self.idx_in_block,
             cu_consumed: self.cu_consumed.map(|x| x as u64),
             cu_requested: self.cu_requested.map(|x| x as u32),
             prioritization_fees: self.prioritization_fees.map(|x| x as u64),
@@ -100,6 +100,7 @@ impl PostgresTransaction {
                     -- transaction_id must exist in the transaction_ids table
                     transaction_id bigint PRIMARY KEY WITH (FILLFACTOR=90),
                     slot bigint NOT NULL,
+                    idx int4 NOT NULL,
                     cu_consumed bigint NOT NULL,
                     cu_requested bigint,
                     prioritization_fees bigint,
@@ -119,19 +120,7 @@ impl PostgresTransaction {
                         autovacuum_analyze_scale_factor=0,
                         autovacuum_analyze_threshold=1000
                         );
-                CREATE INDEX idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
-            "#,
-            schema = schema
-        )
-    }
-
-    // removed the foreign key as it slows down inserts
-    pub fn build_foreign_key_statement(epoch: EpochRef) -> String {
-        let schema = PostgresEpoch::build_schema_name(epoch);
-        format!(
-            r#"
-                ALTER TABLE {schema}.transaction_blockdata
-                ADD CONSTRAINT fk_transactions FOREIGN KEY (slot) REFERENCES {schema}.blocks (slot);
+                CREATE idx idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
             "#,
             schema = schema
         )
@@ -148,6 +137,7 @@ impl PostgresTransaction {
         let statement = r#"
             CREATE TEMP TABLE transaction_raw_blockdata(
                 slot bigint NOT NULL,
+                idx int4 NOT NULL,
                 cu_consumed bigint NOT NULL,
                 cu_requested bigint,
                 prioritization_fees bigint,
@@ -163,6 +153,7 @@ impl PostgresTransaction {
         let statement = r#"
             COPY transaction_raw_blockdata(
                 slot,
+                idx,
                 cu_consumed,
                 cu_requested,
                 prioritization_fees,
@@ -179,6 +170,7 @@ impl PostgresTransaction {
             sink,
             &[
                 Type::INT8, // slot
+                Type::INT4, // idx
                 Type::INT8, // cu_consumed
                 Type::INT8, // cu_requested
                 Type::INT8, // prioritization_fees
@@ -193,6 +185,7 @@ impl PostgresTransaction {
         for tx in transactions {
             let PostgresTransaction {
                 slot,
+                idx_in_block,
                 cu_consumed,
                 cu_requested,
                 prioritization_fees,
@@ -207,6 +200,7 @@ impl PostgresTransaction {
                 .as_mut()
                 .write(&[
                     &slot,
+                    &idx_in_block,
                     &cu_consumed,
                     &cu_requested,
                     &prioritization_fees,
@@ -243,10 +237,22 @@ impl PostgresTransaction {
 
         let statement = format!(
             r#"
-                INSERT INTO {schema}.transaction_blockdata
+                INSERT INTO {schema}.transaction_blockdata(
+                    transaction_id,
+                    slot,
+                    idx,
+                    cu_consumed,
+                    cu_requested,
+                    prioritization_fees,
+                    recent_blockhash,
+                    err,
+                    message
+                    -- model_transaction_blockdata
+                )
                 SELECT
                     ( SELECT transaction_id FROM {schema}.transaction_ids tx_lkup WHERE tx_lkup.signature = transaction_raw_blockdata.signature ),
                     slot,
+                    idx,
                     cu_consumed,
                     cu_requested,
                     prioritization_fees,
@@ -274,6 +280,7 @@ impl PostgresTransaction {
             r#"
                 SELECT
                     (SELECT signature FROM {schema}.transaction_ids tx_ids WHERE tx_ids.transaction_id = transaction_blockdata.transaction_id),
+                    idx,
                     cu_consumed,
                     cu_requested,
                     prioritization_fees,

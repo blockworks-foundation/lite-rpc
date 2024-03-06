@@ -1,5 +1,6 @@
 pub mod rpc_tester;
 
+
 use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
@@ -252,9 +253,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         None
     };
 
-    info!("Waiting for first finalized block...");
+    warn!("WORKAROUND Waiting for first finalized block...");
     let finalized_block =
-        get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
+        get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::processed()).await; // FIXME revert
+
     info!("Got finalized block: {:?}", finalized_block.slot);
 
     let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;

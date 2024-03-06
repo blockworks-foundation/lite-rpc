@@ -13,6 +13,8 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
     pub signature: Signature,
+    // index sent by yellowstone
+    pub index: i32,
     pub is_vote: bool,
     pub err: Option<TransactionError>,
     pub cu_requested: Option<u32>,

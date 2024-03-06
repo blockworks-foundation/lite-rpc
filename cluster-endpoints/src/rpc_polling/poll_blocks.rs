@@ -190,8 +190,8 @@ pub fn from_ui_block(
     let rewards = block.rewards.clone();
 
     let txs = txs
-        .into_iter()
-        .filter_map(|tx| {
+        .into_iter().enumerate()
+        .filter_map(|(idx_in_block, tx)| {
             let Some(UiTransactionStatusMeta {
                 err,
                 compute_units_consumed,
@@ -293,6 +293,8 @@ pub fn from_ui_block(
 
             Some(TransactionInfo {
                 signature,
+                // note: not sure if the index from RPC is compatible with that from yellowstone
+                index: idx_in_block as i32,
                 is_vote: is_vote_transaction,
                 err,
                 cu_requested,

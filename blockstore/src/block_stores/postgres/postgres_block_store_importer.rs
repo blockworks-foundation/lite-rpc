@@ -20,6 +20,7 @@ const OPTIMIZE_DEBOUNCE_SLOTS: u64 = 4;
 // note: the consumer lags far behind the ingress of blocks and transactions
 pub fn start_postgres_block_store_importer_task(
     block_notifier: BlockStream,
+    // TODO try to avoid passing arc but keep store locally inside task
     block_storage: Arc<PostgresBlockStore>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -14,7 +13,7 @@ use tokio_postgres::{
 
 use super::postgres_config::{BlockstorePostgresSessionConfig, PostgresSessionSslConfig};
 
-pub struct PostgresSession(tokio_postgres::Client);
+pub struct PostgresSession(Client);
 
 impl PostgresSession {
     pub async fn new_from_env() -> anyhow::Result<Self> {

@@ -63,3 +63,4 @@ solana-lite-rpc-accounts-on-demand = { workspace = true }
 
 [dev-dependencies]
 bench = { path = "../bench" }
+assert-json-diff = "2.0.2"

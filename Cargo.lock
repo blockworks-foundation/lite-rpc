@@ -364,6 +364,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert-json-diff"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e4f2b81832e72834d7518d8487a0396a28cc408186a2e8854c0f98011faf12"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "assert_matches"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2543,6 +2553,7 @@ name = "lite-rpc"
 version = "0.2.4"
 dependencies = [
  "anyhow",
+ "assert-json-diff",
  "async-channel",
  "async-trait",
  "base64 0.21.7",
