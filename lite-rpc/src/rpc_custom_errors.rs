@@ -1,23 +1,10 @@
-use jsonrpsee::types::error::{CALL_EXECUTION_FAILED_CODE, ErrorCode};
 use jsonrpsee::types::ErrorObject;
-use log::warn;
 use serde_json::json;
 use solana_rpc_client_api::custom_error::*;
 
 /// adoption of solana-rpc-client-api custom_errors.rs for jsonrpsee
 
-fn server_error(code: i64, message: String) -> jsonrpsee::types::error::ErrorObject<'static> {
-    jsonrpsee::types::error::ErrorObject::owned(
-        code as i32,
-        message,
-        None::<()>)
-}
-fn server_error_data(code: i64, message: String, data: serde_json::Value) -> jsonrpsee::types::error::ErrorObject<'static> {
-    jsonrpsee::types::error::ErrorObject::owned(
-        code as i32,
-        message,
-        Some(data))
-}
+
 
 pub fn map_rpc_custom_error<'a>(error: RpcCustomError) -> ErrorObject<'a> {
     match error {
@@ -28,6 +15,12 @@ pub fn map_rpc_custom_error<'a>(error: RpcCustomError) -> ErrorObject<'a> {
             server_error(
                 JSON_RPC_SERVER_ERROR_BLOCK_CLEANED_UP,
                 format!("Block {slot} cleaned up, does not exist on node. First available block: {first_available_block}"),
+            ),
+        RpcCustomError::SendTransactionPreflightFailure { message, result } =>
+            server_error_data(
+                JSON_RPC_SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
+                message,
+                json!(result),
             ),
         RpcCustomError::TransactionSignatureVerificationFailure =>
             server_error(
@@ -111,17 +104,20 @@ pub fn map_rpc_custom_error<'a>(error: RpcCustomError) -> ErrorObject<'a> {
                 JSON_RPC_SERVER_ERROR_MIN_CONTEXT_SLOT_NOT_REACHED,
                 "Minimum context slot has not been reached".to_string(),
             ),
-        _ => {
-            warn!("UNMAPPED ERROR"); // TODO
-            server_error(
-                -121212,
-                "TODO Unknown error".to_string(),
-            )
-        }
     }
 }
 
-
-
+fn server_error(code: i64, message: String) -> jsonrpsee::types::error::ErrorObject<'static> {
+    jsonrpsee::types::error::ErrorObject::owned(
+        code as i32,
+        message,
+        None::<()>)
+}
+fn server_error_data(code: i64, message: String, data: serde_json::Value) -> jsonrpsee::types::error::ErrorObject<'static> {
+    jsonrpsee::types::error::ErrorObject::owned(
+        code as i32,
+        message,
+        Some(data))
+}
 
 
