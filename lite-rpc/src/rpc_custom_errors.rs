@@ -5,7 +5,7 @@ use solana_rpc_client_api::custom_error::*;
 
 /// adoption of solana-rpc-client-api custom_errors.rs for jsonrpsee
 
-fn server_error(message: String, code: i64) -> jsonrpsee::types::error::ErrorObject<'static> {
+fn server_error(code: i64, message: String) -> jsonrpsee::types::error::ErrorObject<'static> {
     jsonrpsee::types::error::ErrorObject::owned(
         code as i32,
         message,
@@ -19,24 +19,19 @@ pub fn map_rpc_custom_error<'a>(error: RpcCustomError) -> ErrorObject<'a> {
             first_available_block,
         } =>
             server_error(
+                JSON_RPC_SERVER_ERROR_BLOCK_CLEANED_UP,
                 format!("Block {slot} cleaned up, does not exist on node. First available block: {first_available_block}"),
-                JSON_RPC_SERVER_ERROR_BLOCK_CLEANED_UP
             ),
         RpcCustomError::TransactionSignatureVerificationFailure =>
             server_error(
+                JSON_RPC_SERVER_ERROR_TRANSACTION_SIGNATURE_VERIFICATION_FAILURE,
                 "Transaction signature verification failure".to_string(),
-                JSON_RPC_SERVER_ERROR_TRANSACTION_SIGNATURE_VERIFICATION_FAILURE
             ),
         RpcCustomError::BlockNotAvailable { slot } =>
             server_error(
+                JSON_RPC_SERVER_ERROR_BLOCK_NOT_AVAILABLE,
                 format!("Block not available for slot {slot}"),
-                JSON_RPC_SERVER_ERROR_BLOCK_NOT_AVAILABLE
             ),
-        // RpcCustomError::BlockNotAvailable { slot } => Self {
-        //     code: ErrorCode::ServerError(JSON_RPC_SERVER_ERROR_BLOCK_NOT_AVAILABLE),
-        //     message: format!("Block not available for slot {slot}"),
-        //     data: None,
-        // },
         // RpcCustomError::NodeUnhealthy { num_slots_behind } => Self {
         //     code: ErrorCode::ServerError(JSON_RPC_SERVER_ERROR_NODE_UNHEALTHY),
         //     message: if let Some(num_slots_behind) = num_slots_behind {
