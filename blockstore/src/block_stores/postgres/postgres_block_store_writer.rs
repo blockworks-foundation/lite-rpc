@@ -189,8 +189,9 @@ impl PostgresBlockStore {
         let chunk_size =
             div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
         let chunks = transactions.chunks(chunk_size).collect_vec();
+        let n_chunks = chunks.len();
         assert!(
-            chunks.len() <= self.write_sessions.len(),
+            n_chunks <= self.write_sessions.len(),
             "cannot have more chunks than session"
         );
         for (i, chunk) in chunks.into_iter().enumerate() {
@@ -212,7 +213,7 @@ impl PostgresBlockStore {
             elapsed_block_insert,
             elapsed_txs_insert,
             transactions.len(),
-            chunks.len(),
+            n_chunks,
             chunk_size,
         );
 
