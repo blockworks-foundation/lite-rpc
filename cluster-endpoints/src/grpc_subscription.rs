@@ -58,6 +58,9 @@ pub fn from_grpc_block_update(
 
             let message = transaction.message?;
 
+            // TODO
+            let _v = message.versioned;
+
             let header = message.header?;
 
             let signature = {

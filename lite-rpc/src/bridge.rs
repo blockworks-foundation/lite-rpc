@@ -279,6 +279,12 @@ impl LiteRpcServer for LiteBridge {
         //     .map(encode_block)
         //     .transpose();
 
+        info!("confirmed_block {:?}", confirmed_block.blockhash);
+        let confirmed_block_txs = &confirmed_block.transactions;
+        for tx in confirmed_block_txs.iter().take(5) {
+            info!("- tx {}", tx.transaction_signature());
+        }
+
         let result = confirmed_block.encode_with_options(encoding, encoding_options)
             .map_err(|error| map_rpc_custom_error(RpcCustomError::from(error)))
             .map(Some);

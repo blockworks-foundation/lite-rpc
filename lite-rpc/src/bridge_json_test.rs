@@ -22,7 +22,7 @@ mod tests {
     use assert_json_diff::{assert_json_eq, assert_json_include};
     use solana_sdk::clock::Slot;
     use solana_sdk::transaction::VersionedTransaction;
-    use solana_transaction_status::UiConfirmedBlock;
+    use solana_transaction_status::{EncodedTransaction, TransactionBinaryEncoding, UiConfirmedBlock};
     use super::*;
 
     #[test]
@@ -71,10 +71,10 @@ mod tests {
 
     #[test]
     fn transactions_full() {
-        let slot = get_recent_slot();
+        let slot = 256912126;
         println!("asking slot slot: {slot}");
         let config = RpcBlockConfig {
-            encoding: Some(UiTransactionEncoding::Base58),
+            encoding: Some(UiTransactionEncoding::Json),
             transaction_details: Some(TransactionDetails::Full),
             rewards: Some(true),
             commitment: None,
@@ -110,6 +110,36 @@ mod tests {
         //     let zzz: VersionedTransaction = tx.transaction.decode().unwrap();
         //     println!("tx: {}", zzz.signatures);
         // }
+    }
+
+    #[test]
+    fn decode_base58() {
+        let raw_testnet = "5nejtVuPH9GteV6kHsoh7EqDgU4gG8kj5uVd84L1dNuJzfwLNRx4shuJEmREsBXW5Lxtr1pEtb79798NBKTMfVSwVHPTjVEYrfoKNbSZyKj8N1vcXSbftWCDf96HGE4guXMf9n52TLTj7JLkNEpaJi1gP1eiTfj34LZqp3cTA3azcnwDLfS75L1UgrGb4F3yScGqJjTzLAaN5UiJ2kbE5926TH3VDRmAVEq3zfnjpsd93JZhzpLBfqKKyaMQZuoT8uF6C4jhjSNvB4pkR8RELUw3rgYSKonhJRjZKPjhKFkFjWaD9qx3dTgAEyL5kiNZN8379gNfsxptCqG3hoiZLL2Wdj8MRVKzuLv4sn4o8WQyDB2gq4bPGaSDbtSgfca3BDjSTzSPpjUpZDxHrFHLivxU7Z4sHFHrGUVmxzBNqbgPUHn5xvK";
+        let raw_local = "2cG57yNZbRy627js22ofBBn3Uj3Ymf92MufP2n1M9uhCdyMctdBc8gcP5E1SBTicXMdebEMVJM7vGW4uw6ZqDmUaWej1mdh7xPUhV5pee4YUiab4tiuxfE1JkN4fgYksLUNcohUJ1eggoP8WBbeNbQ7Kav3RAV7tJFU1xWzd5J9nKKoCGL2HBwhzpWDKKmdD6WorwaXyvAdiepZrKLuGoyZ9SYg8uTv3D2mhr2gxqc4y3RKt26N9RBY4atYYphR6NifYD4pJ6pcimG6KpJJBNXrYnNbhxb4wuZC1Afeye2qHd3mwUZnRq8ytr3d8hVy7snNxjo5MKGUzP3vWc2XFR3RFdZvaHy1iGBPTLQhCgrHKDZvAEUXmfTxf1JvELCjHMFhxybcAWRS4k479PSjgn3JvRSwabRV2VihtsxrgE8Y2jKJd1R5rLo";
+        let transaction = EncodedTransaction::Binary(raw_local.to_string(),
+                                                     TransactionBinaryEncoding::Base58,
+        );
+
+        println!("decoded: {:?}", transaction.decode());
+    }
+
+    ///
+    ///```
+    /// decoded: Some(VersionedTransaction { signatures: [3mJ2rMus6q9XEtgrbnnAfcXYtZrsjo4ehdHPkVWbM78YACUwvr9XkXLnYTtaqZ98S1gft6PrcCqMis3WuBtacPv3], message: V0(Message { header: MessageHeader { num_required_signatures: 1, num_readonly_signed_accounts: 0, num_readonly_unsigned_accounts: 1 }, account_keys: [AweDwMst78mJA1pWyqmueYEns6Mdm9QDNv4SpZJdDaNs, J5RP9MhwfrFzA9Qfm8DUAzeFgVMEjjah77zGFNZC9HJv, Vote111111111111111111111111111111111111111], recent_blockhash: EgPc6CgZPTtqy1wUJTbbU3TZF2SsCFWHCRrzvnufWjtb, instructions: [CompiledInstruction { program_id_index: 2, accounts: [1, 0], data: [12, 0, 0, 0, 221, 42, 80, 15, 0, 0, 0, 0, 31, 1, 31, 1, 30, 1, 29, 1, 28, 1, 27, 1, 26, 1, 25, 1, 24, 1, 23, 1, 22, 1, 21, 1, 20, 1, 19, 1, 18, 1, 17, 1, 16, 1, 15, 1, 14, 1, 13, 1, 12, 1, 11, 1, 10, 1, 9, 1, 8, 1, 7, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, 1, 1, 206, 250, 30, 156, 156, 173, 198, 110, 93, 108, 251, 131, 2, 14, 151, 249, 94, 13, 29, 107, 189, 215, 47, 117, 88, 236, 106, 15, 94, 186, 88, 180, 1, 159, 150, 233, 101, 0, 0, 0, 0] }], address_table_lookups: [] }) })
+    //
+    //
+    // decoded: Some(VersionedTransaction { signatures: [3mJ2rMus6q9XEtgrbnnAfcXYtZrsjo4ehdHPkVWbM78YACUwvr9XkXLnYTtaqZ98S1gft6PrcCqMis3WuBtacPv3], message: Legacy(Message { header: MessageHeader { num_required_signatures: 1, num_readonly_signed_accounts: 0, num_readonly_unsigned_accounts: 1 }, account_keys: [AweDwMst78mJA1pWyqmueYEns6Mdm9QDNv4SpZJdDaNs, J5RP9MhwfrFzA9Qfm8DUAzeFgVMEjjah77zGFNZC9HJv, Vote111111111111111111111111111111111111111], recent_blockhash: EgPc6CgZPTtqy1wUJTbbU3TZF2SsCFWHCRrzvnufWjtb, instructions: [CompiledInstruction { program_id_index: 2, accounts: [1, 0], data: [12, 0, 0, 0, 221, 42, 80, 15, 0, 0, 0, 0, 31, 1, 31, 1, 30, 1, 29, 1, 28, 1, 27, 1, 26, 1, 25, 1, 24, 1, 23, 1, 22, 1, 21, 1, 20, 1, 19, 1, 18, 1, 17, 1, 16, 1, 15, 1, 14, 1, 13, 1, 12, 1, 11, 1, 10, 1, 9, 1, 8, 1, 7, 1, 6, 1, 5, 1, 4, 1, 3, 1, 2, 1, 1, 206, 250, 30, 156, 156, 173, 198, 110, 93, 108, 251, 131, 2, 14, 151, 249, 94, 13, 29, 107, 189, 215, 47, 117, 88, 236, 106, 15, 94, 186, 88, 180, 1, 159, 150, 233, 101, 0, 0, 0, 0] }] }) })
+    ///```
+
+
+    // solana-transction-status
+    #[test]
+    fn test_decode_base58_transaction() {
+        let raw_testnet = "5nejtVuPH9GteV6kHsoh7EqDgU4gG8kj5uVd84L1dNuJzfwLNRx4shuJEmREsBXW5Lxtr1pEtb79798NBKTMfVSwVHPTjVEYrfoKNbSZyKj8N1vcXSbftWCDf96HGE4guXMf9n52TLTj7JLkNEpaJi1gP1eiTfj34LZqp3cTA3azcnwDLfS75L1UgrGb4F3yScGqJjTzLAaN5UiJ2kbE5926TH3VDRmAVEq3zfnjpsd93JZhzpLBfqKKyaMQZuoT8uF6C4jhjSNvB4pkR8RELUw3rgYSKonhJRjZKPjhKFkFjWaD9qx3dTgAEyL5kiNZN8379gNfsxptCqG3hoiZLL2Wdj8MRVKzuLv4sn4o8WQyDB2gq4bPGaSDbtSgfca3BDjSTzSPpjUpZDxHrFHLivxU7Z4sHFHrGUVmxzBNqbgPUHn5xvK";
+        let raw_local = "2cG57yNZbRy627js22ofBBn3Uj3Ymf92MufP2n1M9uhCdyMctdBc8gcP5E1SBTicXMdebEMVJM7vGW4uw6ZqDmUaWej1mdh7xPUhV5pee4YUiab4tiuxfE1JkN4fgYksLUNcohUJ1eggoP8WBbeNbQ7Kav3RAV7tJFU1xWzd5J9nKKoCGL2HBwhzpWDKKmdD6WorwaXyvAdiepZrKLuGoyZ9SYg8uTv3D2mhr2gxqc4y3RKt26N9RBY4atYYphR6NifYD4pJ6pcimG6KpJJBNXrYnNbhxb4wuZC1Afeye2qHd3mwUZnRq8ytr3d8hVy7snNxjo5MKGUzP3vWc2XFR3RFdZvaHy1iGBPTLQhCgrHKDZvAEUXmfTxf1JvELCjHMFhxybcAWRS4k479PSjgn3JvRSwabRV2VihtsxrgE8Y2jKJd1R5rLo";
+        let transaction = EncodedTransaction::Binary(raw_testnet.to_string(),
+            TransactionBinaryEncoding::Base58,
+        );
     }
 
 
