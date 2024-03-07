@@ -68,6 +68,10 @@ pub fn from_grpc_block_update(
                 Signature::from(sig_bytes)
             };
 
+            // meta.fee;
+            // meta.pre_balances;
+            // meta.post_balances;
+
             let err = meta.err.map(|x| {
                 bincode::deserialize::<TransactionError>(&x.err)
                     .expect("TransactionError should be deserialized")

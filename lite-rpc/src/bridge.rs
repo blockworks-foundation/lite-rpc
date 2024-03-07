@@ -193,24 +193,34 @@ impl LiteRpcServer for LiteBridge {
         let (full_transactions, only_signatures) =
             if transaction_details == TransactionDetails::Full || transaction_details == TransactionDetails::Accounts {
                 // TODO minimize allocations
-                let full = block.transactions.iter().map(|transaction_info| {
+                let full = block.transactions.iter().map(|txi| {
 
                     TransactionWithStatusMeta::Complete(
                         VersionedTransactionWithStatusMeta {
-                            transaction: VersionedTransaction::from(transaction_info),
+                            transaction: VersionedTransaction::from(txi),
                             meta: TransactionStatusMeta {
-                                status: transaction_info.err.clone().map_or(Ok(()), Err),
-                                fee: 0,
+                                status: txi.err.clone().map_or(Ok(()), Err),
+                                fee: txi.prioritization_fees.unwrap_or(0),
+                                // TODO map
                                 pre_balances: vec![],
                                 post_balances: vec![],
+                                // not supported by RPCv2 ATM
                                 inner_instructions: None,
+                                // TODO map
                                 log_messages: None,
+                                // not supported by RPCv2 ATM
                                 pre_token_balances: None,
+                                // not supported by RPCv2 ATM
                                 post_token_balances: None,
+                                // TODO map
                                 rewards: None,
-                                loaded_addresses: LoadedAddresses { writable: vec![], readonly: vec![] }, // TODO implement
+                                loaded_addresses: LoadedAddresses {
+                                    writable: txi.writable_accounts.clone(),
+                                    readonly: txi.readable_accounts.clone(),
+                                },
+                                // not supported by RPCv2 ATM
                                 return_data: None,
-                                compute_units_consumed: transaction_info.cu_consumed,
+                                compute_units_consumed: txi.cu_consumed,
                             }
                         })
 
@@ -239,7 +249,6 @@ impl LiteRpcServer for LiteBridge {
                 (Some(full), None)
             } else if transaction_details == TransactionDetails::Signatures {
                 let signatures = block.transactions.iter().map(|td| td.signature.to_string()).collect_vec();
-                // TODO map signatures
                 (None, Some(signatures))
             } else {
                 (None, None)
