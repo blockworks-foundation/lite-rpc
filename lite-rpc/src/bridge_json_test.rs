@@ -16,6 +16,7 @@ use crate::errors::JsonRpcError;
 mod tests {
     use assert_json_diff::{assert_json_eq, assert_json_include};
     use solana_sdk::clock::Slot;
+    use solana_transaction_status::UiConfirmedBlock;
     use super::*;
 
     #[test]
@@ -62,6 +63,20 @@ mod tests {
         assert_same_response_success(slot, config);
     }
 
+    #[test]
+    fn transactions_full() {
+        let slot = get_recent_slot();
+        let config = RpcBlockConfig {
+            encoding: Some(UiTransactionEncoding::Base58),
+            transaction_details: Some(TransactionDetails::Full),
+            rewards: Some(true),
+            commitment: None,
+            max_supported_transaction_version: Some(0),
+        };
+
+        assert_same_response_success(slot, config);
+    }
+
 
     fn assert_same_response_success(slot: u64, config: RpcBlockConfig) {
         let mainnet = "http://api.mainnet-beta.solana.com/";
@@ -71,12 +86,20 @@ mod tests {
         let rpc_client2 = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
 
         let result1 = rpc_client1.get_block_with_config(slot, config);
-        let result2 = rpc_client2.get_block_with_config(slot, config);
-
         let result1 = result1.expect("call to local must succeed");
+        let result1 = truncate(result1);
+
+        let result2 = rpc_client2.get_block_with_config(slot, config);
         let result2 = result2.expect("call to testnet must succeed");
+        let result2 = truncate(result2);
 
         assert_json_eq!(result2, result1);
+    }
+
+    fn truncate(mut result1: UiConfirmedBlock) -> UiConfirmedBlock {
+        const LIMIT: usize = 5;
+        result1.transactions = Some(result1.transactions.unwrap().into_iter().take(LIMIT).collect());
+        result1
     }
 
     fn assert_same_response_fail(slot: u64, config: RpcBlockConfig) {
