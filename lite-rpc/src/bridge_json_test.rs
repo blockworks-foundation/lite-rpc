@@ -20,9 +20,11 @@ use crate::errors::JsonRpcError;
 #[cfg(test)]
 mod tests {
     use assert_json_diff::{assert_json_eq, assert_json_include};
-    use solana_sdk::clock::Slot;
-    use solana_sdk::transaction::VersionedTransaction;
-    use solana_transaction_status::{EncodedTransaction, TransactionBinaryEncoding, UiConfirmedBlock};
+    use bincode::options;
+    use serde_json::Value;
+    use solana_sdk::clock::{Slot, UnixTimestamp};
+    use solana_sdk::transaction::{TransactionVersion, VersionedTransaction};
+    use solana_transaction_status::{BlockEncodingOptions, EncodedTransaction, TransactionBinaryEncoding, UiConfirmedBlock};
     use super::*;
 
     #[test]
@@ -142,6 +144,35 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn test_get_block_with_versioned_tx() {
+
+        let confirmed_block = ConfirmedBlock {
+            previous_blockhash: "Egoc9s7MWfAUrxt2kCat7oGik49mwdKbBDsZ1KgBPTcb".to_string(),
+            blockhash: "APBi3GZqo24ya8Fm4nWfRU2vMZSaaGLbXissLi2GA3Fh".to_string(),
+            parent_slot: 256912125,
+            transactions: vec![], // TODO fill
+            rewards: vec![],
+            block_time: Some(1709807265 as UnixTimestamp),
+            block_height: Some(220980772),
+        };
+
+        let options = BlockEncodingOptions {
+            transaction_details: TransactionDetails::Full,
+            show_rewards: true,
+            max_supported_transaction_version: Some(0),
+        };
+        let confirmed_block = confirmed_block.encode_with_options(UiTransactionEncoding::Base58, options).unwrap();
+
+        assert_json_eq!(
+            confirmed_block,
+            serde_json::from_str::<Value>(
+            r#"{"previousBlockhash":"Egoc9s7MWfAUrxt2kCat7oGik49mwdKbBDsZ1KgBPTcb",
+                "blockhash":"APBi3GZqo24ya8Fm4nWfRU2vMZSaaGLbXissLi2GA3Fh",
+                "parentSlot":256912125,"transactions":[],"rewards":[],"blockTime":1709807265,"blockHeight":220980772
+            }"#).unwrap());
+    }
 
     fn assert_same_response_success(slot: u64, config: RpcBlockConfig) {
         let mainnet = "http://api.mainnet-beta.solana.com/";
