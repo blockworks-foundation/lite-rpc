@@ -15,6 +15,7 @@ use crate::errors::JsonRpcError;
 #[cfg(test)]
 mod tests {
     use assert_json_diff::{assert_json_eq, assert_json_include};
+    use solana_sdk::clock::Slot;
     use super::*;
 
     #[test]
@@ -90,10 +91,19 @@ mod tests {
         assert_same_response_success(slot, config);
     }
 
+    fn get_recent_slot() -> Slot {
+        let testnet = format!("https://api.testnet.rpcpool.com/{testnet_api_token}", testnet_api_token = std::env::var("TESTNET_API_TOKEN").unwrap());
+        let rpc_client = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
+        let slot = rpc_client.get_slot().unwrap();
+        let slot = slot - 40;
+        slot
+    }
+
     #[test]
     fn transactions_signatures_base58() {
         // error
-        let slot = 256771704;
+        let slot = get_recent_slot();
+        println!("asking for slot: {slot}");
         let config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),
             transaction_details: Some(TransactionDetails::Signatures),
@@ -114,19 +124,6 @@ mod tests {
         let rpc_client = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
 
         rpc_client
-    }
-
-
-    #[test]
-    fn connect() {
-        let mainnet = "http://api.mainnet-beta.solana.com/";
-        let testnet = format!("https://api.testnet.rpcpool.com/{testnet_api_token}", testnet_api_token = std::env::var("TESTNET_API_TOKEN").unwrap());
-        let local = "http://localhost:8890";
-        let rpc_client = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
-
-        // error
-        let slot = 256715762;
-        let result = rpc_client.get_block(slot).unwrap();
     }
 
 
