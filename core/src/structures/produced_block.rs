@@ -9,6 +9,7 @@ use solana_transaction_status::Reward;
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
+use solana_sdk::transaction::VersionedTransaction;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
@@ -69,6 +70,7 @@ pub struct ProducedBlockInner {
     pub block_height: u64,
     pub slot: Slot,
     pub parent_slot: Slot,
+    // seconds since epoch
     pub block_time: u64,
     pub previous_blockhash: Hash,
     pub rewards: Option<Vec<Reward>>,
@@ -89,5 +91,15 @@ impl ProducedBlock {
             inner: self.inner.clone(),
             commitment_config: CommitmentConfig::finalized(),
         }
+    }
+}
+
+impl From<&TransactionInfo> for VersionedTransaction {
+    fn from(ti: &TransactionInfo) -> Self {
+        let tx: VersionedTransaction = VersionedTransaction {
+            signatures: vec![ti.signature], // TODO check if it's correct to map only one signature
+            message: ti.message.clone(),
+        };
+        tx
     }
 }

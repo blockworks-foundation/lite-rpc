@@ -15,6 +15,7 @@ pub mod service_spawner;
 pub mod start_server;
 mod rpc_custom_errors;
 mod bridge_json_test;
+mod bridge_map_tx_test;
 
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";

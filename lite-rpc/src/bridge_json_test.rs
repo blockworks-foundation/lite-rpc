@@ -7,7 +7,12 @@ use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_rpc_client_api::request::RpcError::{RpcRequestError, RpcResponseError};
 use solana_rpc_client_api::request::RpcResponseErrorData;
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_transaction_status::{EncodedConfirmedBlock, EncodedTransactionWithStatusMeta, TransactionDetails, UiTransactionEncoding};
+use solana_sdk::message::{MessageHeader, v0, VersionedMessage};
+use solana_sdk::pubkey::Pubkey;
+use solana_sdk::signature::Signature;
+use solana_sdk::transaction::VersionedTransaction;
+use solana_transaction_status::{ConfirmedBlock, EncodedConfirmedBlock, EncodedTransactionWithStatusMeta, Rewards, TransactionDetails, TransactionStatusMeta, TransactionWithStatusMeta, UiTransactionEncoding, VersionedTransactionWithStatusMeta};
+use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 use crate::errors::JsonRpcError;
 
 // "lite-rpc grpc blockstore -testnet"
@@ -16,6 +21,7 @@ use crate::errors::JsonRpcError;
 mod tests {
     use assert_json_diff::{assert_json_eq, assert_json_include};
     use solana_sdk::clock::Slot;
+    use solana_sdk::transaction::VersionedTransaction;
     use solana_transaction_status::UiConfirmedBlock;
     use super::*;
 
@@ -66,6 +72,7 @@ mod tests {
     #[test]
     fn transactions_full() {
         let slot = get_recent_slot();
+        println!("asking slot slot: {slot}");
         let config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),
             transaction_details: Some(TransactionDetails::Full),
@@ -75,6 +82,34 @@ mod tests {
         };
 
         assert_same_response_success(slot, config);
+    }
+
+    #[test]
+    fn transaction_order_full_vs_signatures() {
+        let rpc_client = create_local_rpc_client();
+        let slot = 256903604;
+        let config1 = RpcBlockConfig {
+            encoding: Some(UiTransactionEncoding::Base58),
+            transaction_details: Some(TransactionDetails::Full),
+            rewards: Some(true),
+            commitment: None,
+            max_supported_transaction_version: Some(0),
+        };
+        let config2 = RpcBlockConfig {
+            encoding: Some(UiTransactionEncoding::Base58),
+            transaction_details: Some(TransactionDetails::Signatures),
+            rewards: Some(true),
+            commitment: None,
+            max_supported_transaction_version: Some(0),
+        };
+
+        let block1 = rpc_client.get_block_with_config(slot, config1).unwrap();
+        let block2 = rpc_client.get_block_with_config(slot, config2).unwrap();
+
+        // for tx in &block1.transactions.unwrap() {
+        //     let zzz: VersionedTransaction = tx.transaction.decode().unwrap();
+        //     println!("tx: {}", zzz.signatures);
+        // }
     }
 
 
@@ -93,6 +128,14 @@ mod tests {
         let result2 = result2.expect("call to testnet must succeed");
         let result2 = truncate(result2);
 
+        println!("comparing responses for block {}", slot);
+        println!("-------result1-------\n");
+        println!("{}", serde_json::to_string(&result1).unwrap());
+        println!("=======result1=======\n");
+        println!("\n");
+        println!("-------result2-------\n");
+        println!("{}", serde_json::to_string(&result2).unwrap());
+        println!("=======result2=======\n");
         assert_json_eq!(result2, result1);
     }
 
@@ -112,6 +155,7 @@ mod tests {
         assert!(result1.is_err(), "call to local must fail");
         assert!(result2.is_err(), "call to testnet must fail");
 
+        println!("comparing responses for block {}", slot);
         assert_eq!(result2.unwrap_err().to_string(), result1.unwrap_err().to_string());
     }
 
@@ -145,3 +189,4 @@ mod tests {
         }
     }
 }
+

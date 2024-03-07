@@ -342,8 +342,8 @@ mod tests {
             parent_slot: 666,
             slot: 223555999,
             transactions: vec![create_test_tx(sig1), create_test_tx(sig2)],
-            // TODO double if this is unix millis or seconds
-            block_time: 1699260872000,
+            // seconds
+            block_time: 1699260872,
             leader_id: None,
             rewards: None,
         };
