@@ -19,18 +19,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn error_json() {
-        let msg = format!("Method does not support commitment below `confirmed`");
-        let err = jsonrpsee::types::error::ErrorObject::owned(INVALID_PARAMS_CODE, msg, None::<()>);
-        assert_eq!(serde_json::to_string(&err).unwrap(), r#"{"code":-32602,"message":"Method does not support commitment below `confirmed`"}"#);
-    }
-
-    #[test]
     fn reject_request_for_processed() {
-        let rpc_client = create_rpc_client();
-
-        // error
-        let slot = 256715762;
+        let rpc_client = create_local_rpc_client();
+        let slot = get_recent_slot();
         let config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),
             transaction_details: Some(TransactionDetails::None),
@@ -41,6 +32,36 @@ mod tests {
         let result = rpc_client.get_block_with_config(slot, config);
         assert_eq!(result.unwrap_err().to_string(), "RPC response error -32602: Method does not support commitment below `confirmed` ");
     }
+
+
+    #[test]
+    fn transactions_none_base58() {
+        let slot = get_recent_slot();
+        let config = RpcBlockConfig {
+            encoding: Some(UiTransactionEncoding::Base58),
+            transaction_details: Some(TransactionDetails::None),
+            rewards: Some(true),
+            commitment: None,
+            max_supported_transaction_version: Some(0),
+        };
+
+        assert_same_response_success(slot, config);
+    }
+
+    #[test]
+    fn transactions_signatures_base58() {
+        let slot = get_recent_slot();
+        let config = RpcBlockConfig {
+            encoding: Some(UiTransactionEncoding::Base58),
+            transaction_details: Some(TransactionDetails::Signatures),
+            rewards: Some(true),
+            commitment: None,
+            max_supported_transaction_version: Some(0),
+        };
+
+        assert_same_response_success(slot, config);
+    }
+
 
     fn assert_same_response_success(slot: u64, config: RpcBlockConfig) {
         let mainnet = "http://api.mainnet-beta.solana.com/";
@@ -58,13 +79,9 @@ mod tests {
         assert_json_eq!(result2, result1);
     }
 
-
     fn assert_same_response_fail(slot: u64, config: RpcBlockConfig) {
-        let mainnet = "http://api.mainnet-beta.solana.com/";
-        let testnet = format!("https://api.testnet.rpcpool.com/{testnet_api_token}", testnet_api_token = std::env::var("TESTNET_API_TOKEN").unwrap());
-        let local = "http://localhost:8890";
-        let rpc_client1 = solana_rpc_client::rpc_client::RpcClient::new(local.to_string());
-        let rpc_client2 = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
+        let rpc_client1 = create_local_rpc_client();
+        let rpc_client2 = create_testnet_rpc_client();
 
         let result1 = rpc_client1.get_block_with_config(slot, config);
         let result2 = rpc_client2.get_block_with_config(slot, config);
@@ -75,57 +92,23 @@ mod tests {
         assert_eq!(result2.unwrap_err().to_string(), result1.unwrap_err().to_string());
     }
 
+    fn create_testnet_rpc_client() -> RpcClient {
+        let testnet = format!("https://api.testnet.rpcpool.com/{testnet_api_token}", testnet_api_token = std::env::var("TESTNET_API_TOKEN").unwrap());
+        let rpc_client2 = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
+        rpc_client2
+    }
 
-    #[test]
-    fn transactions_none_base58() {
-        // error
-        let slot = 256718715;
-        let config = RpcBlockConfig {
-            encoding: Some(UiTransactionEncoding::Base58),
-            transaction_details: Some(TransactionDetails::None),
-            rewards: Some(true),
-            commitment: None,
-            max_supported_transaction_version: Some(0),
-        };
-
-        assert_same_response_success(slot, config);
+    fn create_local_rpc_client() -> RpcClient {
+        let local = "http://localhost:8890";
+        let rpc_client1 = solana_rpc_client::rpc_client::RpcClient::new(local.to_string());
+        rpc_client1
     }
 
     fn get_recent_slot() -> Slot {
-        let testnet = format!("https://api.testnet.rpcpool.com/{testnet_api_token}", testnet_api_token = std::env::var("TESTNET_API_TOKEN").unwrap());
-        let rpc_client = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
-        let slot = rpc_client.get_slot().unwrap();
+        let slot = create_testnet_rpc_client().get_slot().unwrap();
         let slot = slot - 40;
         slot
     }
-
-    #[test]
-    fn transactions_signatures_base58() {
-        // error
-        let slot = get_recent_slot();
-        println!("asking for slot: {slot}");
-        let config = RpcBlockConfig {
-            encoding: Some(UiTransactionEncoding::Base58),
-            transaction_details: Some(TransactionDetails::Signatures),
-            rewards: Some(true),
-            commitment: None,
-            max_supported_transaction_version: Some(0),
-        };
-
-        assert_same_response_success(slot, config);
-    }
-
-
-
-    fn create_rpc_client() -> RpcClient {
-        let mainnet = "http://api.mainnet-beta.solana.com/";
-        let testnet = format!("https://api.testnet.rpcpool.com/{testnet_api_token}", testnet_api_token = std::env::var("TESTNET_API_TOKEN").unwrap());
-        let local = "http://localhost:8890";
-        let rpc_client = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
-
-        rpc_client
-    }
-
 
     fn extract_error(result: Result<EncodedConfirmedBlock, Error>) {
         if let Err(error) = result {
