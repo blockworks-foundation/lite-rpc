@@ -98,6 +98,7 @@ impl PostgresQueryBlockStore {
                     prioritization_fees: tx_row.get("prioritization_fees"),
                     cu_consumed: tx_row.get("cu_consumed"),
                     recent_blockhash: tx_row.get("recent_blockhash"),
+                    message_version: tx_row.get("message_version"),
                     message: tx_row.get("message"),
                 }
             })

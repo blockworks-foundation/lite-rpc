@@ -66,6 +66,54 @@ mod tests {
         assert_same_response_success(slot, config);
     }
 
+
+    #[test]
+    fn transactions_v0() {
+        let slot = get_recent_slot();
+
+        for slot in slot-200..slot {
+
+            let config = RpcBlockConfig {
+                encoding: Some(UiTransactionEncoding::Base58),
+                transaction_details: Some(TransactionDetails::Full),
+                rewards: Some(true),
+                commitment: None,
+                max_supported_transaction_version: Some(0),
+            };
+
+            let rpc_client = create_testnet_rpc_client();
+            let blockoption = rpc_client.get_block_with_config(slot, config);
+            println!("check slot {}", slot);
+            if blockoption.is_err() {
+                continue;
+            }
+            let block = blockoption.unwrap();
+
+            let option = block.transactions.clone();
+            if option.is_none() {
+                continue;
+            }
+            let v0_tx = option.unwrap().iter().any(|tx| {
+                match tx.version.as_ref().unwrap() {
+                    TransactionVersion::Legacy(_) => {
+                        true
+                    }
+                    TransactionVersion::Number(_) => {
+                        true
+                    }
+                }
+            });
+
+            if v0_tx {
+                info!("found new version of transaction");
+                let json = serde_json::to_string(&block).unwrap();
+                println!("{}", json);
+            }
+        }
+
+    }
+
+
     #[test]
     fn transactions_signatures_base58() {
         let slot = get_recent_slot();

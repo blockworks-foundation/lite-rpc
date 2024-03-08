@@ -1,7 +1,11 @@
+use std::error::Error;
 use std::str::FromStr;
+use bytes::BytesMut;
 
 use futures_util::pin_mut;
 use log::debug;
+use postgres_types::IsNull;
+use solana_sdk::message::VersionedMessage;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
@@ -11,11 +15,14 @@ use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::TransactionError;
 use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
-use tokio_postgres::types::Type;
+use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
 
 use super::postgres_epoch::*;
 use super::postgres_session::*;
+
+const MESSAGE_VERSION_LEGACY: i32 = -2020;
+const MESSAGE_VERSION_V0: i32 = 0;
 
 #[derive(Debug)]
 pub struct PostgresTransaction {
@@ -27,6 +34,8 @@ pub struct PostgresTransaction {
     pub prioritization_fees: Option<i64>,
     pub recent_blockhash: String,
     pub err: Option<String>,
+    // V0 -> 0, Legacy -> -2020
+    pub message_version: i32,
     pub message: String,
 }
 
@@ -45,7 +54,15 @@ impl PostgresTransaction {
                 .clone()
                 .map(|x| BASE64.serialize(&x).ok())
                 .unwrap_or(None),
+            message_version: Self::map_message_version(&value.message),
             message: BinaryEncoding::Base64.encode(value.message.serialize()),
+        }
+    }
+
+    fn map_message_version(versioned_message: &VersionedMessage) -> i32 {
+        match versioned_message {
+            VersionedMessage::Legacy(_) => MESSAGE_VERSION_LEGACY,
+            VersionedMessage::V0(_) => MESSAGE_VERSION_V0,
         }
     }
 
@@ -106,6 +123,7 @@ impl PostgresTransaction {
                     prioritization_fees bigint,
                     recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                     err text COMPRESSION lz4,
+                    message_version int4 NOT NULL,
                     message text COMPRESSION lz4 NOT NULL
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
@@ -144,7 +162,8 @@ impl PostgresTransaction {
                 signature varchar(88) COMPRESSION lz4 NOT NULL,
                 recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                 err text,
-                message text
+                message_version int4 NOT NULL,
+                message text NOT NULL
                 -- model_transaction_blockdata
             );
         "#;
@@ -160,6 +179,7 @@ impl PostgresTransaction {
                 signature,
                 recent_blockhash,
                 err,
+                message_version,
                 message
                 -- model_transaction_blockdata
             ) FROM STDIN BINARY
@@ -177,6 +197,7 @@ impl PostgresTransaction {
                 Type::VARCHAR, // signature
                 Type::VARCHAR, // recent_blockhash
                 Type::TEXT, // err
+                Type::INT4, // message_version
                 Type::TEXT, // message
             ],
         );
@@ -192,6 +213,7 @@ impl PostgresTransaction {
                 signature,
                 recent_blockhash,
                 err,
+                message_version,
                 message,
                 // model_transaction_blockdata
             } = tx;
@@ -207,6 +229,7 @@ impl PostgresTransaction {
                     &signature,
                     &recent_blockhash,
                     &err,
+                    &message_version,
                     &message,
                     // model_transaction_blockdata
                 ])
@@ -246,6 +269,7 @@ impl PostgresTransaction {
                     prioritization_fees,
                     recent_blockhash,
                     err,
+                    message_version,
                     message
                     -- model_transaction_blockdata
                 )
@@ -258,6 +282,7 @@ impl PostgresTransaction {
                     prioritization_fees,
                     recent_blockhash,
                     err,
+                    message_version,
                     message
                     -- model_transaction_blockdata
                 FROM transaction_raw_blockdata
@@ -286,6 +311,7 @@ impl PostgresTransaction {
                     prioritization_fees,
                     err,
                     recent_blockhash,
+                    message_version,
                     message
                     -- model_transaction_blockdata
                 FROM {schema}.transaction_blockdata
