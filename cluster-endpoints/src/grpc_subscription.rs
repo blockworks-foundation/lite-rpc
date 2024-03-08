@@ -5,7 +5,7 @@ use crate::grpc_multiplex::{
 };
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
-use log::trace;
+use log::{info, trace};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
@@ -31,6 +31,7 @@ use solana_sdk::{
 use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
 use std::sync::Arc;
+use solana_sdk::message::legacy;
 use tracing::trace_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
@@ -58,9 +59,6 @@ pub fn from_grpc_block_update(
 
             let message = transaction.message?;
 
-            // TODO
-            let _v = message.versioned;
-
             let header = message.header?;
 
             let signature = {
@@ -87,7 +85,8 @@ pub fn from_grpc_block_update(
                 })
                 .collect();
 
-            let message = VersionedMessage::V0(v0::Message {
+            // use V0 as container and map to Legacy if needed
+            let full_message = v0::Message {
                 header: MessageHeader {
                     num_required_signatures: header.num_required_signatures as u8,
                     num_readonly_signed_accounts: header.num_readonly_signed_accounts as u8,
@@ -117,7 +116,9 @@ pub fn from_grpc_block_update(
                         }
                     })
                     .collect(),
-            });
+            };
+
+            let message = map_versioned_message(message.versioned, full_message);
 
             let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
 
@@ -210,6 +211,19 @@ pub fn from_grpc_block_update(
         rewards,
     };
     ProducedBlock::new(inner, commitment_config)
+}
+
+fn map_versioned_message(versioned: bool, full_message: v0::Message) -> VersionedMessage {
+    if versioned {
+        VersionedMessage::V0(full_message)
+    } else {
+        VersionedMessage::Legacy(legacy::Message {
+            header: full_message.header,
+            account_keys: full_message.account_keys,
+            recent_blockhash: full_message.recent_blockhash,
+            instructions: full_message.instructions,
+        })
+    }
 }
 
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
