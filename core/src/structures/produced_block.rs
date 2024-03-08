@@ -29,7 +29,7 @@ pub struct TransactionInfo {
     pub fee: i64,
     pub pre_balances: Vec<i64>,
     pub post_balances: Vec<i64>,
-    pub inner_instructions: Vec<InnerInstructions>,
+    pub inner_instructions: Option<Vec<InnerInstructions>>,
 }
 
 #[derive(Clone)]

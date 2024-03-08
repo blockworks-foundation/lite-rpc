@@ -41,7 +41,7 @@ pub struct PostgresTransaction {
     pub fee: i64,
     pub pre_balances: Vec<i64>,
     pub post_balances: Vec<i64>,
-    pub inner_instructions: String,
+    pub inner_instructions: Option<String>,
 }
 
 impl PostgresTransaction {
@@ -64,7 +64,9 @@ impl PostgresTransaction {
             fee: value.fee,
             pre_balances: value.pre_balances.clone(),
             post_balances: value.post_balances.clone(),
-            inner_instructions: BinaryEncoding::Base64.encode(bincode::serialize(&value.inner_instructions).unwrap()),
+            inner_instructions: value.inner_instructions.clone().map(|ins| {
+                BinaryEncoding::Base64.encode(bincode::serialize(&ins).unwrap())
+            }),
         }
     }
 
@@ -99,9 +101,12 @@ impl PostgresTransaction {
             fee: self.fee,
             pre_balances: self.pre_balances.clone(),
             post_balances: self.post_balances.clone(),
-            inner_instructions: BinaryEncoding::Base64
-                .deserialize(&self.inner_instructions)
-                .expect("serialized inner instructions"),
+            inner_instructions: self.inner_instructions.clone()
+                .filter(|x| !x.is_empty()).map(|x| {
+                BinaryEncoding::Base64
+                    .deserialize(&x)
+                    .expect("serialized inner instructions")
+            }),
         }
     }
 
@@ -144,7 +149,7 @@ impl PostgresTransaction {
                     fee int8 NOT NULL,
                     pre_balances int8[] NOT NULL,
                     post_balances int8[] NOT NULL,
-                    inner_instructions text COMPRESSION lz4 NOT NULL,
+                    inner_instructions text COMPRESSION lz4
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
@@ -187,7 +192,7 @@ impl PostgresTransaction {
                 fee int8 NOT NULL,
                 pre_balances int8[] NOT NULL,
                 post_balances int8[] NOT NULL,
-                inner_instructions text NOT NULL
+                inner_instructions text
                 -- model_transaction_blockdata
             );
         "#;

@@ -177,6 +177,8 @@ impl LiteRpcServer for LiteBridge {
                 // TODO minimize allocations
                 let full = block.transactions.iter().map(|txi| {
 
+
+
                     TransactionWithStatusMeta::Complete(
                         VersionedTransactionWithStatusMeta {
                             transaction: VersionedTransaction::from(txi),
@@ -186,8 +188,7 @@ impl LiteRpcServer for LiteBridge {
                                 // TODO map
                                 pre_balances: txi.pre_balances.iter().map(|x| *x as u64).collect_vec(),
                                 post_balances: txi.post_balances.iter().map(|x| *x as u64).collect_vec(),
-                                // not supported by RPCv2 ATM
-                                inner_instructions: None,
+                                inner_instructions: txi.inner_instructions.clone(),
                                 // TODO map
                                 log_messages: None,
                                 // not supported by RPCv2 ATM

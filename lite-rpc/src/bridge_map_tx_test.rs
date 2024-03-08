@@ -52,7 +52,7 @@ fn create_test_tx(signature: Signature) -> TransactionInfo {
         fee: 5000,
         pre_balances: vec![99999],
         post_balances: vec![100001],
-        inner_instructions: vec![],
+        inner_instructions: None,
     }
 }
 
