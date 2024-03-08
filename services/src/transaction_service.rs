@@ -22,7 +22,7 @@ use solana_lite_rpc_core::{
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
     compute_budget::{self, ComputeBudgetInstruction},
-    transaction::VersionedTransaction,
+    transaction::{Transaction, VersionedTransaction},
 };
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
@@ -122,6 +122,15 @@ pub struct TransactionService {
 
 impl TransactionService {
     pub async fn send_transaction(
+        &self,
+        tx: Transaction,
+        max_retries: Option<u16>,
+    ) -> anyhow::Result<String> {
+        let raw_tx = bincode::serialize(&tx)?;
+        self.send_wire_transaction(raw_tx, max_retries).await
+    }
+
+    pub async fn send_wire_transaction(
         &self,
         raw_tx: Vec<u8>,
         max_retries: Option<u16>,

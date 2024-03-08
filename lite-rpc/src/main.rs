@@ -339,7 +339,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     };
 
     let spawner = ServiceSpawner {
-        prometheus_addr,
         data_cache: data_cache.clone(),
     };
     //init grpc leader schedule and vote account is configured.
@@ -364,7 +363,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         slot_notifier.resubscribe(),
     );
 
-    let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
+    let support_service =
+        tokio::spawn(async move { spawner.spawn_support_services(prometheus_addr).await });
 
     let history = History::new();
 
