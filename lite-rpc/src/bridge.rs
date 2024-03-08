@@ -176,15 +176,16 @@ impl LiteRpcServer for LiteBridge {
             if transaction_details == TransactionDetails::Full || transaction_details == TransactionDetails::Accounts {
                 // TODO minimize allocations
                 let full = block.transactions.iter().map(|txi| {
+
                     TransactionWithStatusMeta::Complete(
                         VersionedTransactionWithStatusMeta {
                             transaction: VersionedTransaction::from(txi),
                             meta: TransactionStatusMeta {
                                 status: txi.err.clone().map_or(Ok(()), Err),
-                                fee: txi.prioritization_fees.unwrap_or(0),
+                                fee: txi.fee as u64,
                                 // TODO map
-                                pre_balances: vec![],
-                                post_balances: vec![],
+                                pre_balances: txi.pre_balances.iter().map(|x| *x as u64).collect_vec(),
+                                post_balances: txi.post_balances.iter().map(|x| *x as u64).collect_vec(),
                                 // not supported by RPCv2 ATM
                                 inner_instructions: None,
                                 // TODO map

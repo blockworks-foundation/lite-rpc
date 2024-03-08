@@ -130,8 +130,7 @@ mod tests {
 
     #[test]
     fn transactions_full() {
-        let slot = 256912126;
-        println!("asking slot slot: {slot}");
+        let slot = get_recent_slot();
         let config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Json),
             transaction_details: Some(TransactionDetails::Full),

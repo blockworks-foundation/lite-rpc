@@ -26,6 +26,9 @@ pub struct TransactionInfo {
     pub writable_accounts: Vec<Pubkey>,
     pub readable_accounts: Vec<Pubkey>,
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
+    pub fee: i64,
+    pub pre_balances: Vec<i64>,
+    pub post_balances: Vec<i64>,
 }
 
 #[derive(Clone)]

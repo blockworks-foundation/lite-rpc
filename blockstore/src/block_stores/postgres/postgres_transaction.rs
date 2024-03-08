@@ -37,6 +37,10 @@ pub struct PostgresTransaction {
     // V0 -> 0, Legacy -> -2020
     pub message_version: i32,
     pub message: String,
+    // note: solana uses u64 but SQL does not support that
+    pub fee: i64,
+    pub pre_balances: Vec<i64>,
+    pub post_balances: Vec<i64>,
 }
 
 impl PostgresTransaction {
@@ -56,6 +60,9 @@ impl PostgresTransaction {
                 .unwrap_or(None),
             message_version: Self::map_message_version(&value.message),
             message: BinaryEncoding::Base64.encode(value.message.serialize()),
+            fee: value.fee,
+            pre_balances: value.pre_balances.clone(),
+            post_balances: value.post_balances.clone(),
         }
     }
 
@@ -85,7 +92,11 @@ impl PostgresTransaction {
             readable_accounts: vec![],
             writable_accounts: vec![],
             is_vote: false,
+            // TODO
             address_lookup_tables: vec![],
+            fee: self.fee,
+            pre_balances: self.pre_balances.clone(),
+            post_balances: self.post_balances.clone(),
         }
     }
 
@@ -124,7 +135,10 @@ impl PostgresTransaction {
                     recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                     err text COMPRESSION lz4,
                     message_version int4 NOT NULL,
-                    message text COMPRESSION lz4 NOT NULL
+                    message text COMPRESSION lz4 NOT NULL,
+                    fee int8 NOT NULL,
+                    pre_balances int8[] NOT NULL,
+                    post_balances int8[] NOT NULL,
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
@@ -163,7 +177,10 @@ impl PostgresTransaction {
                 recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                 err text,
                 message_version int4 NOT NULL,
-                message text NOT NULL
+                message text NOT NULL,
+                fee int8 NOT NULL,
+                pre_balances int8[] NOT NULL,
+                post_balances int8[] NOT NULL
                 -- model_transaction_blockdata
             );
         "#;
@@ -180,7 +197,10 @@ impl PostgresTransaction {
                 recent_blockhash,
                 err,
                 message_version,
-                message
+                message,
+                fee,
+                pre_balances,
+                post_balances
                 -- model_transaction_blockdata
             ) FROM STDIN BINARY
         "#;
@@ -199,6 +219,10 @@ impl PostgresTransaction {
                 Type::TEXT, // err
                 Type::INT4, // message_version
                 Type::TEXT, // message
+                Type::INT8, // fee
+                Type::INT8_ARRAY, // pre_balances
+                Type::INT8_ARRAY, // post_balances
+                // model_transaction_blockdata
             ],
         );
         pin_mut!(writer);
@@ -215,6 +239,9 @@ impl PostgresTransaction {
                 err,
                 message_version,
                 message,
+                fee,
+                pre_balances,
+                post_balances,
                 // model_transaction_blockdata
             } = tx;
 
@@ -231,6 +258,9 @@ impl PostgresTransaction {
                     &err,
                     &message_version,
                     &message,
+                    &fee,
+                    &pre_balances,
+                    &post_balances
                     // model_transaction_blockdata
                 ])
                 .await?;
@@ -270,7 +300,10 @@ impl PostgresTransaction {
                     recent_blockhash,
                     err,
                     message_version,
-                    message
+                    message,
+                    fee,
+                    pre_balances,
+                    post_balances
                     -- model_transaction_blockdata
                 )
                 SELECT
@@ -283,7 +316,10 @@ impl PostgresTransaction {
                     recent_blockhash,
                     err,
                     message_version,
-                    message
+                    message,
+                    fee,
+                    pre_balances,
+                    post_balances
                     -- model_transaction_blockdata
                 FROM transaction_raw_blockdata
         "#,
@@ -312,7 +348,10 @@ impl PostgresTransaction {
                     err,
                     recent_blockhash,
                     message_version,
-                    message
+                    message,
+                    fee,
+                    pre_balances,
+                    post_balances
                     -- model_transaction_blockdata
                 FROM {schema}.transaction_blockdata
                 WHERE slot = {}

@@ -195,7 +195,7 @@ impl PostgresBlockStore {
         }
         let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;
         for result in all_results {
-            result.expect("Save query must succeed");
+            result.context("Save query must succeed")?;
         }
 
         let elapsed_txs_insert = started_txs.elapsed();

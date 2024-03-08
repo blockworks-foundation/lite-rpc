@@ -28,7 +28,7 @@ use solana_sdk::{
     signature::Signature,
     transaction::TransactionError,
 };
-use solana_transaction_status::{Reward, RewardType};
+use solana_transaction_status::{Reward, RewardType, TransactionStatusMeta};
 use std::cell::OnceCell;
 use std::sync::Arc;
 use solana_sdk::message::legacy;
@@ -61,14 +61,12 @@ pub fn from_grpc_block_update(
 
             let header = message.header?;
 
+            TransactionStatusMeta
+
             let signature = {
                 let sig_bytes: [u8; 64] = tx.signature.try_into().expect("must map to signature");
                 Signature::from(sig_bytes)
             };
-
-            // meta.fee;
-            // meta.pre_balances;
-            // meta.post_balances;
 
             let err = meta.err.map(|x| {
                 bincode::deserialize::<TransactionError>(&x.err)
@@ -161,6 +159,9 @@ pub fn from_grpc_block_update(
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,
+                fee: meta.fee as i64,
+                pre_balances: meta.pre_balances.into_iter().map(|x| x as i64).collect(),
+                post_balances: meta.post_balances.into_iter().map(|x| x as i64).collect(),
             })
         })
         .collect();

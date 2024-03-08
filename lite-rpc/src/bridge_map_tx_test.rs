@@ -48,6 +48,9 @@ fn create_test_tx(signature: Signature) -> TransactionInfo {
         writable_accounts: vec![],
         readable_accounts: vec![],
         address_lookup_tables: vec![],
+        fee: 5000,
+        pre_balances: vec![99999],
+        post_balances: vec![100001],
     }
 }
 

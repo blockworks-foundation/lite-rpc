@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::debug;
+use log::{debug, trace};
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
@@ -143,15 +143,21 @@ impl PostgresSession {
         // DEALLOCATE -> would drop prepared statements which we do not use ATM
         // DISCARD PLANS -> we want to keep the plans
         // DISCARD SEQUENCES -> we want to keep the sequences
-        self.0
+        let result = self.0
             .batch_execute(
                 r#"
                DISCARD TEMP;
                 CLOSE ALL;"#,
             )
-            .await
-            .unwrap();
-        debug!("Clear postgres session");
+            .await;
+        match result {
+            Ok(_) => {
+                trace!("Clear postgres session");
+            }
+            Err(err) => {
+                log::error!("Error clearing postgres session: {err}");
+            }
+        }
     }
 
     pub async fn execute(

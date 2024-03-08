@@ -195,6 +195,9 @@ pub fn from_ui_block(
             let Some(UiTransactionStatusMeta {
                 err,
                 compute_units_consumed,
+                fee,
+                pre_balances,
+                post_balances,
                 ..
             }) = tx.meta
             else {
@@ -305,6 +308,9 @@ pub fn from_ui_block(
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,
+                fee: fee as i64,
+                pre_balances: pre_balances.into_iter().map(|x| x as i64).collect(),
+                post_balances: post_balances.into_iter().map(|x| x as i64).collect(),
             })
         })
         .collect();
