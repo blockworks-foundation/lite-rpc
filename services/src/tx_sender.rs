@@ -1,6 +1,5 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use anyhow::bail;
 use chrono::Utc;
 use log::{trace, warn};
 
@@ -35,11 +34,6 @@ lazy_static::lazy_static! {
     pub static ref TXS_IN_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_channel", "Transactions in channel")).unwrap();
 
 }
-
-// making 250 as sleep time will effectively make lite rpc send
-// (1000/250) * 5 * 512 = 10240 tps
-const INTERVAL_PER_BATCH_IN_MS: u64 = 50;
-const MAX_BATCH_SIZE_IN_PER_INTERVAL: usize = 2000;
 
 /// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
 #[derive(Clone)]
@@ -134,52 +128,19 @@ impl TxSender {
     ) -> AnyhowJoinHandle {
         tokio::spawn(async move {
             loop {
-                let mut transaction_infos = Vec::with_capacity(MAX_BATCH_SIZE_IN_PER_INTERVAL);
-                let mut timeout_interval = INTERVAL_PER_BATCH_IN_MS;
-
-                // In solana there in sig verify stage rate is limited to 2000 txs in 50ms
-                // taking this as reference
-                while transaction_infos.len() <= MAX_BATCH_SIZE_IN_PER_INTERVAL {
-                    let instance = tokio::time::Instant::now();
-                    match tokio::time::timeout(Duration::from_millis(timeout_interval), recv.recv())
-                        .await
+                while let Some(transaction_info) = recv.recv().await {
+                    // duplicate transaction
+                    if self
+                        .data_cache
+                        .txs
+                        .contains_key(&transaction_info.signature)
                     {
-                        Ok(value) => match value {
-                            Some(transaction_info) => {
-                                TXS_IN_CHANNEL.dec();
-
-                                // duplicate transaction
-                                if self
-                                    .data_cache
-                                    .txs
-                                    .contains_key(&transaction_info.signature)
-                                {
-                                    continue;
-                                }
-                                transaction_infos.push(transaction_info);
-                                // update the timeout inteval
-                                timeout_interval = timeout_interval
-                                    .saturating_sub(instance.elapsed().as_millis() as u64)
-                                    .max(1);
-                            }
-                            None => {
-                                log::error!("Channel Disconnected");
-                                bail!("Channel Disconnected");
-                            }
-                        },
-                        Err(_) => {
-                            break;
-                        }
+                        continue;
                     }
+
+                    self.forward_txs(vec![transaction_info], notifier.clone())
+                        .await;
                 }
-
-                if transaction_infos.is_empty() {
-                    continue;
-                }
-
-                TX_BATCH_SIZES.set(transaction_infos.len() as i64);
-
-                self.forward_txs(transaction_infos, notifier.clone()).await;
             }
         })
     }

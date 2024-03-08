@@ -53,17 +53,14 @@ impl DataCache {
         self.tx_subs.clean(ttl_duration);
     }
 
-    pub async fn check_if_confirmed_or_expired_blockheight(
+    pub fn check_if_confirmed_or_expired_blockheight(
         &self,
         sent_transaction_info: &SentTransactionInfo,
     ) -> bool {
-        let last_block = self
-            .block_information_store
-            .get_latest_block_info(CommitmentConfig::processed())
-            .await;
+        let last_block_height = self.block_information_store.get_last_blockheight();
         self.txs
             .is_transaction_confirmed(&sent_transaction_info.signature)
-            || last_block.block_height > sent_transaction_info.last_valid_block_height
+            || last_block_height > sent_transaction_info.last_valid_block_height
     }
 
     pub async fn get_current_epoch(&self, commitment: CommitmentConfig) -> Epoch {

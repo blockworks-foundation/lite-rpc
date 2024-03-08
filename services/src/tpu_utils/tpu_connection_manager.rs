@@ -111,7 +111,7 @@ impl ActiveConnection {
 
                     let tx: Vec<u8> = match tx {
                         Ok(transaction_sent_info) => {
-                            if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info).await {
+                            if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info) {
                                 // transaction is already confirmed/ no need to send
                                 continue;
                             }
