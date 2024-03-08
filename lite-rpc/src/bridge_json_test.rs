@@ -166,7 +166,24 @@ mod tests {
         let raw = bs58::decode(&foo).into_vec().unwrap();
 
         let obj = bincode::deserialize::<VoteInstruction>(&raw).unwrap();
-        obj.
+        match obj {
+            VoteInstruction::InitializeAccount(_) => {}
+            VoteInstruction::Authorize(_, _) => {}
+            VoteInstruction::Vote(_) => {
+                println!("Vote");
+            }
+            VoteInstruction::Withdraw(_) => {}
+            VoteInstruction::UpdateValidatorIdentity => {}
+            VoteInstruction::UpdateCommission(_) => {}
+            VoteInstruction::VoteSwitch(_, _) => {}
+            VoteInstruction::AuthorizeChecked(_) => {}
+            VoteInstruction::UpdateVoteState(_) => {}
+            VoteInstruction::UpdateVoteStateSwitch(_, _) => {}
+            VoteInstruction::AuthorizeWithSeed(_) => {}
+            VoteInstruction::AuthorizeCheckedWithSeed(_) => {}
+            VoteInstruction::CompactUpdateVoteState(_) => {}
+            VoteInstruction::CompactUpdateVoteStateSwitch(_, _) => {}
+        }
 
     }
 
@@ -176,9 +193,10 @@ mod tests {
 
         let signature1 = Signature::from_str("3mJ2rMus6q9XEtgrbnnAfcXYtZrsjo4ehdHPkVWbM78YACUwvr9XkXLnYTtaqZ98S1gft6PrcCqMis3WuBtacPv3").unwrap();
 
+        let data = bs58::decode("Fk63Q321enfa7mN4TibcZkzYHBEhvTgZ4W1c4rzdbaHKAQ3262j4bLyCTdHwFx3dSC76VmdbGa4PpAY2pXgJZuPRnvttdJJLTQoaymujmbGqMe5gMXNcJ15AzXJNDcZNBWFpvFPTFENGrRznFy6WmosM2xMB7D").into_vec().unwrap();
 
-        let ins1 = CompiledInstruction::new(
-            2, &0, vec![1,0]);
+        let ins1 = CompiledInstruction::new_from_raw_parts(
+            2, data, vec![1,0]);
 
         let message1 = VersionedMessage::Legacy(legacy::Message {
             header: MessageHeader {
