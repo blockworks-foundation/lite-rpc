@@ -18,7 +18,7 @@ use solana_lite_rpc_core::{
     structures::notifications::NotificationSender,
     AnyhowJoinHandle,
 };
-use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::transaction::{Transaction, VersionedTransaction};
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
     time::Instant,
@@ -109,6 +109,15 @@ pub struct TransactionService {
 
 impl TransactionService {
     pub async fn send_transaction(
+        &self,
+        tx: Transaction,
+        max_retries: Option<u16>,
+    ) -> anyhow::Result<String> {
+        let raw_tx = bincode::serialize(&tx)?;
+        self.send_wire_transaction(raw_tx, max_retries).await
+    }
+
+    pub async fn send_wire_transaction(
         &self,
         raw_tx: Vec<u8>,
         max_retries: Option<u16>,

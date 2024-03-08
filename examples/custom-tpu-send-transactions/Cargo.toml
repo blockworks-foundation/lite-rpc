@@ -11,3 +11,16 @@ edition.workspace = true
 [dependencies]
 solana-lite-rpc-services = {workspace = true}
 solana-lite-rpc-core = {workspace = true}
+solana-lite-rpc-cluster-endpoints = {workspace = true}
+
+solana-sdk = { workspace = true }
+solana-rpc-client = { workspace = true }
+
+tokio = "1.28.2"
+clap = { workspace = true }
+anyhow = { workspace = true }
+dashmap = { workspace = true }
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+log = { workspace = true }
+itertools = { workspace = true }

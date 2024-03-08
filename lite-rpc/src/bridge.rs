@@ -378,7 +378,7 @@ impl LiteRpcServer for LiteBridge {
 
         match self
             .transaction_service
-            .send_transaction(raw_tx, max_retries)
+            .send_wire_transaction(raw_tx, max_retries)
             .await
         {
             Ok(sig) => {
