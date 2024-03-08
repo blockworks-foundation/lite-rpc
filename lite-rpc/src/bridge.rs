@@ -153,14 +153,13 @@ impl LiteRpcServer for LiteBridge {
         let commitment = config.commitment.unwrap_or_default();
 
         if !commitment.is_at_least_confirmed() {
-            return Err(jsonrpsee::types::error::ErrorObject::owned(INVALID_PARAMS_CODE, "Method does not support commitment below `confirmed`", None::<()>));
+            return Err(ErrorObject::owned(INVALID_PARAMS_CODE, "Method does not support commitment below `confirmed`", None::<()>));
         }
 
         let transaction_details =
             config.transaction_details
                 .unwrap_or(TransactionDetails::Full);
 
-        // FIXME
         let block = self
             .multiple_strategy_block_storage
             .as_ref()
@@ -169,32 +168,14 @@ impl LiteRpcServer for LiteBridge {
             .await;
 
         let block = block.map_err(|err| {
-            log::error!("Error looking up block {slot} : {err:?}");
+            log::warn!("Error looking up block {slot} : {err:?}");
             map_rpc_custom_error(RpcCustomError::BlockNotAvailable { slot })
-            // jsonrpsee::types::error::ErrorObject::owned(INTERNAL_ERROR_CODE, "failed to load block", None::<()>)
         })?;
-
-        let (is_full, include_rewards, include_accounts) = match transaction_details
-        {
-            solana_transaction_status::TransactionDetails::Full => {
-                (true, true, true)
-            }
-            solana_transaction_status::TransactionDetails::Signatures => {
-                (false, false, false)
-            }
-            solana_transaction_status::TransactionDetails::None => {
-                (false, false, false)
-            }
-            solana_transaction_status::TransactionDetails::Accounts => {
-                (false, false, true)
-            }
-        };
 
         let (full_transactions, only_signatures) =
             if transaction_details == TransactionDetails::Full || transaction_details == TransactionDetails::Accounts {
                 // TODO minimize allocations
                 let full = block.transactions.iter().map(|txi| {
-
                     TransactionWithStatusMeta::Complete(
                         VersionedTransactionWithStatusMeta {
                             transaction: VersionedTransaction::from(txi),
@@ -223,28 +204,6 @@ impl LiteRpcServer for LiteBridge {
                                 compute_units_consumed: txi.cu_consumed,
                             }
                         })
-
-                    // EncodedTransactionWithStatusMeta {
-                    //     version: None,
-                    //     meta: Some(UiTransactionStatusMeta {
-                    //         err: transaction_info.err.clone(),
-                    //         status: transaction_info.err.clone().map_or(Ok(()), Err),
-                    //         fee: 0,
-                    //         pre_balances: vec![],
-                    //         post_balances: vec![],
-                    //         inner_instructions: OptionSerializer::None,
-                    //         log_messages: OptionSerializer::None,
-                    //         pre_token_balances: OptionSerializer::None,
-                    //         post_token_balances: OptionSerializer::None,
-                    //         rewards: OptionSerializer::None,
-                    //         loaded_addresses: OptionSerializer::None,
-                    //         return_data: OptionSerializer::None,
-                    //         compute_units_consumed: transaction_info.cu_consumed.map_or( OptionSerializer::None,OptionSerializer::Some),
-                    //     }),
-                    //     transaction: solana_transaction_status::EncodedTransaction::Binary(
-                    //         BASE64.serialize(&transaction_info.message).unwrap(),
-                    //         solana_transaction_status::TransactionBinaryEncoding::Base64)
-                    // }
                 }).collect_vec();
                 (Some(full), None)
             } else if transaction_details == TransactionDetails::Signatures {
@@ -263,72 +222,11 @@ impl LiteRpcServer for LiteBridge {
             block_time: Some(block.block_time as UnixTimestamp),
             block_height: Some(block.block_height),
         };
-        // let ui_block = UiConfirmedBlock {
-        //     previous_blockhash: block.previous_blockhash.to_string(),
-        //     blockhash: block.blockhash.to_string(),
-        //     parent_slot: block.parent_slot,
-        //     transactions: full_transactions,
-        //     signatures: only_signatures,
-        //     rewards: block.rewards.clone(),
-        //     block_time: Some(block.block_time as i64),
-        //     block_height: Some(block.block_height),
-        // };
-        // let encode_block = |confirmed_block: ConfirmedBlock| -> Result<UiConfirmedBlock, ErrorObject> {
-        // let mut encoded_block = block
-        //     .encode_with_options(encoding, encoding_options)
-        //     .map_err(|error| map_rpc_custom_error(RpcCustomError::from(error)))?;
-        // if slot == 0 {
-        //     // TODO
-        //     // encoded_block.block_time = Some(self.genesis_creation_time());
-        //     encoded_block.block_height = Some(0);
-        // }
-        // return result
-        //     .ok()
-        //     .map(ConfirmedBlock::from)
-        //     .map(encode_block)
-        //     .transpose();
 
-        info!("confirmed_block {:?}", confirmed_block.blockhash);
-        let confirmed_block_txs = &confirmed_block.transactions;
-        for tx in confirmed_block_txs.iter().take(5) {
-            info!("- tx {}", tx.transaction_signature());
-        }
-
-        let result = confirmed_block.encode_with_options(encoding, encoding_options)
+        confirmed_block.encode_with_options(encoding, encoding_options)
             .map_err(|error| map_rpc_custom_error(RpcCustomError::from(error)))
-            .map(Some);
-        // Ok(Some(ui_block))
-        // RpcResult<Option<UiConfirmedBlock>>
-        result
+            .map(Some)
     }
-
-    // async fn __get_block(&self, slot: u64) -> RpcResult<Option<UiConfirmedBlock>> {
-    //     let blockinfo = self.data_cache.block_information_store.get_block_info_by_slot(slot);
-    //
-    //     if let Some(blockinfo) = blockinfo {
-    //         info!("block_information_store got {:?}", blockinfo);
-    //     }
-    //
-    //     if let Ok(block_from_storage) = self.multiple_strategy_block_storage.query_block(slot).await {
-    //         info!("block_from_storage got {:?}", block_from_storage.block);
-    //         info!("block_from_storage block source {:?}", block_from_storage.result_source);
-    //     }
-    //
-    //
-    //     return RpcResult::Ok(None);
-    //
-    //     // if block.is_ok() {
-    //     //     // TO DO Convert to UIConfirmed Block
-    //     //     Err(jsonrpsee::core::Error::HttpNotImplemented)
-    //     // } else {
-    //     //     Ok(None)
-    //     // }
-    //
-    //     // TODO get_block might deserve different implementation based on whether we serve from "blockstore module" vs. from "send tx module"
-    //
-    //     // under progress
-    //     Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
-    // }
 
     async fn get_blocks(
         &self,

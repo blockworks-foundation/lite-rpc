@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 use std::time::Instant;
 
 use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
 use log::{debug, info, warn};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
@@ -65,20 +65,15 @@ impl PostgresQueryBlockStore {
 
         // TODO could we use join! here?
         let statement = PostgresBlock::build_query_statement(epoch, slot);
-        let block_row = self.session
-            .query_opt(&statement, &[])
-            .await
-            .unwrap();
-
-        if block_row.is_none() {
-            bail!("Block {} in epoch {} not found in postgres", slot, epoch);
-        }
+        let row = self.session
+            .query_opt(&statement, &[]).await
+            .context("query block sql")?
+            .context("block not found")?;
 
         let statement = PostgresTransaction::build_query_statement(epoch, slot);
         let transaction_rows = self.session
             .query_list(&statement, &[])
-            .await
-            .unwrap();
+            .await?;
 
         warn!(
             "transaction_rows: {} - print first 10",
@@ -107,11 +102,9 @@ impl PostgresQueryBlockStore {
             .collect_vec();
 
 
-        let row = block_row.unwrap();
         // meta data
         let _epoch: i64 = row.get("_epoch");
         let epoch_schema: String = row.get("_epoch_schema");
-
         let blockhash: String = row.get("blockhash");
         let block_height: i64 = row.get("block_height");
         let slot: i64 = row.get("slot");
