@@ -158,7 +158,7 @@ impl PostgresTransaction {
                         autovacuum_analyze_scale_factor=0,
                         autovacuum_analyze_threshold=1000
                         );
-                CREATE idx idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
+                CREATE INDEX idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
             "#,
             schema = schema
         )
