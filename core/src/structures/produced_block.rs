@@ -1,15 +1,16 @@
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::Hash;
-use solana_sdk::message::v0::MessageAddressTableLookup;
+use solana_sdk::message::v0::{LoadedAddresses, MessageAddressTableLookup};
 use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
-use solana_transaction_status::{InnerInstructions, Reward};
+use solana_transaction_status::{InnerInstructions, Reward, Rewards, TransactionStatusMeta, TransactionTokenBalance};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
 use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::transaction_context::TransactionReturnData;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
@@ -30,6 +31,14 @@ pub struct TransactionInfo {
     pub pre_balances: Vec<i64>,
     pub post_balances: Vec<i64>,
     pub inner_instructions: Option<Vec<InnerInstructions>>,
+    pub log_messages: Option<Vec<String>>,
+
+    // from TransactionStatusMeta
+
+    // pub pre_token_balances: Option<Vec<TransactionTokenBalance>>,
+    // pub post_token_balances: Option<Vec<TransactionTokenBalance>>,
+    // pub rewards: Option<Rewards>,
+    // pub return_data: Option<TransactionReturnData>,
 }
 
 #[derive(Clone)]

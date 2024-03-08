@@ -95,10 +95,13 @@ impl PostgresQueryBlockStore {
                     recent_blockhash: tx_row.get("recent_blockhash"),
                     message_version: tx_row.get("message_version"),
                     message: tx_row.get("message"),
+                    writable_accounts: tx_row.get("writable_accounts"),
+                    readable_accounts: tx_row.get("readable_accounts"),
                     fee: tx_row.get("fee"),
                     pre_balances: tx_row.get("pre_balances"),
                     post_balances: tx_row.get("post_balances"),
                     inner_instructions: tx_row.get("inner_instructions"),
+                    log_messages: tx_row.get("log_messages"),
                 }
             })
             .sorted_by(|a, b| a.idx_in_block.cmp(&b.idx_in_block))

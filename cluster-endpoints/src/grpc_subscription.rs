@@ -161,6 +161,12 @@ pub fn from_grpc_block_update(
                 .map(|x| x.to_vec())
                 .unwrap_or_default();
 
+            let log_messages = if meta.log_messages_none {
+                None
+            } else {
+                Some(meta.log_messages)
+            };
+
             Some(TransactionInfo {
                 signature,
                 index: tx.index as i32,
@@ -178,6 +184,7 @@ pub fn from_grpc_block_update(
                 pre_balances: meta.pre_balances.into_iter().map(|x| x as i64).collect(),
                 post_balances: meta.post_balances.into_iter().map(|x| x as i64).collect(),
                 inner_instructions: Option::from(inner_instructions).filter(|x| !x.is_empty()),
+                log_messages,
             })
         })
         .collect();

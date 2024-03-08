@@ -53,6 +53,7 @@ fn create_test_tx(signature: Signature) -> TransactionInfo {
         pre_balances: vec![99999],
         post_balances: vec![100001],
         inner_instructions: None,
+        log_messages: Some(vec!["log line1".to_string(), "log line2".to_string()]),
     }
 }
 

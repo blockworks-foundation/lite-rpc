@@ -156,6 +156,8 @@ impl LiteRpcServer for LiteBridge {
             return Err(ErrorObject::owned(INVALID_PARAMS_CODE, "Method does not support commitment below `confirmed`", None::<()>));
         }
 
+        assert!(!config.rewards.unwrap_or(false), "Rewards not yet supported");
+
         let transaction_details =
             config.transaction_details
                 .unwrap_or(TransactionDetails::Full);
@@ -190,12 +192,12 @@ impl LiteRpcServer for LiteBridge {
                                 post_balances: txi.post_balances.iter().map(|x| *x as u64).collect_vec(),
                                 inner_instructions: txi.inner_instructions.clone(),
                                 // TODO map
-                                log_messages: None,
-                                // not supported by RPCv2 ATM
+                                log_messages: txi.log_messages.clone(),
+                                // TODO check if we want that
                                 pre_token_balances: None,
-                                // not supported by RPCv2 ATM
+                                // TODO check if we want that
                                 post_token_balances: None,
-                                // TODO map
+                                // TODO check if we want that
                                 rewards: None,
                                 loaded_addresses: LoadedAddresses {
                                     writable: txi.writable_accounts.clone(),
