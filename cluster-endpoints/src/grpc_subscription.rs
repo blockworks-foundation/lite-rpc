@@ -72,8 +72,7 @@ pub fn from_grpc_block_update(
             });
 
             let inner_instructions: Vec<InnerInstructions> =
-                meta.inner_instructions.into_iter().map(|ins| {
-                    let yellow: yellowstone_grpc_proto::prelude::InnerInstructions = ins;
+                meta.inner_instructions.into_iter().map(|yellow| {
                     InnerInstructions {
                         index: yellow.index as u8,
                         instructions: yellow.instructions.into_iter().map(|ins| {
