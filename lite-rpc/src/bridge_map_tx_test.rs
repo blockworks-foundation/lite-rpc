@@ -11,7 +11,8 @@ use solana_sdk::message::{MessageHeader, v0, VersionedMessage};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
-use solana_transaction_status::{ConfirmedBlock, EncodedConfirmedBlock, EncodedTransactionWithStatusMeta, Rewards, TransactionDetails, TransactionStatusMeta, TransactionWithStatusMeta, UiTransactionEncoding, VersionedTransactionWithStatusMeta};
+use solana_transaction_status::{ConfirmedBlock, EncodedConfirmedBlock, EncodedTransactionWithStatusMeta, InnerInstructions, Rewards, TransactionDetails, TransactionStatusMeta, TransactionWithStatusMeta, UiTransactionEncoding, VersionedTransactionWithStatusMeta};
+use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 use crate::errors::JsonRpcError;
 
@@ -51,6 +52,7 @@ fn create_test_tx(signature: Signature) -> TransactionInfo {
         fee: 5000,
         pre_balances: vec![99999],
         post_balances: vec![100001],
+        inner_instructions: vec![],
     }
 }
 
@@ -92,4 +94,17 @@ fn map_confirmed() {
 
 }
 
+#[test]
+fn test_serialize_empty_vec() {
+    {
+        let empty_vec: Vec<u8> = vec![];
+        let serialized = BinaryEncoding::Base64.encode(bincode::serialize(&empty_vec).unwrap());
+        assert_eq!(serialized, "AAAAAAAAAAA=");
+    }
+    {
+        let empty_vec: Vec<InnerInstructions> = vec![];
+        let serialized = BinaryEncoding::Base64.encode(bincode::serialize(&empty_vec).unwrap());
+        assert_eq!(serialized, "AAAAAAAAAAA=");
+    }
+}
 

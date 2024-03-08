@@ -16,4 +16,6 @@ ALTER TABLE rpc2a_epoch_607.transaction_blockdata ALTER COLUMN pre_balances DROP
 ALTER TABLE rpc2a_epoch_607.transaction_blockdata ADD COLUMN post_balances int8[] DEFAULT ARRAY[]::int8[];
 ALTER TABLE rpc2a_epoch_607.transaction_blockdata ALTER COLUMN post_balances DROP DEFAULT;
 
+ALTER TABLE rpc2a_epoch_607.transaction_blockdata ADD COLUMN inner_instructions text NOT NULL DEFAULT 'AAAAAAAAAAA=';
+ALTER TABLE rpc2a_epoch_607.transaction_blockdata ALTER COLUMN inner_instructions DROP DEFAULT;
 

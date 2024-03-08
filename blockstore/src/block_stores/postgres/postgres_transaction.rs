@@ -41,6 +41,7 @@ pub struct PostgresTransaction {
     pub fee: i64,
     pub pre_balances: Vec<i64>,
     pub post_balances: Vec<i64>,
+    pub inner_instructions: String,
 }
 
 impl PostgresTransaction {
@@ -63,6 +64,7 @@ impl PostgresTransaction {
             fee: value.fee,
             pre_balances: value.pre_balances.clone(),
             post_balances: value.post_balances.clone(),
+            inner_instructions: BinaryEncoding::Base64.encode(bincode::serialize(&value.inner_instructions).unwrap()),
         }
     }
 
@@ -97,6 +99,9 @@ impl PostgresTransaction {
             fee: self.fee,
             pre_balances: self.pre_balances.clone(),
             post_balances: self.post_balances.clone(),
+            inner_instructions: BinaryEncoding::Base64
+                .deserialize(&self.inner_instructions)
+                .expect("serialized inner instructions"),
         }
     }
 
@@ -139,6 +144,7 @@ impl PostgresTransaction {
                     fee int8 NOT NULL,
                     pre_balances int8[] NOT NULL,
                     post_balances int8[] NOT NULL,
+                    inner_instructions text COMPRESSION lz4 NOT NULL,
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
@@ -180,7 +186,8 @@ impl PostgresTransaction {
                 message text NOT NULL,
                 fee int8 NOT NULL,
                 pre_balances int8[] NOT NULL,
-                post_balances int8[] NOT NULL
+                post_balances int8[] NOT NULL,
+                inner_instructions text NOT NULL
                 -- model_transaction_blockdata
             );
         "#;
@@ -200,7 +207,8 @@ impl PostgresTransaction {
                 message,
                 fee,
                 pre_balances,
-                post_balances
+                post_balances,
+                inner_instructions
                 -- model_transaction_blockdata
             ) FROM STDIN BINARY
         "#;
@@ -222,6 +230,7 @@ impl PostgresTransaction {
                 Type::INT8, // fee
                 Type::INT8_ARRAY, // pre_balances
                 Type::INT8_ARRAY, // post_balances
+                Type::TEXT, // inner_instructions
                 // model_transaction_blockdata
             ],
         );
@@ -242,6 +251,7 @@ impl PostgresTransaction {
                 fee,
                 pre_balances,
                 post_balances,
+                inner_instructions,
                 // model_transaction_blockdata
             } = tx;
 
@@ -260,7 +270,8 @@ impl PostgresTransaction {
                     &message,
                     &fee,
                     &pre_balances,
-                    &post_balances
+                    &post_balances,
+                    &inner_instructions,
                     // model_transaction_blockdata
                 ])
                 .await?;
@@ -303,7 +314,8 @@ impl PostgresTransaction {
                     message,
                     fee,
                     pre_balances,
-                    post_balances
+                    post_balances,
+                    inner_instructions
                     -- model_transaction_blockdata
                 )
                 SELECT
@@ -319,7 +331,8 @@ impl PostgresTransaction {
                     message,
                     fee,
                     pre_balances,
-                    post_balances
+                    post_balances,
+                    inner_instructions
                     -- model_transaction_blockdata
                 FROM transaction_raw_blockdata
         "#,
@@ -351,7 +364,8 @@ impl PostgresTransaction {
                     message,
                     fee,
                     pre_balances,
-                    post_balances
+                    post_balances,
+                    inner_instructions
                     -- model_transaction_blockdata
                 FROM {schema}.transaction_blockdata
                 WHERE slot = {}

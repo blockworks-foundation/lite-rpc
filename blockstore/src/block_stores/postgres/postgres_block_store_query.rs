@@ -98,6 +98,7 @@ impl PostgresQueryBlockStore {
                     fee: tx_row.get("fee"),
                     pre_balances: tx_row.get("pre_balances"),
                     post_balances: tx_row.get("post_balances"),
+                    inner_instructions: tx_row.get("inner_instructions"),
                 }
             })
             .sorted_by(|a, b| a.idx_in_block.cmp(&b.idx_in_block))

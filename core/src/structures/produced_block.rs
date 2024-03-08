@@ -5,7 +5,7 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
-use solana_transaction_status::Reward;
+use solana_transaction_status::{InnerInstructions, Reward};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -29,6 +29,7 @@ pub struct TransactionInfo {
     pub fee: i64,
     pub pre_balances: Vec<i64>,
     pub post_balances: Vec<i64>,
+    pub inner_instructions: Vec<InnerInstructions>,
 }
 
 #[derive(Clone)]

@@ -23,6 +23,7 @@ mod tests {
     use assert_json_diff::{assert_json_eq, assert_json_include};
     use bincode::options;
     use serde_json::Value;
+    use solana_account_decoder::parse_token::UiTokenAmount;
     use solana_sdk::blake3::Hash;
     use solana_sdk::clock::{Slot, UnixTimestamp};
     use solana_sdk::hash::Hasher;
@@ -31,8 +32,9 @@ mod tests {
     use solana_sdk::reward_type::RewardType;
     use solana_sdk::system_instruction::SystemInstruction;
     use solana_sdk::transaction::{TransactionVersion, VersionedTransaction};
+    use solana_sdk::vote;
     use solana_sdk::vote::instruction::VoteInstruction;
-    use solana_transaction_status::{BlockEncodingOptions, EncodedTransaction, Reward, TransactionBinaryEncoding, UiConfirmedBlock};
+    use solana_transaction_status::{BlockEncodingOptions, EncodedTransaction, Reward, TransactionBinaryEncoding, TransactionTokenBalance, UiConfirmedBlock, UiTransactionTokenBalance};
     use solana_transaction_status::TransactionDetails::Signatures;
     use super::*;
 

@@ -198,6 +198,7 @@ pub fn from_ui_block(
                 fee,
                 pre_balances,
                 post_balances,
+                inner_instructions,
                 ..
             }) = tx.meta
             else {
@@ -311,6 +312,7 @@ pub fn from_ui_block(
                 fee: fee as i64,
                 pre_balances: pre_balances.into_iter().map(|x| x as i64).collect(),
                 post_balances: post_balances.into_iter().map(|x| x as i64).collect(),
+                inner_instructions: vec![], // not implemented for RPC
             })
         })
         .collect();

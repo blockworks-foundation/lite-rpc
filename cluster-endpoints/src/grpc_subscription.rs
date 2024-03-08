@@ -28,7 +28,7 @@ use solana_sdk::{
     signature::Signature,
     transaction::TransactionError,
 };
-use solana_transaction_status::{Reward, RewardType, TransactionStatusMeta};
+use solana_transaction_status::{InnerInstruction, InnerInstructions, Reward, RewardType, TransactionStatusMeta};
 use std::cell::OnceCell;
 use std::sync::Arc;
 use solana_sdk::message::legacy;
@@ -61,8 +61,6 @@ pub fn from_grpc_block_update(
 
             let header = message.header?;
 
-            TransactionStatusMeta
-
             let signature = {
                 let sig_bytes: [u8; 64] = tx.signature.try_into().expect("must map to signature");
                 Signature::from(sig_bytes)
@@ -72,6 +70,24 @@ pub fn from_grpc_block_update(
                 bincode::deserialize::<TransactionError>(&x.err)
                     .expect("TransactionError should be deserialized")
             });
+
+            let inner_instructions: Vec<InnerInstructions> =
+                meta.inner_instructions.into_iter().map(|ins| {
+                    let yellow: yellowstone_grpc_proto::prelude::InnerInstructions = ins;
+                    InnerInstructions {
+                        index: yellow.index as u8,
+                        instructions: yellow.instructions.into_iter().map(|ins| {
+                            InnerInstruction {
+                                instruction: CompiledInstruction {
+                                    program_id_index: ins.program_id_index as u8,
+                                    accounts: ins.accounts,
+                                    data: ins.data,
+                                },
+                                stack_height: ins.stack_height,
+                            }
+                        }).collect(),
+                    }
+                }).collect_vec();
 
             let compute_units_consumed = meta.compute_units_consumed;
             let account_keys: Vec<Pubkey> = message
@@ -162,6 +178,7 @@ pub fn from_grpc_block_update(
                 fee: meta.fee as i64,
                 pre_balances: meta.pre_balances.into_iter().map(|x| x as i64).collect(),
                 post_balances: meta.post_balances.into_iter().map(|x| x as i64).collect(),
+                inner_instructions,
             })
         })
         .collect();
