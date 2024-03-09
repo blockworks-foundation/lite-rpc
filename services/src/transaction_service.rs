@@ -132,6 +132,10 @@ impl TransactionService {
             bail!("Blockhash not found in block store".to_string());
         };
 
+        if self.block_information_store.get_last_blockheight() > last_valid_blockheight {
+            bail!("Blockhash is expired");
+        }
+
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         let transaction_info = SentTransactionInfo {
             signature: signature.to_string(),

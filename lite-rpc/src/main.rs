@@ -237,7 +237,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     .await?;
     let tx_sender = TxSender::new(data_cache.clone(), tpu_service.clone());
     let tx_replayer =
-        TransactionReplayer::new(tpu_service.clone(), data_cache.txs.clone(), retry_after);
+        TransactionReplayer::new(tpu_service.clone(), data_cache.clone(), retry_after);
     let (transaction_service, tx_service_jh) = spawner.spawn_tx_service(
         tx_sender,
         tx_replayer,

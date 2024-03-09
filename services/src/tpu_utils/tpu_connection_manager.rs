@@ -43,7 +43,7 @@ struct ActiveConnection {
     identity: Pubkey,
     tpu_address: SocketAddr,
     exit_signal: Arc<AtomicBool>,
-    data_cache: DataCache,
+    _data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
 }
 
@@ -60,7 +60,7 @@ impl ActiveConnection {
             tpu_address,
             identity,
             exit_signal: Arc::new(AtomicBool::new(false)),
-            data_cache,
+            _data_cache: data_cache,
             connection_parameters,
         }
     }
@@ -111,10 +111,6 @@ impl ActiveConnection {
 
                     let tx: Vec<u8> = match tx {
                         Ok(transaction_sent_info) => {
-                            if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info) {
-                                // transaction is already confirmed/ no need to send
-                                continue;
-                            }
                             transaction_sent_info.transaction
                         },
                         Err(e) => {
