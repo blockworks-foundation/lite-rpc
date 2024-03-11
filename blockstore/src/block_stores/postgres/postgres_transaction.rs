@@ -399,9 +399,9 @@ impl PostgresTransaction {
                     err,
                     recent_blockhash,
                     message_version,
-                    message,
-                    writable_accounts,
-                    readable_accounts,
+                    message, -- TODO remove
+                    --writable_accounts,
+                    --readable_accounts,
                     fee,
                     pre_balances,
                     post_balances,

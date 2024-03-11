@@ -211,6 +211,7 @@ impl LiteRpcServer for LiteBridge {
                 }).collect_vec();
                 (Some(full), None)
             } else if transaction_details == TransactionDetails::Signatures {
+                // TODO optimized
                 let signatures = block.transactions.iter().map(|td| td.signature.to_string()).collect_vec();
                 (None, Some(signatures))
             } else {

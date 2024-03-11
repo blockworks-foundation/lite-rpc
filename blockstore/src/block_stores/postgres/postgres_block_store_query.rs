@@ -94,9 +94,9 @@ impl PostgresQueryBlockStore {
                     cu_consumed: tx_row.get("cu_consumed"),
                     recent_blockhash: tx_row.get("recent_blockhash"),
                     message_version: tx_row.get("message_version"),
-                    message: tx_row.get("message"),
-                    writable_accounts: tx_row.get("writable_accounts"),
-                    readable_accounts: tx_row.get("readable_accounts"),
+                    message: tx_row.get("message"), // TODO do not query
+                    writable_accounts: vec![], // TODO should not query that
+                    readable_accounts: vec![],
                     fee: tx_row.get("fee"),
                     pre_balances: tx_row.get("pre_balances"),
                     post_balances: tx_row.get("post_balances"),
