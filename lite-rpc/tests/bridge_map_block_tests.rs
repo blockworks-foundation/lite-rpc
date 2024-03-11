@@ -22,56 +22,19 @@ use solana_transaction_status::{BlockEncodingOptions, ConfirmedBlock, EncodedCon
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 
-fn map_versioned_transaction(ti: TransactionInfo) -> VersionedTransaction {
-    let tx: VersionedTransaction = VersionedTransaction {
-        signatures: vec![ti.signature], // TODO check if that is correct
-        message: ti.message,
-    };
-    tx
-}
-
-fn create_test_message() -> VersionedMessage {
-    VersionedMessage::V0(v0::Message {
-        header: MessageHeader {
-            num_required_signatures: 1,
-            ..MessageHeader::default()
-        },
-        account_keys: vec![Pubkey::new_unique()],
-        ..v0::Message::default()
-    })
-}
-
-fn create_test_tx(signature: Signature) -> TransactionInfo {
-    TransactionInfo {
-        signature,
-        index: 0,
-        is_vote: false,
-        err: None,
-        cu_requested: Some(40000),
-        prioritization_fees: Some(5000),
-        cu_consumed: Some(32000),
-        recent_blockhash: solana_sdk::hash::Hash::new_unique(),
-        message: create_test_message(),
-        writable_accounts: vec![],
-        readable_accounts: vec![],
-        address_lookup_tables: vec![],
-        fee: 5000,
-        pre_balances: vec![99999],
-        post_balances: vec![100001],
-        inner_instructions: None,
-        log_messages: Some(vec!["log line1".to_string(), "log line2".to_string()]),
-    }
-}
-
 
 #[test]
-fn map_confirmed() {
+fn test_map_tx_with_meta() {
 
     let ti = create_test_tx(Signature::new_unique());
 
+    let tx1: VersionedTransaction = VersionedTransaction {
+        signatures: vec![ti.signature],
+        message: ti.message,
+    };
     let tx: TransactionWithStatusMeta = TransactionWithStatusMeta::Complete(
         VersionedTransactionWithStatusMeta {
-            transaction: map_versioned_transaction(ti),
+            transaction: tx1,
             meta: TransactionStatusMeta {
                 status: Ok(()),
                 fee: 0,
@@ -101,6 +64,7 @@ fn map_confirmed() {
 
 }
 
+
 #[test]
 fn test_serialize_empty_vec() {
     {
@@ -115,26 +79,13 @@ fn test_serialize_empty_vec() {
     }
 }
 
-#[test]
-fn test_decode_base58_transaction() {
-    let raw_testnet = "5nejtVuPH9GteV6kHsoh7EqDgU4gG8kj5uVd84L1dNuJzfwLNRx4shuJEmREsBXW5Lxtr1pEtb79798NBKTMfVSwVHPTjVEYrfoKNbSZyKj8N1vcXSbftWCDf96HGE4guXMf9n52TLTj7JLkNEpaJi1gP1eiTfj34LZqp3cTA3azcnwDLfS75L1UgrGb4F3yScGqJjTzLAaN5UiJ2kbE5926TH3VDRmAVEq3zfnjpsd93JZhzpLBfqKKyaMQZuoT8uF6C4jhjSNvB4pkR8RELUw3rgYSKonhJRjZKPjhKFkFjWaD9qx3dTgAEyL5kiNZN8379gNfsxptCqG3hoiZLL2Wdj8MRVKzuLv4sn4o8WQyDB2gq4bPGaSDbtSgfca3BDjSTzSPpjUpZDxHrFHLivxU7Z4sHFHrGUVmxzBNqbgPUHn5xvK";
-    let raw_local = "2cG57yNZbRy627js22ofBBn3Uj3Ymf92MufP2n1M9uhCdyMctdBc8gcP5E1SBTicXMdebEMVJM7vGW4uw6ZqDmUaWej1mdh7xPUhV5pee4YUiab4tiuxfE1JkN4fgYksLUNcohUJ1eggoP8WBbeNbQ7Kav3RAV7tJFU1xWzd5J9nKKoCGL2HBwhzpWDKKmdD6WorwaXyvAdiepZrKLuGoyZ9SYg8uTv3D2mhr2gxqc4y3RKt26N9RBY4atYYphR6NifYD4pJ6pcimG6KpJJBNXrYnNbhxb4wuZC1Afeye2qHd3mwUZnRq8ytr3d8hVy7snNxjo5MKGUzP3vWc2XFR3RFdZvaHy1iGBPTLQhCgrHKDZvAEUXmfTxf1JvELCjHMFhxybcAWRS4k479PSjgn3JvRSwabRV2VihtsxrgE8Y2jKJd1R5rLo";
-    let transaction = EncodedTransaction::Binary(raw_testnet.to_string(),
-                                                 TransactionBinaryEncoding::Base58,
-    );
-}
-
 
 #[test]
 fn test_decode() {
 
-
-    let foo = "Fk63Q321enfa7mN4TibcZkzYHBEhvTgZ4W1c4r\
-            zdbaHKAQ3262j4bLyCTdHwFx3dSC76VmdbGa4PpAY2p\
-            XgJZuPRnvttdJJLTQoaymujmbGqMe5gMXNcJ15AzXJN\
-            DcZNBWFpvFPTFENGrRznFy6WmosM2xMB7D";
-
-    let raw = bs58::decode(&foo).into_vec().unwrap();
+    let base58_blob =
+        r#"Fk63Q321enfa7mN4TibcZkzYHBEhvTgZ4W1c4rzdbaHKAQ3262j4bLyCTdHwFx3dSC76VmdbGa4PpAY2pXgJZuPRnvttdJJLTQoaymujmbGqMe5gMXNcJ15AzXJNDcZNBWFpvFPTFENGrRznFy6WmosM2xMB7D"#;
+    let raw = bs58::decode(&base58_blob).into_vec().unwrap();
 
     let obj = bincode::deserialize::<VoteInstruction>(&raw).unwrap();
     match obj {
@@ -157,6 +108,7 @@ fn test_decode() {
     }
 
 }
+
 
 #[test]
 fn test_get_block_with_versioned_tx() {
@@ -318,4 +270,39 @@ fn test_get_block_with_versioned_tx() {
             }
             "#).unwrap());
 }
+
+
+fn create_test_message() -> VersionedMessage {
+    VersionedMessage::V0(v0::Message {
+        header: MessageHeader {
+            num_required_signatures: 1,
+            ..MessageHeader::default()
+        },
+        account_keys: vec![Pubkey::new_unique()],
+        ..v0::Message::default()
+    })
+}
+
+fn create_test_tx(signature: Signature) -> TransactionInfo {
+    TransactionInfo {
+        signature,
+        index: 0,
+        is_vote: false,
+        err: None,
+        cu_requested: Some(40000),
+        prioritization_fees: Some(5000),
+        cu_consumed: Some(32000),
+        recent_blockhash: solana_sdk::hash::Hash::new_unique(),
+        message: create_test_message(),
+        writable_accounts: vec![],
+        readable_accounts: vec![],
+        address_lookup_tables: vec![],
+        fee: 5000,
+        pre_balances: vec![99999],
+        post_balances: vec![100001],
+        inner_instructions: None,
+        log_messages: Some(vec!["log line1".to_string(), "log line2".to_string()]),
+    }
+}
+
 
