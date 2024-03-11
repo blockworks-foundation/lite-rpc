@@ -6,6 +6,7 @@ use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
 use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
 use log::{debug, info, warn};
+use serde_json::Value;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -83,7 +84,7 @@ impl PostgresQueryBlockStore {
                     slot: slot as i64,
                     idx_in_block: tx_row.get("idx"),
                     signature: tx_row.get("signature"),
-                    err: tx_row.get("err"),
+                    err: tx_row.get("err"), // TODO do we need to query that?
                     cu_requested: tx_row.get("cu_requested"),
                     prioritization_fees: tx_row.get("prioritization_fees"),
                     cu_consumed: tx_row.get("cu_consumed"),
@@ -113,7 +114,7 @@ impl PostgresQueryBlockStore {
         let parent_slot: i64 = row.get("parent_slot");
         let block_time: i64 = row.get("block_time");
         let previous_blockhash: String = row.get("previous_blockhash");
-        let rewards: Option<String> = row.get("rewards");
+        let rewards: Option<Vec<Value>> = row.get("rewards");
         let leader_id: Option<String> = row.get("leader_id");
 
         let postgres_block = PostgresBlock {

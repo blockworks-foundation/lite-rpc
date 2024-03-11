@@ -6,6 +6,8 @@ use futures_util::pin_mut;
 use itertools::Itertools;
 use log::debug;
 use postgres_types::IsNull;
+use serde_json::map::Values;
+use serde_json::Value;
 use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
@@ -19,6 +21,7 @@ use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
+use crate::block_stores::postgres::{json_deserialize, json_serialize};
 
 use super::postgres_epoch::*;
 use super::postgres_session::*;
@@ -35,7 +38,7 @@ pub struct PostgresTransaction {
     pub cu_requested: Option<i64>,
     pub prioritization_fees: Option<i64>,
     pub recent_blockhash: String,
-    pub err: Option<String>,
+    pub err: Option<Value>,
     // V0 -> 0, Legacy -> -2020
     pub message_version: i32,
     pub message: String,
@@ -45,7 +48,7 @@ pub struct PostgresTransaction {
     pub fee: i64,
     pub pre_balances: Vec<i64>,
     pub post_balances: Vec<i64>,
-    pub inner_instructions: Option<Vec<String>>,
+    pub inner_instructions: Option<Vec<Value>>,
     pub log_messages: Option<Vec<String>>,
 }
 
@@ -59,11 +62,8 @@ impl PostgresTransaction {
             cu_requested: value.cu_requested.map(|x| x as i64),
             prioritization_fees: value.prioritization_fees.map(|x| x as i64),
             recent_blockhash: value.recent_blockhash.to_string(),
-            err: value
-                .err
-                .clone()
-                .map(|x| BASE64.serialize(&x).ok())
-                .unwrap_or(None),
+            err: value.err.clone()
+                .map(|x| json_serialize(&x)),
             message_version: Self::map_message_version(&value.message),
             message: BinaryEncoding::Base64.encode(value.message.serialize()),
             writable_accounts: value.writable_accounts.clone().into_iter().map(|pk| pk.to_string()).collect(),
@@ -72,7 +72,7 @@ impl PostgresTransaction {
             pre_balances: value.pre_balances.clone(),
             post_balances: value.post_balances.clone(),
             inner_instructions: value.inner_instructions.clone().map(|list|
-                list.iter().map(|ins| BinaryEncoding::Base64.encode(bincode::serialize(&ins).unwrap())).collect_vec()
+                list.iter().map(|ins| json_serialize(&ins)).collect_vec()
             ),
             log_messages: value.log_messages.clone(),
         }
@@ -96,10 +96,8 @@ impl PostgresTransaction {
             cu_requested: self.cu_requested.map(|x| x as u32),
             prioritization_fees: self.prioritization_fees.map(|x| x as u64),
             recent_blockhash: hash_from_str(&self.recent_blockhash).expect("valid blockhash"),
-            err: self
-                .err
-                .as_ref()
-                .and_then(|x| BASE64.deserialize::<TransactionError>(x).ok()),
+            err: self.err.clone()
+                .map(|x| json_deserialize::<TransactionError>(x)),
             message,
             // TODO readable_accounts etc.
             readable_accounts: vec![],
@@ -111,10 +109,7 @@ impl PostgresTransaction {
             pre_balances: self.pre_balances.clone(),
             post_balances: self.post_balances.clone(),
             inner_instructions: self.inner_instructions.clone()
-                .map(|list|
-                    list.iter().map(|ins| BinaryEncoding::Base64
-                        .deserialize(&ins)
-                        .expect("serialized inner instructions")).collect_vec()),
+                .map(|list| list.into_iter().map(|ins| json_deserialize(ins)).collect_vec()),
             log_messages: self.log_messages.clone(),
         }
     }
@@ -152,7 +147,7 @@ impl PostgresTransaction {
                     cu_requested bigint,
                     prioritization_fees bigint,
                     recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
-                    err text COMPRESSION lz4,
+                    err jsonb COMPRESSION lz4,
                     message_version int4 NOT NULL,
                     message text COMPRESSION lz4 NOT NULL,
                     writable_accounts text[] COMPRESSION lz4,
@@ -160,7 +155,7 @@ impl PostgresTransaction {
                     fee int8 NOT NULL,
                     pre_balances int8[] NOT NULL,
                     post_balances int8[] NOT NULL,
-                    inner_instructions text[] COMPRESSION lz4,
+                    inner_instructions jsonb[] COMPRESSION lz4,
                     log_messages text[] COMPRESSION lz4
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
@@ -198,7 +193,7 @@ impl PostgresTransaction {
                 prioritization_fees bigint,
                 signature varchar(88) COMPRESSION lz4 NOT NULL,
                 recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
-                err text,
+                err jsonb,
                 message_version int4 NOT NULL,
                 message text NOT NULL,
                 writable_accounts text[],
@@ -206,7 +201,7 @@ impl PostgresTransaction {
                 fee int8 NOT NULL,
                 pre_balances int8[] NOT NULL,
                 post_balances int8[] NOT NULL,
-                inner_instructions text[],
+                inner_instructions jsonb[],
                 log_messages text[] COMPRESSION lz4
                 -- model_transaction_blockdata
             );
@@ -247,7 +242,7 @@ impl PostgresTransaction {
                 Type::INT8, // prioritization_fees
                 Type::VARCHAR, // signature
                 Type::VARCHAR, // recent_blockhash
-                Type::TEXT, // err
+                Type::JSONB, // err
                 Type::INT4, // message_version
                 Type::TEXT, // message
                 Type::TEXT_ARRAY, // writable_accounts
@@ -255,7 +250,7 @@ impl PostgresTransaction {
                 Type::INT8, // fee
                 Type::INT8_ARRAY, // pre_balances
                 Type::INT8_ARRAY, // post_balances
-                Type::TEXT_ARRAY, // inner_instructions
+                Type::JSONB_ARRAY, // inner_instructions
                 Type::TEXT_ARRAY, // log_messages
                 // model_transaction_blockdata
             ],

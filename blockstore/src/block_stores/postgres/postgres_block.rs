@@ -9,7 +9,10 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::Reward;
 use std::time::Instant;
+use itertools::Itertools;
+use serde_json::Value;
 use tokio_postgres::types::ToSql;
+use crate::block_stores::postgres::{json_deserialize, json_serialize};
 
 #[derive(Debug)]
 pub struct PostgresBlock {
@@ -19,17 +22,14 @@ pub struct PostgresBlock {
     pub parent_slot: i64,
     pub block_time: i64,
     pub previous_blockhash: String,
-    pub rewards: Option<String>,
+    pub rewards: Option<Vec<Value>>,
     pub leader_id: Option<String>,
 }
 
 impl From<&ProducedBlock> for PostgresBlock {
     fn from(value: &ProducedBlock) -> Self {
-        let rewards = value
-            .rewards
-            .as_ref()
-            .map(|x| BASE64.serialize::<Vec<Reward>>(x).ok())
-            .unwrap_or(None);
+        let rewards_vec = value.rewards.as_ref()
+            .map(|list| list.iter().map(|r| json_serialize::<Reward>(r)).collect_vec());
 
         Self {
             blockhash: value.blockhash.to_string(),
@@ -38,8 +38,7 @@ impl From<&ProducedBlock> for PostgresBlock {
             parent_slot: value.parent_slot as i64,
             block_time: value.block_time as i64,
             previous_blockhash: value.previous_blockhash.to_string(),
-            // TODO add leader_id, etc.
-            rewards,
+            rewards: rewards_vec,
             leader_id: value.leader_id.clone(),
         }
     }
@@ -52,10 +51,8 @@ impl PostgresBlock {
         commitment_config: CommitmentConfig,
     ) -> ProducedBlock {
         let rewards_vec: Option<Vec<Reward>> = self
-            .rewards
-            .as_ref()
-            .map(|x| BASE64.deserialize::<Vec<Reward>>(x).ok())
-            .unwrap_or(None);
+            .rewards.clone()
+            .map(|list | list.into_iter().map(|r| json_deserialize(r)).collect_vec());
 
         let inner = ProducedBlockInner {
             // TODO implement
@@ -86,7 +83,7 @@ impl PostgresBlock {
                 blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                 previous_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                 leader_id TEXT COMPRESSION lz4,
-                rewards TEXT COMPRESSION lz4,
+                rewards jsonb[] COMPRESSION lz4,
                 CONSTRAINT pk_block_slot PRIMARY KEY(slot)
             ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
             ALTER TABLE {schema}.blocks ALTER COLUMN blockhash SET STORAGE MAIN;
