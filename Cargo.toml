@@ -17,7 +17,8 @@ members = [
     "accounts-on-demand",
     #examples
     "examples/custom-tpu-send-transactions",
-    "examples/dump-blocks-from-grpc-to-disk"
+    "examples/dump-blocks-from-grpc-to-disk",
+    "examples/query-blockstore",
 ]
 
 [workspace.package]
