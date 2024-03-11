@@ -63,9 +63,9 @@ mod tests {
     #[test]
     fn test_batch_compare() {
         tracing_subscriber::fmt::init();
-        let slot = 253506193;
+        let slot = 257687693;
         let rpc_local = create_local_rpc_client();
-        let rpc_reference = create_reference_rpc_client();
+        let rpc_testnet = create_testnet_rpc_client();
 
 
         // None: all MATCH
@@ -79,7 +79,7 @@ mod tests {
 
         for slot in slot-60..slot-40 {
             info!("check slot {}", slot);
-            let check_block = rpc_reference.get_block_with_config(slot, RpcBlockConfig {
+            let check_block = rpc_testnet.get_block_with_config(slot, RpcBlockConfig {
                 encoding: Some(UiTransactionEncoding::Base58),
                 transaction_details: Some(TransactionDetails::Full),
                 rewards: Some(true),
@@ -87,7 +87,7 @@ mod tests {
                 max_supported_transaction_version: Some(0),
             }).is_ok();
             if !check_block {
-                warn!("Skip block {} (not on reference system)", slot);
+                warn!("Skip block {} (not on testnet)", slot);
                 continue;
             }
 
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn transactions_full() {
-        let slot = 253508366;
+        let slot = get_recent_slot();
         let config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Json),
             transaction_details: Some(TransactionDetails::Full),
@@ -160,12 +160,11 @@ mod tests {
     }
 
     fn assert_same_response_success(slot: u64, config: RpcBlockConfig) {
-        let mainnet = format!("https://mango.rpcpool.com/{mainnet_api_token}", mainnet_api_token = std::env::var("MAINNET_API_TOKEN").unwrap());
+        let mainnet = "http://api.mainnet-beta.solana.com/";
         let testnet = format!("https://api.testnet.rpcpool.com/{testnet_api_token}", testnet_api_token = std::env::var("TESTNET_API_TOKEN").unwrap());
-        let reference_rpc = mainnet;
         let local = "http://localhost:8890";
         let rpc_client1 = solana_rpc_client::rpc_client::RpcClient::new(local.to_string());
-        let rpc_client2 = solana_rpc_client::rpc_client::RpcClient::new(reference_rpc.to_string());
+        let rpc_client2 = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
 
         let result1 = rpc_client1.get_block_with_config(slot, config);
         let result1 = result1.expect("call to local must succeed");
@@ -194,7 +193,7 @@ mod tests {
 
     fn assert_same_response_fail(slot: u64, config: RpcBlockConfig) {
         let rpc_client1 = create_local_rpc_client();
-        let rpc_client2 = create_reference_rpc_client();
+        let rpc_client2 = create_testnet_rpc_client();
 
         let result1 = rpc_client1.get_block_with_config(slot, config);
         let result2 = rpc_client2.get_block_with_config(slot, config);
@@ -206,8 +205,7 @@ mod tests {
         assert_eq!(result2.unwrap_err().to_string(), result1.unwrap_err().to_string());
     }
 
-    // RPC to compare with
-    fn create_reference_rpc_client() -> RpcClient {
+    fn create_testnet_rpc_client() -> RpcClient {
         let testnet = format!("https://api.testnet.rpcpool.com/{testnet_api_token}", testnet_api_token = std::env::var("TESTNET_API_TOKEN").unwrap());
         let rpc_client2 = solana_rpc_client::rpc_client::RpcClient::new(testnet.to_string());
         rpc_client2
@@ -220,7 +218,7 @@ mod tests {
     }
 
     fn get_recent_slot() -> Slot {
-        let slot = create_reference_rpc_client().get_slot().unwrap();
+        let slot = create_testnet_rpc_client().get_slot().unwrap();
         let slot = slot - 40;
         slot
     }

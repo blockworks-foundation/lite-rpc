@@ -185,7 +185,6 @@ impl LiteRpcServer for LiteBridge {
                         VersionedTransactionWithStatusMeta {
                             transaction: VersionedTransaction::from(txi),
                             meta: TransactionStatusMeta {
-                                // TODO test
                                 status: txi.err.clone().map_or(Ok(()), Err),
                                 fee: txi.fee as u64,
                                 // TODO map
