@@ -3,6 +3,7 @@ use std::str::FromStr;
 use bytes::BytesMut;
 
 use futures_util::pin_mut;
+use itertools::Itertools;
 use log::debug;
 use postgres_types::IsNull;
 use solana_sdk::message::VersionedMessage;
@@ -44,7 +45,7 @@ pub struct PostgresTransaction {
     pub fee: i64,
     pub pre_balances: Vec<i64>,
     pub post_balances: Vec<i64>,
-    pub inner_instructions: Option<String>,
+    pub inner_instructions: Option<Vec<String>>,
     pub log_messages: Option<Vec<String>>,
 }
 
@@ -70,9 +71,9 @@ impl PostgresTransaction {
             fee: value.fee,
             pre_balances: value.pre_balances.clone(),
             post_balances: value.post_balances.clone(),
-            inner_instructions: value.inner_instructions.clone().map(|ins| {
-                BinaryEncoding::Base64.encode(bincode::serialize(&ins).unwrap())
-            }),
+            inner_instructions: value.inner_instructions.clone().map(|list|
+                list.iter().map(|ins| BinaryEncoding::Base64.encode(bincode::serialize(&ins).unwrap())).collect_vec()
+            ),
             log_messages: value.log_messages.clone(),
         }
     }
@@ -110,11 +111,10 @@ impl PostgresTransaction {
             pre_balances: self.pre_balances.clone(),
             post_balances: self.post_balances.clone(),
             inner_instructions: self.inner_instructions.clone()
-                .filter(|x| !x.is_empty()).map(|x| {
-                BinaryEncoding::Base64
-                    .deserialize(&x)
-                    .expect("serialized inner instructions")
-            }),
+                .map(|list|
+                    list.iter().map(|ins| BinaryEncoding::Base64
+                        .deserialize(&ins)
+                        .expect("serialized inner instructions")).collect_vec()),
             log_messages: self.log_messages.clone(),
         }
     }
@@ -160,7 +160,7 @@ impl PostgresTransaction {
                     fee int8 NOT NULL,
                     pre_balances int8[] NOT NULL,
                     post_balances int8[] NOT NULL,
-                    inner_instructions text COMPRESSION lz4,
+                    inner_instructions text[] COMPRESSION lz4,
                     log_messages text[] COMPRESSION lz4
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
@@ -206,7 +206,7 @@ impl PostgresTransaction {
                 fee int8 NOT NULL,
                 pre_balances int8[] NOT NULL,
                 post_balances int8[] NOT NULL,
-                inner_instructions text,
+                inner_instructions text[],
                 log_messages text[] COMPRESSION lz4
                 -- model_transaction_blockdata
             );
@@ -255,7 +255,7 @@ impl PostgresTransaction {
                 Type::INT8, // fee
                 Type::INT8_ARRAY, // pre_balances
                 Type::INT8_ARRAY, // post_balances
-                Type::TEXT, // inner_instructions
+                Type::TEXT_ARRAY, // inner_instructions
                 Type::TEXT_ARRAY, // log_messages
                 // model_transaction_blockdata
             ],

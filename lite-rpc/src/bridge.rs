@@ -196,11 +196,11 @@ impl LiteRpcServer for LiteBridge {
                                 // TODO map
                                 log_messages: txi.log_messages.clone(),
                                 // TODO check if we want that
-                                pre_token_balances: None,
+                                pre_token_balances: Some(vec![]),
                                 // TODO check if we want that
-                                post_token_balances: None,
+                                post_token_balances: Some(vec![]),
                                 // TODO check if we want that
-                                rewards: None,
+                                rewards: Some(vec![]),
                                 loaded_addresses: LoadedAddresses {
                                     writable: txi.writable_accounts.clone(),
                                     readonly: txi.readable_accounts.clone(),

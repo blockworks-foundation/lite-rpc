@@ -183,7 +183,7 @@ pub fn from_grpc_block_update(
                 fee: meta.fee as i64,
                 pre_balances: meta.pre_balances.into_iter().map(|x| x as i64).collect(),
                 post_balances: meta.post_balances.into_iter().map(|x| x as i64).collect(),
-                inner_instructions: Option::from(inner_instructions).filter(|x| !x.is_empty()),
+                inner_instructions: Option::from(inner_instructions),
                 log_messages,
             })
         })
