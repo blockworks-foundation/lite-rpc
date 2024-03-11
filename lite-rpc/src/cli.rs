@@ -90,6 +90,15 @@ pub struct Config {
 
     #[serde(default)]
     pub enable_accounts_on_demand_accounts_service: Option<bool>,
+
+    /// query postgres blockstore to serve blocks
+    /// note: this will not enable the importer (see enable_postgres_block_store)
+    #[serde(default)]
+    pub use_postgres_blockstore: bool,
+
+    /// write/import blocks to postgres blockstore
+    #[serde(default)]
+    pub enable_postgres_block_store_importer: bool,
 }
 
 impl Config {
@@ -225,6 +234,16 @@ impl Config {
             .map(|value| value.parse::<bool>().unwrap())
             .ok()
             .or(config.enable_accounts_on_demand_accounts_service);
+
+        config.use_postgres_blockstore = env::var("USE_POSTGRES_BLOCKSTORE")
+            .map(|value| value.parse::<bool>().unwrap())
+            .unwrap_or(config.use_postgres_blockstore);
+
+        config.enable_postgres_block_store_importer =
+            env::var("ENABLE_POSTGRES_BLOCK_STORE_IMPORTER")
+                .map(|value| value.parse::<bool>().unwrap())
+                .unwrap_or(config.enable_postgres_block_store_importer);
+
         Ok(config)
     }
 

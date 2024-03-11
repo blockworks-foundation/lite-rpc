@@ -3,9 +3,10 @@ use std::ops::RangeInclusive;
 use std::time::Instant;
 
 use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
 use log::{debug, info, warn};
+use serde_json::Value;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -17,32 +18,37 @@ use super::postgres_epoch::*;
 use super::postgres_session::*;
 use super::postgres_transaction::*;
 
-#[derive(Clone)]
+
+// no clone/sync/send
 pub struct PostgresQueryBlockStore {
-    session_cache: PostgresSessionCache,
+    session: PostgresSession,
     epoch_schedule: EpochCache,
 }
 
 impl PostgresQueryBlockStore {
-    pub async fn new(epoch_schedule: EpochCache, pg_session_config: PostgresSessionConfig) -> Self {
-        let session_cache = PostgresSessionCache::new(pg_session_config.clone())
-            .await
-            .unwrap();
+    pub async fn new(
+        epoch_schedule: EpochCache,
+        pg_session_config: BlockstorePostgresSessionConfig,
+    ) -> Self {
+        // let session_cache = PostgresSessionCache::new(pg_session_config.clone())
+        //     .await
+        //     .unwrap();
+        let session = PostgresSession::new(pg_session_config.clone()).await.unwrap();
 
-        Self::check_query_role(&session_cache).await;
+        Self::check_postgresql_version(&session).await;
+        Self::check_query_role(&session).await;
 
         Self {
-            session_cache,
+            session,
             epoch_schedule,
         }
     }
 
-    async fn get_session(&self) -> PostgresSession {
-        self.session_cache
-            .get_session()
-            .await
-            .expect("should get new postgres session")
-    }
+    // async fn get_session(&self) -> PostgresSession {
+    //     self.session_cache
+    //         .get_session()
+    //         .await
+    // }
 
     pub async fn is_block_in_range(&self, slot: Slot) -> bool {
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
@@ -58,61 +64,57 @@ impl PostgresQueryBlockStore {
         let started_at = Instant::now();
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
 
+        // TODO could we use join! here?
         let statement = PostgresBlock::build_query_statement(epoch, slot);
-        let block_row = self
-            .get_session()
-            .await
-            .query_opt(&statement, &[])
-            .await
-            .unwrap();
-
-        if block_row.is_none() {
-            bail!("Block {} in epoch {} not found in postgres", slot, epoch);
-        }
+        let row = self.session
+            .query_opt(&statement, &[]).await
+            .context("query block sql")?
+            .context("block not found")?;
 
         let statement = PostgresTransaction::build_query_statement(epoch, slot);
-        let transaction_rows = self
-            .get_session()
-            .await
+        let transaction_rows = self.session
             .query_list(&statement, &[])
-            .await
-            .unwrap();
-
-        warn!(
-            "transaction_rows: {} - print first 10",
-            transaction_rows.len()
-        );
+            .await?;
 
         let tx_infos = transaction_rows
             .iter()
+            // TODO check why we map to PostgresTransaction and then to TransactionInfo
             .map(|tx_row| {
-                let postgres_transaction = PostgresTransaction {
+                PostgresTransaction {
                     slot: slot as i64,
+                    idx_in_block: tx_row.get("idx"),
                     signature: tx_row.get("signature"),
-                    err: tx_row.get("err"),
+                    err: tx_row.get("err"), // TODO do we need to query that?
                     cu_requested: tx_row.get("cu_requested"),
                     prioritization_fees: tx_row.get("prioritization_fees"),
                     cu_consumed: tx_row.get("cu_consumed"),
                     recent_blockhash: tx_row.get("recent_blockhash"),
-                    message: tx_row.get("message"),
-                };
-
-                postgres_transaction.to_transaction_info()
+                    message_version: tx_row.get("message_version"),
+                    message: tx_row.get("message"), // TODO do not query
+                    writable_accounts: vec![], // TODO should not query that
+                    readable_accounts: vec![],
+                    fee: tx_row.get("fee"),
+                    pre_balances: tx_row.get("pre_balances"),
+                    post_balances: tx_row.get("post_balances"),
+                    inner_instructions: tx_row.get("inner_instructions"),
+                    log_messages: tx_row.get("log_messages"),
+                }
             })
+            .sorted_by(|a, b| a.idx_in_block.cmp(&b.idx_in_block))
+            .map(|pt| pt.to_transaction_info())
             .collect_vec();
 
-        let row = block_row.unwrap();
+
         // meta data
         let _epoch: i64 = row.get("_epoch");
         let epoch_schema: String = row.get("_epoch_schema");
-
         let blockhash: String = row.get("blockhash");
         let block_height: i64 = row.get("block_height");
         let slot: i64 = row.get("slot");
         let parent_slot: i64 = row.get("parent_slot");
         let block_time: i64 = row.get("block_time");
         let previous_blockhash: String = row.get("previous_blockhash");
-        let rewards: Option<String> = row.get("rewards");
+        let rewards: Option<Vec<Value>> = row.get("rewards");
         let leader_id: Option<String> = row.get("leader_id");
 
         let postgres_block = PostgresBlock {
@@ -144,13 +146,10 @@ impl PostgresQueryBlockStore {
         Ok(produced_block)
     }
 
-    async fn check_query_role(session_cache: &PostgresSessionCache) {
+    async fn check_query_role(session: &PostgresSession) {
         let role = LITERPC_QUERY_ROLE;
         let statement = format!("SELECT 1 FROM pg_roles WHERE rolname='{role}'");
-        let count = session_cache
-            .get_session()
-            .await
-            .expect("must get session")
+        let count = session
             .execute(&statement, &[])
             .await
             .expect("must execute query to check for role");
@@ -163,6 +162,22 @@ impl PostgresQueryBlockStore {
         } else {
             info!("Self check - found postgres role '{}'", role);
         }
+    }
+
+    async fn check_postgresql_version(session: &PostgresSession) {
+        let statement = r#"SELECT version(), current_setting('server_version_num')::integer >= 150000 AS is_v15_or_higher"#;
+        let row = session
+            .query_one(statement, &[])
+            .await
+            .expect("must execute query to check for role");
+        let is_v15_or_higher = row.get::<&str, bool>("is_v15_or_higher");
+        let version_string = row.get::<&str, &str>("version");
+        assert!(
+            is_v15_or_higher,
+            "Postgres version must be 15 or higher, found: {}",
+            version_string
+        );
+        info!("Self check - found postgres version: {}", version_string);
     }
 }
 
@@ -190,7 +205,7 @@ impl PostgresQueryBlockStore {
 
     pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<Slot>> {
         let started = Instant::now();
-        let session = self.get_session().await;
+        // let session = self.get_session().await;
         // e.g. "rpc2a_epoch_552"
         let query = format!(
             r#"
@@ -201,7 +216,7 @@ impl PostgresQueryBlockStore {
             "#,
             schema_prefix = EPOCH_SCHEMA_PREFIX
         );
-        let result = session.query_list(&query, &[]).await.unwrap();
+        let result = self.session.query_list(&query, &[]).await.unwrap();
 
         let epoch_schemas = result
             .iter()
@@ -239,11 +254,21 @@ impl PostgresQueryBlockStore {
             inner = inner
         );
 
-        let rows_minmax = session.query_list(&query, &[]).await.unwrap();
+        let rows_minmax = self.session.query_list(&query, &[]).await;
 
-        if rows_minmax.is_empty() {
-            return HashMap::new();
-        }
+        match rows_minmax {
+            Ok(ref rows_minmax) => {
+                if rows_minmax.is_empty() {
+                    return HashMap::new();
+                }
+            }
+            Err(err) => {
+                warn!("Skipping query slot range by epoch: {:?}", err);
+                return HashMap::new();
+            }
+        };
+
+        let rows_minmax = rows_minmax.unwrap();
 
         let mut map_epoch_to_slot_range = rows_minmax
             .iter()

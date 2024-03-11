@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::debug;
+use log::{debug, trace};
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
@@ -11,23 +11,19 @@ use tokio_postgres::{
     Socket,
 };
 
-use super::postgres_config::{PostgresSessionConfig, PostgresSessionSslConfig};
+use super::postgres_config::{BlockstorePostgresSessionConfig, PostgresSessionSslConfig};
 
-#[derive(Clone)]
-pub struct PostgresSession {
-    pub client: Arc<Client>,
-}
+pub struct PostgresSession(Client);
 
 impl PostgresSession {
     pub async fn new_from_env() -> anyhow::Result<Self> {
-        let pg_session_config = PostgresSessionConfig::new_from_env()
-            .expect("failed to start Postgres Client")
-            .expect("Postgres not enabled (use PG_ENABLED)");
+        let pg_session_config = BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB")
+            .expect("Blockstore PostgreSQL Configuration from env");
         PostgresSession::new(pg_session_config).await
     }
 
     pub async fn new(
-        PostgresSessionConfig { pg_config, ssl }: PostgresSessionConfig,
+        BlockstorePostgresSessionConfig { pg_config, ssl }: BlockstorePostgresSessionConfig,
     ) -> anyhow::Result<Self> {
         let pg_config = pg_config.parse::<tokio_postgres::Config>()?;
 
@@ -57,9 +53,19 @@ impl PostgresSession {
             Self::spawn_connection(pg_config, MakeTlsConnector::new(connector)).await?
         };
 
-        Ok(Self {
-            client: Arc::new(client),
-        })
+        Ok(Self(client))
+    }
+
+    pub async fn new_writer(pg_config: BlockstorePostgresSessionConfig) -> anyhow::Result<Self> {
+        let write_session = Self::new(pg_config).await?;
+        let statement = r#"
+                SET SESSION application_name='postgres-blockstore-write-session';
+                -- default: 64MB
+                SET SESSION maintenance_work_mem = '256MB';
+            "#;
+
+        write_session.execute_multiple(statement).await.unwrap();
+        Ok(write_session)
     }
 
     async fn spawn_connection<T>(
@@ -137,15 +143,21 @@ impl PostgresSession {
         // DEALLOCATE -> would drop prepared statements which we do not use ATM
         // DISCARD PLANS -> we want to keep the plans
         // DISCARD SEQUENCES -> we want to keep the sequences
-        self.client
+        let result = self.0
             .batch_execute(
                 r#"
                DISCARD TEMP;
                 CLOSE ALL;"#,
             )
-            .await
-            .unwrap();
-        debug!("Clear postgres session");
+            .await;
+        match result {
+            Ok(_) => {
+                trace!("Clear postgres session");
+            }
+            Err(err) => {
+                log::error!("Error clearing postgres session: {err}");
+            }
+        }
     }
 
     pub async fn execute(
@@ -153,12 +165,12 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
-        self.client.execute(statement, params).await
+        self.0.execute(statement, params).await
     }
 
     // execute statements seperated by semicolon
     pub async fn execute_multiple(&self, statement: &str) -> Result<(), Error> {
-        self.client.batch_execute(statement).await
+        self.0.batch_execute(statement).await
     }
 
     pub async fn execute_prepared_batch(
@@ -166,10 +178,10 @@ impl PostgresSession {
         statement: &str,
         params: &Vec<Vec<&(dyn ToSql + Sync)>>,
     ) -> Result<u64, Error> {
-        let prepared_stmt = self.client.prepare(statement).await?;
+        let prepared_stmt = self.0.prepare(statement).await?;
         let mut total_inserted = 0;
         for row in params {
-            let result = self.client.execute(&prepared_stmt, row).await;
+            let result = self.0.execute(&prepared_stmt, row).await;
             total_inserted += result?;
         }
         Ok(total_inserted)
@@ -180,8 +192,8 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
-        let prepared_stmt = self.client.prepare(statement).await?;
-        self.client.execute(&prepared_stmt, params).await
+        let prepared_stmt = self.0.prepare(statement).await?;
+        self.0.execute(&prepared_stmt, params).await
     }
 
     pub async fn execute_and_return(
@@ -189,7 +201,7 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<Row>, Error> {
-        self.client.query_opt(statement, params).await
+        self.0.query_opt(statement, params).await
     }
 
     pub async fn query_opt(
@@ -197,7 +209,7 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<Row>, Error> {
-        self.client.query_opt(statement, params).await
+        self.0.query_opt(statement, params).await
     }
 
     pub async fn query_one(
@@ -205,7 +217,7 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Row, Error> {
-        self.client.query_one(statement, params).await
+        self.0.query_one(statement, params).await
     }
 
     pub async fn query_list(
@@ -213,24 +225,24 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<Row>, Error> {
-        self.client.query(statement, params).await
+        self.0.query(statement, params).await
     }
 
     pub async fn copy_in(&self, statement: &str) -> Result<CopyInSink<bytes::Bytes>, Error> {
         // BinaryCopyInWriter
         // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
-        self.client.copy_in(statement).await
+        self.0.copy_in(statement).await
     }
 }
 
 #[derive(Clone)]
 pub struct PostgresSessionCache {
     session: Arc<RwLock<PostgresSession>>,
-    config: PostgresSessionConfig,
+    config: BlockstorePostgresSessionConfig,
 }
 
 impl PostgresSessionCache {
-    pub async fn new(config: PostgresSessionConfig) -> anyhow::Result<Self> {
+    pub async fn new(config: BlockstorePostgresSessionConfig) -> anyhow::Result<Self> {
         let session = PostgresSession::new(config.clone()).await?;
         Ok(Self {
             session: Arc::new(RwLock::new(session)),
@@ -238,65 +250,71 @@ impl PostgresSessionCache {
         })
     }
 
-    pub async fn get_session(&self) -> anyhow::Result<PostgresSession> {
-        let session = self.session.read().await;
-        if session.client.is_closed() {
-            drop(session);
-            let session = PostgresSession::new(self.config.clone()).await?;
-            *self.session.write().await = session.clone();
-            Ok(session)
-        } else {
-            Ok(session.clone())
-        }
-    }
+
+    // TODO remove
+    // pub async fn __get_session(&self) -> PostgresSession {
+        // let session = self.session.read().await;
+
+        // if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
+        //     drop(session);
+        //     let session = PostgresSession::new(self.config.clone()).await
+        //         .expect("should have created new postgres session");
+        //     *self.session.write().await = session.clone();
+        //     session
+        // } else {
+        //     session.clear_session().await;
+        //     session.clone()
+        // }
+    // }
 }
 
-#[derive(Clone)]
-pub struct PostgresWriteSession {
-    session: Arc<RwLock<PostgresSession>>,
-    pub pg_session_config: PostgresSessionConfig,
-}
-
-impl PostgresWriteSession {
-    pub async fn new_from_env() -> anyhow::Result<Self> {
-        let pg_session_config = PostgresSessionConfig::new_from_env()
-            .expect("failed to start Postgres Client")
-            .expect("Postgres not enabled (use PG_ENABLED)");
-        Self::new(pg_session_config).await
-    }
-
-    pub async fn new(pg_session_config: PostgresSessionConfig) -> anyhow::Result<Self> {
-        let session = PostgresSession::new(pg_session_config.clone()).await?;
-
-        let statement = r#"
-                SET SESSION application_name='postgres-blockstore-write-session';
-                -- default: 64MB
-                SET SESSION maintenance_work_mem = '256MB';
-            "#;
-
-        session.execute_multiple(statement).await.unwrap();
-
-        Ok(Self {
-            session: Arc::new(RwLock::new(session)),
-            pg_session_config,
-        })
-    }
-
-    pub async fn get_write_session(&self) -> PostgresSession {
-        let session = self.session.read().await;
-
-        if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
-            let session = PostgresSession::new(self.pg_session_config.clone())
-                .await
-                .expect("should have created new postgres session");
-            let mut lock = self.session.write().await;
-            *lock = session.clone();
-            session
-        } else {
-            session.clone()
-        }
-    }
-}
+// #[derive(Clone)]
+// pub struct BlockstorePostgresWriteSession {
+//     session: Arc<RwLock<PostgresSession>>,
+//     // pub pg_session_config: BlockstorePostgresSessionConfig,
+// }
+//
+// impl BlockstorePostgresWriteSession {
+//     pub async fn new_from_env() -> anyhow::Result<Self> {
+//         let pg_session_config = BlockstorePostgresSessionConfig::new_from_env()
+//             .expect("Blockstore PostgreSQL Configuration from env");
+//         Self::new(pg_session_config).await
+//     }
+//
+//     pub async fn new(pg_session_config: BlockstorePostgresSessionConfig) -> anyhow::Result<Self> {
+//         let session = PostgresSession::new(pg_session_config.clone()).await?;
+//
+//         let statement = r#"
+//                 SET SESSION application_name='postgres-blockstore-write-session';
+//                 -- default: 64MB
+//                 SET SESSION maintenance_work_mem = '256MB';
+//             "#;
+//
+//         session.execute_multiple(statement).await.unwrap();
+//
+//         Ok(Self {
+//             session: Arc::new(RwLock::new(session)),
+//             // pg_session_config,
+//         })
+//     }
+//
+//     // pub async fn get_write_session(&self) -> PostgresSession {
+//     //     let session = self.session.read().await;
+//     //
+//     //     if session.0.is_closed() || session.0.execute(";", &[]).await.is_err() {
+//     //         drop(session);
+//     //         let session = PostgresSession::new(self.pg_session_config.clone())
+//     //             .await
+//     //             .expect("should have created new postgres session");
+//     //         let mut lock = self.session.write().await;
+//     //         *lock = session.clone();
+//     //         session
+//     //     } else {
+//     //         session.clear_session().await;
+//     //         session.clone()
+//     //     }
+//     // }
+// }
 
 #[test]
 fn multiline_query_test() {

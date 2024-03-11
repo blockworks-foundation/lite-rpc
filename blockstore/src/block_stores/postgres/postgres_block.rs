@@ -9,7 +9,10 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::Reward;
 use std::time::Instant;
+use itertools::Itertools;
+use serde_json::Value;
 use tokio_postgres::types::ToSql;
+use crate::block_stores::postgres::{json_deserialize, json_serialize};
 
 #[derive(Debug)]
 pub struct PostgresBlock {
@@ -19,17 +22,14 @@ pub struct PostgresBlock {
     pub parent_slot: i64,
     pub block_time: i64,
     pub previous_blockhash: String,
-    pub rewards: Option<String>,
+    pub rewards: Option<Vec<Value>>,
     pub leader_id: Option<String>,
 }
 
 impl From<&ProducedBlock> for PostgresBlock {
     fn from(value: &ProducedBlock) -> Self {
-        let rewards = value
-            .rewards
-            .as_ref()
-            .map(|x| BASE64.serialize::<Vec<Reward>>(x).ok())
-            .unwrap_or(None);
+        let rewards_vec = value.rewards.as_ref()
+            .map(|list| list.iter().map(|r| json_serialize::<Reward>(r)).collect_vec());
 
         Self {
             blockhash: value.blockhash.to_string(),
@@ -38,8 +38,7 @@ impl From<&ProducedBlock> for PostgresBlock {
             parent_slot: value.parent_slot as i64,
             block_time: value.block_time as i64,
             previous_blockhash: value.previous_blockhash.to_string(),
-            // TODO add leader_id, etc.
-            rewards,
+            rewards: rewards_vec,
             leader_id: value.leader_id.clone(),
         }
     }
@@ -52,10 +51,8 @@ impl PostgresBlock {
         commitment_config: CommitmentConfig,
     ) -> ProducedBlock {
         let rewards_vec: Option<Vec<Reward>> = self
-            .rewards
-            .as_ref()
-            .map(|x| BASE64.deserialize::<Vec<Reward>>(x).ok())
-            .unwrap_or(None);
+            .rewards.clone()
+            .map(|list | list.into_iter().map(|r| json_deserialize(r)).collect_vec());
 
         let inner = ProducedBlockInner {
             // TODO implement
@@ -80,16 +77,26 @@ impl PostgresBlock {
             r#"
             CREATE TABLE IF NOT EXISTS {schema}.blocks (
                 slot BIGINT NOT NULL,
-                blockhash TEXT NOT NULL,
-                leader_id TEXT,
                 block_height BIGINT NOT NULL,
                 parent_slot BIGINT NOT NULL,
                 block_time BIGINT NOT NULL,
-                previous_blockhash TEXT NOT NULL,
-                rewards TEXT,
+                blockhash varchar(44) COMPRESSION lz4 NOT NULL,
+                previous_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
+                leader_id TEXT COMPRESSION lz4,
+                rewards jsonb[] COMPRESSION lz4,
                 CONSTRAINT pk_block_slot PRIMARY KEY(slot)
-            ) WITH (FILLFACTOR=90);
-            CLUSTER {schema}.blocks USING pk_block_slot;
+            ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
+            ALTER TABLE {schema}.blocks ALTER COLUMN blockhash SET STORAGE MAIN;
+            ALTER TABLE {schema}.blocks ALTER COLUMN previous_blockhash SET STORAGE MAIN;
+            ALTER TABLE {schema}.blocks
+                SET (
+                    autovacuum_vacuum_scale_factor=0,
+                    autovacuum_vacuum_threshold=1000,
+                    autovacuum_vacuum_insert_scale_factor=0,
+                    autovacuum_vacuum_insert_threshold=100,
+                    autovacuum_analyze_scale_factor=0,
+                    autovacuum_analyze_threshold=100
+                    );
         "#,
             schema = schema
         )
@@ -123,7 +130,7 @@ impl PostgresBlock {
 
         let statement = format!(
             r#"
-                INSERT INTO {schema}.blocks (slot, blockhash, block_height, parent_slot, block_time, previous_blockhash, rewards, leader_id)
+                INSERT INTO {schema}.blocks (slot, block_height, parent_slot, block_time, blockhash, previous_blockhash, leader_id, rewards)
                 VALUES {}
                 -- prevent updates
                 ON CONFLICT DO NOTHING
@@ -140,13 +147,13 @@ impl PostgresBlock {
 
         let mut args: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(NB_ARGUMENTS);
         args.push(&self.slot);
-        args.push(&self.blockhash);
         args.push(&self.block_height);
         args.push(&self.parent_slot);
         args.push(&self.block_time);
+        args.push(&self.blockhash);
         args.push(&self.previous_blockhash);
-        args.push(&self.rewards);
         args.push(&self.leader_id);
+        args.push(&self.rewards);
 
         let returning = postgres_session
             .execute_and_return(&statement, &args)
@@ -158,7 +165,7 @@ impl PostgresBlock {
                 // check if monotonic
                 let prev_max_slot = row.get::<&str, Option<i64>>("prev_max_slot");
                 // None -> no previous rows
-                debug!("Inserted block {}", self.slot,);
+                debug!("Inserted block {}, epoch={}", self.slot, epoch);
                 if let Some(prev_max_slot) = prev_max_slot {
                     if prev_max_slot > self.slot {
                         // note: unclear if this is desired behavior!
@@ -220,6 +227,7 @@ mod tests {
     fn create_tx_info() -> TransactionInfo {
         TransactionInfo {
             signature: Signature::new_unique(),
+            index: 0,
             is_vote: false,
             err: None,
             cu_requested: None,
@@ -230,6 +238,11 @@ mod tests {
             writable_accounts: vec![],
             readable_accounts: vec![],
             address_lookup_tables: vec![],
+            fee: 0,
+            pre_balances: vec![],
+            post_balances: vec![],
+            inner_instructions: None,
+            log_messages: None,
         }
     }
 

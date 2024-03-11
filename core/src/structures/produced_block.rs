@@ -1,18 +1,22 @@
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::Hash;
-use solana_sdk::message::v0::MessageAddressTableLookup;
+use solana_sdk::message::v0::{LoadedAddresses, MessageAddressTableLookup};
 use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
-use solana_transaction_status::Reward;
+use solana_transaction_status::{InnerInstructions, Reward, Rewards, TransactionStatusMeta, TransactionTokenBalance};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
+use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::transaction_context::TransactionReturnData;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
     pub signature: Signature,
+    // index sent by yellowstone
+    pub index: i32,
     pub is_vote: bool,
     pub err: Option<TransactionError>,
     pub cu_requested: Option<u32>,
@@ -23,6 +27,18 @@ pub struct TransactionInfo {
     pub writable_accounts: Vec<Pubkey>,
     pub readable_accounts: Vec<Pubkey>,
     pub address_lookup_tables: Vec<MessageAddressTableLookup>,
+    pub fee: i64,
+    pub pre_balances: Vec<i64>,
+    pub post_balances: Vec<i64>,
+    pub inner_instructions: Option<Vec<InnerInstructions>>,
+    pub log_messages: Option<Vec<String>>,
+
+    // from TransactionStatusMeta
+
+    // pub pre_token_balances: Option<Vec<TransactionTokenBalance>>,
+    // pub post_token_balances: Option<Vec<TransactionTokenBalance>>,
+    // pub rewards: Option<Rewards>,
+    // pub return_data: Option<TransactionReturnData>,
 }
 
 #[derive(Clone)]
@@ -67,6 +83,7 @@ pub struct ProducedBlockInner {
     pub block_height: u64,
     pub slot: Slot,
     pub parent_slot: Slot,
+    // seconds since epoch
     pub block_time: u64,
     pub previous_blockhash: Hash,
     pub rewards: Option<Vec<Reward>>,
@@ -87,5 +104,15 @@ impl ProducedBlock {
             inner: self.inner.clone(),
             commitment_config: CommitmentConfig::finalized(),
         }
+    }
+}
+
+impl From<&TransactionInfo> for VersionedTransaction {
+    fn from(ti: &TransactionInfo) -> Self {
+        let tx: VersionedTransaction = VersionedTransaction {
+            signatures: vec![ti.signature], // TODO check if it's correct to map only one signature
+            message: ti.message.clone(),
+        };
+        tx
     }
 }

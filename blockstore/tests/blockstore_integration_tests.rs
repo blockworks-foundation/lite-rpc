@@ -1,7 +1,7 @@
 use log::{debug, error, info, warn};
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
-use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
+use solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
@@ -38,10 +38,10 @@ async fn storage_test() {
 
     let pg_session_config = if no_pgconfig {
         info!("No PG_CONFIG env - use hartcoded defaults for integration test");
-        PostgresSessionConfig::new_for_tests()
+        BlockstorePostgresSessionConfig::new_for_tests()
     } else {
         info!("PG_CONFIG env defined");
-        PostgresSessionConfig::new_from_env().unwrap().unwrap()
+        BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB").unwrap()
     };
 
     let rpc_url = std::env::var("RPC_URL").expect("env var RPC_URL is mandatory");
@@ -197,7 +197,7 @@ fn storage_listen(
 
                     // avoid backpressure here!
 
-                    block_storage.save_block(&block).await.unwrap();
+                    block_storage.save_confirmed_block(&block).await.unwrap();
 
                     // we should be faster than 150ms here
                     let elapsed = started.elapsed();

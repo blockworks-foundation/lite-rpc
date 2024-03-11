@@ -2,7 +2,7 @@ use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::Blo
 use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
-use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
+use solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlock, ProducedBlockInner};
 use solana_sdk::pubkey::Pubkey;
@@ -36,25 +36,25 @@ pub fn create_test_block(slot: u64, commitment_config: CommitmentConfig) -> Prod
 async fn test_in_multiple_stategy_block_store() {
     tracing_subscriber::fmt::init();
 
-    let pg_session_config = PostgresSessionConfig::new_from_env().unwrap().unwrap();
+    let pg_session_config = BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB").unwrap();
     let epoch_cache = EpochCache::new_for_tests();
     let persistent_store =
         PostgresBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await;
     let block_storage_query = PostgresQueryBlockStore::new(epoch_cache, pg_session_config).await;
     let multi_store = MultipleStrategyBlockStorage::new(
-        block_storage_query.clone(),
-        None, // not supported
+        block_storage_query
+        // None, // not supported
     );
 
     persistent_store.prepare_epoch_schema(1200).await.unwrap();
 
     persistent_store
-        .save_block(&create_test_block(1200, CommitmentConfig::confirmed()))
+        .save_confirmed_block(&create_test_block(1200, CommitmentConfig::confirmed()))
         .await
         .unwrap();
     // span range of slots between those two
     persistent_store
-        .save_block(&create_test_block(1289, CommitmentConfig::confirmed()))
+        .save_confirmed_block(&create_test_block(1289, CommitmentConfig::confirmed()))
         .await
         .unwrap();
 

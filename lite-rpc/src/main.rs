@@ -1,5 +1,6 @@
 pub mod rpc_tester;
 
+
 use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
@@ -7,11 +8,11 @@ use itertools::Itertools;
 use lite_rpc::bridge::LiteBridge;
 use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
-use lite_rpc::postgres_logger::PostgresLogger;
+use lite_rpc::postgres_logger::{PostgresLogger, PostgresSessionConfig};
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
-use log::{debug, info};
+use log::{debug, info, warn};
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
@@ -52,6 +53,12 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
 use lite_rpc::postgres_logger;
+use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::MultipleStrategyBlockStorage;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_importer::{
+    start_postgres_block_store_importer_task, storage_prepare_epoch_schema,
+};
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::{PostgresQueryBlockStore};
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
@@ -136,6 +143,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         address_lookup_tables_binary,
         account_filters,
         enable_accounts_on_demand_accounts_service,
+        use_postgres_blockstore,
+        enable_postgres_block_store_importer,
         ..
     } = args;
 
@@ -168,7 +177,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         connect_timeout: Duration::from_secs(5),
         request_timeout: Duration::from_secs(5),
         subscribe_timeout: Duration::from_secs(5),
-        receive_timeout: Duration::from_secs(5),
+        receive_timeout: Duration::from_secs(15),
     };
 
     let gprc_sources = grpc_sources
@@ -244,9 +253,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         None
     };
 
-    info!("Waiting for first finalized block...");
+    warn!("WORKAROUND Waiting for first finalized block...");
     let finalized_block =
-        get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
+        get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::processed()).await; // FIXME revert
+
     info!("Got finalized block: {:?}", finalized_block.slot);
 
     let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
@@ -263,7 +273,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         txs: TxStore {
             store: Arc::new(DashMap::new()),
         },
-        epoch_data,
+        epoch_data: epoch_data.clone(),
         leader_schedule: Arc::new(RwLock::new(CalculatedSchedule::default())),
     };
 
@@ -362,13 +372,48 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
 
-    let history = History::new();
+    // Block store importer
+    if enable_postgres_block_store_importer {
+        // TODO use dedicated database for block store
+        let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB")
+            .expect("Blockstore PostgreSQL Configuration from env");
+        let postgres_block_store =
+            Arc::new(PostgresBlockStore::new(epoch_data.clone(), pg_session_config).await);
+
+        let (_ah_prepare_epochschema_task, startup_token) =
+            storage_prepare_epoch_schema(slot_notifier.resubscribe(), postgres_block_store.clone());
+        startup_token.cancelled().await;
+
+        let _jh_task = start_postgres_block_store_importer_task(
+            blocks_notifier.resubscribe(),
+            postgres_block_store,
+        );
+    } else {
+        info!("Disable block store importer");
+    };
+
+    // Block store query
+    let multiple_strategy_block_store = if use_postgres_blockstore {
+        warn!("TODO make multiple_strategy_block_store configurable");
+        // TODO use dedicated database for block store
+        let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB")
+            .expect("Blockstore PostgreSQL Configuration from env");
+        let persistent_store =
+            PostgresQueryBlockStore::new(epoch_data.clone(), pg_session_config).await;
+        let multi_store = MultipleStrategyBlockStorage::new(persistent_store);
+        Some(multi_store)
+    } else {
+        info!("Disable multiple-strategy blockstore");
+        None
+    };
+
+    // let history = History::new();
 
     let rpc_service = LiteBridge::new(
         rpc_client.clone(),
         data_cache.clone(),
         transaction_service,
-        history,
+        multiple_strategy_block_store,
         block_priofees_service.clone(),
         account_priofees_service.clone(),
         accounts_service.clone(),

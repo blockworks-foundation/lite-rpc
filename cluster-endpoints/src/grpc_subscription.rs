@@ -5,7 +5,7 @@ use crate::grpc_multiplex::{
 };
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
-use log::trace;
+use log::{info, trace};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
@@ -28,9 +28,10 @@ use solana_sdk::{
     signature::Signature,
     transaction::TransactionError,
 };
-use solana_transaction_status::{Reward, RewardType};
+use solana_transaction_status::{InnerInstruction, InnerInstructions, Reward, RewardType, TransactionStatusMeta};
 use std::cell::OnceCell;
 use std::sync::Arc;
+use solana_sdk::message::legacy;
 use tracing::trace_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
@@ -50,6 +51,7 @@ pub fn from_grpc_block_update(
     let txs: Vec<TransactionInfo> = block
         .transactions
         .into_iter()
+        .sorted_by_key(|tx| tx.index)
         .filter_map(|tx| {
             let meta = tx.meta?;
 
@@ -69,6 +71,23 @@ pub fn from_grpc_block_update(
                     .expect("TransactionError should be deserialized")
             });
 
+            let inner_instructions: Vec<InnerInstructions> =
+                meta.inner_instructions.into_iter().map(|yellow| {
+                    InnerInstructions {
+                        index: yellow.index as u8,
+                        instructions: yellow.instructions.into_iter().map(|ins| {
+                            InnerInstruction {
+                                instruction: CompiledInstruction {
+                                    program_id_index: ins.program_id_index as u8,
+                                    accounts: ins.accounts,
+                                    data: ins.data,
+                                },
+                                stack_height: ins.stack_height,
+                            }
+                        }).collect(),
+                    }
+                }).collect_vec();
+
             let compute_units_consumed = meta.compute_units_consumed;
             let account_keys: Vec<Pubkey> = message
                 .account_keys
@@ -79,7 +98,8 @@ pub fn from_grpc_block_update(
                 })
                 .collect();
 
-            let message = VersionedMessage::V0(v0::Message {
+            // use V0 as container and map to Legacy if needed
+            let full_message = v0::Message {
                 header: MessageHeader {
                     num_required_signatures: header.num_required_signatures as u8,
                     num_readonly_signed_accounts: header.num_readonly_signed_accounts as u8,
@@ -109,7 +129,9 @@ pub fn from_grpc_block_update(
                         }
                     })
                     .collect(),
-            });
+            };
+
+            let message = map_versioned_message(message.versioned, full_message);
 
             let (cu_requested, prioritization_fees) = map_compute_budget_instructions(&message);
 
@@ -139,8 +161,15 @@ pub fn from_grpc_block_update(
                 .map(|x| x.to_vec())
                 .unwrap_or_default();
 
+            let log_messages = if meta.log_messages_none {
+                None
+            } else {
+                Some(meta.log_messages)
+            };
+
             Some(TransactionInfo {
                 signature,
+                index: tx.index as i32,
                 is_vote: is_vote_transaction,
                 err,
                 cu_requested,
@@ -151,6 +180,11 @@ pub fn from_grpc_block_update(
                 readable_accounts,
                 writable_accounts,
                 address_lookup_tables,
+                fee: meta.fee as i64,
+                pre_balances: meta.pre_balances.into_iter().map(|x| x as i64).collect(),
+                post_balances: meta.post_balances.into_iter().map(|x| x as i64).collect(),
+                inner_instructions: Option::from(inner_instructions),
+                log_messages,
             })
         })
         .collect();
@@ -201,6 +235,19 @@ pub fn from_grpc_block_update(
         rewards,
     };
     ProducedBlock::new(inner, commitment_config)
+}
+
+fn map_versioned_message(versioned: bool, full_message: v0::Message) -> VersionedMessage {
+    if versioned {
+        VersionedMessage::V0(full_message)
+    } else {
+        VersionedMessage::Legacy(legacy::Message {
+            header: full_message.header,
+            account_keys: full_message.account_keys,
+            recent_blockhash: full_message.recent_blockhash,
+            instructions: full_message.instructions,
+        })
+    }
 }
 
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {

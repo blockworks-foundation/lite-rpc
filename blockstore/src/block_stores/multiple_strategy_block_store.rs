@@ -1,12 +1,12 @@
 use crate::block_stores::faithful_history::faithful_block_store::FaithfulBlockStore;
 use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use anyhow::{bail, Context, Result};
-use log::{debug, trace};
+
+use log::{debug, info, trace};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+
 use solana_sdk::slot_history::Slot;
 use std::ops::{Deref, RangeInclusive};
-use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {
@@ -18,7 +18,6 @@ pub enum BlockSource {
 
 #[derive(Debug, Clone)]
 pub struct BlockStorageData {
-    // note: commitment_config is the actual commitment level
     pub block: ProducedBlock,
     // meta data
     pub result_source: BlockSource,
@@ -32,6 +31,7 @@ impl Deref for BlockStorageData {
 }
 
 // you might need to add a read-cache instead
+// #[derive(Clone)]
 pub struct MultipleStrategyBlockStorage {
     block_storage_query: PostgresQueryBlockStore,
     // note supported ATM
@@ -40,10 +40,12 @@ pub struct MultipleStrategyBlockStorage {
 }
 
 impl MultipleStrategyBlockStorage {
-    pub fn new(
-        block_storage_query: PostgresQueryBlockStore,
-        _faithful_rpc_client: Option<Arc<RpcClient>>,
-    ) -> Self {
+    pub fn new(block_storage_query: PostgresQueryBlockStore) -> Self {
+        info!(
+            "Initializing MultipleStrategyBlockStorage {} faithful history storage",
+            "without"
+        );
+
         Self {
             block_storage_query,
             // faithful_history not used ATM
@@ -108,7 +110,7 @@ impl MultipleStrategyBlockStorage {
                     .block_storage_query
                     .query_block(slot)
                     .await
-                    .context(format!("block {} not found although it was in range", slot));
+                    .context(format!("query block {} from postgres", slot));
 
                 return lookup.map(|b| BlockStorageData {
                     block: b,

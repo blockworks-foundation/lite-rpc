@@ -13,6 +13,8 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
+use solana_sdk::signature::Signature;
+use solana_transaction_status::TransactionDetails::Signatures;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
 use tokio::time::{sleep, Instant};
@@ -41,17 +43,7 @@ fn create_grpc_multiplex_processed_block_task(
 
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut slots_processed = BTreeSet::<u64>::new();
-        let mut last_tick = Instant::now();
         loop {
-            // recv loop
-            if last_tick.elapsed() > Duration::from_millis(200) {
-                warn!(
-                    "(soft_realtime) slow multiplex loop interation: {:?}",
-                    last_tick.elapsed()
-                );
-            }
-            last_tick = Instant::now();
-
             const MAX_SIZE: usize = 1024;
             match blocks_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {

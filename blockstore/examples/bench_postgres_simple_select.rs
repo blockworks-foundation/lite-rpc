@@ -3,20 +3,20 @@ use itertools::Itertools;
 /// test program to query postgres the simples possible way
 ///
 use log::info;
+use solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig;
 use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSession;
-use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let pg_session_config = PostgresSessionConfig::new_for_tests();
+    let pg_session_config = BlockstorePostgresSessionConfig::new_for_tests();
 
     let single_session = PostgresSession::new(pg_session_config.clone())
         .await
         .unwrap();
     // run one query
-    query_database_simple(single_session).await;
+    query_database_simple(&single_session).await;
     info!("single query test ... done");
 
     // run parallel queries
@@ -26,7 +26,7 @@ pub async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn parallel_queries(pg_session_config: PostgresSessionConfig) {
+async fn parallel_queries(pg_session_config: BlockstorePostgresSessionConfig) {
     let many_sessions = vec![
         PostgresSession::new(pg_session_config.clone())
             .await
@@ -56,7 +56,7 @@ async fn parallel_queries(pg_session_config: PostgresSessionConfig) {
 
     let futures = (0..many_sessions.len())
         .map(|si| {
-            let session = many_sessions[si].clone();
+            let session = &many_sessions[si];
             query_database_simple(session)
         })
         .collect_vec();
@@ -64,7 +64,7 @@ async fn parallel_queries(pg_session_config: PostgresSessionConfig) {
     futures_util::future::join_all(futures).await;
 }
 
-async fn query_database_simple(postgres_session: PostgresSession) {
+async fn query_database_simple(postgres_session: &PostgresSession) {
     let statement = "SELECT 1";
 
     let started = tokio::time::Instant::now();
