@@ -23,3 +23,6 @@ ALTER TABLE rpc2a_epoch_EPOCH.transaction_blockdata ADD COLUMN log_messages text
 ALTER TABLE rpc2a_epoch_EPOCH.transaction_blockdata ADD COLUMN writable_accounts text[];
 ALTER TABLE rpc2a_epoch_EPOCH.transaction_blockdata ADD COLUMN readable_accounts text[];
 
+ALTER TABLE rpc2a_epoch_EPOCH.transaction_blockdata ADD COLUMN pre_token_balances jsonb[] NOT NULL DEFAULT ARRAY[]::jsonb[];
+
+ALTER TABLE rpc2a_epoch_EPOCH.transaction_blockdata ADD COLUMN post_token_balances jsonb[] NOT NULL DEFAULT ARRAY[]::jsonb[];

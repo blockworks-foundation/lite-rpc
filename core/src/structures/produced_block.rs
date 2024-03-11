@@ -5,7 +5,7 @@ use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
-use solana_transaction_status::{InnerInstructions, Reward, Rewards, TransactionStatusMeta, TransactionTokenBalance};
+use solana_transaction_status::{InnerInstructions, Reward, Rewards, TransactionStatusMeta, TransactionTokenBalance, UiTransactionTokenBalance};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -32,6 +32,8 @@ pub struct TransactionInfo {
     pub post_balances: Vec<i64>,
     pub inner_instructions: Option<Vec<InnerInstructions>>,
     pub log_messages: Option<Vec<String>>,
+    pub pre_token_balances: Vec<UiTransactionTokenBalance>,
+    pub post_token_balances: Vec<UiTransactionTokenBalance>,
 
     // from TransactionStatusMeta
 

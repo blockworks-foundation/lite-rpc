@@ -4634,6 +4634,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "solana-account-decoder",
  "solana-client",
  "solana-lite-rpc-core",
  "solana-lite-rpc-util",

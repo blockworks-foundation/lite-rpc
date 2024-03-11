@@ -17,6 +17,7 @@ use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::Transac
 use solana_sdk::signature::Signature;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::TransactionError;
+use solana_transaction_status::UiTransactionTokenBalance;
 use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
@@ -50,6 +51,8 @@ pub struct PostgresTransaction {
     pub post_balances: Vec<i64>,
     pub inner_instructions: Option<Vec<Value>>,
     pub log_messages: Option<Vec<String>>,
+    pub pre_token_balances: Vec<Value>,
+    pub post_token_balances: Vec<Value>,
 }
 
 impl PostgresTransaction {
@@ -75,6 +78,10 @@ impl PostgresTransaction {
                 list.iter().map(|ins| json_serialize(&ins)).collect_vec()
             ),
             log_messages: value.log_messages.clone(),
+            pre_token_balances: value.pre_token_balances.iter()
+                .map(|x| json_serialize(x)).collect(),
+            post_token_balances: value.post_token_balances.iter()
+                .map(|x| json_serialize(x)).collect(),
         }
     }
 
@@ -111,6 +118,10 @@ impl PostgresTransaction {
             inner_instructions: self.inner_instructions.clone()
                 .map(|list| list.into_iter().map(|ins| json_deserialize(ins)).collect_vec()),
             log_messages: self.log_messages.clone(),
+            pre_token_balances: self.pre_token_balances.clone().into_iter()
+                .map(|x| json_deserialize::<UiTransactionTokenBalance>(x)).collect(),
+            post_token_balances: self.post_token_balances.clone().into_iter()
+                .map(|x| json_deserialize::<UiTransactionTokenBalance>(x)).collect(),
         }
     }
 
@@ -156,7 +167,9 @@ impl PostgresTransaction {
                     pre_balances int8[] NOT NULL,
                     post_balances int8[] NOT NULL,
                     inner_instructions jsonb[] COMPRESSION lz4,
-                    log_messages text[] COMPRESSION lz4
+                    log_messages text[] COMPRESSION lz4,
+                    pre_token_balances jsonb[] NOT NULL,
+                    post_token_balances jsonb[] NOT NULL
                     -- model_transaction_blockdata
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
@@ -202,7 +215,9 @@ impl PostgresTransaction {
                 pre_balances int8[] NOT NULL,
                 post_balances int8[] NOT NULL,
                 inner_instructions jsonb[],
-                log_messages text[] COMPRESSION lz4
+                log_messages text[] COMPRESSION lz4,
+                pre_token_balances jsonb[] NOT NULL,
+                post_token_balances jsonb[] NOT NULL
                 -- model_transaction_blockdata
             );
         "#;
@@ -226,7 +241,9 @@ impl PostgresTransaction {
                 pre_balances,
                 post_balances,
                 inner_instructions,
-                log_messages
+                log_messages,
+                pre_token_balances,
+                post_token_balances
                 -- model_transaction_blockdata
             ) FROM STDIN BINARY
         "#;
@@ -252,6 +269,8 @@ impl PostgresTransaction {
                 Type::INT8_ARRAY, // post_balances
                 Type::JSONB_ARRAY, // inner_instructions
                 Type::TEXT_ARRAY, // log_messages
+                Type::JSONB_ARRAY, // pre_token_balances
+                Type::JSONB_ARRAY, // post_token_balances
                 // model_transaction_blockdata
             ],
         );
@@ -276,6 +295,8 @@ impl PostgresTransaction {
                 post_balances,
                 inner_instructions,
                 log_messages,
+                pre_token_balances,
+                post_token_balances,
                 // model_transaction_blockdata
             } = tx;
 
@@ -299,6 +320,8 @@ impl PostgresTransaction {
                     &post_balances,
                     &inner_instructions,
                     &log_messages,
+                    &pre_token_balances,
+                    &post_token_balances,
                     // model_transaction_blockdata
                 ])
                 .await?;
@@ -345,7 +368,9 @@ impl PostgresTransaction {
                     pre_balances,
                     post_balances,
                     inner_instructions,
-                    log_messages
+                    log_messages,
+                    pre_token_balances,
+                    post_token_balances
                     -- model_transaction_blockdata
                 )
                 SELECT
@@ -365,7 +390,9 @@ impl PostgresTransaction {
                     pre_balances,
                     post_balances,
                     inner_instructions,
-                    log_messages
+                    log_messages,
+                    pre_token_balances,
+                    post_token_balances
                     -- model_transaction_blockdata
                 FROM transaction_raw_blockdata
         "#,
@@ -401,7 +428,9 @@ impl PostgresTransaction {
                     pre_balances,
                     post_balances,
                     inner_instructions,
-                    log_messages
+                    log_messages,
+                    pre_token_balances,
+                    post_token_balances
                     -- model_transaction_blockdata
                 FROM {schema}.transaction_blockdata
                 WHERE slot = {}

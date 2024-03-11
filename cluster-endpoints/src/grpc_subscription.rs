@@ -28,10 +28,12 @@ use solana_sdk::{
     signature::Signature,
     transaction::TransactionError,
 };
-use solana_transaction_status::{InnerInstruction, InnerInstructions, Reward, RewardType, TransactionStatusMeta};
+use solana_transaction_status::{InnerInstruction, InnerInstructions, Reward, RewardType, TransactionStatusMeta, TransactionTokenBalance, UiTransactionTokenBalance};
 use std::cell::OnceCell;
 use std::sync::Arc;
+use solana_account_decoder::parse_token::UiTokenAmount;
 use solana_sdk::message::legacy;
+use solana_transaction_status::option_serializer::OptionSerializer;
 use tracing::trace_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
@@ -39,7 +41,7 @@ use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
 };
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlockInner;
-use yellowstone_grpc_proto::prelude::SubscribeUpdateBlock;
+use yellowstone_grpc_proto::prelude::{SubscribeUpdateBlock, TokenBalance};
 
 /// grpc version of ProducedBlock mapping
 pub fn from_grpc_block_update(
@@ -161,6 +163,16 @@ pub fn from_grpc_block_update(
                 .map(|x| x.to_vec())
                 .unwrap_or_default();
 
+            let pre_token_balances = meta.pre_token_balances.iter()
+                .map(|tb| map_token_balance(tb))
+                .collect_vec();
+
+            let post_token_balances = meta.post_token_balances.iter()
+                .map(|tb| map_token_balance(tb))
+                .collect_vec();
+
+            // info!("pre_token_balances: {:?}", pre_token_balances.iter().map(|x| serde_json::to_string(&pre_token_balances).unwrap()).collect_vec());
+
             let log_messages = if meta.log_messages_none {
                 None
             } else {
@@ -185,6 +197,8 @@ pub fn from_grpc_block_update(
                 post_balances: meta.post_balances.into_iter().map(|x| x as i64).collect(),
                 inner_instructions: Option::from(inner_instructions),
                 log_messages,
+                pre_token_balances,
+                post_token_balances,
             })
         })
         .collect();
@@ -235,6 +249,22 @@ pub fn from_grpc_block_update(
         rewards,
     };
     ProducedBlock::new(inner, commitment_config)
+}
+
+fn map_token_balance(tb: &TokenBalance) -> UiTransactionTokenBalance {
+    let amount = tb.ui_token_amount.as_ref().unwrap();
+    UiTransactionTokenBalance {
+        account_index: tb.account_index as u8,
+        mint: tb.mint.clone(),
+        owner: OptionSerializer::Some(tb.owner.to_string()),
+        program_id: OptionSerializer::Some(tb.program_id.to_string()),
+        ui_token_amount: UiTokenAmount {
+            amount: amount.amount.clone(),
+            decimals: amount.decimals as u8,
+            ui_amount: Some(amount.ui_amount),
+            ui_amount_string: amount.ui_amount_string.clone(),
+        },
+    }
 }
 
 fn map_versioned_message(versioned: bool, full_message: v0::Message) -> VersionedMessage {

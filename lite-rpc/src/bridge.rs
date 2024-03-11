@@ -42,7 +42,7 @@ use solana_sdk::clock::UnixTimestamp;
 use solana_sdk::message::v0::LoadedAddresses;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_transaction_status::option_serializer::OptionSerializer;
-use solana_transaction_status::{BlockEncodingOptions, ConfirmedBlock, EncodableWithMeta, EncodedTransaction, EncodedTransactionWithStatusMeta, TransactionDetails, TransactionStatus, TransactionStatusMeta, TransactionWithStatusMeta, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta, VersionedTransactionWithStatusMeta};
+use solana_transaction_status::{BlockEncodingOptions, ConfirmedBlock, EncodableWithMeta, EncodedTransaction, EncodedTransactionWithStatusMeta, TransactionDetails, TransactionStatus, TransactionStatusMeta, TransactionTokenBalance, TransactionWithStatusMeta, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta, UiTransactionTokenBalance, VersionedTransactionWithStatusMeta};
 
 use solana_lite_rpc_core::encoding::BASE64;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
@@ -167,7 +167,7 @@ impl LiteRpcServer for LiteBridge {
         let block = self
             .multiple_strategy_block_storage
             .as_ref()
-            .unwrap()
+            .expect("Multiple strategy block storage not available")
             .query_block(slot)
             .await;
 
@@ -181,8 +181,6 @@ impl LiteRpcServer for LiteBridge {
                 // TODO minimize allocations
                 let full = block.transactions.iter().map(|txi| {
 
-
-
                     TransactionWithStatusMeta::Complete(
                         VersionedTransactionWithStatusMeta {
                             transaction: VersionedTransaction::from(txi),
@@ -195,10 +193,8 @@ impl LiteRpcServer for LiteBridge {
                                 inner_instructions: txi.inner_instructions.clone(),
                                 // TODO map
                                 log_messages: txi.log_messages.clone(),
-                                // TODO check if we want that
-                                pre_token_balances: Some(vec![]),
-                                // TODO check if we want that
-                                post_token_balances: Some(vec![]),
+                                pre_token_balances: Some(txi.pre_token_balances.clone().into_iter().map(|tb| map_token_balance(tb)).collect()),
+                                post_token_balances: Some(txi.post_token_balances.clone().into_iter().map(|tb| map_token_balance(tb)).collect()),
                                 // TODO check if we want that
                                 rewards: Some(vec![]),
                                 loaded_addresses: LoadedAddresses {
@@ -779,5 +775,17 @@ impl LiteRpcServer for LiteBridge {
             // accounts are disabled
             Err(jsonrpsee::types::error::ErrorCode::MethodNotFound.into())
         }
+    }
+}
+
+fn map_token_balance(tb: UiTransactionTokenBalance) -> TransactionTokenBalance {
+    let owner: Option<String> = tb.owner.into();
+    let program_id: Option<String> = tb.program_id.into();
+    TransactionTokenBalance {
+        owner: owner.unwrap(),
+        program_id: program_id.unwrap(),
+        account_index: tb.account_index,
+        mint: tb.mint.to_string(),
+        ui_token_amount: tb.ui_token_amount.clone(),
     }
 }

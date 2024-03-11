@@ -3,6 +3,7 @@ use assert_json_diff::assert_json_eq;
 use jsonrpsee::types::error::INVALID_PARAMS_CODE;
 use log::info;
 use serde_json::Value;
+use solana_account_decoder::parse_token::UiTokenAmount;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_rpc_client_api::client_error::{Error, ErrorKind};
 use solana_rpc_client_api::client_error::ErrorKind::RpcError;
@@ -18,7 +19,9 @@ use solana_sdk::reward_type::RewardType;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::vote::instruction::VoteInstruction;
-use solana_transaction_status::{BlockEncodingOptions, ConfirmedBlock, EncodedConfirmedBlock, EncodedTransaction, EncodedTransactionWithStatusMeta, InnerInstructions, Reward, Rewards, TransactionBinaryEncoding, TransactionDetails, TransactionStatusMeta, TransactionWithStatusMeta, UiTransactionEncoding, VersionedTransactionWithStatusMeta};
+use solana_transaction_status::{BlockEncodingOptions, ConfirmedBlock, EncodedConfirmedBlock, EncodedTransaction, EncodedTransactionWithStatusMeta, InnerInstructions, Reward, Rewards, TransactionBinaryEncoding, TransactionDetails, TransactionStatusMeta, TransactionTokenBalance, TransactionWithStatusMeta, UiTransactionEncoding, UiTransactionTokenBalance, VersionedTransactionWithStatusMeta};
+use solana_transaction_status::option_serializer::OptionSerializer;
+use tower::balance;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 
@@ -269,6 +272,38 @@ fn test_get_block_with_versioned_tx() {
               "blockHeight": 220980772
             }
             "#).unwrap());
+}
+
+
+#[test]
+fn test_map_tokenbalance() {
+
+    let token_balance = UiTransactionTokenBalance {
+        account_index: 6,
+        mint: "EXMVRXYMMsMxtxfaJt4tncwtp2nNBLPitEu7tFrPnLyk".to_string(),
+        owner: OptionSerializer::Some("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1".to_string()),
+        program_id: OptionSerializer::Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string()),
+        ui_token_amount: UiTokenAmount {
+            amount: "173462449762313559".to_string(),
+            decimals: 9,
+            ui_amount: Some(173462449.76231357),
+            ui_amount_string: "173462449.762313559".to_string(),
+        },
+    };
+    assert_json_eq!(
+        token_balance,
+        serde_json::from_str::<Value>(r#"{
+        "accountIndex": 6,
+        "mint": "EXMVRXYMMsMxtxfaJt4tncwtp2nNBLPitEu7tFrPnLyk",
+        "owner": "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1",
+        "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+        "uiTokenAmount": {
+          "amount": "173462449762313559",
+          "decimals": 9,
+          "uiAmount": 173462449.76231357,
+          "uiAmountString": "173462449.762313559"
+        }
+      }"#).unwrap());
 }
 
 

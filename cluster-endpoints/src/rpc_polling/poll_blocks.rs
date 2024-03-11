@@ -200,6 +200,8 @@ pub fn from_ui_block(
                 post_balances,
                 inner_instructions,
                 log_messages,
+                pre_token_balances,
+                post_token_balances,
                 ..
             }) = tx.meta
             else {
@@ -301,6 +303,16 @@ pub fn from_ui_block(
                 _ => None,
             };
 
+            let pre_token_balances = match pre_token_balances {
+                OptionSerializer::Some(pre_token_balances) => pre_token_balances,
+                _ => vec![],
+            };
+
+            let post_token_balances = match post_token_balances {
+                OptionSerializer::Some(post_token_balances) => post_token_balances,
+                _ => vec![],
+            };
+
             Some(TransactionInfo {
                 signature,
                 // note: not sure if the index from RPC is compatible with that from yellowstone
@@ -320,6 +332,8 @@ pub fn from_ui_block(
                 post_balances: post_balances.into_iter().map(|x| x as i64).collect(),
                 inner_instructions: None, // not implemented for RPC
                 log_messages: log_messages,
+                pre_token_balances,
+                post_token_balances,
             })
         })
         .collect();
