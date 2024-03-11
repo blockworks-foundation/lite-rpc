@@ -21,7 +21,6 @@ use solana_sdk::vote::instruction::VoteInstruction;
 use solana_transaction_status::{BlockEncodingOptions, ConfirmedBlock, EncodedConfirmedBlock, EncodedTransaction, EncodedTransactionWithStatusMeta, InnerInstructions, Reward, Rewards, TransactionBinaryEncoding, TransactionDetails, TransactionStatusMeta, TransactionWithStatusMeta, UiTransactionEncoding, VersionedTransactionWithStatusMeta};
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
-use crate::errors::JsonRpcError;
 
 fn map_versioned_transaction(ti: TransactionInfo) -> VersionedTransaction {
     let tx: VersionedTransaction = VersionedTransaction {
