@@ -44,7 +44,7 @@ fn create_grpc_multiplex_processed_block_task(
         let mut last_tick = Instant::now();
         loop {
             // recv loop
-            if last_tick.elapsed() > Duration::from_millis(200) {
+            if last_tick.elapsed() > Duration::from_millis(800) {
                 warn!(
                     "(soft_realtime) slow multiplex loop interation: {:?}",
                     last_tick.elapsed()
