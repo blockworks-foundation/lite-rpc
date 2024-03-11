@@ -14,7 +14,6 @@ pub mod rpc_pubsub;
 pub mod service_spawner;
 pub mod start_server;
 mod rpc_custom_errors;
-mod bridge_json_test;
 mod bridge_map_tx_test;
 
 #[from_env]
