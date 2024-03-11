@@ -1,12 +1,12 @@
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicUsize, Ordering},
     Arc,
 };
 
 #[derive(Clone)]
 pub struct RotatingQueue<T: Clone> {
     elements: Vec<T>,
-    current: Arc<AtomicU64>,
+    current: Arc<AtomicUsize>,
 }
 
 impl<T: Clone> RotatingQueue<T> {
@@ -14,23 +14,17 @@ impl<T: Clone> RotatingQueue<T> {
     where
         F: Fn() -> T,
     {
-        let mut item = Self {
-            elements: Vec::<T>::new(),
-            current: Arc::new(AtomicU64::new(0)),
-        };
-        {
-            for _i in 0..size {
-                item.elements.push(creator_functor());
-            }
+        Self {
+            elements: std::iter::repeat_with(creator_functor).take(size).collect(),
+            current: Arc::new(AtomicUsize::new(0)),
         }
-        item
     }
 
     pub fn get(&self) -> Option<T> {
         if !self.elements.is_empty() {
             let current = self.current.fetch_add(1, Ordering::Relaxed);
-            let index = current % (self.elements.len() as u64);
-            Some(self.elements[index as usize].clone())
+            let index = current % (self.elements.len());
+            Some(self.elements[index].clone())
         } else {
             None
         }

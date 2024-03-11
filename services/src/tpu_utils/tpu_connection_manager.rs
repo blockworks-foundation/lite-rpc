@@ -1,6 +1,8 @@
 use dashmap::DashMap;
 use log::{error, trace};
-use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use prometheus::{
+    core::GenericGauge, histogram_opts, opts, register_histogram, register_int_gauge, Histogram,
+};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
     stores::data_cache::DataCache,
@@ -19,7 +21,7 @@ use std::{
         Arc,
     },
 };
-use tokio::sync::{broadcast::Receiver, broadcast::Sender};
+use tokio::sync::broadcast::{Receiver, Sender};
 
 use crate::{
     quic_connection::{PooledConnection, QuicConnectionPool},
@@ -35,6 +37,11 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_connections_to_keep", "Number of connections to keep asked by tpu service")).unwrap();
     static ref NB_QUIC_TASKS: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
+    static ref TT_SENT_TIMER: Histogram = register_histogram!(histogram_opts!(
+            "literpc_txs_send_timer",
+            "Time to send transaction batch",
+        ))
+        .unwrap();
 }
 
 #[derive(Clone)]
@@ -69,13 +76,12 @@ impl ActiveConnection {
     async fn listen(
         &self,
         transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
+        exit_notifier: Arc<tokio::sync::Notify>,
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
     ) {
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
         let mut transaction_reciever = transaction_reciever;
-        let mut exit_oneshot_channel = exit_oneshot_channel;
         let identity = self.identity;
 
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
@@ -141,11 +147,14 @@ impl ActiveConnection {
                         // permit will be used to send all the transaction and then destroyed
                         let _permit = permit;
                         NB_QUIC_TASKS.inc();
+                        let timer = TT_SENT_TIMER.start_timer();
                         connection.send_transaction(tx).await;
+                        timer.observe_duration();
                         NB_QUIC_TASKS.dec();
                     });
                 },
-                _ = exit_oneshot_channel.recv() => {
+                _ = exit_notifier.notified() => {
+                    // notified to exit
                     break;
                 }
             }
@@ -158,26 +167,21 @@ impl ActiveConnection {
     pub fn start_listening(
         &self,
         transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_oneshot_channel: tokio::sync::mpsc::Receiver<()>,
+        exit_notifier: Arc<tokio::sync::Notify>,
         identity_stakes: IdentityStakesData,
     ) {
         let addr = self.tpu_address;
         let this = self.clone();
         tokio::spawn(async move {
-            this.listen(
-                transaction_reciever,
-                exit_oneshot_channel,
-                addr,
-                identity_stakes,
-            )
-            .await;
+            this.listen(transaction_reciever, exit_notifier, addr, identity_stakes)
+                .await;
         });
     }
 }
 
 struct ActiveConnectionWithExitChannel {
     pub active_connection: ActiveConnection,
-    pub exit_stream: tokio::sync::mpsc::Sender<()>,
+    pub exit_notifier: Arc<tokio::sync::Notify>,
 }
 
 pub struct TpuConnectionManager {
@@ -220,15 +224,19 @@ impl TpuConnectionManager {
                     connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
-                let (sx, rx) = tokio::sync::mpsc::channel(1);
+                let exit_notifier = Arc::new(tokio::sync::Notify::new());
 
                 let broadcast_receiver = broadcast_sender.subscribe();
-                active_connection.start_listening(broadcast_receiver, rx, identity_stakes);
+                active_connection.start_listening(
+                    broadcast_receiver,
+                    exit_notifier.clone(),
+                    identity_stakes,
+                );
                 self.identity_to_active_connection.insert(
                     *identity,
                     Arc::new(ActiveConnectionWithExitChannel {
                         active_connection,
-                        exit_stream: sx,
+                        exit_notifier,
                     }),
                 );
             }
@@ -248,7 +256,7 @@ impl TpuConnectionManager {
                     .active_connection
                     .exit_signal
                     .store(true, Ordering::Relaxed);
-                let _ = value.exit_stream.send(()).await;
+                value.exit_notifier.notify_one();
                 self.identity_to_active_connection.remove(identity);
             }
         }
