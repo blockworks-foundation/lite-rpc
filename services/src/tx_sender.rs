@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::bail;
 use chrono::Utc;
@@ -78,32 +78,51 @@ impl TxSender {
         notifier: Option<NotificationSender>,
     ) -> AnyhowJoinHandle {
         tokio::spawn(async move {
-            let mut instant = Instant::now();
             let mut notifications = vec![];
-            while let Some(transaction_info) = recv.recv().await {
-                self.forward_txs(&transaction_info).await;
-
-                // send transaction notifications in batches
+            let mut interval = tokio::time::interval(INTERVAL_PER_BATCH_IN_MS);
+            let notify_transaction_messages = |notifications: &mut Vec<TransactionNotification>| {
+                if notifications.is_empty() {
+                    // no notifications to send
+                    return;
+                }
                 if let Some(notifier) = &notifier {
-                    let forwarded_slot = self.data_cache.slot_cache.get_current_slot();
-                    let forwarded_local_time = Utc::now();
-                    let tx_notification = TransactionNotification {
-                        signature: transaction_info.signature,
-                        recent_slot: transaction_info.slot,
-                        forwarded_slot,
-                        forwarded_local_time,
-                        processed_slot: None,
-                        cu_consumed: None,
-                        cu_requested: None,
-                        quic_response: 0,
-                    };
-                    notifications.push(tx_notification);
-                    if instant.elapsed() > INTERVAL_PER_BATCH_IN_MS {
-                        // send notification for sent transactions
-                        let _ = notifier.send(NotificationMsg::TxNotificationMsg(
-                            notifications.drain(..).collect_vec(),
-                        ));
-                        instant = Instant::now();
+                    // send notification for sent transactions
+                    let _ = notifier.send(NotificationMsg::TxNotificationMsg(
+                        notifications.drain(..).collect_vec(),
+                    ));
+                }
+            };
+
+            loop {
+                tokio::select! {
+                    transaction_info = recv.recv() => {
+                        if let Some(transaction_info) = transaction_info {
+                            self.forward_txs(&transaction_info).await;
+
+                            if notifier.is_some() {
+                                let forwarded_slot = self.data_cache.slot_cache.get_current_slot();
+                                let forwarded_local_time = Utc::now();
+                                let tx_notification = TransactionNotification {
+                                    signature: transaction_info.signature,
+                                    recent_slot: transaction_info.slot,
+                                    forwarded_slot,
+                                    forwarded_local_time,
+                                    processed_slot: None,
+                                    cu_consumed: None,
+                                    cu_requested: None,
+                                    quic_response: 0,
+                                };
+                                notifications.push(tx_notification);
+                            }
+                        } else {
+                            notify_transaction_messages(&mut notifications);
+                            log::warn!("TxSender reciever broken");
+                            break;
+                        }
+
+                    },
+                    _ = interval.tick() => {
+                        notify_transaction_messages(&mut notifications);
                     }
                 }
             }

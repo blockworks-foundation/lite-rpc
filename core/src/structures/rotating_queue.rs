@@ -24,7 +24,7 @@ impl<T: Clone> RotatingQueue<T> {
         if !self.elements.is_empty() {
             let current = self.current.fetch_add(1, Ordering::Relaxed);
             let index = current % (self.elements.len());
-            Some(self.elements[index].clone())
+            self.elements.get(index).cloned()
         } else {
             None
         }
