@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::str::FromStr;
-use std::sync::Arc;
 use itertools::Itertools;
 use jsonrpsee::core::RpcResult;
 use prometheus::{opts, register_int_counter, IntCounter};
@@ -27,6 +24,9 @@ use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::sync::Arc;
 
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
@@ -594,7 +594,10 @@ impl LiteRpcServer for LiteBridge {
         let Ok(program_id) = Pubkey::from_str(&program_id_str) else {
             return Err(jsonrpsee::types::error::ErrorCode::InternalError.into());
         };
-        let with_context = config.as_ref().map(|value| value.with_context.unwrap_or_default()).unwrap_or_default();
+        let with_context = config
+            .as_ref()
+            .map(|value| value.with_context.unwrap_or_default())
+            .unwrap_or_default();
 
         if let Some(account_service) = &self.accounts_service {
             match account_service
@@ -603,19 +606,17 @@ impl LiteRpcServer for LiteBridge {
             {
                 Ok((slot, ui_account)) => {
                     if with_context {
-                        Ok(OptionalContext::Context(
-                            RpcResponse {
-                                context: RpcResponseContext {
-                                    slot,
-                                    api_version: None,
-                                },
-                                value: ui_account
-                            }
-                        ))
+                        Ok(OptionalContext::Context(RpcResponse {
+                            context: RpcResponseContext {
+                                slot,
+                                api_version: None,
+                            },
+                            value: ui_account,
+                        }))
                     } else {
                         Ok(OptionalContext::NoContext(ui_account))
                     }
-                },
+                }
                 Err(_) => {
                     return Err(jsonrpsee::types::error::ErrorCode::ServerError(
                         RpcErrors::AccountNotFound as i32,
