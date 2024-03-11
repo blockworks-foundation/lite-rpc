@@ -9,7 +9,7 @@ use itertools::Itertools;
 use jsonrpsee::core::{Error, RpcResult};
 use jsonrpsee::types::error::{INTERNAL_ERROR_CODE, INVALID_PARAMS_CODE};
 use jsonrpsee::types::ErrorObject;
-use log::info;
+use log::{info, warn};
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
 use solana_lite_rpc_accounts::account_service::AccountService;
@@ -156,7 +156,9 @@ impl LiteRpcServer for LiteBridge {
             return Err(ErrorObject::owned(INVALID_PARAMS_CODE, "Method does not support commitment below `confirmed`", None::<()>));
         }
 
-        assert!(!config.rewards.unwrap_or(false), "Rewards not yet supported");
+        if config.rewards.unwrap_or(false) {
+            warn!("Rewards not yet supported");
+        }
 
         let transaction_details =
             config.transaction_details

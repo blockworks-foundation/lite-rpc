@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn transaction_order_full_vs_signatures() {
         let rpc_client = create_local_rpc_client();
-        let slot = 256903604;
+        let slot = get_recent_slot();
         let config1 = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),
             transaction_details: Some(TransactionDetails::Full),
