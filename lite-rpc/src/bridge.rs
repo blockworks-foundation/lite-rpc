@@ -601,13 +601,7 @@ impl LiteRpcServer for LiteBridge {
                 .get_program_accounts(program_id, config)
                 .await
             {
-                Ok((slot, ui_account)) => Ok(OptionalContext::Context(RpcResponse {
-                    context: RpcResponseContext {
-                        slot,
-                        api_version: None,
-                    },
-                    value: ui_account,
-                })),
+                Ok((_, ui_account)) => Ok(OptionalContext::NoContext(ui_account)),
                 Err(_) => {
                     return Err(jsonrpsee::types::error::ErrorCode::ServerError(
                         RpcErrors::AccountNotFound as i32,
