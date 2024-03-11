@@ -230,6 +230,7 @@ mod tests {
     fn create_tx_info() -> TransactionInfo {
         TransactionInfo {
             signature: Signature::new_unique(),
+            index: 0,
             is_vote: false,
             err: None,
             cu_requested: None,
@@ -240,6 +241,11 @@ mod tests {
             writable_accounts: vec![],
             readable_accounts: vec![],
             address_lookup_tables: vec![],
+            fee: 0,
+            pre_balances: vec![],
+            post_balances: vec![],
+            inner_instructions: None,
+            log_messages: None,
         }
     }
 

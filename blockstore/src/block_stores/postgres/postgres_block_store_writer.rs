@@ -353,6 +353,7 @@ mod tests {
     fn create_test_tx(signature: Signature) -> TransactionInfo {
         TransactionInfo {
             signature,
+            index: 0,
             is_vote: false,
             err: None,
             cu_requested: Some(40000),
@@ -363,6 +364,11 @@ mod tests {
             writable_accounts: vec![],
             readable_accounts: vec![],
             address_lookup_tables: vec![],
+            fee: 0,
+            pre_balances: vec![],
+            post_balances: vec![],
+            inner_instructions: None,
+            log_messages: None,
         }
     }
 
