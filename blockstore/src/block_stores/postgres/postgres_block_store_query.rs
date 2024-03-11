@@ -11,6 +11,7 @@ use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::slot_history::Slot;
+use crate::block_stores::postgres::postgres_transaction_query::PostgresTransactionRpcQuery;
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -71,7 +72,7 @@ impl PostgresQueryBlockStore {
             .context("query block sql")?
             .context("block not found")?;
 
-        let statement = PostgresTransaction::build_query_statement(epoch, slot);
+        let statement = PostgresTransactionRpcQuery::build_query_statement(epoch, slot);
         let transaction_rows = self.session
             .query_list(&statement, &[])
             .await?;

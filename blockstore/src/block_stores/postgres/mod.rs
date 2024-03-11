@@ -15,6 +15,7 @@ mod postgres_config;
 mod postgres_epoch;
 mod postgres_session;
 mod postgres_transaction;
+mod postgres_transaction_query;
 
 // role for block store componente owner with full write access
 pub const LITERPC_ROLE: &str = "r_literpc";

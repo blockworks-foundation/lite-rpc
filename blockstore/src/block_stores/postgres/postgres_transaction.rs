@@ -23,6 +23,7 @@ use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
 use crate::block_stores::postgres::{json_deserialize, json_serialize};
+use crate::block_stores::postgres::postgres_transaction_query::PostgresTransactionRpcQuery;
 
 use super::postgres_epoch::*;
 use super::postgres_session::*;
@@ -30,6 +31,7 @@ use super::postgres_session::*;
 const MESSAGE_VERSION_LEGACY: i32 = -2020;
 const MESSAGE_VERSION_V0: i32 = 0;
 
+/// full DTO used for saving transaction data to postgres
 #[derive(Debug)]
 pub struct PostgresTransaction {
     pub signature: String,
@@ -67,7 +69,7 @@ impl PostgresTransaction {
             recent_blockhash: value.recent_blockhash.to_string(),
             err: value.err.clone()
                 .map(|x| json_serialize(&x)),
-            message_version: Self::map_message_version(&value.message),
+            message_version: map_message_version(&value.message),
             message: BinaryEncoding::Base64.encode(value.message.serialize()),
             writable_accounts: value.writable_accounts.clone().into_iter().map(|pk| pk.to_string()).collect(),
             readable_accounts: value.readable_accounts.clone().into_iter().map(|pk| pk.to_string()).collect(),
@@ -82,13 +84,6 @@ impl PostgresTransaction {
                 .map(|x| json_serialize(x)).collect(),
             post_token_balances: value.post_token_balances.iter()
                 .map(|x| json_serialize(x)).collect(),
-        }
-    }
-
-    fn map_message_version(versioned_message: &VersionedMessage) -> i32 {
-        match versioned_message {
-            VersionedMessage::Legacy(_) => MESSAGE_VERSION_LEGACY,
-            VersionedMessage::V0(_) => MESSAGE_VERSION_V0,
         }
     }
 
@@ -409,35 +404,12 @@ impl PostgresTransaction {
         Ok(())
     }
 
-    pub fn build_query_statement(epoch: EpochRef, slot: Slot) -> String {
-        format!(
-            r#"
-                SELECT
-                    (SELECT signature FROM {schema}.transaction_ids tx_ids WHERE tx_ids.transaction_id = transaction_blockdata.transaction_id),
-                    idx,
-                    cu_consumed,
-                    cu_requested,
-                    prioritization_fees,
-                    err,
-                    recent_blockhash,
-                    message_version,
-                    message, -- TODO remove
-                    --writable_accounts,
-                    --readable_accounts,
-                    fee,
-                    pre_balances,
-                    post_balances,
-                    inner_instructions,
-                    log_messages,
-                    pre_token_balances,
-                    post_token_balances
-                    -- model_transaction_blockdata
-                FROM {schema}.transaction_blockdata
-                WHERE slot = {}
-            "#,
-            slot,
-            schema = PostgresEpoch::build_schema_name(epoch),
-        )
+}
+
+pub fn map_message_version(versioned_message: &VersionedMessage) -> i32 {
+    match versioned_message {
+        VersionedMessage::Legacy(_) => MESSAGE_VERSION_LEGACY,
+        VersionedMessage::V0(_) => MESSAGE_VERSION_V0,
     }
 }
 
