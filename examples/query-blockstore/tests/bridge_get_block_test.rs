@@ -1,17 +1,10 @@
 use log::info;
 use solana_rpc_client::rpc_client::RpcClient;
 use solana_rpc_client_api::client_error::{Error, ErrorKind};
-use solana_rpc_client_api::client_error::ErrorKind::RpcError;
 use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_rpc_client_api::request::RpcError::{RpcRequestError, RpcResponseError};
-use solana_rpc_client_api::request::RpcResponseErrorData;
+use solana_rpc_client_api::request::RpcError::{RpcResponseError};
 use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::message::{MessageHeader, v0, VersionedMessage};
-use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::Signature;
-use solana_sdk::transaction::VersionedTransaction;
-use solana_transaction_status::{ConfirmedBlock, EncodedConfirmedBlock, EncodedTransactionWithStatusMeta, Rewards, TransactionDetails, TransactionStatusMeta, TransactionWithStatusMeta, UiTransactionEncoding, VersionedTransactionWithStatusMeta};
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
+use solana_transaction_status::{EncodedConfirmedBlock, TransactionDetails, UiTransactionEncoding};
 
 // "lite-rpc grpc blockstore -testnet"
 
@@ -33,6 +26,7 @@ mod tests {
     use solana_sdk::vote::instruction::VoteInstruction;
     use solana_transaction_status::{BlockEncodingOptions, EncodedTransaction, Reward, TransactionBinaryEncoding, TransactionTokenBalance, UiConfirmedBlock, UiTransactionTokenBalance};
     use solana_transaction_status::TransactionDetails::Signatures;
+    use tracing::warn;
     use super::*;
 
     #[test]
@@ -53,7 +47,7 @@ mod tests {
 
     #[test]
     fn transactions_none_base58() {
-        let slot = get_recent_slot();
+        let slot = 257671036;
         let config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),
             transaction_details: Some(TransactionDetails::None),
@@ -67,10 +61,47 @@ mod tests {
 
 
     #[test]
-    fn transactions_v0() {
-        let slot = get_recent_slot();
+    fn test_batch_compare() {
+        tracing_subscriber::fmt::init();
+        let slot = 257687693;
+        let rpc_local = create_local_rpc_client();
+        let rpc_testnet = create_testnet_rpc_client();
 
-        for slot in slot-200..slot {
+
+        // None: all MATCH
+        // Full/Json: all MATCH
+        // Full/Base58: all MATCH
+        // Full/Base64: all MATCH
+        // Full/Binary: all MATCH
+        //
+        // rewards: true
+
+
+        for slot in slot-60..slot-40 {
+            info!("check slot {}", slot);
+            let check_block = rpc_testnet.get_block_with_config(slot, RpcBlockConfig {
+                encoding: Some(UiTransactionEncoding::Base58),
+                transaction_details: Some(TransactionDetails::Full),
+                rewards: Some(true),
+                commitment: None,
+                max_supported_transaction_version: Some(0),
+            }).is_ok();
+            if !check_block {
+                warn!("Skip block {} (not on testnet)", slot);
+                continue;
+            }
+
+            let check_block = rpc_local.get_block_with_config(slot, RpcBlockConfig {
+                encoding: None,
+                transaction_details: Some(TransactionDetails::None),
+                rewards: Some(false),
+                commitment: None,
+                max_supported_transaction_version: Some(0),
+            }).is_ok();
+            if !check_block {
+                warn!("Skip block {} (not on local)", slot);
+                continue;
+            }
 
             let config = RpcBlockConfig {
                 encoding: Some(UiTransactionEncoding::Base58),
@@ -80,41 +111,14 @@ mod tests {
                 max_supported_transaction_version: Some(0),
             };
 
-            let rpc_client = create_testnet_rpc_client();
-            let blockoption = rpc_client.get_block_with_config(slot, config);
-            println!("check slot {}", slot);
-            if blockoption.is_err() {
-                continue;
-            }
-            let block = blockoption.unwrap();
-
-            let option = block.transactions.clone();
-            if option.is_none() {
-                continue;
-            }
-            let v0_tx = option.unwrap().iter().any(|tx| {
-                match tx.version.as_ref().unwrap() {
-                    TransactionVersion::Legacy(_) => {
-                        true
-                    }
-                    TransactionVersion::Number(_) => {
-                        true
-                    }
-                }
-            });
-
-            if v0_tx {
-                info!("found new version of transaction");
-                let json = serde_json::to_string(&block).unwrap();
-                println!("{}", json);
-            }
+            assert_same_response_success(slot, config);
+            info!("MATCH for block {}", slot);
         }
-
     }
 
 
     #[test]
-    fn transactions_signatures_base58() {
+    fn transactions_signatures() {
         let slot = get_recent_slot();
         let config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),
@@ -142,31 +146,17 @@ mod tests {
     }
 
     #[test]
-    fn transaction_order_full_vs_signatures() {
-        let rpc_client = create_local_rpc_client();
-        let slot = get_recent_slot();
-        let config1 = RpcBlockConfig {
+    fn transactions_full_base58() {
+        let slot = 257671036;
+        let config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),
             transaction_details: Some(TransactionDetails::Full),
             rewards: Some(true),
             commitment: None,
             max_supported_transaction_version: Some(0),
         };
-        let config2 = RpcBlockConfig {
-            encoding: Some(UiTransactionEncoding::Base58),
-            transaction_details: Some(TransactionDetails::Signatures),
-            rewards: Some(true),
-            commitment: None,
-            max_supported_transaction_version: Some(0),
-        };
 
-        let block1 = rpc_client.get_block_with_config(slot, config1).unwrap();
-        let block2 = rpc_client.get_block_with_config(slot, config2).unwrap();
-
-        // for tx in &block1.transactions.unwrap() {
-        //     let zzz: VersionedTransaction = tx.transaction.decode().unwrap();
-        //     println!("tx: {}", zzz.signatures);
-        // }
+        assert_same_response_success(slot, config);
     }
 
     fn assert_same_response_success(slot: u64, config: RpcBlockConfig) {

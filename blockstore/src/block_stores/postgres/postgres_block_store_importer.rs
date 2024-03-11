@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use crate::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use log::{debug, info, warn};
 
@@ -5,6 +6,7 @@ use solana_lite_rpc_core::types::{BlockStream, SlotStream};
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use solana_sdk::clock::Slot;
 use tokio::sync::broadcast::error::RecvError;
 
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
@@ -27,6 +29,7 @@ pub fn start_postgres_block_store_importer_task(
         info!("Start block storage importer task");
         let mut last_optimizer_run = 0;
         let mut block_notifier = block_notifier;
+        let first_block_written: OnceCell<Slot> = OnceCell::new();
         // this is the critical write loop
         'recv_loop: loop {
             match block_notifier.recv().await {
@@ -75,6 +78,10 @@ pub fn start_postgres_block_store_importer_task(
                     );
                     if elapsed > Duration::from_millis(150) {
                         warn!("(soft_realtime) Write operation was slow!");
+                    }
+
+                    if first_block_written.set(block.slot).is_err() {
+                        info!("Stored first block {} after restart!", block.slot);
                     }
 
                     // debounce for 4 slots but run at least every 10 slots

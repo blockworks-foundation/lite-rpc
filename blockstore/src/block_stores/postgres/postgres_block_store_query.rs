@@ -75,11 +75,6 @@ impl PostgresQueryBlockStore {
             .query_list(&statement, &[])
             .await?;
 
-        warn!(
-            "transaction_rows: {} - print first 10",
-            transaction_rows.len()
-        );
-
         let tx_infos = transaction_rows
             .iter()
             // TODO check why we map to PostgresTransaction and then to TransactionInfo
