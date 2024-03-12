@@ -253,14 +253,20 @@ impl LiteRpcServer for LiteBridge {
             blockhash: block.blockhash.to_string(),
             parent_slot: block.parent_slot,
             transactions: full_transactions.unwrap_or_default(),
+
             rewards: block.rewards.clone().unwrap_or_default(),
             block_time: Some(block.block_time as UnixTimestamp),
             block_height: Some(block.block_height),
         };
 
+        // note on signatures-only-mode: encode_with_options tries to map signatures from full transaction but we do not
         confirmed_block
             .encode_with_options(encoding, encoding_options)
             .map_err(|error| map_rpc_custom_error(RpcCustomError::from(error)))
+            .map(|mut confirmed_block| {
+                // patch signatures
+                confirmed_block.signatures = only_signatures;
+                confirmed_block }) // TODO map signatures
             .map(Some)
     }
 
