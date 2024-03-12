@@ -4,6 +4,7 @@ use anyhow::Context;
 use log::{debug, trace};
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
+use prometheus::{exponential_buckets, histogram_opts, HistogramVec, linear_buckets, register_histogram_vec};
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
 use tokio_postgres::{
@@ -12,6 +13,19 @@ use tokio_postgres::{
 };
 
 use super::postgres_config::{BlockstorePostgresSessionConfig, PostgresSessionSslConfig};
+
+
+lazy_static::lazy_static! {
+    static ref PG_QUERY: HistogramVec =
+        register_histogram_vec!
+            (histogram_opts!(
+                "literpc_blockstore_postgres",
+                "SQL query times in blockstore::postgres_session by method",
+                // 1ms to 65536ms
+                exponential_buckets(0.001, 4.0, 8).unwrap()),
+            &["method"]).unwrap();
+}
+
 
 pub struct PostgresSession(Client);
 
@@ -165,11 +179,13 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
+        let _timer = PG_QUERY.with_label_values(&["execute"]).start_timer();
         self.0.execute(statement, params).await
     }
 
     // execute statements seperated by semicolon
     pub async fn execute_multiple(&self, statement: &str) -> Result<(), Error> {
+        let _timer = PG_QUERY.with_label_values(&["execute_multiple"]).start_timer();
         self.0.batch_execute(statement).await
     }
 
@@ -178,6 +194,7 @@ impl PostgresSession {
         statement: &str,
         params: &Vec<Vec<&(dyn ToSql + Sync)>>,
     ) -> Result<u64, Error> {
+        let _timer = PG_QUERY.with_label_values(&["execute_prepared_batch"]).start_timer();
         let prepared_stmt = self.0.prepare(statement).await?;
         let mut total_inserted = 0;
         for row in params {
@@ -201,6 +218,7 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<Row>, Error> {
+        let _timer = PG_QUERY.with_label_values(&["execute_and_return"]).start_timer();
         self.0.query_opt(statement, params).await
     }
 
@@ -209,6 +227,7 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<Row>, Error> {
+        let _timer = PG_QUERY.with_label_values(&["query_opt"]).start_timer();
         self.0.query_opt(statement, params).await
     }
 
@@ -217,6 +236,7 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Row, Error> {
+        let _timer = PG_QUERY.with_label_values(&["query_one"]).start_timer();
         self.0.query_one(statement, params).await
     }
 
@@ -225,12 +245,14 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<Row>, Error> {
+        let _timer = PG_QUERY.with_label_values(&["query_list"]).start_timer();
         self.0.query(statement, params).await
     }
 
     pub async fn copy_in(&self, statement: &str) -> Result<CopyInSink<bytes::Bytes>, Error> {
         // BinaryCopyInWriter
         // https://github.com/sfackler/rust-postgres/blob/master/tokio-postgres/tests/test/binary_copy.rs
+        let _timer = PG_QUERY.with_label_values(&["copy_in"]).start_timer();
         self.0.copy_in(statement).await
     }
 }
