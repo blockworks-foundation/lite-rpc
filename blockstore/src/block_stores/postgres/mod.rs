@@ -3,10 +3,10 @@ pub mod postgres_block_store_query;
 pub mod postgres_block_store_writer;
 
 use anyhow::Context;
-use serde::{Deserialize, Deserializer, Serialize};
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 pub use postgres_config::BlockstorePostgresSessionConfig;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 // pub use postgres_session::BlockstorePostgresWriteSession;
 pub use postgres_session::PostgresSession;
 

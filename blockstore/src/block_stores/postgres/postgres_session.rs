@@ -1,10 +1,13 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use anyhow::Context;
 use log::{debug, trace};
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
-use prometheus::{exponential_buckets, histogram_opts, HistogramVec, linear_buckets, register_histogram_vec};
+use prometheus::{
+    exponential_buckets, histogram_opts, linear_buckets, register_histogram_vec, HistogramVec,
+};
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
 use tokio_postgres::{
@@ -13,7 +16,6 @@ use tokio_postgres::{
 };
 
 use super::postgres_config::{BlockstorePostgresSessionConfig, PostgresSessionSslConfig};
-
 
 lazy_static::lazy_static! {
     static ref PG_QUERY: HistogramVec =
@@ -25,7 +27,6 @@ lazy_static::lazy_static! {
                 exponential_buckets(0.001, 4.0, 8).unwrap()),
             &["method"]).unwrap();
 }
-
 
 pub struct PostgresSession(Client);
 
@@ -157,7 +158,8 @@ impl PostgresSession {
         // DEALLOCATE -> would drop prepared statements which we do not use ATM
         // DISCARD PLANS -> we want to keep the plans
         // DISCARD SEQUENCES -> we want to keep the sequences
-        let result = self.0
+        let result = self
+            .0
             .batch_execute(
                 r#"
                DISCARD TEMP;
@@ -185,7 +187,9 @@ impl PostgresSession {
 
     // execute statements seperated by semicolon
     pub async fn execute_multiple(&self, statement: &str) -> Result<(), Error> {
-        let _timer = PG_QUERY.with_label_values(&["execute_multiple"]).start_timer();
+        let _timer = PG_QUERY
+            .with_label_values(&["execute_multiple"])
+            .start_timer();
         self.0.batch_execute(statement).await
     }
 
@@ -194,7 +198,9 @@ impl PostgresSession {
         statement: &str,
         params: &Vec<Vec<&(dyn ToSql + Sync)>>,
     ) -> Result<u64, Error> {
-        let _timer = PG_QUERY.with_label_values(&["execute_prepared_batch"]).start_timer();
+        let _timer = PG_QUERY
+            .with_label_values(&["execute_prepared_batch"])
+            .start_timer();
         let prepared_stmt = self.0.prepare(statement).await?;
         let mut total_inserted = 0;
         for row in params {
@@ -218,7 +224,9 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<Row>, Error> {
-        let _timer = PG_QUERY.with_label_values(&["execute_and_return"]).start_timer();
+        let _timer = PG_QUERY
+            .with_label_values(&["execute_and_return"])
+            .start_timer();
         self.0.query_opt(statement, params).await
     }
 
@@ -272,21 +280,20 @@ impl PostgresSessionCache {
         })
     }
 
-
     // TODO remove
     // pub async fn __get_session(&self) -> PostgresSession {
-        // let session = self.session.read().await;
+    // let session = self.session.read().await;
 
-        // if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
-        //     drop(session);
-        //     let session = PostgresSession::new(self.config.clone()).await
-        //         .expect("should have created new postgres session");
-        //     *self.session.write().await = session.clone();
-        //     session
-        // } else {
-        //     session.clear_session().await;
-        //     session.clone()
-        // }
+    // if session.client.is_closed() || session.client.execute(";", &[]).await.is_err() {
+    //     drop(session);
+    //     let session = PostgresSession::new(self.config.clone()).await
+    //         .expect("should have created new postgres session");
+    //     *self.session.write().await = session.clone();
+    //     session
+    // } else {
+    //     session.clear_session().await;
+    //     session.clone()
+    // }
     // }
 }
 

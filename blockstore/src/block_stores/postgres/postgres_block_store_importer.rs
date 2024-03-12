@@ -1,12 +1,12 @@
-use std::cell::OnceCell;
 use crate::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use log::{debug, info, warn};
+use std::cell::OnceCell;
 
 use solana_lite_rpc_core::types::{BlockStream, SlotStream};
+use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use solana_sdk::clock::Slot;
 use tokio::sync::broadcast::error::RecvError;
 
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
@@ -63,8 +63,10 @@ pub fn start_postgres_block_store_importer_task(
                     match block_storage.save_confirmed_block(&block).await {
                         Ok(_ok) => {}
                         Err(err) => {
-                            warn!("Error saving block {}@{} to postgres: {:?}",
-                                block.slot, block.commitment_config.commitment, err);
+                            warn!(
+                                "Error saving block {}@{} to postgres: {:?}",
+                                block.slot, block.commitment_config.commitment, err
+                            );
                             continue 'recv_loop;
                         }
                     }

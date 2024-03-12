@@ -6,12 +6,14 @@ use crate::grpc_multiplex::{
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::{info, trace};
+use solana_account_decoder::parse_token::UiTokenAmount;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
     structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
 };
+use solana_sdk::message::legacy;
 use solana_sdk::program_utils::limited_deserialize;
 use solana_sdk::vote::instruction::VoteInstruction;
 use solana_sdk::{
@@ -28,12 +30,13 @@ use solana_sdk::{
     signature::Signature,
     transaction::TransactionError,
 };
-use solana_transaction_status::{InnerInstruction, InnerInstructions, Reward, RewardType, TransactionStatusMeta, TransactionTokenBalance, UiTransactionTokenBalance};
+use solana_transaction_status::option_serializer::OptionSerializer;
+use solana_transaction_status::{
+    InnerInstruction, InnerInstructions, Reward, RewardType, TransactionStatusMeta,
+    TransactionTokenBalance, UiTransactionTokenBalance,
+};
 use std::cell::OnceCell;
 use std::sync::Arc;
-use solana_account_decoder::parse_token::UiTokenAmount;
-use solana_sdk::message::legacy;
-use solana_transaction_status::option_serializer::OptionSerializer;
 use tracing::trace_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
@@ -73,22 +76,25 @@ pub fn from_grpc_block_update(
                     .expect("TransactionError should be deserialized")
             });
 
-            let inner_instructions: Vec<InnerInstructions> =
-                meta.inner_instructions.into_iter().map(|yellow| {
-                    InnerInstructions {
-                        index: yellow.index as u8,
-                        instructions: yellow.instructions.into_iter().map(|ins| {
-                            InnerInstruction {
-                                instruction: CompiledInstruction {
-                                    program_id_index: ins.program_id_index as u8,
-                                    accounts: ins.accounts,
-                                    data: ins.data,
-                                },
-                                stack_height: ins.stack_height,
-                            }
-                        }).collect(),
-                    }
-                }).collect_vec();
+            let inner_instructions: Vec<InnerInstructions> = meta
+                .inner_instructions
+                .into_iter()
+                .map(|yellow| InnerInstructions {
+                    index: yellow.index as u8,
+                    instructions: yellow
+                        .instructions
+                        .into_iter()
+                        .map(|ins| InnerInstruction {
+                            instruction: CompiledInstruction {
+                                program_id_index: ins.program_id_index as u8,
+                                accounts: ins.accounts,
+                                data: ins.data,
+                            },
+                            stack_height: ins.stack_height,
+                        })
+                        .collect(),
+                })
+                .collect_vec();
 
             let compute_units_consumed = meta.compute_units_consumed;
             let account_keys: Vec<Pubkey> = message
@@ -163,11 +169,15 @@ pub fn from_grpc_block_update(
                 .map(|x| x.to_vec())
                 .unwrap_or_default();
 
-            let pre_token_balances = meta.pre_token_balances.iter()
+            let pre_token_balances = meta
+                .pre_token_balances
+                .iter()
                 .map(|tb| map_token_balance(tb))
                 .collect_vec();
 
-            let post_token_balances = meta.post_token_balances.iter()
+            let post_token_balances = meta
+                .post_token_balances
+                .iter()
                 .map(|tb| map_token_balance(tb))
                 .collect_vec();
 

@@ -1,4 +1,4 @@
-use std::time::{Instant};
+use std::time::Instant;
 
 use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 use anyhow::{bail, Context, Result};
@@ -33,7 +33,9 @@ impl PostgresBlockStore {
         epoch_schedule: EpochCache,
         pg_session_config: BlockstorePostgresSessionConfig,
     ) -> Self {
-        let session = PostgresSession::new(pg_session_config.clone()).await.unwrap();
+        let session = PostgresSession::new(pg_session_config.clone())
+            .await
+            .unwrap();
         // let session_cache = PostgresSessionCache::new(pg_session_config.clone())
         //     .await
         //     .unwrap();
@@ -149,7 +151,12 @@ impl PostgresBlockStore {
         );
 
         // TODO implement reconnect if closed
-        join_all(self.write_sessions.iter().map(|session| session.clear_session())).await;
+        join_all(
+            self.write_sessions
+                .iter()
+                .map(|session| session.clear_session()),
+        )
+        .await;
 
         let slot = block.slot;
         let transactions = block
@@ -351,7 +358,7 @@ mod tests {
     }
 
     fn create_test_tx(signature: Signature) -> TransactionInfo {
-        TransactionInfo {
+        let info = TransactionInfo {
             signature,
             index: 0,
             is_vote: false,
@@ -369,7 +376,10 @@ mod tests {
             post_balances: vec![],
             inner_instructions: None,
             log_messages: None,
-        }
+            pre_token_balances: vec![],
+            post_token_balances: vec![],
+        };
+        info
     }
 
     fn create_test_message() -> VersionedMessage {

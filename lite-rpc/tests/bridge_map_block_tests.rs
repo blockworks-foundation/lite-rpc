@@ -1,42 +1,46 @@
-use std::str::FromStr;
 use assert_json_diff::assert_json_eq;
 use jsonrpsee::types::error::INVALID_PARAMS_CODE;
 use log::info;
 use serde_json::Value;
 use solana_account_decoder::parse_token::UiTokenAmount;
+use solana_lite_rpc_core::encoding::BinaryEncoding;
+use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 use solana_rpc_client::rpc_client::RpcClient;
-use solana_rpc_client_api::client_error::{Error, ErrorKind};
 use solana_rpc_client_api::client_error::ErrorKind::RpcError;
+use solana_rpc_client_api::client_error::{Error, ErrorKind};
 use solana_rpc_client_api::config::RpcBlockConfig;
 use solana_rpc_client_api::request::RpcError::{RpcRequestError, RpcResponseError};
 use solana_rpc_client_api::request::RpcResponseErrorData;
 use solana_sdk::clock::UnixTimestamp;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::instruction::CompiledInstruction;
-use solana_sdk::message::{legacy, MessageHeader, v0, VersionedMessage};
+use solana_sdk::message::{legacy, v0, MessageHeader, VersionedMessage};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::vote::instruction::VoteInstruction;
-use solana_transaction_status::{BlockEncodingOptions, ConfirmedBlock, EncodedConfirmedBlock, EncodedTransaction, EncodedTransactionWithStatusMeta, InnerInstructions, Reward, Rewards, TransactionBinaryEncoding, TransactionDetails, TransactionStatusMeta, TransactionTokenBalance, TransactionWithStatusMeta, UiTransactionEncoding, UiTransactionTokenBalance, VersionedTransactionWithStatusMeta};
 use solana_transaction_status::option_serializer::OptionSerializer;
+use solana_transaction_status::{
+    BlockEncodingOptions, ConfirmedBlock, EncodedConfirmedBlock, EncodedTransaction,
+    EncodedTransactionWithStatusMeta, InnerInstructions, Reward, Rewards,
+    TransactionBinaryEncoding, TransactionDetails, TransactionStatusMeta, TransactionTokenBalance,
+    TransactionWithStatusMeta, UiTransactionEncoding, UiTransactionTokenBalance,
+    VersionedTransactionWithStatusMeta,
+};
+use std::str::FromStr;
 use tower::balance;
-use solana_lite_rpc_core::encoding::BinaryEncoding;
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
-
 
 #[test]
 fn test_map_tx_with_meta() {
-
     let ti = create_test_tx(Signature::new_unique());
 
     let tx1: VersionedTransaction = VersionedTransaction {
         signatures: vec![ti.signature],
         message: ti.message,
     };
-    let tx: TransactionWithStatusMeta = TransactionWithStatusMeta::Complete(
-        VersionedTransactionWithStatusMeta {
+    let tx: TransactionWithStatusMeta =
+        TransactionWithStatusMeta::Complete(VersionedTransactionWithStatusMeta {
             transaction: tx1,
             meta: TransactionStatusMeta {
                 status: Ok(()),
@@ -52,8 +56,7 @@ fn test_map_tx_with_meta() {
                 return_data: None,
                 compute_units_consumed: None,
             },
-        }
-    );
+        });
 
     let _confirmed_block: ConfirmedBlock = ConfirmedBlock {
         previous_blockhash: "previous_blockhash".to_string(),
@@ -64,9 +67,7 @@ fn test_map_tx_with_meta() {
         block_time: None,
         block_height: None,
     };
-
 }
-
 
 #[test]
 fn test_serialize_empty_vec() {
@@ -82,12 +83,9 @@ fn test_serialize_empty_vec() {
     }
 }
 
-
 #[test]
 fn test_decode() {
-
-    let base58_blob =
-        r#"Fk63Q321enfa7mN4TibcZkzYHBEhvTgZ4W1c4rzdbaHKAQ3262j4bLyCTdHwFx3dSC76VmdbGa4PpAY2pXgJZuPRnvttdJJLTQoaymujmbGqMe5gMXNcJ15AzXJNDcZNBWFpvFPTFENGrRznFy6WmosM2xMB7D"#;
+    let base58_blob = r#"Fk63Q321enfa7mN4TibcZkzYHBEhvTgZ4W1c4rzdbaHKAQ3262j4bLyCTdHwFx3dSC76VmdbGa4PpAY2pXgJZuPRnvttdJJLTQoaymujmbGqMe5gMXNcJ15AzXJNDcZNBWFpvFPTFENGrRznFy6WmosM2xMB7D"#;
     let raw = bs58::decode(&base58_blob).into_vec().unwrap();
 
     let obj = bincode::deserialize::<VoteInstruction>(&raw).unwrap();
@@ -109,20 +107,20 @@ fn test_decode() {
         VoteInstruction::CompactUpdateVoteState(_) => {}
         VoteInstruction::CompactUpdateVoteStateSwitch(_, _) => {}
     }
-
 }
-
 
 #[test]
 fn test_get_block_with_versioned_tx() {
     // block 256912126 from testnet, 2024-03-07
 
-    let signature1 = Signature::from_str("3mJ2rMus6q9XEtgrbnnAfcXYtZrsjo4ehdHPkVWbM78YACUwvr9XkXLnYTtaqZ98S1gft6PrcCqMis3WuBtacPv3").unwrap();
+    let signature1 = Signature::from_str(
+        "3mJ2rMus6q9XEtgrbnnAfcXYtZrsjo4ehdHPkVWbM78YACUwvr9XkXLnYTtaqZ98S1gft6PrcCqMis3WuBtacPv3",
+    )
+    .unwrap();
 
     let data = bs58::decode("Fk63Q321enfa7mN4TibcZkzYHBEhvTgZ4W1c4rzdbaHKAQ3262j4bLyCTdHwFx3dSC76VmdbGa4PpAY2pXgJZuPRnvttdJJLTQoaymujmbGqMe5gMXNcJ15AzXJNDcZNBWFpvFPTFENGrRznFy6WmosM2xMB7D").into_vec().unwrap();
 
-    let ins1 = CompiledInstruction::new_from_raw_parts(
-        2, data, vec![1,0]);
+    let ins1 = CompiledInstruction::new_from_raw_parts(2, data, vec![1, 0]);
 
     let message1 = VersionedMessage::Legacy(legacy::Message {
         header: MessageHeader {
@@ -135,12 +133,15 @@ fn test_get_block_with_versioned_tx() {
             Pubkey::from_str("J5RP9MhwfrFzA9Qfm8DUAzeFgVMEjjah77zGFNZC9HJv").unwrap(),
             Pubkey::from_str("Vote111111111111111111111111111111111111111").unwrap(),
         ],
-        recent_blockhash: solana_sdk::hash::Hash::from_str("EgPc6CgZPTtqy1wUJTbbU3TZF2SsCFWHCRrzvnufWjtb").unwrap(),
+        recent_blockhash: solana_sdk::hash::Hash::from_str(
+            "EgPc6CgZPTtqy1wUJTbbU3TZF2SsCFWHCRrzvnufWjtb",
+        )
+        .unwrap(),
         instructions: vec![ins1],
     });
 
-    let tx1: TransactionWithStatusMeta = TransactionWithStatusMeta::Complete(
-        VersionedTransactionWithStatusMeta {
+    let tx1: TransactionWithStatusMeta =
+        TransactionWithStatusMeta::Complete(VersionedTransactionWithStatusMeta {
             transaction: VersionedTransaction {
                 signatures: vec![signature1], // TODO check if that is correct
                 message: message1,
@@ -153,7 +154,8 @@ fn test_get_block_with_versioned_tx() {
                 inner_instructions: Some(vec![]),
                 log_messages: Some(vec![
                     "Program Vote111111111111111111111111111111111111111 invoke [1]".to_string(),
-                    "Program Vote111111111111111111111111111111111111111 success".to_string()]),
+                    "Program Vote111111111111111111111111111111111111111 success".to_string(),
+                ]),
                 pre_token_balances: Some(vec![]),
                 post_token_balances: Some(vec![]),
                 rewards: Some(vec![]),
@@ -161,8 +163,7 @@ fn test_get_block_with_versioned_tx() {
                 return_data: None,
                 compute_units_consumed: Some(2100),
             },
-        }
-    );
+        });
 
     let confirmed_block = ConfirmedBlock {
         previous_blockhash: "Egoc9s7MWfAUrxt2kCat7oGik49mwdKbBDsZ1KgBPTcb".to_string(),
@@ -174,7 +175,7 @@ fn test_get_block_with_versioned_tx() {
             lamports: 12042400,
             post_balance: 31559596374,
             reward_type: Some(RewardType::Fee),
-            commission: None
+            commission: None,
         }],
         block_time: Some(1709807265 as UnixTimestamp),
         block_height: Some(220980772),
@@ -185,7 +186,9 @@ fn test_get_block_with_versioned_tx() {
         show_rewards: true,
         max_supported_transaction_version: Some(0),
     };
-    let confirmed_block = confirmed_block.encode_with_options(UiTransactionEncoding::Json, options).unwrap();
+    let confirmed_block = confirmed_block
+        .encode_with_options(UiTransactionEncoding::Json, options)
+        .unwrap();
 
     assert_json_eq!(
             confirmed_block,
@@ -274,15 +277,15 @@ fn test_get_block_with_versioned_tx() {
             "#).unwrap());
 }
 
-
 #[test]
 fn test_map_tokenbalance() {
-
     let token_balance = UiTransactionTokenBalance {
         account_index: 6,
         mint: "EXMVRXYMMsMxtxfaJt4tncwtp2nNBLPitEu7tFrPnLyk".to_string(),
         owner: OptionSerializer::Some("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1".to_string()),
-        program_id: OptionSerializer::Some("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string()),
+        program_id: OptionSerializer::Some(
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
+        ),
         ui_token_amount: UiTokenAmount {
             amount: "173462449762313559".to_string(),
             decimals: 9,
@@ -292,7 +295,8 @@ fn test_map_tokenbalance() {
     };
     assert_json_eq!(
         token_balance,
-        serde_json::from_str::<Value>(r#"{
+        serde_json::from_str::<Value>(
+            r#"{
         "accountIndex": 6,
         "mint": "EXMVRXYMMsMxtxfaJt4tncwtp2nNBLPitEu7tFrPnLyk",
         "owner": "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1",
@@ -303,9 +307,11 @@ fn test_map_tokenbalance() {
           "uiAmount": 173462449.76231357,
           "uiAmountString": "173462449.762313559"
         }
-      }"#).unwrap());
+      }"#
+        )
+        .unwrap()
+    );
 }
-
 
 fn create_test_message() -> VersionedMessage {
     VersionedMessage::V0(v0::Message {
@@ -337,7 +343,7 @@ fn create_test_tx(signature: Signature) -> TransactionInfo {
         post_balances: vec![100001],
         inner_instructions: None,
         log_messages: Some(vec!["log line1".to_string(), "log line2".to_string()]),
+        pre_token_balances: vec![],
+        post_token_balances: vec![],
     }
 }
-
-

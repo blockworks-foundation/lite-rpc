@@ -20,6 +20,8 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::{
     RpcAccountInfoConfig, RpcBlockConfig, RpcEncodingConfigWrapper,
 };
+use solana_rpc_client_api::custom_error::RpcCustomError;
+use solana_rpc_client_api::custom_error::RpcCustomError::BlockNotAvailable;
 use solana_rpc_client_api::response::{OptionalContext, RpcKeyedAccount};
 use solana_rpc_client_api::{
     config::{
@@ -33,16 +35,19 @@ use solana_rpc_client_api::{
         RpcVoteAccountStatus,
     },
 };
-use solana_rpc_client_api::custom_error::RpcCustomError;
-use solana_rpc_client_api::custom_error::RpcCustomError::BlockNotAvailable;
-use solana_sdk::epoch_info::EpochInfo;
-use solana_sdk::signature::Signature;
-use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_sdk::clock::UnixTimestamp;
+use solana_sdk::epoch_info::EpochInfo;
 use solana_sdk::message::v0::LoadedAddresses;
+use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use solana_transaction_status::option_serializer::OptionSerializer;
-use solana_transaction_status::{BlockEncodingOptions, ConfirmedBlock, EncodableWithMeta, EncodedTransaction, EncodedTransactionWithStatusMeta, TransactionDetails, TransactionStatus, TransactionStatusMeta, TransactionTokenBalance, TransactionWithStatusMeta, UiConfirmedBlock, UiTransactionEncoding, UiTransactionStatusMeta, UiTransactionTokenBalance, VersionedTransactionWithStatusMeta};
+use solana_transaction_status::{
+    BlockEncodingOptions, ConfirmedBlock, EncodableWithMeta, EncodedTransaction,
+    EncodedTransactionWithStatusMeta, TransactionDetails, TransactionStatus, TransactionStatusMeta,
+    TransactionTokenBalance, TransactionWithStatusMeta, UiConfirmedBlock, UiTransactionEncoding,
+    UiTransactionStatusMeta, UiTransactionTokenBalance, VersionedTransactionWithStatusMeta,
+};
 
 use solana_lite_rpc_core::encoding::BASE64;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
@@ -55,6 +60,7 @@ use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
 
+use crate::rpc_custom_errors::map_rpc_custom_error;
 use crate::rpc_errors::RpcErrors;
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},
@@ -62,7 +68,6 @@ use crate::{
 };
 use solana_lite_rpc_prioritization_fees::rpc_data::{AccountPrioFeesStats, PrioFeesStats};
 use solana_lite_rpc_prioritization_fees::PrioFeesService;
-use crate::rpc_custom_errors::map_rpc_custom_error;
 
 lazy_static::lazy_static! {
     static ref RPC_SEND_TX: IntCounter =
@@ -153,16 +158,20 @@ impl LiteRpcServer for LiteBridge {
         let commitment = config.commitment.unwrap_or_default();
 
         if !commitment.is_at_least_confirmed() {
-            return Err(ErrorObject::owned(INVALID_PARAMS_CODE, "Method does not support commitment below `confirmed`", None::<()>));
+            return Err(ErrorObject::owned(
+                INVALID_PARAMS_CODE,
+                "Method does not support commitment below `confirmed`",
+                None::<()>,
+            ));
         }
 
         if config.rewards.unwrap_or(false) {
             warn!("Rewards not yet supported");
         }
 
-        let transaction_details =
-            config.transaction_details
-                .unwrap_or(TransactionDetails::Full);
+        let transaction_details = config
+            .transaction_details
+            .unwrap_or(TransactionDetails::Full);
 
         let block = self
             .multiple_strategy_block_storage
@@ -176,45 +185,68 @@ impl LiteRpcServer for LiteBridge {
             map_rpc_custom_error(RpcCustomError::BlockNotAvailable { slot })
         })?;
 
-        let (full_transactions, only_signatures) =
-            if transaction_details == TransactionDetails::Full || transaction_details == TransactionDetails::Accounts {
-                // TODO minimize allocations
-                let full = block.transactions.iter().map(|txi| {
-
-                    TransactionWithStatusMeta::Complete(
-                        VersionedTransactionWithStatusMeta {
-                            transaction: VersionedTransaction::from(txi),
-                            meta: TransactionStatusMeta {
-                                status: txi.err.clone().map_or(Ok(()), Err),
-                                fee: txi.fee as u64,
-                                // TODO map
-                                pre_balances: txi.pre_balances.iter().map(|x| *x as u64).collect_vec(),
-                                post_balances: txi.post_balances.iter().map(|x| *x as u64).collect_vec(),
-                                inner_instructions: txi.inner_instructions.clone(),
-                                // TODO map
-                                log_messages: txi.log_messages.clone(),
-                                pre_token_balances: Some(txi.pre_token_balances.clone().into_iter().map(|tb| map_token_balance(tb)).collect()),
-                                post_token_balances: Some(txi.post_token_balances.clone().into_iter().map(|tb| map_token_balance(tb)).collect()),
-                                // TODO check if we want that
-                                rewards: Some(vec![]),
-                                loaded_addresses: LoadedAddresses {
-                                    writable: txi.writable_accounts.clone(),
-                                    readonly: txi.readable_accounts.clone(),
-                                },
-                                // not supported by RPCv2 ATM
-                                return_data: None,
-                                compute_units_consumed: txi.cu_consumed,
-                            }
-                        })
-                }).collect_vec();
-                (Some(full), None)
-            } else if transaction_details == TransactionDetails::Signatures {
-                // TODO optimized
-                let signatures = block.transactions.iter().map(|td| td.signature.to_string()).collect_vec();
-                (None, Some(signatures))
-            } else {
-                (None, None)
-            };
+        let (full_transactions, only_signatures) = if transaction_details
+            == TransactionDetails::Full
+            || transaction_details == TransactionDetails::Accounts
+        {
+            // TODO minimize allocations
+            let full = block
+                .transactions
+                .iter()
+                .map(|txi| {
+                    TransactionWithStatusMeta::Complete(VersionedTransactionWithStatusMeta {
+                        transaction: VersionedTransaction::from(txi),
+                        meta: TransactionStatusMeta {
+                            status: txi.err.clone().map_or(Ok(()), Err),
+                            fee: txi.fee as u64,
+                            pre_balances: txi.pre_balances.iter().map(|x| *x as u64).collect_vec(),
+                            post_balances: txi
+                                .post_balances
+                                .iter()
+                                .map(|x| *x as u64)
+                                .collect_vec(),
+                            inner_instructions: txi.inner_instructions.clone(),
+                            // TODO map
+                            log_messages: txi.log_messages.clone(),
+                            pre_token_balances: Some(
+                                txi.pre_token_balances
+                                    .clone()
+                                    .into_iter()
+                                    .map(|tb| map_token_balance(tb))
+                                    .collect(),
+                            ),
+                            post_token_balances: Some(
+                                txi.post_token_balances
+                                    .clone()
+                                    .into_iter()
+                                    .map(|tb| map_token_balance(tb))
+                                    .collect(),
+                            ),
+                            // TODO check if we want that
+                            rewards: Some(vec![]),
+                            loaded_addresses: LoadedAddresses {
+                                writable: txi.writable_accounts.clone(),
+                                readonly: txi.readable_accounts.clone(),
+                            },
+                            // not supported by RPCv2 ATM
+                            return_data: None,
+                            compute_units_consumed: txi.cu_consumed,
+                        },
+                    })
+                })
+                .collect_vec();
+            (Some(full), None)
+        } else if transaction_details == TransactionDetails::Signatures {
+            // TODO optimized
+            let signatures = block
+                .transactions
+                .iter()
+                .map(|td| td.signature.to_string())
+                .collect_vec();
+            (None, Some(signatures))
+        } else {
+            (None, None)
+        };
 
         let confirmed_block = ConfirmedBlock {
             previous_blockhash: block.previous_blockhash.to_string(),
@@ -226,7 +258,8 @@ impl LiteRpcServer for LiteBridge {
             block_height: Some(block.block_height),
         };
 
-        confirmed_block.encode_with_options(encoding, encoding_options)
+        confirmed_block
+            .encode_with_options(encoding, encoding_options)
             .map_err(|error| map_rpc_custom_error(RpcCustomError::from(error)))
             .map(Some)
     }

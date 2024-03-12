@@ -1,6 +1,9 @@
 use super::postgres_epoch::PostgresEpoch;
 use super::postgres_session::PostgresSession;
+use crate::block_stores::postgres::{json_deserialize, json_serialize};
+use itertools::Itertools;
 use log::{debug, warn};
+use serde_json::Value;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
@@ -9,10 +12,7 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::Reward;
 use std::time::Instant;
-use itertools::Itertools;
-use serde_json::Value;
 use tokio_postgres::types::ToSql;
-use crate::block_stores::postgres::{json_deserialize, json_serialize};
 
 #[derive(Debug)]
 pub struct PostgresBlock {
@@ -28,8 +28,11 @@ pub struct PostgresBlock {
 
 impl From<&ProducedBlock> for PostgresBlock {
     fn from(value: &ProducedBlock) -> Self {
-        let rewards_vec = value.rewards.as_ref()
-            .map(|list| list.iter().map(|r| json_serialize::<Reward>(r)).collect_vec());
+        let rewards_vec = value.rewards.as_ref().map(|list| {
+            list.iter()
+                .map(|r| json_serialize::<Reward>(r))
+                .collect_vec()
+        });
 
         Self {
             blockhash: value.blockhash.to_string(),
@@ -51,8 +54,9 @@ impl PostgresBlock {
         commitment_config: CommitmentConfig,
     ) -> ProducedBlock {
         let rewards_vec: Option<Vec<Reward>> = self
-            .rewards.clone()
-            .map(|list | list.into_iter().map(|r| json_deserialize(r)).collect_vec());
+            .rewards
+            .clone()
+            .map(|list| list.into_iter().map(|r| json_deserialize(r)).collect_vec());
 
         let inner = ProducedBlockInner {
             // TODO implement
@@ -243,6 +247,8 @@ mod tests {
             post_balances: vec![],
             inner_instructions: None,
             log_messages: None,
+            pre_token_balances: vec![],
+            post_token_balances: vec![],
         }
     }
 

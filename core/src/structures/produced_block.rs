@@ -4,13 +4,16 @@ use solana_sdk::message::v0::{LoadedAddresses, MessageAddressTableLookup};
 use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
+use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::transaction_context::TransactionReturnData;
 use solana_sdk::{slot_history::Slot, transaction::TransactionError};
-use solana_transaction_status::{InnerInstructions, Reward, Rewards, TransactionStatusMeta, TransactionTokenBalance, UiTransactionTokenBalance};
+use solana_transaction_status::{
+    InnerInstructions, Reward, Rewards, TransactionStatusMeta, TransactionTokenBalance,
+    UiTransactionTokenBalance,
+};
 use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::Arc;
-use solana_sdk::transaction::VersionedTransaction;
-use solana_sdk::transaction_context::TransactionReturnData;
 
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
@@ -34,7 +37,6 @@ pub struct TransactionInfo {
     pub log_messages: Option<Vec<String>>,
     pub pre_token_balances: Vec<UiTransactionTokenBalance>,
     pub post_token_balances: Vec<UiTransactionTokenBalance>,
-
     // from TransactionStatusMeta
 
     // pub pre_token_balances: Option<Vec<TransactionTokenBalance>>,

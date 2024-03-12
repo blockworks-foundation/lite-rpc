@@ -1,6 +1,6 @@
 use dashmap::DashMap;
 use log::{error, trace};
-use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use prometheus::{core::GenericGauge, labels, opts, register_int_gauge};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
     stores::data_cache::DataCache,

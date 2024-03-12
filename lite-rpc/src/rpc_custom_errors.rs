@@ -4,8 +4,6 @@ use solana_rpc_client_api::custom_error::*;
 
 /// adoption of solana-rpc-client-api custom_errors.rs for jsonrpsee
 
-
-
 pub fn map_rpc_custom_error<'a>(error: RpcCustomError) -> ErrorObject<'a> {
     match error {
         RpcCustomError::BlockCleanedUp {
@@ -108,16 +106,12 @@ pub fn map_rpc_custom_error<'a>(error: RpcCustomError) -> ErrorObject<'a> {
 }
 
 fn server_error(code: i64, message: String) -> jsonrpsee::types::error::ErrorObject<'static> {
-    jsonrpsee::types::error::ErrorObject::owned(
-        code as i32,
-        message,
-        None::<()>)
+    jsonrpsee::types::error::ErrorObject::owned(code as i32, message, None::<()>)
 }
-fn server_error_data(code: i64, message: String, data: serde_json::Value) -> jsonrpsee::types::error::ErrorObject<'static> {
-    jsonrpsee::types::error::ErrorObject::owned(
-        code as i32,
-        message,
-        Some(data))
+fn server_error_data(
+    code: i64,
+    message: String,
+    data: serde_json::Value,
+) -> jsonrpsee::types::error::ErrorObject<'static> {
+    jsonrpsee::types::error::ErrorObject::owned(code as i32, message, Some(data))
 }
-
-

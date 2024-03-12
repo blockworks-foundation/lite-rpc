@@ -190,7 +190,8 @@ pub fn from_ui_block(
     let rewards = block.rewards.clone();
 
     let txs = txs
-        .into_iter().enumerate()
+        .into_iter()
+        .enumerate()
         .filter_map(|(idx_in_block, tx)| {
             let Some(UiTransactionStatusMeta {
                 err,

@@ -1,19 +1,20 @@
+use bytes::BytesMut;
 use std::error::Error;
 use std::str::FromStr;
-use bytes::BytesMut;
 
+use crate::block_stores::postgres::{json_deserialize, json_serialize};
 use futures_util::pin_mut;
 use itertools::Itertools;
 use log::debug;
 use postgres_types::IsNull;
 use serde_json::map::Values;
 use serde_json::Value;
-use solana_sdk::message::VersionedMessage;
-use solana_sdk::pubkey::Pubkey;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
+use solana_sdk::message::VersionedMessage;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::slot_history::Slot;
 use solana_sdk::transaction::TransactionError;
@@ -22,7 +23,6 @@ use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
-use crate::block_stores::postgres::{json_deserialize, json_serialize};
 
 use super::postgres_epoch::*;
 use super::postgres_session::*;
@@ -65,23 +65,39 @@ impl PostgresTransaction {
             cu_requested: value.cu_requested.map(|x| x as i64),
             prioritization_fees: value.prioritization_fees.map(|x| x as i64),
             recent_blockhash: value.recent_blockhash.to_string(),
-            err: value.err.clone()
-                .map(|x| json_serialize(&x)),
+            err: value.err.clone().map(|x| json_serialize(&x)),
             message_version: Self::map_message_version(&value.message),
             message: BinaryEncoding::Base64.encode(value.message.serialize()),
-            writable_accounts: value.writable_accounts.clone().into_iter().map(|pk| pk.to_string()).collect(),
-            readable_accounts: value.readable_accounts.clone().into_iter().map(|pk| pk.to_string()).collect(),
+            writable_accounts: value
+                .writable_accounts
+                .clone()
+                .into_iter()
+                .map(|pk| pk.to_string())
+                .collect(),
+            readable_accounts: value
+                .readable_accounts
+                .clone()
+                .into_iter()
+                .map(|pk| pk.to_string())
+                .collect(),
             fee: value.fee,
             pre_balances: value.pre_balances.clone(),
             post_balances: value.post_balances.clone(),
-            inner_instructions: value.inner_instructions.clone().map(|list|
-                list.iter().map(|ins| json_serialize(&ins)).collect_vec()
-            ),
+            inner_instructions: value
+                .inner_instructions
+                .clone()
+                .map(|list| list.iter().map(|ins| json_serialize(&ins)).collect_vec()),
             log_messages: value.log_messages.clone(),
-            pre_token_balances: value.pre_token_balances.iter()
-                .map(|x| json_serialize(x)).collect(),
-            post_token_balances: value.post_token_balances.iter()
-                .map(|x| json_serialize(x)).collect(),
+            pre_token_balances: value
+                .pre_token_balances
+                .iter()
+                .map(|x| json_serialize(x))
+                .collect(),
+            post_token_balances: value
+                .post_token_balances
+                .iter()
+                .map(|x| json_serialize(x))
+                .collect(),
         }
     }
 
@@ -103,7 +119,9 @@ impl PostgresTransaction {
             cu_requested: self.cu_requested.map(|x| x as u32),
             prioritization_fees: self.prioritization_fees.map(|x| x as u64),
             recent_blockhash: hash_from_str(&self.recent_blockhash).expect("valid blockhash"),
-            err: self.err.clone()
+            err: self
+                .err
+                .clone()
                 .map(|x| json_deserialize::<TransactionError>(x)),
             message,
             // TODO readable_accounts etc.
@@ -115,13 +133,24 @@ impl PostgresTransaction {
             fee: self.fee,
             pre_balances: self.pre_balances.clone(),
             post_balances: self.post_balances.clone(),
-            inner_instructions: self.inner_instructions.clone()
-                .map(|list| list.into_iter().map(|ins| json_deserialize(ins)).collect_vec()),
+            inner_instructions: self.inner_instructions.clone().map(|list| {
+                list.into_iter()
+                    .map(|ins| json_deserialize(ins))
+                    .collect_vec()
+            }),
             log_messages: self.log_messages.clone(),
-            pre_token_balances: self.pre_token_balances.clone().into_iter()
-                .map(|x| json_deserialize::<UiTransactionTokenBalance>(x)).collect(),
-            post_token_balances: self.post_token_balances.clone().into_iter()
-                .map(|x| json_deserialize::<UiTransactionTokenBalance>(x)).collect(),
+            pre_token_balances: self
+                .pre_token_balances
+                .clone()
+                .into_iter()
+                .map(|x| json_deserialize::<UiTransactionTokenBalance>(x))
+                .collect(),
+            post_token_balances: self
+                .post_token_balances
+                .clone()
+                .into_iter()
+                .map(|x| json_deserialize::<UiTransactionTokenBalance>(x))
+                .collect(),
         }
     }
 
@@ -189,7 +218,6 @@ impl PostgresTransaction {
         )
     }
 
-
     pub async fn save_transactions_from_block(
         postgres_session: &PostgresSession,
         epoch: EpochRef,
@@ -252,26 +280,26 @@ impl PostgresTransaction {
         let writer = BinaryCopyInWriter::new(
             sink,
             &[
-                Type::INT8, // slot
-                Type::INT4, // idx
-                Type::INT8, // cu_consumed
-                Type::INT8, // cu_requested
-                Type::INT8, // prioritization_fees
-                Type::VARCHAR, // signature
-                Type::VARCHAR, // recent_blockhash
-                Type::JSONB, // err
-                Type::INT4, // message_version
-                Type::TEXT, // message
-                Type::TEXT_ARRAY, // writable_accounts
-                Type::TEXT_ARRAY, // readable_accounts
-                Type::INT8, // fee
-                Type::INT8_ARRAY, // pre_balances
-                Type::INT8_ARRAY, // post_balances
+                Type::INT8,        // slot
+                Type::INT4,        // idx
+                Type::INT8,        // cu_consumed
+                Type::INT8,        // cu_requested
+                Type::INT8,        // prioritization_fees
+                Type::VARCHAR,     // signature
+                Type::VARCHAR,     // recent_blockhash
+                Type::JSONB,       // err
+                Type::INT4,        // message_version
+                Type::TEXT,        // message
+                Type::TEXT_ARRAY,  // writable_accounts
+                Type::TEXT_ARRAY,  // readable_accounts
+                Type::INT8,        // fee
+                Type::INT8_ARRAY,  // pre_balances
+                Type::INT8_ARRAY,  // post_balances
                 Type::JSONB_ARRAY, // inner_instructions
-                Type::TEXT_ARRAY, // log_messages
+                Type::TEXT_ARRAY,  // log_messages
                 Type::JSONB_ARRAY, // pre_token_balances
                 Type::JSONB_ARRAY, // post_token_balances
-                // model_transaction_blockdata
+                                   // model_transaction_blockdata
             ],
         );
         pin_mut!(writer);
@@ -440,4 +468,3 @@ impl PostgresTransaction {
         )
     }
 }
-

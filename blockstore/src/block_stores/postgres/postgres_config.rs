@@ -18,7 +18,7 @@ pub struct PostgresSessionSslConfig {
 impl BlockstorePostgresSessionConfig {
     // var_prefix is typically "BLOCKSTOREDB" or similar
     pub fn new_from_env(var_prefix: &str) -> anyhow::Result<Self> {
-        assert!(var_prefix.len()>0, "var_prefix must not be empty");
+        assert!(var_prefix.len() > 0, "var_prefix must not be empty");
         let env_pg_config =
             env::var(format!("{var_prefix}_PG_CONFIG")).context("pg config on env not found")?;
 

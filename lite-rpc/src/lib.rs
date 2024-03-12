@@ -9,11 +9,11 @@ pub mod errors;
 pub mod jsonrpsee_subscrption_handler_sink;
 pub mod postgres_logger;
 pub mod rpc;
+mod rpc_custom_errors;
 pub mod rpc_errors;
 pub mod rpc_pubsub;
 pub mod service_spawner;
 pub mod start_server;
-mod rpc_custom_errors;
 
 #[from_env]
 pub const DEFAULT_RPC_ADDR: &str = "http://0.0.0.0:8899";

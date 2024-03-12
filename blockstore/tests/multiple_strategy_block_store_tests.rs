@@ -42,8 +42,7 @@ async fn test_in_multiple_stategy_block_store() {
         PostgresBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await;
     let block_storage_query = PostgresQueryBlockStore::new(epoch_cache, pg_session_config).await;
     let multi_store = MultipleStrategyBlockStorage::new(
-        block_storage_query
-        // None, // not supported
+        block_storage_query, // None, // not supported
     );
 
     persistent_store.prepare_epoch_schema(1200).await.unwrap();

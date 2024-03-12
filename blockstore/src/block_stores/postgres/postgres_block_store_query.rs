@@ -1,11 +1,15 @@
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
 use anyhow::{anyhow, bail, Context, Result};
 use itertools::Itertools;
 use log::{debug, info, warn};
+use prometheus::{
+    exponential_buckets, histogram_opts, labels, opts, register_gauge, register_gauge_vec,
+    register_histogram, register_histogram_vec, Histogram, HistogramVec,
+};
 use serde_json::Value;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
@@ -18,6 +22,20 @@ use super::postgres_epoch::*;
 use super::postgres_session::*;
 use super::postgres_transaction::*;
 
+const QUERY_TIMEOUT: Duration = Duration::from_millis(5000);
+// PostgreSQL Server 15.0 or later
+const MIN_POSTGRES_SERVER_VERSION: u32 = 150000;
+
+lazy_static::lazy_static! {
+    static ref BS_QUERY_BLOCK: HistogramVec =
+        register_histogram_vec!
+            (histogram_opts!(
+                "literpc_blockstore_query_block",
+                "SQL query time for blockstore query block",
+                // 1ms to 65536ms
+                exponential_buckets(0.001, 4.0, 8).unwrap()),
+            &["subquery"]).unwrap();
+}
 
 // no clone/sync/send
 pub struct PostgresQueryBlockStore {
@@ -33,10 +51,13 @@ impl PostgresQueryBlockStore {
         // let session_cache = PostgresSessionCache::new(pg_session_config.clone())
         //     .await
         //     .unwrap();
-        let session = PostgresSession::new(pg_session_config.clone()).await.unwrap();
+        let session = PostgresSession::new(pg_session_config.clone())
+            .await
+            .unwrap();
 
         Self::check_postgresql_version(&session).await;
         Self::check_query_role(&session).await;
+        Self::set_timeout(&session).await;
 
         Self {
             session,
@@ -61,20 +82,21 @@ impl PostgresQueryBlockStore {
     }
 
     pub async fn query_block(&self, slot: Slot) -> Result<ProducedBlock> {
+        let _prometheus_timer = BS_QUERY_BLOCK.with_label_values(&["total"]).start_timer();
         let started_at = Instant::now();
         let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
 
         // TODO could we use join! here?
         let statement = PostgresBlock::build_query_statement(epoch, slot);
-        let row = self.session
-            .query_opt(&statement, &[]).await
+        let row = self
+            .session
+            .query_opt(&statement, &[])
+            .await
             .context("query block sql")?
             .context("block not found")?;
 
         let statement = PostgresTransaction::build_query_statement(epoch, slot);
-        let transaction_rows = self.session
-            .query_list(&statement, &[])
-            .await?;
+        let transaction_rows = self.session.query_list(&statement, &[]).await?;
 
         let tx_infos = transaction_rows
             .iter()
@@ -91,7 +113,7 @@ impl PostgresQueryBlockStore {
                     recent_blockhash: tx_row.get("recent_blockhash"),
                     message_version: tx_row.get("message_version"),
                     message: tx_row.get("message"), // TODO do not query
-                    writable_accounts: vec![], // TODO should not query that
+                    writable_accounts: vec![],      // TODO should not query that
                     readable_accounts: vec![],
                     fee: tx_row.get("fee"),
                     pre_balances: tx_row.get("pre_balances"),
@@ -105,7 +127,6 @@ impl PostgresQueryBlockStore {
             .sorted_by(|a, b| a.idx_in_block.cmp(&b.idx_in_block))
             .map(|pt| pt.to_transaction_info())
             .collect_vec();
-
 
         // meta data
         let _epoch: i64 = row.get("_epoch");
@@ -145,6 +166,10 @@ impl PostgresQueryBlockStore {
             produced_block.commitment_config.commitment
         );
 
+        // let timer = .with_label_values(&["total"]).start_timer();
+        // timer.stop_and_record();
+        // REQ_QUERY.with_label_values(&["total"]).observe(started_at.elapsed().as_secs_f64());
+
         Ok(produced_block)
     }
 
@@ -167,9 +192,15 @@ impl PostgresQueryBlockStore {
     }
 
     async fn check_postgresql_version(session: &PostgresSession) {
-        let statement = r#"SELECT version(), current_setting('server_version_num')::integer >= 150000 AS is_v15_or_higher"#;
+        let statement = format!(
+            r#"
+                SELECT
+                    version(),
+                    current_setting('server_version_num')::integer >= {min_version} AS is_v15_or_higher"#,
+            min_version = MIN_POSTGRES_SERVER_VERSION
+        );
         let row = session
-            .query_one(statement, &[])
+            .query_one(&statement, &[])
             .await
             .expect("must execute query to check for role");
         let is_v15_or_higher = row.get::<&str, bool>("is_v15_or_higher");
@@ -180,6 +211,17 @@ impl PostgresQueryBlockStore {
             version_string
         );
         info!("Self check - found postgres version: {}", version_string);
+    }
+
+    async fn set_timeout(session: &PostgresSession) {
+        let timeout_ms = QUERY_TIMEOUT.as_millis();
+        let statement = format!("SET statement_timeout TO {}", timeout_ms);
+        session
+            .execute_multiple(&statement)
+            .await
+            .expect("must set sql statement timeout");
+
+        info!("Configured postgres statement_timeout to '{}'", timeout_ms);
     }
 }
 

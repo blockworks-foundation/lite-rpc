@@ -1,6 +1,5 @@
 pub mod rpc_tester;
 
-
 use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
@@ -18,7 +17,6 @@ use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
 use solana_lite_rpc_accounts_on_demand::accounts_on_demand::AccountsOnDemand;
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
-use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::grpc_inspect::{
     debugtask_blockstream_confirmation_sequence, debugtask_blockstream_slot_progression,
@@ -57,7 +55,7 @@ use solana_lite_rpc_blockstore::block_stores::multiple_strategy_block_store::Mul
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_importer::{
     start_postgres_block_store_importer_task, storage_prepare_epoch_schema,
 };
-use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::{PostgresQueryBlockStore};
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
@@ -377,16 +375,18 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         // TODO use dedicated database for block store
         let pg_session_config = solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB")
             .expect("Blockstore PostgreSQL Configuration from env");
-        let postgres_block_store =
+        let postgres_block_store_writer =
             Arc::new(PostgresBlockStore::new(epoch_data.clone(), pg_session_config).await);
 
-        let (_ah_prepare_epochschema_task, startup_token) =
-            storage_prepare_epoch_schema(slot_notifier.resubscribe(), postgres_block_store.clone());
+        let (_ah_prepare_epochschema_task, startup_token) = storage_prepare_epoch_schema(
+            slot_notifier.resubscribe(),
+            postgres_block_store_writer.clone(),
+        );
         startup_token.cancelled().await;
 
         let _jh_task = start_postgres_block_store_importer_task(
             blocks_notifier.resubscribe(),
-            postgres_block_store,
+            postgres_block_store_writer,
         );
     } else {
         info!("Disable block store importer");
