@@ -34,8 +34,12 @@ pub struct ProducedBlock {
 
 impl ProducedBlock {
     pub fn new(inner: ProducedBlockInner, commitment_config: CommitmentConfig) -> Self {
+        let arc = Arc::new(inner);
+
+        crate::debug_allocations::track_producedblock_allocation(&arc);
+
         ProducedBlock {
-            inner: Arc::new(inner),
+            inner: arc,
             commitment_config,
         }
     }

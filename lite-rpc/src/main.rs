@@ -55,6 +55,7 @@ use lite_rpc::postgres_logger;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
+use solana_lite_rpc_core::debug_allocations::start_produced_block_inspect_task;
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -361,6 +362,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     );
 
     let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
+
+    // span produced block inspect task
+    let _produced_block_inspect_task = start_produced_block_inspect_task();
 
     let history = History::new();
 
