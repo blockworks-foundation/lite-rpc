@@ -199,7 +199,7 @@ pub fn from_ui_block(
                 fee,
                 pre_balances,
                 post_balances,
-                inner_instructions,
+                // inner_instructions,
                 log_messages,
                 pre_token_balances,
                 post_token_balances,
@@ -331,7 +331,7 @@ pub fn from_ui_block(
                 fee: fee as i64,
                 pre_balances: pre_balances.into_iter().map(|x| x as i64).collect(),
                 post_balances: post_balances.into_iter().map(|x| x as i64).collect(),
-                inner_instructions: None, // not implemented for RPC
+                inner_instructions: None, // not ported to RPC but implemented for geyser
                 log_messages: log_messages,
                 pre_token_balances,
                 post_token_balances,
