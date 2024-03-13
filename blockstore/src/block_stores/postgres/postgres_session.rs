@@ -23,9 +23,7 @@ lazy_static::lazy_static! {
         register_histogram_vec!
             (histogram_opts!(
                 "literpc_blockstore_postgres",
-                "SQL query times in blockstore::postgres_session by method",
-                // 1ms to 65536ms
-                exponential_buckets(0.001, 4.0, 8).unwrap()),
+                "SQL query times in blockstore::postgres_session by method"),
             &["method"]).unwrap();
 }
 
@@ -182,16 +180,8 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
-        let started_at = Instant::now();
         let _timer = PG_QUERY.with_label_values(&["execute"]).start_timer();
-        let result = self.0.execute(statement, params).await;
-
-        // TODO remove
-        if started_at.elapsed().as_millis() > 500 {
-            warn!("Slow query (execute): {statement}");
-        }
-
-        result
+        self.0.execute(statement, params).await
     }
 
     // execute statements seperated by semicolon
