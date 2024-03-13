@@ -1,9 +1,8 @@
-
 use anyhow::Context;
 use bench_lib::config::BenchConfig;
 use bench_lib::tx_size::TxSize;
 use bench_lib::{create_memo_tx, create_rng, send_and_confirm_transactions, Rng8};
-use log::info;
+use log::{info, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Signer};
 use solana_sdk::transaction::Transaction;
@@ -13,6 +12,9 @@ use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+
+    warn!("THIS IS WORK IN PROGRESS");
+
     let config = BenchConfig::load().unwrap();
     let tx_size = config.confirmation_slot.tx_size;
 

@@ -1,4 +1,4 @@
-payer_path = "/Users/stefan/.config/solana/id.json"
+payer_path = "/path/to/id.json"
 lite_rpc_url = "http://127.0.0.1:8899"
 rpc_url = "https://api.testnet.rpcpool.com/secret"
 

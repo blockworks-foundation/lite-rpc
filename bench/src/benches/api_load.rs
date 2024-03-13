@@ -1,5 +1,5 @@
 use bench_lib::{config::BenchConfig, create_memo_tx_small};
-use log::info;
+use log::{info, warn};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -11,6 +11,10 @@ use solana_sdk::signature::{read_keypair_file, Keypair, Signer};
 // TC3 measure how much load the API endpoint can take
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
+    warn!("THIS IS WORK IN PROGRESS");
+
     let config = BenchConfig::load().unwrap();
 
     let rpc = Arc::new(RpcClient::new(config.lite_rpc_url.clone()));

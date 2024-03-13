@@ -33,6 +33,10 @@ pub struct RpcStat {
 /// TC2 send multiple runs of num_txns, measure the confirmation rate
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
+
+    warn!("THIS IS WORK IN PROGRESS");
+
     let config = BenchConfig::load().unwrap();
     let ConfirmationRateConfig {
         tx_size,
