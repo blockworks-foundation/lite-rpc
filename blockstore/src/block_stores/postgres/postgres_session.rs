@@ -77,6 +77,7 @@ impl PostgresSession {
                 -- default: 64MB
                 SET SESSION maintenance_work_mem = '256MB';
                 SET SESSION vacuum_freeze_min_age = 0;
+                SET SESSION lock_timeout = 3000;
             "#;
 
         write_session.execute_multiple(statement).await.unwrap();
