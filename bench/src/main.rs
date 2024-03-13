@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use bench::{
     benches::{
         api_load::api_load, confirmation_rate::confirmation_rate,
@@ -19,7 +21,7 @@ struct Arguments {
 enum SubCommand {
     ApiLoad {
         #[clap(short, long)]
-        payer_path: String,
+        payer_path: PathBuf,
         #[clap(short, long)]
         rpc_url: String,
         #[clap(short, long)]
@@ -27,7 +29,7 @@ enum SubCommand {
     },
     ConfirmationRate {
         #[clap(short, long)]
-        payer_path: String,
+        payer_path: PathBuf,
         #[clap(short, long)]
         rpc_url: String,
         #[clap(short, long)]
@@ -39,7 +41,7 @@ enum SubCommand {
     },
     ConfirmationSlot {
         #[clap(short, long)]
-        payer_path: String,
+        payer_path: PathBuf,
         #[clap(short, long)]
         #[arg(short = 'a')]
         rpc_a: String,
@@ -70,7 +72,7 @@ async fn main() {
             rpc_url,
             time_ms,
         } => {
-            api_load(payer_path, rpc_url, time_ms).await.unwrap();
+            api_load(&payer_path, rpc_url, time_ms).await.unwrap();
         }
         SubCommand::ConfirmationRate {
             payer_path,
@@ -78,7 +80,7 @@ async fn main() {
             size_tx,
             txns_per_round,
             num_rounds,
-        } => confirmation_rate(payer_path, rpc_url, size_tx, txns_per_round, num_rounds)
+        } => confirmation_rate(&payer_path, rpc_url, size_tx, txns_per_round, num_rounds)
             .await
             .unwrap(),
         SubCommand::ConfirmationSlot {
@@ -86,7 +88,7 @@ async fn main() {
             rpc_a,
             rpc_b,
             size_tx,
-        } => confirmation_slot(payer_path, rpc_a, rpc_b, size_tx)
+        } => confirmation_slot(&payer_path, rpc_a, rpc_b, size_tx)
             .await
             .unwrap(),
     }

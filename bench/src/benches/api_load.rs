@@ -1,7 +1,10 @@
 use log::{info, warn};
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -10,13 +13,13 @@ use solana_sdk::signature::{read_keypair_file, Keypair, Signer};
 use crate::create_memo_tx_small;
 
 // TC3 measure how much load the API endpoint can take
-pub async fn api_load(payer_path: String, rpc_url: String, time_ms: u64) -> anyhow::Result<()> {
+pub async fn api_load(payer_path: &Path, rpc_url: String, time_ms: u64) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
 
     let rpc = Arc::new(RpcClient::new(rpc_url));
     info!("RPC: {}", rpc.as_ref().url());
 
-    let payer: Arc<Keypair> = Arc::new(read_keypair_file(&payer_path).unwrap());
+    let payer: Arc<Keypair> = Arc::new(read_keypair_file(payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
 
     let mut txs = 0;

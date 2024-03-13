@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::tx_size::TxSize;
 use crate::{create_memo_tx, create_rng, send_and_confirm_transactions, Rng8};
 use anyhow::Context;
@@ -9,7 +11,7 @@ use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 
 /// TC1 send 2 txs (one via LiteRPC, one via Solana RPC) and compare confirmation slot (=slot distance)
 pub async fn confirmation_slot(
-    payer_path: String,
+    payer_path: &Path,
     rpc_a_url: String,
     rpc_b_url: String,
     tx_size: TxSize,
@@ -23,7 +25,7 @@ pub async fn confirmation_slot(
     info!("RPC B: {}", rpc_b.url());
 
     let mut rng = create_rng(None);
-    let payer = read_keypair_file(&payer_path).expect("payer file");
+    let payer = read_keypair_file(payer_path).expect("payer file");
     info!("Payer: {}", payer.pubkey().to_string());
 
     let rpc_a_tx = create_tx(&rpc_a, &payer, &mut rng, tx_size).await?;

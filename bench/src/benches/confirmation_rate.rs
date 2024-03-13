@@ -7,6 +7,7 @@ use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use std::collections::{HashMap, HashSet};
 use std::iter::zip;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,7 +32,7 @@ pub struct RpcStat {
 
 /// TC2 send multiple runs of num_txns, measure the confirmation rate
 pub async fn confirmation_rate(
-    payer_path: String,
+    payer_path: &Path,
     rpc_url: String,
     tx_size: TxSize,
     txns_per_round: usize,
@@ -42,7 +43,7 @@ pub async fn confirmation_rate(
     let rpc = Arc::new(RpcClient::new(rpc_url));
     info!("RPC: {}", rpc.as_ref().url());
 
-    let payer: Arc<Keypair> = Arc::new(read_keypair_file(&payer_path).unwrap());
+    let payer: Arc<Keypair> = Arc::new(read_keypair_file(payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
 
     let mut rpc_results = Vec::with_capacity(num_rounds);
