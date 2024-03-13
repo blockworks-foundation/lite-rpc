@@ -1,4 +1,3 @@
-use bench_lib::{config::BenchConfig, create_memo_tx_small};
 use log::{info, warn};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -8,19 +7,16 @@ use std::sync::{
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Keypair, Signer};
 
-// TC3 measure how much load the API endpoint can take
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+use crate::create_memo_tx_small;
 
+// TC3 measure how much load the API endpoint can take
+pub async fn api_load(payer_path: String, rpc_url: String, time_ms: u64) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
 
-    let config = BenchConfig::load().unwrap();
-
-    let rpc = Arc::new(RpcClient::new(config.lite_rpc_url.clone()));
+    let rpc = Arc::new(RpcClient::new(rpc_url));
     info!("RPC: {}", rpc.as_ref().url());
 
-    let payer: Arc<Keypair> = Arc::new(read_keypair_file(&config.payer_path).unwrap());
+    let payer: Arc<Keypair> = Arc::new(read_keypair_file(&payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
 
     let mut txs = 0;
@@ -28,7 +24,6 @@ async fn main() -> anyhow::Result<()> {
     let success = Arc::new(AtomicUsize::new(0));
 
     let hash = rpc.get_latest_blockhash().await?;
-    let time_ms = config.api_load.time_ms;
     let time = tokio::time::Instant::now();
 
     while time.elapsed().as_millis() < time_ms.into() {

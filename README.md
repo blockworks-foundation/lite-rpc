@@ -49,7 +49,7 @@ $ cargo test
 *bench*
 ```bash
 $ cd bench
-$ cargo run --bin confirmation_slot ./bench-config.toml
+$ RUST_LOG=info cargo run -- --help
 ```
 
 Find a new file named `metrics.csv` in the project root.

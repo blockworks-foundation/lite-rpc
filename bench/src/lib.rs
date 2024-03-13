@@ -20,7 +20,8 @@ use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
 
-pub mod config;
+pub mod benches;
+pub mod metrics;
 pub mod tx_size;
 
 //TODO: use CLAP
