@@ -27,7 +27,6 @@ pub fn start_postgres_block_store_importer_task(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         info!("Start block storage importer task");
-        let mut last_optimizer_run = 0;
         let mut block_notifier = block_notifier;
         let first_block_written: OnceCell<Slot> = OnceCell::new();
         // this is the critical write loop
@@ -86,22 +85,11 @@ pub fn start_postgres_block_store_importer_task(
                         info!("Stored first block {} after restart!", block.slot);
                     }
 
-                    // debounce for 4 slots but run at least every 10 slots
-                    if block.slot > last_optimizer_run + OPTIMIZE_EVERY_N_SLOTS
-                        || block.slot > last_optimizer_run + OPTIMIZE_DEBOUNCE_SLOTS
-                            && started.elapsed() < Duration::from_millis(200)
-                            && block_notifier.is_empty()
-                    {
-                        debug!(
-                            "Use extra time to do some optimization (slot {})",
-                            block.slot
-                        );
-                        block_storage
-                            .optimize_blocks_table(block.slot)
-                            .await
-                            .unwrap();
-                        last_optimizer_run = block.slot;
-                    }
+                    block_storage
+                        .optimize_tables(block.slot)
+                        .await
+                        .unwrap();
+
                 } // -- Ok
                 Err(RecvError::Lagged(missed_blocks)) => {
                     warn!(
