@@ -94,12 +94,12 @@ impl PostgresBlock {
             ALTER TABLE {schema}.blocks ALTER COLUMN previous_blockhash SET STORAGE MAIN;
             ALTER TABLE {schema}.blocks
                 SET (
-                    autovacuum_vacuum_scale_factor=0,
+                    autovacuum_vacuum_scale_factor=0.2,
                     autovacuum_vacuum_threshold=1000,
-                    autovacuum_vacuum_insert_scale_factor=0,
-                    autovacuum_vacuum_insert_threshold=100,
-                    autovacuum_analyze_scale_factor=0,
-                    autovacuum_analyze_threshold=100
+                    autovacuum_vacuum_insert_scale_factor=0.2,
+                    autovacuum_vacuum_insert_threshold=1000,
+                    autovacuum_analyze_scale_factor=0.2,
+                    autovacuum_analyze_threshold=1000
                     );
         "#,
             schema = schema
