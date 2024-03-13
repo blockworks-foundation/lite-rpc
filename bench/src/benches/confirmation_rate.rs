@@ -34,8 +34,8 @@ pub async fn confirmation_rate(
     payer_path: String,
     rpc_url: String,
     tx_size: TxSize,
-    num_txns: usize,
-    num_runs: usize,
+    txns_per_round: usize,
+    num_rounds: usize,
 ) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
 
@@ -45,10 +45,10 @@ pub async fn confirmation_rate(
     let payer: Arc<Keypair> = Arc::new(read_keypair_file(&payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
 
-    let mut rpc_results = Vec::with_capacity(num_runs);
+    let mut rpc_results = Vec::with_capacity(num_rounds);
 
-    for _ in 0..num_runs {
-        let stat: RpcStat = send_bulk_txs_and_wait(&rpc, &payer, num_txns, tx_size).await?;
+    for _ in 0..num_rounds {
+        let stat: RpcStat = send_bulk_txs_and_wait(&rpc, &payer, txns_per_round, tx_size).await?;
         rpc_results.push(stat);
     }
 

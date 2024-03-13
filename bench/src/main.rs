@@ -28,21 +28,23 @@ enum SubCommand {
         #[clap(short, long)]
         rpc_url: String,
         #[clap(short, long)]
-        tx_size: TxSize,
+        size_tx: TxSize,
         #[clap(short, long)]
-        num_txns: usize,
+        txns_per_round: usize,
         #[clap(short, long)]
-        num_runs: usize,
+        num_rounds: usize,
     },
     ConfirmationSlot {
         #[clap(short, long)]
         payer_path: String,
         #[clap(short, long)]
+        #[arg(short = 'a')]
         rpc_a: String,
         #[clap(short, long)]
+        #[arg(short = 'b')]
         rpc_b: String,
         #[clap(short, long)]
-        tx_size: TxSize,
+        size_tx: TxSize,
     },
 }
 
@@ -70,17 +72,17 @@ async fn main() {
         SubCommand::ConfirmationRate {
             payer_path,
             rpc_url,
-            tx_size,
-            num_txns,
-            num_runs,
-        } => confirmation_rate(payer_path, rpc_url, tx_size, num_txns, num_runs)
+            size_tx,
+            txns_per_round,
+            num_rounds,
+        } => confirmation_rate(payer_path, rpc_url, size_tx, txns_per_round, num_rounds)
             .await
             .unwrap(),
         SubCommand::ConfirmationSlot {
             payer_path,
             rpc_a,
             rpc_b,
-            tx_size
-        } => confirmation_slot(payer_path, rpc_a, rpc_b, tx_size).await.unwrap(),
+            size_tx
+        } => confirmation_slot(payer_path, rpc_a, rpc_b, size_tx).await.unwrap(),
     }
 }
