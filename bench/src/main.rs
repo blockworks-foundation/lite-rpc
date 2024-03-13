@@ -26,7 +26,7 @@ enum SubCommand {
         rpc_url: String,
         #[clap(short, long)]
         time_ms: u64,
-        /// (Optional) The CU price in micro lamports
+        /// The CU price in micro lamports
         #[clap(short, long, default_value_t = 3)]
         #[arg(short = 'f')]
         cu_price: u64,
@@ -42,7 +42,7 @@ enum SubCommand {
         txns_per_round: usize,
         #[clap(short, long)]
         num_rounds: usize,
-        /// (Optional) The CU price in micro lamports
+        /// The CU price in micro lamports
         #[clap(short, long, default_value_t = 300)]
         #[arg(short = 'f')]
         cu_price: u64,
@@ -61,7 +61,12 @@ enum SubCommand {
         rpc_b: String,
         #[clap(short, long)]
         size_tx: TxSize,
-        /// (Optional) The CU price in micro lamports
+        /// Maximum confirmation time in milliseconds. After this, the txn is considered unconfirmed
+        #[clap(short, long, default_value_t = 3000)]
+        max_timeout_ms: u64,
+        #[clap(short, long)]
+        num_rounds: usize,
+        /// The CU price in micro lamports
         #[clap(short, long, default_value_t = 300)]
         #[arg(short = 'f')]
         cu_price: u64,
@@ -114,9 +119,19 @@ async fn main() {
             rpc_a,
             rpc_b,
             size_tx,
+            max_timeout_ms,
+            num_rounds,
             cu_price,
-        } => confirmation_slot(&payer_path, rpc_a, rpc_b, size_tx, cu_price)
-            .await
-            .unwrap(),
+        } => confirmation_slot(
+            &payer_path,
+            rpc_a,
+            rpc_b,
+            size_tx,
+            max_timeout_ms,
+            num_rounds,
+            cu_price,
+        )
+        .await
+        .unwrap(),
     }
 }
