@@ -76,6 +76,7 @@ impl PostgresSession {
                 SET SESSION application_name='postgres-blockstore-write-session';
                 -- default: 64MB
                 SET SESSION maintenance_work_mem = '256MB';
+                SET SESSION vacuum_freeze_min_age = 0;
             "#;
 
         write_session.execute_multiple(statement).await.unwrap();
