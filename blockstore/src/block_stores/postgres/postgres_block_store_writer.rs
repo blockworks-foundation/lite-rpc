@@ -11,6 +11,7 @@ use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::slot_history::Slot;
 use tokio::{join, try_join};
 use tokio_postgres::error::SqlState;
+use tracing_subscriber::fmt::init;
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -18,7 +19,7 @@ use super::postgres_epoch::*;
 use super::postgres_session::*;
 use super::postgres_transaction::*;
 
-const PARALLEL_WRITE_SESSIONS: usize = 4;
+const PARALLEL_WRITE_SESSIONS: usize = 1;
 const MIN_WRITE_CHUNK_SIZE: usize = 500;
 
 // #[derive(Clone)]
@@ -55,6 +56,7 @@ impl PostgresBlockStore {
 
         Self::check_write_role(&session).await;
 
+        info!("Initialized PostgreSQL Blockstore Writer with {} write sessions", PARALLEL_WRITE_SESSIONS);
         Self {
             session,
             write_sessions,
