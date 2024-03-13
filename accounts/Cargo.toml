@@ -43,6 +43,8 @@ lazy_static = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-util = { workspace = true }
 
+async-recursion = "1.0.5"
+
 [dev-dependencies]
 rand = "0.8.5"
 rand_chacha = "0.3.1"
