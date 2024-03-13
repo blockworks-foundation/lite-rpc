@@ -78,6 +78,7 @@ impl PostgresSession {
                 SET SESSION maintenance_work_mem = '256MB';
                 SET SESSION vacuum_freeze_min_age = 0;
                 SET SESSION lock_timeout = 3000;
+                SET SESSION work_mem = '128MB';
             "#;
 
         write_session.execute_multiple(statement).await.unwrap();
