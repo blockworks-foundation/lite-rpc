@@ -2,7 +2,6 @@ use std::time::{Duration, Instant};
 
 use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 use anyhow::{bail, Context, Result};
-use futures_util::future;
 use futures_util::future::join_all;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
