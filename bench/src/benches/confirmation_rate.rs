@@ -37,6 +37,7 @@ pub async fn confirmation_rate(
     tx_size: TxSize,
     txns_per_round: usize,
     num_rounds: usize,
+    cu_price_micro_lamports: u64,
 ) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
 
@@ -49,7 +50,14 @@ pub async fn confirmation_rate(
     let mut rpc_results = Vec::with_capacity(num_rounds);
 
     for _ in 0..num_rounds {
-        let stat: RpcStat = send_bulk_txs_and_wait(&rpc, &payer, txns_per_round, tx_size).await?;
+        let stat: RpcStat = send_bulk_txs_and_wait(
+            &rpc,
+            &payer,
+            txns_per_round,
+            tx_size,
+            cu_price_micro_lamports,
+        )
+        .await?;
         rpc_results.push(stat);
     }
 
@@ -62,10 +70,18 @@ pub async fn send_bulk_txs_and_wait(
     payer: &Keypair,
     num_txns: usize,
     tx_size: TxSize,
+    cu_price_micro_lamports: u64,
 ) -> anyhow::Result<RpcStat> {
     let hash = rpc.get_latest_blockhash().await?;
     let mut rng = create_rng(None);
-    let txs = generate_txs(num_txns, payer, hash, &mut rng, tx_size);
+    let txs = generate_txs(
+        num_txns,
+        payer,
+        hash,
+        &mut rng,
+        tx_size,
+        cu_price_micro_lamports,
+    );
 
     let started_at = tokio::time::Instant::now();
 

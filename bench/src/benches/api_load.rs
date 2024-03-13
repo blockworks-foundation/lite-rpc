@@ -13,7 +13,12 @@ use solana_sdk::signature::{read_keypair_file, Keypair, Signer};
 use crate::create_memo_tx_small;
 
 // TC3 measure how much load the API endpoint can take
-pub async fn api_load(payer_path: &Path, rpc_url: String, time_ms: u64) -> anyhow::Result<()> {
+pub async fn api_load(
+    payer_path: &Path,
+    rpc_url: String,
+    time_ms: u64,
+    cu_price_micro_lamports: u64,
+) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
 
     let rpc = Arc::new(RpcClient::new(rpc_url));
@@ -40,7 +45,7 @@ pub async fn api_load(payer_path: &Path, rpc_url: String, time_ms: u64) -> anyho
 
         tokio::spawn(async move {
             let msg = msg.as_bytes();
-            let tx = create_memo_tx_small(msg, &payer, hash);
+            let tx = create_memo_tx_small(msg, &payer, hash, cu_price_micro_lamports);
             match rpc.send_transaction(&tx).await {
                 Ok(_) => success.fetch_add(1, Ordering::Relaxed),
                 Err(_) => failed.fetch_add(1, Ordering::Relaxed),

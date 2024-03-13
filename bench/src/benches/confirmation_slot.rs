@@ -15,6 +15,7 @@ pub async fn confirmation_slot(
     rpc_a_url: String,
     rpc_b_url: String,
     tx_size: TxSize,
+    cu_price_micro_lamports: u64,
 ) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
 
@@ -28,8 +29,8 @@ pub async fn confirmation_slot(
     let payer = read_keypair_file(payer_path).expect("payer file");
     info!("Payer: {}", payer.pubkey().to_string());
 
-    let rpc_a_tx = create_tx(&rpc_a, &payer, &mut rng, tx_size).await?;
-    let rpc_b_tx = create_tx(&rpc_b, &payer, &mut rng, tx_size).await?;
+    let rpc_a_tx = create_tx(&rpc_a, &payer, &mut rng, tx_size, cu_price_micro_lamports).await?;
+    let rpc_b_tx = create_tx(&rpc_b, &payer, &mut rng, tx_size, cu_price_micro_lamports).await?;
 
     let (rpc_slot, lite_rpc_slot) = tokio::join!(
         send_transaction_and_get_slot(&rpc_a, rpc_a_tx),
@@ -47,10 +48,17 @@ async fn create_tx(
     payer: &Keypair,
     rng: &mut Rng8,
     tx_size: TxSize,
+    cu_price_micro_lamports: u64,
 ) -> anyhow::Result<Transaction> {
     let hash = rpc.get_latest_blockhash().await?;
 
-    Ok(create_memo_tx(payer, hash, rng, tx_size))
+    Ok(create_memo_tx(
+        payer,
+        hash,
+        rng,
+        tx_size,
+        cu_price_micro_lamports,
+    ))
 }
 
 async fn send_transaction_and_get_slot(client: &RpcClient, tx: Transaction) -> anyhow::Result<u64> {
