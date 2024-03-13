@@ -221,7 +221,7 @@ fn storage_listen(
                             block.slot
                         );
                         block_storage
-                            .optimize_blocks_table(block.slot)
+                            .optimize_tables(block.slot)
                             .await
                             .unwrap();
                         last_optimizer_run = block.slot;
