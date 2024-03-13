@@ -1,5 +1,8 @@
 use bench::{
-    benches::{api_load::api_load, confirmation_rate::confirmation_rate, confirmation_slot::confirmation_slot},
+    benches::{
+        api_load::api_load, confirmation_rate::confirmation_rate,
+        confirmation_slot::confirmation_slot,
+    },
     tx_size::TxSize,
 };
 use clap::{Parser, Subcommand};
@@ -82,7 +85,9 @@ async fn main() {
             payer_path,
             rpc_a,
             rpc_b,
-            size_tx
-        } => confirmation_slot(payer_path, rpc_a, rpc_b, size_tx).await.unwrap(),
+            size_tx,
+        } => confirmation_slot(payer_path, rpc_a, rpc_b, size_tx)
+            .await
+            .unwrap(),
     }
 }
