@@ -228,11 +228,11 @@ impl PostgresTransaction {
         let statement = r#"
             CREATE TEMP TABLE transaction_raw_blockdata(
                 slot bigint NOT NULL,
+                signature varchar(88) NOT NULL,
                 idx int4 NOT NULL,
                 cu_consumed bigint NOT NULL,
                 cu_requested bigint,
                 prioritization_fees bigint,
-                signature varchar(88) NOT NULL,
                 recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                 err jsonb,
                 message_version int4 NOT NULL,
@@ -254,11 +254,11 @@ impl PostgresTransaction {
         let statement = r#"
             COPY transaction_raw_blockdata(
                 slot,
+                signature,
                 idx,
                 cu_consumed,
                 cu_requested,
                 prioritization_fees,
-                signature,
                 recent_blockhash,
                 err,
                 message_version,
@@ -281,11 +281,11 @@ impl PostgresTransaction {
             sink,
             &[
                 Type::INT8,        // slot
+                Type::VARCHAR,     // signature
                 Type::INT4,        // idx
                 Type::INT8,        // cu_consumed
                 Type::INT8,        // cu_requested
                 Type::INT8,        // prioritization_fees
-                Type::VARCHAR,     // signature
                 Type::VARCHAR,     // recent_blockhash
                 Type::JSONB,       // err
                 Type::INT4,        // message_version
@@ -332,11 +332,11 @@ impl PostgresTransaction {
                 .as_mut()
                 .write(&[
                     &slot,
+                    &signature,
                     &idx_in_block,
                     &cu_consumed,
                     &cu_requested,
                     &prioritization_fees,
-                    &signature,
                     &recent_blockhash,
                     &err,
                     &message_version,
@@ -364,16 +364,17 @@ impl PostgresTransaction {
 
         let statement = format!(
             r#"
+            LOCK TABLE {schema}.transaction_ids IN EXCLUSIVE MODE;
             INSERT INTO {schema}.transaction_ids(signature)
             SELECT signature from transaction_raw_blockdata
-            ON CONFLICT DO NOTHING
+            ON CONFLICT DO NOTHING;
             "#,
         );
         let started_at = Instant::now();
-        let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
+        postgres_session.execute_multiple(statement.as_str()).await?;
         debug!(
             "inserted {} signatures into transaction_ids table in {:.2?}",
-            num_rows,
+            transactions.len(),
             started_at.elapsed()
         );
 
