@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::{debug, trace};
+use log::{debug, trace, warn};
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use prometheus::{
@@ -10,6 +10,7 @@ use prometheus::{
 };
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
+use tokio::time::Instant;
 use tokio_postgres::{
     config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, CopyInSink, Error, NoTls, Row,
     Socket,
@@ -181,8 +182,16 @@ impl PostgresSession {
         statement: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::error::Error> {
+        let started_at = Instant::now();
         let _timer = PG_QUERY.with_label_values(&["execute"]).start_timer();
-        self.0.execute(statement, params).await
+        let result = self.0.execute(statement, params).await;
+
+        // TODO remove
+        if started_at.elapsed().as_millis() > 500 {
+            warn!("Slow query (execute): {statement}");
+        }
+
+        result
     }
 
     // execute statements seperated by semicolon
