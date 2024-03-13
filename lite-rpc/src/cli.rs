@@ -12,6 +12,7 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
+use serde::{Deserialize, Serialize};
 use solana_rpc_client_api::client_error::reqwest::Url;
 
 #[derive(Parser, Debug, Clone)]
@@ -86,10 +87,7 @@ pub struct Config {
     pub enable_address_lookup_tables: Option<bool>,
 
     #[serde(default)]
-    pub account_filters: Option<String>,
-
-    #[serde(default)]
-    pub enable_accounts_on_demand_accounts_service: Option<bool>,
+    pub accounts_configuration: AccountConfiguration,
 }
 
 impl Config {
@@ -219,12 +217,25 @@ impl Config {
             .ok()
             .or(config.address_lookup_tables_binary);
 
-        config.account_filters = env::var("ACCOUNT_FILTERS").ok().or(config.account_filters);
+        config.accounts_configuration.account_filters = env::var("ACCOUNT_FILTERS")
+            .ok()
+            .or(config.accounts_configuration.account_filters);
 
-        config.enable_accounts_on_demand_accounts_service = env::var("ENABLE_ACCOUNT_ON_DEMAND")
+        config
+            .accounts_configuration
+            .enable_accounts_on_demand_accounts_service = env::var("ENABLE_SMART_ACCOUNT_WARMUP")
             .map(|value| value.parse::<bool>().unwrap())
             .ok()
-            .or(config.enable_accounts_on_demand_accounts_service);
+            .or(config.accounts_configuration.enable_smart_accounts_warmup);
+
+        config
+            .accounts_configuration
+            .enable_accounts_on_demand_accounts_service = env::var("ENABLE_ACCOUNT_ON_DEMAND")
+            .map(|value| value.parse::<bool>().unwrap())
+            .ok()
+            .or(config
+                .accounts_configuration
+                .enable_accounts_on_demand_accounts_service);
         Ok(config)
     }
 
@@ -348,4 +359,16 @@ fn obfuscate_token(token: &Option<String>) -> String {
             token
         }
     }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
+pub struct AccountConfiguration {
+    #[serde(default)]
+    pub account_filters: Option<String>,
+
+    #[serde(default)]
+    pub enable_accounts_on_demand_accounts_service: Option<bool>,
+
+    #[serde(default)]
+    pub enable_smart_accounts_warmup: Option<bool>,
 }

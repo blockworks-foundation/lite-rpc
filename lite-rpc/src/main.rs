@@ -134,8 +134,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         enable_grpc_stream_inspection,
         enable_address_lookup_tables,
         address_lookup_tables_binary,
-        account_filters,
-        enable_accounts_on_demand_accounts_service,
+        accounts_configuration,
         ..
     } = args;
 
@@ -149,15 +148,16 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
     let tpu_connection_path = configure_tpu_connection_path(quic_proxy_addr);
 
-    let account_filters = if let Some(account_filters) = account_filters {
+    let account_filters = if let Some(account_filters) = accounts_configuration.account_filters {
         serde_json::from_str::<AccountFilters>(account_filters.as_str())
             .expect("Account filters should be valid")
     } else {
         vec![]
     };
 
-    let enable_accounts_on_demand_accounts_service =
-        enable_accounts_on_demand_accounts_service.unwrap_or_default();
+    let enable_accounts_on_demand_accounts_service = accounts_configuration
+        .enable_accounts_on_demand_accounts_service
+        .unwrap_or_default();
     if enable_accounts_on_demand_accounts_service {
         log::info!("Accounts on demand service is enabled");
     } else {
@@ -232,11 +232,21 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         account_service
             .process_account_stream(account_stream.resubscribe(), blocks_notifier.resubscribe());
 
+        let enable_smart_accounts_warmup = accounts_configuration
+            .enable_smart_accounts_warmup
+            .unwrap_or_default();
+        if enable_smart_accounts_warmup {
+            info!("Smart account warmup enabled");
+        } else {
+            info!("Smart account warmup disabled");
+        }
+
         account_service
             .populate_from_rpc(
                 rpc_client.clone(),
                 &account_filters,
                 MAX_CONNECTIONS_IN_PARALLEL,
+                enable_smart_accounts_warmup,
             )
             .await?;
         Some(account_service)

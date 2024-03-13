@@ -1,6 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::bail;
+use async_recursion::async_recursion;
 use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_account_decoder::{UiAccount, UiDataSliceConfig};
@@ -8,7 +9,9 @@ use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
         account_data::{AccountData, AccountNotificationMessage, AccountStream},
-        account_filter::AccountFilters,
+        account_filter::{
+            AccountFilter, AccountFilterType, AccountFilters, MemcmpFilter, MemcmpFilterData,
+        },
     },
     types::BlockStream,
     AnyhowJoinHandle,
@@ -38,6 +41,10 @@ lazy_static::lazy_static! {
        register_int_gauge!(opts!("literpc_get_account_called", "Account Updates by lite-rpc service")).unwrap();
 }
 
+// this is because for most of the anchor programs first 8 bytes are discriminators so the best discriminator is at index 9
+// but for general case 0 is better
+const WARMUP_BYTE_INDEX: u64 = 0;
+
 #[derive(Clone)]
 pub struct AccountService {
     account_store: Arc<dyn AccountStorageInterface>,
@@ -55,51 +62,100 @@ impl AccountService {
         }
     }
 
+    #[async_recursion]
+    pub async fn get_account_keys(
+        rpc_client: &Arc<RpcClient>,
+        filter: &AccountFilter,
+        enable_smart_warmup: bool,
+    ) -> anyhow::Result<Vec<Pubkey>> {
+        if !filter.accounts.is_empty() {
+            Ok(filter
+                .accounts
+                .iter()
+                .map(|x| Pubkey::from_str(x).expect("Accounts in filters should be valid"))
+                .collect_vec())
+        } else if let Some(program_id) = &filter.program_id {
+            let program_id =
+                Pubkey::from_str(program_id).expect("Program id in filters should be valid");
+
+            match rpc_client
+                .get_program_accounts_with_config(
+                    &program_id,
+                    RpcProgramAccountsConfig {
+                        filters: filter.get_rpc_filter(),
+                        account_config: RpcAccountInfoConfig {
+                            encoding: Some(solana_account_decoder::UiAccountEncoding::Base64),
+                            data_slice: Some(UiDataSliceConfig {
+                                offset: 0,
+                                length: 0,
+                            }),
+                            commitment: None,
+                            min_context_slot: None,
+                        },
+                        with_context: None,
+                    },
+                )
+                .await
+            {
+                Ok(value) => Ok(value.iter().map(|(pk, _)| *pk).collect_vec()),
+                Err(e) => {
+                    if enable_smart_warmup {
+                        log::info!(
+                            "gPA failed, using smart warmup feature for program {}",
+                            filter.program_id.clone().unwrap_or_default()
+                        );
+                        let mut accounts = vec![];
+                        for desc in 0..=u8::MAX {
+                            let desc_filter = AccountFilterType::Memcmp(MemcmpFilter {
+                                offset: WARMUP_BYTE_INDEX,
+                                data: MemcmpFilterData::Bytes(vec![desc]),
+                            });
+                            let program_id = filter.program_id.clone();
+                            let filter_list = match &filter.filters {
+                                Some(filters) => {
+                                    let mut filters = filters.clone();
+                                    filters.push(desc_filter);
+                                    filters
+                                }
+                                None => {
+                                    vec![desc_filter]
+                                }
+                            };
+                            let new_filter = AccountFilter {
+                                accounts: vec![],
+                                program_id,
+                                filters: Some(filter_list),
+                            };
+                            let mut acc_list =
+                                Self::get_account_keys(rpc_client, &new_filter, false).await?;
+                            accounts.append(&mut acc_list);
+                        }
+                        Ok(accounts)
+                    } else {
+                        log::error!("The account filter provided timed out while getProgramAccounts from RPC, try making filter smaller. error {e:?}");
+                        bail!("The account filter provided timed out while getProgramAccounts from RPC, try making filter smaller");
+                    }
+                }
+            }
+        } else {
+            bail!("Account filter does not contain accounts nor program filters");
+        }
+    }
+
     pub async fn populate_from_rpc(
         &self,
         rpc_client: Arc<RpcClient>,
         filters: &AccountFilters,
         max_request_in_parallel: usize,
+        enable_smart_accounts_warmup: bool,
     ) -> anyhow::Result<()> {
         const NB_ACCOUNTS_IN_GMA: usize = 100;
         const NB_RETRY: usize = 10;
         let mut accounts = vec![];
         for filter in filters.iter() {
-            if !filter.accounts.is_empty() {
-                let mut f_accounts = filter
-                    .accounts
-                    .iter()
-                    .map(|x| Pubkey::from_str(x).expect("Accounts in filters should be valid"))
-                    .collect();
-                accounts.append(&mut f_accounts);
-            }
-
-            if let Some(program_id) = &filter.program_id {
-                let program_id =
-                    Pubkey::from_str(program_id).expect("Program id in filters should be valid");
-                let mut rpc_acc = rpc_client
-                    .get_program_accounts_with_config(
-                        &program_id,
-                        RpcProgramAccountsConfig {
-                            filters: filter.get_rpc_filter(),
-                            account_config: RpcAccountInfoConfig {
-                                encoding: Some(solana_account_decoder::UiAccountEncoding::Base64),
-                                data_slice: Some(UiDataSliceConfig {
-                                    offset: 0,
-                                    length: 0,
-                                }),
-                                commitment: None,
-                                min_context_slot: None,
-                            },
-                            with_context: None,
-                        },
-                    )
-                    .await?
-                    .iter()
-                    .map(|(pk, _)| *pk)
-                    .collect_vec();
-                accounts.append(&mut rpc_acc);
-            }
+            let mut keys =
+                Self::get_account_keys(&rpc_client, filter, enable_smart_accounts_warmup).await?;
+            accounts.append(&mut keys);
         }
         log::info!("Fetching {} accounts", accounts.len());
         for accounts in accounts.chunks(max_request_in_parallel * NB_ACCOUNTS_IN_GMA) {
