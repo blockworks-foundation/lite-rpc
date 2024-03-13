@@ -23,6 +23,8 @@ use tokio::time::Instant;
 pub mod config;
 pub mod tx_size;
 
+//TODO: use CLAP
+
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 const WAIT_LIMIT_IN_SECONDS: u64 = 60;
 
