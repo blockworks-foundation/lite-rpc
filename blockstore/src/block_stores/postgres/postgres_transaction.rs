@@ -169,12 +169,12 @@ impl PostgresTransaction {
                 ALTER TABLE {schema}.transaction_ids ALTER COLUMN signature SET STORAGE PLAIN;
                 ALTER TABLE {schema}.transaction_ids
                     SET (
-                        autovacuum_vacuum_scale_factor=0,
-                        autovacuum_vacuum_threshold=1000,
-                        autovacuum_vacuum_insert_scale_factor=0,
-                        autovacuum_vacuum_insert_threshold=1000,
-                        autovacuum_analyze_scale_factor=0,
-                        autovacuum_analyze_threshold=1000
+                        autovacuum_vacuum_scale_factor=0.2,
+                        autovacuum_vacuum_threshold=10000,
+                        autovacuum_vacuum_insert_scale_factor=0.2,
+                        autovacuum_vacuum_insert_threshold=50000,
+                        autovacuum_analyze_scale_factor=0.2,
+                        autovacuum_analyze_threshold=50000
                         );
 
                 -- parameter 'schema' is something like 'rpc2a_epoch_592'
@@ -205,12 +205,12 @@ impl PostgresTransaction {
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN message SET STORAGE EXTENDED;
                 ALTER TABLE {schema}.transaction_blockdata
                     SET (
-                        autovacuum_vacuum_scale_factor=0,
-                        autovacuum_vacuum_threshold=1000,
-                        autovacuum_vacuum_insert_scale_factor=0,
-                        autovacuum_vacuum_insert_threshold=1000,
-                        autovacuum_analyze_scale_factor=0,
-                        autovacuum_analyze_threshold=1000
+                        autovacuum_vacuum_scale_factor=0.2,
+                        autovacuum_vacuum_threshold=10000,
+                        autovacuum_vacuum_insert_scale_factor=0.2,
+                        autovacuum_vacuum_insert_threshold=10000,
+                        autovacuum_analyze_scale_factor=0.2,
+                        autovacuum_analyze_threshold=10000
                         );
                 CREATE INDEX idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
             "#,
