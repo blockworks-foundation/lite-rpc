@@ -162,11 +162,11 @@ impl PostgresTransaction {
                 -- no updates or deletes, only INSERTs
                 CREATE TABLE {schema}.transaction_ids(
                     transaction_id bigserial PRIMARY KEY WITH (FILLFACTOR=90),
-                    signature varchar(88) COMPRESSION lz4 NOT NULL,
+                    signature varchar(88) NOT NULL,
                     UNIQUE(signature)
                 ) WITH (FILLFACTOR=100);
                 -- never put sig on TOAST
-                ALTER TABLE {schema}.transaction_ids ALTER COLUMN signature SET STORAGE MAIN;
+                ALTER TABLE {schema}.transaction_ids ALTER COLUMN signature SET STORAGE PLAIN;
                 ALTER TABLE {schema}.transaction_ids
                     SET (
                         autovacuum_vacuum_scale_factor=0,
@@ -232,7 +232,7 @@ impl PostgresTransaction {
                 cu_consumed bigint NOT NULL,
                 cu_requested bigint,
                 prioritization_fees bigint,
-                signature varchar(88) COMPRESSION lz4 NOT NULL,
+                signature varchar(88) NOT NULL,
                 recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                 err jsonb,
                 message_version int4 NOT NULL,
