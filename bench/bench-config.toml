@@ -1,0 +1,14 @@
+payer_path = "/path/to/id.json"
+lite_rpc_url = "http://127.0.0.1:8899"
+rpc_url = "https://api.testnet.rpcpool.com/secret"
+
+[api_load]
+time_ms = 3000
+
+[confirmation_rate]
+num_txns = 20
+num_runs = 5
+tx_size = "Small"
+
+[confirmation_slot]
+tx_size = "Small" # Small or Large

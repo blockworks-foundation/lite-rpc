@@ -48,7 +48,8 @@ $ cargo test
 
 *bench*
 ```bash
-$ cd bench and cargo run --release
+$ cd bench
+$ cargo run --bin confirmation_slot ./bench-config.toml
 ```
 
 Find a new file named `metrics.csv` in the project root.
