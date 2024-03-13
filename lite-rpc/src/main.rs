@@ -7,7 +7,7 @@ use itertools::Itertools;
 use lite_rpc::bridge::LiteBridge;
 use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
-use lite_rpc::postgres_logger::{PostgresLogger, PostgresSessionConfig};
+use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
 use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};

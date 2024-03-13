@@ -266,7 +266,8 @@ impl LiteRpcServer for LiteBridge {
             .map(|mut confirmed_block| {
                 // patch signatures
                 confirmed_block.signatures = only_signatures;
-                confirmed_block }) // TODO map signatures
+                confirmed_block
+            }) // TODO map signatures
             .map(Some)
     }
 
