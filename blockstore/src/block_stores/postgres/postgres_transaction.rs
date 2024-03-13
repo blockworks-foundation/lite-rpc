@@ -378,13 +378,13 @@ impl PostgresTransaction {
                 ON CONFLICT DO NOTHING
                 RETURNING *
             )
-            SELECT transaction_id, signature FROM mapping;
-
-            CREATE INDEX ON transaction_ids_temp_mapping USING HASH(signature);
+            SELECT transaction_id, signature FROM mapping
             "#,
         );
         let started_at = Instant::now();
-        postgres_session.execute_multiple(statement.as_str()).await?;
+        postgres_session.execute(statement.as_str(), &[]).await?;
+        // TODO try primary key or even withou
+        postgres_session.execute("CREATE INDEX ON transaction_ids_temp_mapping USING HASH(signature)", &[]).await?;
 
         debug!(
             "inserted {} signatures into transaction_ids table in {:.2?}",
