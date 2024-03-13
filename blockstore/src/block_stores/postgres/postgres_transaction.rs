@@ -1,17 +1,19 @@
 use bytes::BytesMut;
 use std::error::Error;
 use std::str::FromStr;
+use std::sync::Arc;
 
-use crate::block_stores::postgres::{json_deserialize, json_serialize};
+use crate::block_stores::postgres::{BlockstorePostgresSessionConfig, json_deserialize, json_serialize};
 use futures_util::pin_mut;
 use itertools::Itertools;
-use log::debug;
+use log::{debug, info, Level, LevelFilter};
 use postgres_types::IsNull;
 use serde_json::map::Values;
 use serde_json::Value;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
-use solana_lite_rpc_core::structures::epoch::EpochRef;
+use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};
 use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::TransactionInfo};
 use solana_sdk::message::VersionedMessage;
 use solana_sdk::pubkey::Pubkey;
@@ -23,6 +25,9 @@ use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
+use tracing_subscriber::EnvFilter;
+use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
+use crate::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 
 use super::postgres_epoch::*;
 use super::postgres_session::*;
@@ -163,7 +168,7 @@ impl PostgresTransaction {
                 CREATE TABLE {schema}.transaction_ids(
                     transaction_id bigserial PRIMARY KEY WITH (FILLFACTOR=90),
                     signature varchar(88) NOT NULL,
-                    UNIQUE(signature)
+                    UNIQUE(signature) WITH (FILLFACTOR=80)
                 ) WITH (FILLFACTOR=100);
                 -- never put sig on TOAST
                 ALTER TABLE {schema}.transaction_ids ALTER COLUMN signature SET STORAGE PLAIN;
@@ -362,16 +367,25 @@ impl PostgresTransaction {
             started_at.elapsed()
         );
 
+        // note: session has lock_timeout configured
+        // tried LOCK TABLE {schema}.transaction_ids IN EXCLUSIVE MODE but is slowed down things
+        // cost of "ON CONFLICT DO NOTHING" -> `
         let statement = format!(
             r#"
-            LOCK TABLE {schema}.transaction_ids IN EXCLUSIVE MODE;
-            INSERT INTO {schema}.transaction_ids(signature)
-            SELECT signature from transaction_raw_blockdata
-            ON CONFLICT DO NOTHING;
+            CREATE TEMP TABLE transaction_ids_temp_mapping AS WITH mapping AS (
+                INSERT INTO {schema}.transaction_ids(signature)
+                SELECT signature from transaction_raw_blockdata
+                ON CONFLICT DO NOTHING
+                RETURNING *
+            )
+            SELECT transaction_id, signature FROM mapping;
+
+            CREATE INDEX ON transaction_ids_temp_mapping USING HASH(signature);
             "#,
         );
         let started_at = Instant::now();
         postgres_session.execute_multiple(statement.as_str()).await?;
+
         debug!(
             "inserted {} signatures into transaction_ids table in {:.2?}",
             transactions.len(),
@@ -403,7 +417,7 @@ impl PostgresTransaction {
                     -- model_transaction_blockdata
                 )
                 SELECT
-                    ( SELECT transaction_id FROM {schema}.transaction_ids tx_lkup WHERE tx_lkup.signature = transaction_raw_blockdata.signature ),
+                    transaction_ids_temp_mapping.transaction_id,
                     slot,
                     idx,
                     cu_consumed,
@@ -424,6 +438,7 @@ impl PostgresTransaction {
                     post_token_balances
                     -- model_transaction_blockdata
                 FROM transaction_raw_blockdata
+                INNER JOIN transaction_ids_temp_mapping USING(signature)
         "#,
             schema = schema,
         );
@@ -434,6 +449,7 @@ impl PostgresTransaction {
             num_rows,
             started_at.elapsed()
         );
+        assert_eq!(num_rows, transactions.len() as u64);
 
         Ok(())
     }
@@ -467,5 +483,54 @@ impl PostgresTransaction {
             slot,
             schema = PostgresEpoch::build_schema_name(epoch),
         )
+    }
+}
+
+#[tokio::test]
+async fn write_speed() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_str("info,solana_lite_rpc_blockstore::block_stores::postgres::postgres_transaction=debug").unwrap())
+        .init();
+
+    // BENCH_PG_CONFIG=host=localhost dbname=literpc3 user=literpc_app password=litelitesecret sslmode=disable
+    let pg_session_config = BlockstorePostgresSessionConfig::new_from_env("BENCH").unwrap();
+    let epoch = EpochRef::new(610);
+
+    let session = PostgresSession::new_writer(pg_session_config.clone()).await.unwrap();
+
+    for run in 0..10 {
+        session.clear_session().await;
+        info!("-----------------------------------------");
+        info!("starting run {}", run);
+        let transactions = (0..10000).map(|_| create_tx()).collect_vec();
+        let started_at = Instant::now();
+        PostgresTransaction::save_transactions_from_block(&session, epoch, &transactions).await.expect("save must succeed");
+        info!(".. done with run {}", run);
+    }
+
+}
+
+fn create_tx() -> PostgresTransaction {
+    let signature = Signature::new_unique().to_string();
+    PostgresTransaction {
+        signature,
+        slot: 1,
+        idx_in_block: 1,
+        cu_consumed: Some(1),
+        cu_requested: Some(1),
+        prioritization_fees: Some(1),
+        recent_blockhash: "recent_blockhash".to_string(),
+        err: Some(Value::Null),
+        message_version: 1,
+        message: "message".to_string(),
+        writable_accounts: vec!["writable_accounts".to_string()],
+        readable_accounts: vec!["readable_accounts".to_string()],
+        fee: 1,
+        pre_balances: vec![1],
+        post_balances: vec![1],
+        inner_instructions: Some(vec![Value::Null]),
+        log_messages: Some(vec!["log_messages".to_string()]),
+        pre_token_balances: vec![Value::Null],
+        post_token_balances: vec![Value::Null],
     }
 }
