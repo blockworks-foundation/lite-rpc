@@ -1,7 +1,8 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 use anyhow::{bail, Context, Result};
+use futures_util::future;
 use futures_util::future::join_all;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
@@ -9,6 +10,7 @@ use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::slot_history::Slot;
+use tokio::{join, try_join};
 use tokio_postgres::error::SqlState;
 
 use super::postgres_block::*;
@@ -42,7 +44,7 @@ impl PostgresBlockStore {
         let mut write_sessions = Vec::new();
         for _i in 0..PARALLEL_WRITE_SESSIONS {
             write_sessions.push(
-                PostgresSession::new(pg_session_config.clone())
+                PostgresSession::new_writer(pg_session_config.clone())
                     .await
                     .unwrap(),
             );
@@ -220,35 +222,52 @@ impl PostgresBlockStore {
         Ok(())
     }
 
-    // ATM we focus on blocks as this table gets INSERTS and does deduplication checks (i.e. heavy reads on index pk_block_slot)
-    pub async fn optimize_blocks_table(&self, slot: Slot) -> Result<()> {
-        // let started = Instant::now();
-        // let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
-        // let random_session = slot as usize % self.write_sessions.len();
-        // let write_session_single = self.write_sessions[random_session]
-        //     .get_write_session()
-        //     .await;
-        // let statement = format!(
-        //     r#"
-        //         ANALYZE (SKIP_LOCKED) {schema}.blocks;
-        //     "#,
-        //     schema = PostgresEpoch::build_schema_name(epoch),
-        // );
-        //
-        // tokio::spawn(async move {
-        //     write_session_single
-        //         .execute_multiple(&statement)
-        //         .await
-        //         .unwrap();
-        //     let elapsed = started.elapsed();
-        //     debug!("Postgres analyze of blocks table took {:.2?}", elapsed);
-        //     if elapsed > Duration::from_millis(500) {
-        //         warn!(
-        //             "Very slow postgres ANALYZE on slot {} - took {:.2?}",
-        //             slot, elapsed
-        //         );
-        //     }
-        // });
+    pub async fn optimize_tables(&self, slot: Slot) -> Result<()> {
+        let started = Instant::now();
+        let epoch: EpochRef = self.epoch_schedule.get_epoch_at_slot(slot).into();
+        // vacuum_freeze_min_age advised here https://www.cybertec-postgresql.com/en/postgresql-autovacuum-insert-only-tables/
+
+        let write_session = &self.write_sessions[0];
+
+
+        // consider vacuum_freeze_min_age=0
+        // INDEX_CLEANUP (default auto): disabled as processing all tables indexes is more expensive than the potentially reclaimed dead tuples
+        // PROCESS_TOAST: toast data is not touched in critical operations like signature lookup
+        // TRUNCATE: do not try to reclaim empty pages at end of the table because there should be none due to the append-only insertion pattern
+        let statement1 = format!(
+            r#"
+                VACUUM (SKIP_LOCKED true, PROCESS_TOAST false, TRUNCATE false, INDEX_CLEANUP off) {schema}.transaction_ids
+            "#,
+            schema = PostgresEpoch::build_schema_name(epoch),
+        );
+        let statement2 = format!(
+            r#"
+                VACUUM (SKIP_LOCKED true, PROCESS_TOAST false, TRUNCATE false, INDEX_CLEANUP off) {schema}.transaction_blockdata
+            "#,
+            schema = PostgresEpoch::build_schema_name(epoch),
+        );
+        let statement3 = format!(
+            r#"
+                VACUUM (SKIP_LOCKED true, PROCESS_TOAST false, TRUNCATE false, INDEX_CLEANUP off) {schema}.blocks
+            "#,
+            schema = PostgresEpoch::build_schema_name(epoch),
+        );
+        // v16: add BUFFER_USAGE_LIMIT
+
+        let _ = try_join!(
+            write_session.execute_multiple(&statement1),
+            write_session.execute_multiple(&statement2),
+            write_session.execute_multiple(&statement3),
+        );
+
+        let elapsed = started.elapsed();
+        if elapsed > Duration::from_millis(50) {
+            warn!(
+                "Very slow postgres VACUUM took {:.2?}",
+                elapsed
+            );
+        }
+
         Ok(())
     }
 
