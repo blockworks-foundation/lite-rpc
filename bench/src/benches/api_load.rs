@@ -8,6 +8,7 @@ use std::sync::{
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Keypair, Signer};
 
+// TC3 measure how much load the API endpoint can take
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = BenchConfig::load().unwrap();

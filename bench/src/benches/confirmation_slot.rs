@@ -1,3 +1,4 @@
+
 use anyhow::Context;
 use bench_lib::config::BenchConfig;
 use bench_lib::tx_size::TxSize;
@@ -8,9 +9,10 @@ use solana_sdk::signature::{read_keypair_file, Signer};
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 
-/// send 2 txs (one via LiteRPC, one via Solana RPC) and compare confirmation slot (=slot distance)
+/// TC1 send 2 txs (one via LiteRPC, one via Solana RPC) and compare confirmation slot (=slot distance)
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt::init();
     let config = BenchConfig::load().unwrap();
     let tx_size = config.confirmation_slot.tx_size;
 
@@ -21,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     info!("RPC: {}", rpc.url());
 
     let mut rng = create_rng(None);
-    let payer = read_keypair_file(&config.payer_path).unwrap();
+    let payer = read_keypair_file(&config.payer_path).expect("payer file");
     info!("Payer: {}", payer.pubkey().to_string());
 
     let rpc_tx = create_tx(&rpc, &payer, &mut rng, tx_size).await?;

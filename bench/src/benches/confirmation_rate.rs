@@ -30,7 +30,7 @@ pub struct RpcStat {
     failed: u64,
 }
 
-/// send multiple runs of num_txns, measure the confirmation rate
+/// TC2 send multiple runs of num_txns, measure the confirmation rate
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = BenchConfig::load().unwrap();
