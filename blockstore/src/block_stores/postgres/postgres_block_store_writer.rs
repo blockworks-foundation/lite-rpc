@@ -143,6 +143,28 @@ impl PostgresBlockStore {
             .await
             .context("create transaction table for new epoch")?;
 
+
+        let statement = PostgresTransaction::build_citus_distribute_table_statement(
+            epoch, "transaction_blockdata", "transaction_id");
+        self.session
+            .execute_multiple(&statement)
+            .await
+            .context("distribute table(citus)")?;
+
+        let statement = PostgresTransaction::build_citus_distribute_table_statement(
+            epoch, "blocks", "slot");
+        self.session
+            .execute_multiple(&statement)
+            .await
+            .context("distribute table(citus)")?;
+
+        let statement = PostgresTransaction::build_citus_distribute_table_statement(
+            epoch, "transaction_ids", "transaction_id");
+        self.session
+            .execute_multiple(&statement)
+            .await
+            .context("distribute table(citus)")?;
+
         info!("Start new epoch in postgres schema {}", schema_name);
         Ok(true)
     }

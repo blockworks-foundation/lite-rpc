@@ -221,22 +221,33 @@ impl PostgresTransaction {
                         autovacuum_analyze_threshold=10000
                         );
                 CREATE INDEX idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
+            "#,
+            schema = schema
+        )
+    }
 
+    pub fn build_citus_distribute_table_statement(epoch: EpochRef, table_name: &str, distribution_column: &str) -> String {
+        let schema = PostgresEpoch::build_schema_name(epoch);
+        format!(
+            r#"
                 DO $$
                     DECLARE has_citus boolean;
                 BEGIN
                     has_citus = exists (SELECT name FROM pg_available_extensions() WHERE name='citus');
                     IF has_citus THEN
                         RAISE INFO 'Use citus extension, will distribute table';
-                        SELECT create_distributed_table('{schema}.transaction_blockdata', 'transaction_id');
+                        PERFORM create_distributed_table('{schema}.{table_name}', {distribution_column});
                     ELSE
                         RAISE INFO 'No citus extension found';
                     END IF;
-                END; $$;
+                END; $$
             "#,
-            schema = schema
+            schema = schema,
+            table_name = table_name,
+            distribution_column = distribution_column,
         )
     }
+
 
     pub async fn save_transactions_from_block(
         postgres_session: &PostgresSession,
