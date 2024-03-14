@@ -386,7 +386,6 @@ impl PostgresTransaction {
         let started_at = Instant::now();
         postgres_session.execute(statement.as_str(), &[]).await?;
         // TODO try primary key or even withou
-        postgres_session.execute("CREATE INDEX ON transaction_ids_temp_mapping USING HASH(signature)", &[]).await?;
 
         debug!(
             "inserted {} signatures into transaction_ids table in {:.2}",
@@ -501,11 +500,18 @@ async fn write_speed() {
 
     let session = PostgresSession::new_writer(pg_session_config.clone()).await.unwrap();
 
-    for run in 0..10 {
+    // let create_schema = PostgresEpoch::build_create_schema_statement(epoch);
+    // let create_block = PostgresBlock::build_create_table_statement(epoch);
+    // let create_transactin = PostgresTransaction::build_create_table_statement(epoch);
+    // session.execute_multiple(&create_schema).await.unwrap();
+    // session.execute_multiple(&create_block).await.unwrap();
+    // session.execute_multiple(&create_transactin).await.unwrap();
+
+    for run in 0..100 {
         session.clear_session().await;
         info!("-----------------------------------------");
         info!("starting run {}", run);
-        let transactions = (0..10000).map(|_| create_tx()).collect_vec();
+        let transactions = (0..10000).map(|idx| create_tx((start_slot_value + run) as i64, idx)).collect_vec();
         let started_at = Instant::now();
         PostgresTransaction::save_transactions_from_block(&session, epoch, &transactions).await.expect("save must succeed");
         info!(".. done with run {}", run);
@@ -513,12 +519,12 @@ async fn write_speed() {
 
 }
 
-fn create_tx() -> PostgresTransaction {
+fn create_tx(slot: i64, idx_in_block: i32) -> PostgresTransaction {
     let signature = Signature::new_unique().to_string();
     PostgresTransaction {
         signature,
-        slot: 1,
-        idx_in_block: 1,
+        slot,
+        idx_in_block,
         cu_consumed: Some(1),
         cu_requested: Some(1),
         prioritization_fees: Some(1),
