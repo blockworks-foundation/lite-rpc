@@ -205,7 +205,7 @@ impl PostgresBlockStore {
         let elapsed_txs_insert = started_txs.elapsed();
 
         info!(
-            "Saving block {}@{} to postgres took {:.2}ms for block and {:.2} for {} transactions ({}x{} chunks)",
+            "Saving block {}@{} to postgres took {:.2}ms for block and {:.2}ms for {} transactions ({}x{} chunks)",
             slot, block.commitment_config.commitment,
             elapsed_block_insert.as_secs_f64() * 1000.0,
             elapsed_txs_insert.as_secs_f64() * 1000.0,
@@ -270,7 +270,7 @@ impl PostgresBlockStore {
         let elapsed = started.elapsed();
         if elapsed > Duration::from_millis(50) {
             warn!(
-                "Very slow postgres VACUUM took {:.2}",
+                "Very slow postgres VACUUM took {:.2}ms",
                 elapsed.as_secs_f64() * 1000.0
             );
         }

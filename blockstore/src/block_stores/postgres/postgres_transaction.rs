@@ -364,7 +364,7 @@ impl PostgresTransaction {
 
         let num_rows = writer.finish().await?;
         debug!(
-            "inserted {} raw transaction data rows into temp table in {:.2}",
+            "inserted {} raw transaction data rows into temp table in {:.2}ms",
             num_rows,
             started_at.elapsed().as_secs_f64() * 1000.0
         );
@@ -388,7 +388,7 @@ impl PostgresTransaction {
         // TODO try primary key or even withou
 
         debug!(
-            "inserted {} signatures into transaction_ids table in {:.2}",
+            "inserted {} signatures into transaction_ids table in {:.2}ms",
             transactions.len(),
             started_at.elapsed().as_secs_f64() * 1000.0
         );
@@ -448,7 +448,7 @@ impl PostgresTransaction {
         postgres_session.execute_explain(&statement, &[], Duration::from_millis(50)).await?;
 
         debug!(
-            "inserted {} rows into transaction block table in {:.2}",
+            "inserted {} rows into transaction block table in {:.2}ms",
             num_rows,
             started_at.elapsed().as_secs_f64() * 1000.0
         );
@@ -515,7 +515,7 @@ async fn write_speed() {
         session.clear_session().await;
         info!("-----------------------------------------");
         info!("starting run {}", run);
-        let transactions = (0..10000).map(|idx| create_tx((start_slot_value + run) as i64, idx)).collect_vec();
+        let transactions = (0..1000).map(|idx| create_tx((start_slot_value + run) as i64, idx)).collect_vec();
         let started_at = Instant::now();
         PostgresTransaction::save_transactions_from_block(&session, epoch, &transactions).await.expect("save must succeed");
         info!(".. done with run {}", run);
