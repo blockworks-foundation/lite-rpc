@@ -73,10 +73,9 @@ pub fn start_postgres_block_store_importer_task(
                     // we should be faster than 150ms here
                     let elapsed = started.elapsed();
                     debug!(
-                        "Successfully stored block {} to postgres which took {:.2}ms - remaining {} queue elements",
+                        "Successfully stored block {} to postgres which took {:.2}ms",
                         block.slot,
-                        elapsed.as_secs_f64() * 1000.0, block_notifier.len()
-                    );
+                        elapsed.as_secs_f64() * 1000.0);
                     if elapsed > Duration::from_millis(150) {
                         warn!("(soft_realtime) Write operation was slow!");
                     }
