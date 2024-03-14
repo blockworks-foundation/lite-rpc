@@ -2,7 +2,7 @@ use bytes::BytesMut;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::block_stores::postgres::{BlockstorePostgresSessionConfig, json_deserialize, json_serialize};
 use futures_util::pin_mut;
@@ -499,6 +499,10 @@ async fn write_speed() {
     let epoch = EpochRef::new(610);
 
     let session = PostgresSession::new_writer(pg_session_config.clone()).await.unwrap();
+
+    let now = SystemTime::now();
+    let start_slot_value = now.duration_since(UNIX_EPOCH).unwrap().as_secs() - 1710403000;
+
 
     // let create_schema = PostgresEpoch::build_create_schema_statement(epoch);
     // let create_block = PostgresBlock::build_create_table_statement(epoch);
