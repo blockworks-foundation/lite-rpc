@@ -189,14 +189,8 @@ impl PostgresBlockStore {
         let started_txs = Instant::now();
 
         let mut queries_fut = Vec::new();
-        let chunk_size =
-            div_ceil(transactions.len(), self.write_sessions.len()).max(MIN_WRITE_CHUNK_SIZE);
-        let chunks = transactions.chunks(chunk_size).collect_vec();
-        let n_chunks = chunks.len();
-        assert!(
-            n_chunks <= self.write_sessions.len(),
-            "cannot have more chunks than session"
-        );
+        let n_sessions = self.write_sessions.len();
+        let (chunk_size, chunks, n_chunks) = Self::tx_chunks(&transactions, n_sessions);
         for (i, chunk) in chunks.into_iter().enumerate() {
             let session = &self.write_sessions[i];
             let future =
@@ -221,6 +215,18 @@ impl PostgresBlockStore {
         );
 
         Ok(())
+    }
+
+    fn tx_chunks(transactions: &Vec<PostgresTransaction>, n_sessions: usize) -> (usize, Vec<&[PostgresTransaction]>, usize) {
+        let chunk_size =
+            div_ceil(transactions.len(), n_sessions).max(MIN_WRITE_CHUNK_SIZE);
+        let chunks = transactions.chunks(chunk_size).collect_vec();
+        let n_chunks = chunks.len();
+        assert!(
+            n_chunks <= n_sessions,
+            "cannot have more chunks than session"
+        );
+        (chunk_size, chunks, n_chunks)
     }
 
     pub async fn optimize_tables(&self, slot: Slot) -> Result<()> {
