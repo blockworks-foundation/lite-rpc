@@ -27,6 +27,7 @@ use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
 use tracing_subscriber::EnvFilter;
+use crate::block_stores::postgres::postgres_block::PostgresBlock;
 use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use crate::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 
@@ -220,6 +221,18 @@ impl PostgresTransaction {
                         autovacuum_analyze_threshold=10000
                         );
                 CREATE INDEX idx_slot ON {schema}.transaction_blockdata USING btree (slot) WITH (FILLFACTOR=90);
+
+                DO $$
+                    DECLARE has_citus boolean;
+                BEGIN
+                    has_citus = exists (SELECT name FROM pg_available_extensions() WHERE name='citus');
+                    IF has_citus THEN
+                        RAISE INFO 'Use citus extension, will distribute table';
+                        SELECT create_distributed_table('{schema}.transaction_blockdata', 'slot');
+                    ELSE
+                        RAISE INFO 'No citus extension found';
+                    END IF;
+                END; $$
             "#,
             schema = schema
         )
@@ -497,7 +510,7 @@ async fn write_speed() {
 
     // BENCH_PG_CONFIG=host=localhost dbname=literpc3 user=literpc_app password=litelitesecret sslmode=disable
     let pg_session_config = BlockstorePostgresSessionConfig::new_from_env("BENCH").unwrap();
-    let epoch = EpochRef::new(610);
+    let epoch = EpochRef::new(334);
 
     let session = PostgresSession::new_writer(pg_session_config.clone()).await.unwrap();
 
@@ -505,12 +518,12 @@ async fn write_speed() {
     let start_slot_value = now.duration_since(UNIX_EPOCH).unwrap().as_secs() - 1710403000;
 
 
-    // let create_schema = PostgresEpoch::build_create_schema_statement(epoch);
-    // let create_block = PostgresBlock::build_create_table_statement(epoch);
-    // let create_transactin = PostgresTransaction::build_create_table_statement(epoch);
-    // session.execute_multiple(&create_schema).await.unwrap();
-    // session.execute_multiple(&create_block).await.unwrap();
-    // session.execute_multiple(&create_transactin).await.unwrap();
+    let create_schema = PostgresEpoch::build_create_schema_statement(epoch);
+    let create_block = PostgresBlock::build_create_table_statement(epoch);
+    let create_transactin = PostgresTransaction::build_create_table_statement(epoch);
+    session.execute_multiple(&create_schema).await.unwrap();
+    session.execute_multiple(&create_block).await.unwrap();
+    session.execute_multiple(&create_transactin).await.unwrap();
 
     for run in 0..100 {
         session.clear_session().await;
