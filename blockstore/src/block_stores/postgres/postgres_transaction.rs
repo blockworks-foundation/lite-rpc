@@ -445,7 +445,8 @@ impl PostgresTransaction {
         );
         let started_at = Instant::now();
 
-        postgres_session.execute_explain(&statement, &[], Duration::from_millis(50)).await?;
+        // postgres_session.execute_explain(&statement, &[], Duration::from_millis(50)).await?;
+        postgres_session.execute(&statement, &[]).await?;
 
         debug!(
             "inserted {} rows into transaction block table in {:.2}ms",
@@ -516,8 +517,27 @@ async fn write_speed() {
         info!("-----------------------------------------");
         info!("starting run {}", run);
         let transactions = (0..1000).map(|idx| create_tx((start_slot_value + run) as i64, idx)).collect_vec();
+        // let started_at = Instant::now();
+        // PostgresTransaction::save_transactions_from_block(&session, epoch, &transactions).await.expect("save must succeed");
+
+        let statement = format!(
+            r#"
+            CREATE TEMP TABLE transaction_ids_temp_mapping AS WITH mapping AS (
+                INSERT INTO {schema}.transaction_ids(signature)
+                SELECT signature FROM {schema}.example_signatures
+                -- overlay(signature placing 'aaa' from 2 for 4)
+                ON CONFLICT DO NOTHING
+                RETURNING *
+            )
+            SELECT transaction_id, signature FROM mapping
+            "#,
+            schema = "rpc2a_epoch_610"
+        );
         let started_at = Instant::now();
-        PostgresTransaction::save_transactions_from_block(&session, epoch, &transactions).await.expect("save must succeed");
+        session.execute(statement.as_str(), &[]).await.unwrap();
+        info!("inserted {} signatures into transaction_ids table in {:.2}ms", transactions.len(), started_at.elapsed().as_secs_f64() * 1000.0);
+
+
         info!(".. done with run {}", run);
     }
 
