@@ -22,6 +22,7 @@ use regex::Regex;
 use super::postgres_config::{BlockstorePostgresSessionConfig, PostgresSessionSslConfig};
 
 lazy_static::lazy_static! {
+    // sum(rate(literpc_blockstore_postgres_sum[10s])) by (method)
     static ref PG_QUERY: HistogramVec =
         register_histogram_vec!
             (histogram_opts!(

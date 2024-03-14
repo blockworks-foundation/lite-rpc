@@ -5,6 +5,7 @@ use anyhow::{bail, Context, Result};
 use futures_util::future::join_all;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
+use prometheus::{Histogram, histogram_opts, HistogramVec, register_histogram, register_histogram_vec};
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::{epoch::EpochCache, produced_block::ProducedBlock};
 use solana_sdk::commitment_config::CommitmentLevel;
@@ -18,6 +19,16 @@ use super::postgres_config::*;
 use super::postgres_epoch::*;
 use super::postgres_session::*;
 use super::postgres_transaction::*;
+
+lazy_static::lazy_static! {
+    // rate(literpc_blockstore_save_block_sum[10s])
+    static ref PG_SAVE_BLOCK: Histogram =
+        register_histogram!
+            (histogram_opts!(
+                "literpc_blockstore_save_block",
+                "Total time to save block to PostgreSQL")).unwrap();
+}
+
 
 const PARALLEL_WRITE_SESSIONS: usize = 1;
 const MIN_WRITE_CHUNK_SIZE: usize = 500;
@@ -147,6 +158,7 @@ impl PostgresBlockStore {
             CommitmentLevel::Confirmed
         );
 
+        let _timer = PG_SAVE_BLOCK.start_timer();
         trace!(
             "Saving block {}@{} to postgres storage...",
             block.slot,
