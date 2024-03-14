@@ -3,24 +3,8 @@ name = "bench"
 version = "0.2.4"
 edition = "2021"
 
-[lib]
-name = "bench_lib"
-path = "src/lib.rs"
-
-[[bin]]
-name = "api_load"
-path = "src/benches/api_load.rs"
-
-[[bin]]
-name = "confirmation_slot"
-path = "src/benches/confirmation_slot.rs"
-
-[[bin]]
-name = "confirmation_rate"
-path = "src/benches/confirmation_rate.rs"
-
-
 [dependencies]
+clap = { workspace = true }
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-transaction-status = { workspace = true }
@@ -39,7 +23,6 @@ dashmap = { workspace = true }
 bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
-toml = "0.8.10"
 
 [dev-dependencies]
 bincode = { workspace = true }

@@ -1,13 +1,13 @@
+use crate::tx_size::TxSize;
+use crate::{create_rng, generate_txs};
 use anyhow::{bail, Error};
-use bench_lib::config::{BenchConfig, ConfirmationRateConfig};
-use bench_lib::tx_size::TxSize;
-use bench_lib::{create_rng, generate_txs};
 use futures::future::join_all;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use std::collections::{HashMap, HashSet};
 use std::iter::zip;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,29 +31,25 @@ pub struct RpcStat {
 }
 
 /// TC2 send multiple runs of num_txns, measure the confirmation rate
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-
+pub async fn confirmation_rate(
+    payer_path: &Path,
+    rpc_url: String,
+    tx_size: TxSize,
+    txns_per_round: usize,
+    num_rounds: usize,
+) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
 
-    let config = BenchConfig::load().unwrap();
-    let ConfirmationRateConfig {
-        tx_size,
-        num_txns,
-        num_runs,
-    } = config.confirmation_rate;
-
-    let rpc = Arc::new(RpcClient::new(config.lite_rpc_url.clone()));
+    let rpc = Arc::new(RpcClient::new(rpc_url));
     info!("RPC: {}", rpc.as_ref().url());
 
-    let payer: Arc<Keypair> = Arc::new(read_keypair_file(&config.payer_path).unwrap());
+    let payer: Arc<Keypair> = Arc::new(read_keypair_file(payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
 
-    let mut rpc_results = Vec::with_capacity(num_runs);
+    let mut rpc_results = Vec::with_capacity(num_rounds);
 
-    for _ in 0..num_runs {
-        let stat: RpcStat = send_bulk_txs_and_wait(&rpc, &payer, num_txns, tx_size).await?;
+    for _ in 0..num_rounds {
+        let stat: RpcStat = send_bulk_txs_and_wait(&rpc, &payer, txns_per_round, tx_size).await?;
         rpc_results.push(stat);
     }
 
