@@ -185,9 +185,9 @@ impl PostgresTransaction {
 
                 -- parameter 'schema' is something like 'rpc2a_epoch_592'
                 CREATE TABLE IF NOT EXISTS {schema}.transaction_blockdata(
-                    -- transaction_id must exist in the transaction_ids table
-                    transaction_id bigint PRIMARY KEY WITH (FILLFACTOR=90),
                     slot bigint NOT NULL,
+                    -- transaction_id must exist in the transaction_ids table
+                    transaction_id bigint NOT NULL,
                     idx int4 NOT NULL,
                     cu_consumed bigint NOT NULL,
                     cu_requested bigint,
@@ -204,8 +204,9 @@ impl PostgresTransaction {
                     inner_instructions jsonb[] COMPRESSION lz4,
                     log_messages text[] COMPRESSION lz4,
                     pre_token_balances jsonb[] NOT NULL,
-                    post_token_balances jsonb[] NOT NULL
+                    post_token_balances jsonb[] NOT NULL,
                     -- model_transaction_blockdata
+                    PRIMARY KEY (slot, transaction_id)  WITH (FILLFACTOR=90)
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN message SET STORAGE EXTENDED;
@@ -396,8 +397,8 @@ impl PostgresTransaction {
         let statement = format!(
             r#"
                 INSERT INTO {schema}.transaction_blockdata(
-                    transaction_id,
                     slot,
+                    transaction_id,
                     idx,
                     cu_consumed,
                     cu_requested,
@@ -418,8 +419,8 @@ impl PostgresTransaction {
                     -- model_transaction_blockdata
                 )
                 SELECT
-                    transaction_ids_temp_mapping.transaction_id,
                     slot,
+                    transaction_ids_temp_mapping.transaction_id,
                     idx,
                     cu_consumed,
                     cu_requested,
