@@ -228,7 +228,7 @@ impl PostgresTransaction {
                     has_citus = exists (SELECT name FROM pg_available_extensions() WHERE name='citus');
                     IF has_citus THEN
                         RAISE INFO 'Use citus extension, will distribute table';
-                        SELECT create_distributed_table('{schema}.transaction_blockdata', 'slot');
+                        SELECT create_distributed_table('{schema}.transaction_blockdata', 'transaction_id');
                     ELSE
                         RAISE INFO 'No citus extension found';
                     END IF;
