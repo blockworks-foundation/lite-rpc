@@ -232,7 +232,7 @@ impl PostgresTransaction {
                     ELSE
                         RAISE INFO 'No citus extension found';
                     END IF;
-                END; $$
+                END; $$;
             "#,
             schema = schema
         )
