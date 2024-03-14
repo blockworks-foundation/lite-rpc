@@ -30,7 +30,7 @@ lazy_static::lazy_static! {
 }
 
 
-const PARALLEL_WRITE_SESSIONS: usize = 4;
+const PARALLEL_WRITE_SESSIONS: usize = 1;
 const MIN_WRITE_CHUNK_SIZE: usize = 500;
 
 // #[derive(Clone)]
