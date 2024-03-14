@@ -1,8 +1,10 @@
 use std::cell::RefCell;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
-use log::{debug, trace, warn};
+use itertools::Itertools;
+use log::{debug, info, trace, warn};
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use prometheus::{
@@ -15,6 +17,7 @@ use tokio_postgres::{
     config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, CopyInSink, Error, NoTls, Row,
     Socket,
 };
+use regex::Regex;
 
 use super::postgres_config::{BlockstorePostgresSessionConfig, PostgresSessionSslConfig};
 
@@ -265,6 +268,27 @@ impl PostgresSession {
         let _timer = PG_QUERY.with_label_values(&["copy_in"]).start_timer();
         self.0.copy_in(statement).await
     }
+
+    pub async fn execute_explain(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+        log_threshold: Duration,
+    ) -> Result<(), tokio_postgres::error::Error> {
+        let _timer = PG_QUERY.with_label_values(&["execute_explain"]).start_timer();
+        let explain_plan_lines = self.query_list(
+            &format!("EXPLAIN (ANALYZE true, VERBOSE true, COSTS true, BUFFERS true, TIMING true) {}",
+                     statement), params).await?;
+
+        let last_line = explain_plan_lines.last().map(|row| row.get::<_, &str>(0)).unwrap();
+        let execution_time = parse_explain_execution_time(last_line);
+        if Duration::from_secs_f64(execution_time / 1000.0) > log_threshold {
+            info!("explain postgres query plan...\n{}",explain_plan_lines.iter()
+                .map(|row| format!("\t{}", row.get::<_, &str>(0))).join("\n"));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -297,6 +321,12 @@ impl PostgresSessionCache {
     //     session.clone()
     // }
     // }
+}
+
+fn parse_explain_execution_time(input: &str) -> f64 {
+    let re = Regex::new(r"Execution Time: ([\d.]+) ms").unwrap();
+    let caps = re.captures(input).unwrap();
+    caps.get(1).unwrap().as_str().parse::<f64>().unwrap()
 }
 
 // #[derive(Clone)]
@@ -379,4 +409,12 @@ fn value_vecvec_test_types() {
 fn value_vec_test_types() {
     let values = PostgresSession::values_vec(3, &["text", "int", "int"]);
     assert_eq!(values, "(($1)::text,($2)::int,($3)::int)");
+}
+
+#[test]
+fn test_parse_explain_execution_time() {
+    let input = "Execution Time: 27.503 ms";
+    let time = parse_explain_execution_time(input);
+
+    assert_eq!(time, 27.503);
 }

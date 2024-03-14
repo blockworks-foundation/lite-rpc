@@ -2,6 +2,7 @@ use bytes::BytesMut;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::block_stores::postgres::{BlockstorePostgresSessionConfig, json_deserialize, json_serialize};
 use futures_util::pin_mut;
@@ -443,13 +444,14 @@ impl PostgresTransaction {
             schema = schema,
         );
         let started_at = Instant::now();
-        let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
+
+        postgres_session.execute_explain(&statement, &[], Duration::from_millis(50)).await?;
+
         debug!(
             "inserted {} rows into transaction block table in {:.2}",
             num_rows,
             started_at.elapsed().as_secs_f64() * 1000.0
         );
-        assert_eq!(num_rows, transactions.len() as u64);
 
         Ok(())
     }
