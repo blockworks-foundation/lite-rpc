@@ -236,7 +236,7 @@ impl PostgresTransaction {
                     has_citus = exists (SELECT name FROM pg_available_extensions() WHERE name='citus');
                     IF has_citus THEN
                         RAISE INFO 'Use citus extension, will distribute table';
-                        PERFORM create_distributed_table('{schema}.{table_name}', {distribution_column});
+                        PERFORM create_distributed_table('{schema}.{table_name}', '{distribution_column}');
                     ELSE
                         RAISE INFO 'No citus extension found';
                     END IF;
