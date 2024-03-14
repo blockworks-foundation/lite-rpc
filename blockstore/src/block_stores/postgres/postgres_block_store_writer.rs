@@ -30,7 +30,7 @@ lazy_static::lazy_static! {
 }
 
 
-const PARALLEL_WRITE_SESSIONS: usize = 1;
+const PARALLEL_WRITE_SESSIONS: usize = 4;
 const MIN_WRITE_CHUNK_SIZE: usize = 500;
 
 // #[derive(Clone)]
@@ -274,6 +274,7 @@ impl PostgresBlockStore {
         // v16: add BUFFER_USAGE_LIMIT
 
         let _ = try_join!(
+            // TODO fan out to all avilable write sessions
             write_session.execute_multiple(&statement1),
             write_session.execute_multiple(&statement2),
             write_session.execute_multiple(&statement3),
