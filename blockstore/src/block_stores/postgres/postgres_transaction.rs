@@ -362,9 +362,9 @@ impl PostgresTransaction {
 
         let num_rows = writer.finish().await?;
         debug!(
-            "inserted {} raw transaction data rows into temp table in {:.2?}",
+            "inserted {} raw transaction data rows into temp table in {:.2}",
             num_rows,
-            started_at.elapsed()
+            started_at.elapsed().as_secs_f64() * 1000.0
         );
 
         // note: session has lock_timeout configured
@@ -387,9 +387,9 @@ impl PostgresTransaction {
         postgres_session.execute("CREATE INDEX ON transaction_ids_temp_mapping USING HASH(signature)", &[]).await?;
 
         debug!(
-            "inserted {} signatures into transaction_ids table in {:.2?}",
+            "inserted {} signatures into transaction_ids table in {:.2}",
             transactions.len(),
-            started_at.elapsed()
+            started_at.elapsed().as_secs_f64() * 1000.0
         );
 
         let statement = format!(
@@ -445,9 +445,9 @@ impl PostgresTransaction {
         let started_at = Instant::now();
         let num_rows = postgres_session.execute(statement.as_str(), &[]).await?;
         debug!(
-            "inserted {} rows into transaction block table in {:.2?}",
+            "inserted {} rows into transaction block table in {:.2}",
             num_rows,
-            started_at.elapsed()
+            started_at.elapsed().as_secs_f64() * 1000.0
         );
         assert_eq!(num_rows, transactions.len() as u64);
 
