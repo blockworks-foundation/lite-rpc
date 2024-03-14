@@ -4596,6 +4596,7 @@ dependencies = [
  "prometheus",
  "rand 0.8.5",
  "rangetools",
+ "regex",
  "serde",
  "serde_json",
  "solana-lite-rpc-cluster-endpoints",
