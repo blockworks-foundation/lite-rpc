@@ -153,20 +153,16 @@ impl PostgresBlock {
         args.push(&self.leader_id);
         args.push(&self.rewards);
 
-        let returning = postgres_session
-            .execute_and_return(&statement, &args)
+        let inserted_count = postgres_session
+            .execute(&statement, &args)
             .await?;
 
-        // TODO: decide what to do if block already exists
-        match returning {
-            Some(_) => {
-                debug!("Inserted block {}, epoch={}", self.slot, epoch);
-            }
-            None => {
-                // database detected conflict
-                warn!("Block {} already exists - not updated", self.slot);
-                return Ok(false);
-            }
+        assert!(inserted_count <= 1);
+
+        if inserted_count == 0 {
+            // database detected conflict
+            warn!("Block {} already exists - not updated", self.slot);
+            return Ok(false);
         }
 
         debug!(
