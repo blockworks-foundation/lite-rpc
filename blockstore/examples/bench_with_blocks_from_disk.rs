@@ -64,7 +64,7 @@ pub async fn main() {
 
         match result {
             Ok(()) => {
-                info!("block {} saved", produced_block.slot);
+                info!("block {} saved in {} ms", produced_block.slot, elapsed.as_secs_f64() * 1000.0);
                 block_save_times.push(elapsed.as_secs_f64() * 1000.0);
             }
             Err(err) => {
