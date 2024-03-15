@@ -402,7 +402,6 @@ impl PostgresTransaction {
             r#"
                 INSERT INTO {schema}.transaction_blockdata(
                     slot,
-                    transaction_id,
                     signature,
                     idx,
                     cu_consumed,
@@ -425,7 +424,6 @@ impl PostgresTransaction {
                 )
                 SELECT
                     slot,
-                    99999 as transaction_id,
                     signature,
                     idx,
                     cu_consumed,
