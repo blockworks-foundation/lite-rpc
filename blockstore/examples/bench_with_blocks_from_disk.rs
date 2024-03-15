@@ -23,7 +23,7 @@ use solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessio
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::from_grpc_block_update;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
-use solana_lite_rpc_util::histogram::histogram;
+use solana_lite_rpc_util::histogram_nbuckets::histogram;
 
 #[tokio::main]
 pub async fn main() {
@@ -73,8 +73,9 @@ pub async fn main() {
         }
     } // -- END for
 
-    let histogram = histogram(&block_save_times, 10);
-    info!("block save times histogram(ms): {:?}", histogram);
+    block_save_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let histogram = solana_lite_rpc_util::histogram_percentiles::calculate_percentiles(&block_save_times);
+    info!("block save times histogram(ms): {}", histogram);
 
 }
 
