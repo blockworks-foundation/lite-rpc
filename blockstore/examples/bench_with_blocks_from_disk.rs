@@ -27,7 +27,7 @@ use solana_lite_rpc_core::structures::epoch::EpochCache;
 pub async fn main() {
     tracing_subscriber::fmt::init();
 
-    let blockfiles_index_file = std::env::var("BLOCKFILES_INDEX").expect("env var BLOCKFILES_INDEX is mandatory");
+    let blockfiles_index_file = std::env::var("BLOCKS_LIST_FILE").expect("env var BLOCKS_LIST_FILE is mandatory");
     let blockfiles_index_file = PathBuf::from_str(&blockfiles_index_file).expect("must be filename");
     let pg_config = BlockstorePostgresSessionConfig::new_from_env("BENCH").unwrap();
 
