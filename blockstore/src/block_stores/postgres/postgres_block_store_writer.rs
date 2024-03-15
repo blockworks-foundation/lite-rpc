@@ -112,7 +112,7 @@ impl PostgresBlockStore {
                 .unwrap_or(false)
             {
                 // TODO: do we want to allow this; continuing with existing epoch schema might lead to inconsistent data in blocks and transactions table
-                info!(
+                trace!(
                     "Schema {} for epoch {} already exists - data will be appended",
                     schema_name, epoch
                 );
