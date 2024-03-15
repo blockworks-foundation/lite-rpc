@@ -85,6 +85,9 @@ impl PostgresSession {
                 SET SESSION work_mem = '128MB';
             "#;
 
+        // set work_mem high enough to prevent "Sort Method: external merge  Disk"
+
+
         write_session.execute_multiple(statement).await.unwrap();
         Ok(write_session)
     }
