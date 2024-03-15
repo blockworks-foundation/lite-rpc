@@ -46,3 +46,4 @@ regex = "1.10.3"
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
+yellowstone-grpc-proto = { workspace = true }
