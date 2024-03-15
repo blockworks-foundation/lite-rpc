@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::ops::RangeInclusive;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::block_stores::postgres::LITERPC_QUERY_ROLE;
 use anyhow::{anyhow, bail, Context, Result};
+use dashmap::DashSet;
 use itertools::Itertools;
 use log::{debug, info, warn};
 use prometheus::{
@@ -41,6 +43,7 @@ lazy_static::lazy_static! {
 pub struct PostgresQueryBlockStore {
     session: PostgresSession,
     epoch_schedule: EpochCache,
+    epochs_available_cache: Arc<DashSet<EpochRef>>,
 }
 
 impl PostgresQueryBlockStore {
@@ -62,6 +65,7 @@ impl PostgresQueryBlockStore {
         Self {
             session,
             epoch_schedule,
+            epochs_available_cache: Arc::new(DashSet::new()),
         }
     }
 
@@ -72,13 +76,9 @@ impl PostgresQueryBlockStore {
     // }
 
     pub async fn is_block_in_range(&self, slot: Slot) -> bool {
-        let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
-        let ranges = self.get_slot_range_by_epoch().await;
-        let matching_range: Option<&RangeInclusive<Slot>> = ranges.get(&epoch.into());
-
-        matching_range
-            .map(|slot_range| slot_range.contains(&slot))
-            .is_some()
+        let epoch = self.epoch_schedule.get_epoch_at_slot(slot).into();
+        let is_in_range = self.check_block_epoch(epoch).await;
+        is_in_range
     }
 
     pub async fn query_block(&self, slot: Slot) -> Result<ProducedBlock> {
@@ -247,6 +247,30 @@ impl PostgresQueryBlockStore {
         RangeInclusive::new(*slot_min, *slot_max)
     }
 
+    pub async fn check_block_epoch(&self, epoch: EpochRef) -> bool {
+
+        if self.epochs_available_cache.contains(&epoch) {
+            return true;
+        }
+
+        let query = r#"
+                SELECT
+                 1
+                FROM information_schema.schemata
+                WHERE schema_name=$1
+            "#;
+        let schema_name = PostgresEpoch::build_schema_name(epoch);
+        let result = self.session.query_opt(&query, &[&schema_name]).await.unwrap();
+
+        if result.is_some() {
+            self.epochs_available_cache.insert(epoch);
+            true
+        } else {
+            // misses are not cached - this will imply that consecutive calls will trigger query
+            false
+        }
+    }
+
     pub async fn get_slot_range_by_epoch(&self) -> HashMap<EpochRef, RangeInclusive<Slot>> {
         let started = Instant::now();
         // let session = self.get_session().await;
@@ -343,9 +367,9 @@ impl PostgresQueryBlockStore {
             .collect();
 
         debug!(
-            "Slot range check in postgres found {} ranges, took {:2}sec: {:?}",
+            "Slot range check in postgres found {} ranges, took {:2}ms: {:?}",
             rows_minmax.len(),
-            started.elapsed().as_secs_f64(),
+            started.elapsed().as_secs_f64() * 1000.0,
             final_range
         );
 
