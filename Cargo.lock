@@ -4601,6 +4601,7 @@ dependencies = [
  "serde_json",
  "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
+ "solana-lite-rpc-util",
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",

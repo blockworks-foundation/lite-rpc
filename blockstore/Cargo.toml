@@ -19,6 +19,7 @@ tokio-util = "0.7"
 
 solana-lite-rpc-core = {workspace = true}
 solana-lite-rpc-cluster-endpoints = {workspace = true}
+solana-lite-rpc-util = {workspace = true}
 solana-rpc-client-api = {workspace = true}
 native-tls = { workspace = true }
 postgres-native-tls = { workspace = true }
