@@ -145,7 +145,7 @@ impl PostgresBlockStore {
 
 
         let statement = PostgresTransaction::build_citus_distribute_table_statement(
-            epoch, "transaction_blockdata", "transaction_id");
+            epoch, "transaction_blockdata", "signature");
         self.session
             .execute_multiple(&statement)
             .await
