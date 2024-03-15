@@ -188,6 +188,7 @@ impl PostgresBlockStore {
                 .map(|session| session.clear_session()),
         )
         .await;
+        debug!("Time spent until clear_session: {:.2}ms", started_at.elapsed().as_secs_f64() * 1000.0);
 
         let slot = block.slot;
         let transactions = block
@@ -196,8 +197,10 @@ impl PostgresBlockStore {
             .map(|tx| PostgresTransaction::new(tx, slot))
             .collect_vec();
         let postgres_block = PostgresBlock::from(block);
+        debug!("Time spent until map postgres_block: {:.2}ms", started_at.elapsed().as_secs_f64() * 1000.0);
 
         let epoch = self.epoch_schedule.get_epoch_at_slot(slot);
+        debug!("Time spent until get_epoch_at_slot: {:.2}ms", started_at.elapsed().as_secs_f64() * 1000.0);
 
         // TODO write parallel to transaction
         // let write_session_single = self.write_sessions[0].get_write_session().await;
