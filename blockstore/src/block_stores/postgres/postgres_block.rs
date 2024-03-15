@@ -138,12 +138,6 @@ impl PostgresBlock {
                 VALUES {}
                 -- prevent updates
                 ON CONFLICT DO NOTHING
-                RETURNING (
-                    -- get previous max slot
-                    SELECT max(all_blocks.slot) as prev_max_slot
-                    FROM {schema}.blocks AS all_blocks
-                    WHERE all_blocks.slot!={schema}.blocks.slot
-                )
             "#,
             values,
             schema = schema,
@@ -165,20 +159,8 @@ impl PostgresBlock {
 
         // TODO: decide what to do if block already exists
         match returning {
-            Some(row) => {
-                // check if monotonic
-                let prev_max_slot = row.get::<&str, Option<i64>>("prev_max_slot");
-                // None -> no previous rows
+            Some(_) => {
                 debug!("Inserted block {}, epoch={}", self.slot, epoch);
-                if let Some(prev_max_slot) = prev_max_slot {
-                    if prev_max_slot > self.slot {
-                        // note: unclear if this is desired behavior!
-                        warn!(
-                            "Block {} was inserted behind tip of highest slot number {} (epoch {})",
-                            self.slot, prev_max_slot, epoch
-                        );
-                    }
-                }
             }
             None => {
                 // database detected conflict
