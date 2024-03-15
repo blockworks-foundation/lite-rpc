@@ -460,7 +460,7 @@ pub async fn main() -> anyhow::Result<()> {
         res = main => {
             // This should never happen
             log::error!("Services quit unexpectedly {res:?}");
-            bail!("")
+            bail!("Service quit unexpectedly {res:?}");
         }
         _ = ctrl_c_signal => {
             log::info!("Received ctrl+c signal");
