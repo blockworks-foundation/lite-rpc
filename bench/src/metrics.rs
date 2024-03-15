@@ -3,6 +3,8 @@ use std::{
     time::Duration,
 };
 
+use anyhow::anyhow;
+use reqwest::Client;
 use solana_sdk::slot_history::Slot;
 
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
@@ -142,4 +144,38 @@ pub struct TxMetricData {
     pub confirmed_slot: Slot,
     pub time_to_send_in_millis: u64,
     pub time_to_confirm_in_millis: u64,
+}
+
+#[derive(serde::Serialize)]
+pub struct PingThingData {
+    pub application: String,
+    pub commitment_level: String,
+    pub signature: String,
+    pub success: bool,
+    pub time: String,
+    pub transaction_type: String,
+    pub slot_sent: String,
+    pub slot_landed: String,
+    pub reported_at: String,
+}
+
+pub async fn report_confirmation_to_ping_thing(
+    data: PingThingData,
+    api_token: String,
+) -> anyhow::Result<()> {
+    let json_payload = serde_json::to_string(&data)?;
+
+    let client = Client::new();
+    let response = client
+        .post("https://www.validators.app/api/v1/ping-thing/:network.json")
+        .header("Token", api_token)
+        .header("Content-Type", "application/json")
+        .body(json_payload)
+        .send()
+        .await?;
+
+    match response.error_for_status() {
+        Ok(_res) => Ok(()),
+        Err(err) => Err(anyhow!("POST to Ping Thing failed: {:?}", err)),
+    }
 }

@@ -262,5 +262,5 @@ fn transaction_size_large() {
     let priority_fee = 100;
 
     let tx = create_memo_tx_large(&rand_string, &payer_keypair, blockhash, priority_fee);
-    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1186);
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1230);
 }

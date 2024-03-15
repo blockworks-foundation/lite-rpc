@@ -34,9 +34,7 @@ pub async fn confirmation_slot(
     let payer = read_keypair_file(payer_path).expect("payer file");
     info!("Payer: {}", payer.pubkey().to_string());
 
-    // TODO: aggregate stats
-
-    for i in 0..num_rounds {
+    for _ in 0..num_rounds {
         let rpc_a = RpcClient::new(rpc_a_url.clone());
         let rpc_b = RpcClient::new(rpc_b_url.clone());
         let time_a = rpc_roundtrip_duration(&rpc_a).await?.as_secs_f64();
@@ -57,7 +55,7 @@ pub async fn confirmation_slot(
             (half_round_trip, 0f64)
         };
 
-        info!("A delay: {}, B delay: {}", a_delay, b_delay);
+        debug!("A delay: {}, B delay: {}", a_delay, b_delay);
 
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
