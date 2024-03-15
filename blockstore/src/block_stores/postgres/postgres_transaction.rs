@@ -189,6 +189,7 @@ impl PostgresTransaction {
                     slot bigint NOT NULL,
                     -- transaction_id must exist in the transaction_ids table
                     transaction_id bigint NOT NULL,
+                    signature varchar(88) NOT NULL,
                     idx int4 NOT NULL,
                     cu_consumed bigint NOT NULL,
                     cu_requested bigint,
@@ -209,6 +210,7 @@ impl PostgresTransaction {
                     -- model_transaction_blockdata
                     PRIMARY KEY (slot, transaction_id)  WITH (FILLFACTOR=90)
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
+                ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN signature SET STORAGE PLAIN;
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN message SET STORAGE EXTENDED;
                 ALTER TABLE {schema}.transaction_blockdata
@@ -422,6 +424,7 @@ impl PostgresTransaction {
                 INSERT INTO {schema}.transaction_blockdata(
                     slot,
                     transaction_id,
+                    signature,
                     idx,
                     cu_consumed,
                     cu_requested,
@@ -444,6 +447,7 @@ impl PostgresTransaction {
                 SELECT
                     slot,
                     transaction_ids_temp_mapping.transaction_id,
+                    signature,
                     idx,
                     cu_consumed,
                     cu_requested,
@@ -482,10 +486,11 @@ impl PostgresTransaction {
     }
 
     pub fn build_query_statement(epoch: EpochRef, slot: Slot) -> String {
+        // (SELECT signature FROM {schema}.transaction_ids tx_ids WHERE tx_ids.transaction_id = transaction_blockdata.transaction_id),
         format!(
             r#"
                 SELECT
-                    (SELECT signature FROM {schema}.transaction_ids tx_ids WHERE tx_ids.transaction_id = transaction_blockdata.transaction_id),
+                    signature,
                     idx,
                     cu_consumed,
                     cu_requested,
@@ -529,12 +534,12 @@ async fn write_speed() {
     let start_slot_value = now.duration_since(UNIX_EPOCH).unwrap().as_secs() - 1710403000;
 
 
-    let create_schema = PostgresEpoch::build_create_schema_statement(epoch);
-    let create_block = PostgresBlock::build_create_table_statement(epoch);
-    let create_transactin = PostgresTransaction::build_create_table_statement(epoch);
-    session.execute_multiple(&create_schema).await.unwrap();
-    session.execute_multiple(&create_block).await.unwrap();
-    session.execute_multiple(&create_transactin).await.unwrap();
+    // let create_schema = PostgresEpoch::build_create_schema_statement(epoch);
+    // let create_block = PostgresBlock::build_create_table_statement(epoch);
+    // let create_transactin = PostgresTransaction::build_create_table_statement(epoch);
+    // session.execute_multiple(&create_schema).await.unwrap();
+    // session.execute_multiple(&create_block).await.unwrap();
+    // session.execute_multiple(&create_transactin).await.unwrap();
 
     for run in 0..100 {
         session.clear_session().await;
