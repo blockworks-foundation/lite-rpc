@@ -12,6 +12,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use tokio::time::Instant;
 
 use tracing::debug;
 
@@ -22,6 +23,7 @@ use solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessio
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::from_grpc_block_update;
 use solana_lite_rpc_core::structures::epoch::EpochCache;
+use solana_lite_rpc_util::histogram::histogram;
 
 #[tokio::main]
 pub async fn main() {
@@ -39,38 +41,40 @@ pub async fn main() {
     let block_store = PostgresBlockStore::new(epoch_cache, pg_config).await;
 
 
+    let mut block_save_times: Vec<f64> = Vec::with_capacity(1000);
     let file = File::open(blockfiles_index_file).unwrap();
     let lines = io::BufReader::new(file).lines();
     for filename in lines {
         let filename = filename.unwrap();
         let block_file = PathBuf::from_str(&filename).unwrap();
-        info!("filename: {:?}", filename);
 
-        let (slot_from_file, epoch_ms) =
+        let (_slot_from_file, _epoch_ms) =
             parse_slot_and_timestamp_from_file(block_file.file_name().unwrap().to_str().unwrap());
-        info!("slot from file: {}", slot_from_file);
-        info!("epochms from file: {}", epoch_ms);
 
         let block_bytes = std::fs::read(block_file).unwrap();
         debug!("read {} bytes from block file", block_bytes.len());
         let decoded = SubscribeUpdateBlock::decode(block_bytes.as_slice()).expect("Block file must be protobuf");
 
-        info!("decoded block: {}", decoded.slot);
-
         let produced_block = from_grpc_block_update(decoded, CommitmentConfig::confirmed());
 
         block_store.prepare_epoch_schema(produced_block.slot).await.expect("prepare epoch schema must succeed");
+        let started_at = Instant::now();
         let result = block_store.save_confirmed_block(&produced_block).await;
+        let elapsed = started_at.elapsed();
 
         match result {
             Ok(()) => {
                 info!("block {} saved", produced_block.slot);
+                block_save_times.push(elapsed.as_secs_f64() * 1000.0);
             }
             Err(err) => {
                 error!("block {} not saved: {}", produced_block.slot, err);
             }
         }
-    }
+    } // -- END for
+
+    let histogram = histogram(&block_save_times, 10);
+    info!("block save times histogram(ms): {:?}", histogram);
 
 }
 
