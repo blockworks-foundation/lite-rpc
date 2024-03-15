@@ -144,19 +144,19 @@ impl PostgresBlockStore {
             .context("create transaction table for new epoch")?;
 
 
-        // let statement = PostgresTransaction::build_citus_distribute_table_statement(
-        //     epoch, "transaction_blockdata", "signature");
-        // self.session
-        //     .execute_multiple(&statement)
-        //     .await
-        //     .context("distribute table(citus)")?;
-        //
-        // let statement = PostgresTransaction::build_citus_distribute_table_statement(
-        //     epoch, "blocks", "slot");
-        // self.session
-        //     .execute_multiple(&statement)
-        //     .await
-        //     .context("distribute table(citus)")?;
+        let statement = PostgresTransaction::build_citus_distribute_table_statement(
+            epoch, "transaction_blockdata", "signature");
+        self.session
+            .execute_multiple(&statement)
+            .await
+            .context("distribute table(citus)")?;
+
+        let statement = PostgresTransaction::build_citus_distribute_table_statement(
+            epoch, "blocks", "slot");
+        self.session
+            .execute_multiple(&statement)
+            .await
+            .context("distribute table(citus)")?;
 
         info!("Start new epoch in postgres schema {}", schema_name);
         Ok(true)
@@ -168,6 +168,7 @@ impl PostgresBlockStore {
 
     /// allow confirmed+finalized blocks
     pub async fn save_confirmed_block(&self, block: &ProducedBlock) -> Result<()> {
+        let started_at = Instant::now();
         assert_eq!(
             block.commitment_config.commitment,
             CommitmentLevel::Confirmed
@@ -201,6 +202,8 @@ impl PostgresBlockStore {
         // TODO write parallel to transaction
         // let write_session_single = self.write_sessions[0].get_write_session().await;
         let write_session_single = &self.session;
+
+        debug!("Time spent before start saving block: {:.2}ms", started_at.elapsed().as_secs_f64() * 1000.0);
 
         let started_block = Instant::now();
         let inserted = postgres_block
