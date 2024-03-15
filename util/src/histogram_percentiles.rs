@@ -127,7 +127,7 @@ pub struct Percentiles {
 impl Display for Percentiles {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for i in 0..self.v.len() {
-            write!(f, "(p{},{:.2})", self.p[i], self.v[i])?;
+            write!(f, "p{}=>{} ", self.p[i] * 100.0, self.v[i])?;
         }
         Ok(())
     }
