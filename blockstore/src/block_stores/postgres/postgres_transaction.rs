@@ -187,7 +187,7 @@ impl PostgresTransaction {
                     pre_token_balances jsonb[] NOT NULL,
                     post_token_balances jsonb[] NOT NULL,
                     -- model_transaction_blockdata
-                    PRIMARY KEY (slot, left(signature,12))  WITH (FILLFACTOR=90)
+                    PRIMARY KEY (slot, signature) WITH (FILLFACTOR=90)
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN signature SET STORAGE PLAIN;
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
@@ -402,6 +402,7 @@ impl PostgresTransaction {
             r#"
                 INSERT INTO {schema}.transaction_blockdata(
                     slot,
+                    transaction_id,
                     signature,
                     idx,
                     cu_consumed,
@@ -424,6 +425,7 @@ impl PostgresTransaction {
                 )
                 SELECT
                     slot,
+                    99999 as transaction_id,
                     signature,
                     idx,
                     cu_consumed,
