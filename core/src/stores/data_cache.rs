@@ -58,9 +58,10 @@ impl DataCache {
         sent_transaction_info: &SentTransactionInfo,
     ) -> bool {
         let last_block_height = self.block_information_store.get_last_blockheight();
-        self.txs
-            .is_transaction_confirmed(&sent_transaction_info.signature)
-            || last_block_height > sent_transaction_info.last_valid_block_height
+        last_block_height > sent_transaction_info.last_valid_block_height
+            || self
+                .txs
+                .is_transaction_confirmed(&sent_transaction_info.signature)
     }
 
     pub async fn get_current_epoch(&self, commitment: CommitmentConfig) -> Epoch {

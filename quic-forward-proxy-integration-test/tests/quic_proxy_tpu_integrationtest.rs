@@ -749,6 +749,7 @@ pub fn build_raw_sample_tx(i: u32) -> SentTransactionInfo {
         slot: 1,
         transaction,
         last_valid_block_height: 300,
+        prioritization_fee: 0,
     }
 }
 

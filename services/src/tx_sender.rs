@@ -1,12 +1,11 @@
-use std::time::Instant;
+use std::time::Duration;
 
+use anyhow::bail;
 use chrono::Utc;
+use itertools::Itertools;
 use log::{trace, warn};
 
-use prometheus::{
-    core::GenericGauge, histogram_opts, opts, register_histogram, register_int_counter,
-    register_int_gauge, Histogram, IntCounter,
-};
+use prometheus::{core::GenericGauge, opts, register_int_counter, register_int_gauge, IntCounter};
 use tokio::sync::mpsc::Receiver;
 
 use crate::tpu_utils::tpu_service::TpuService;
@@ -24,16 +23,12 @@ lazy_static::lazy_static! {
         register_int_counter!("literpc_txs_sent", "Number of transactions forwarded to tpu").unwrap();
     static ref TXS_SENT_ERRORS: IntCounter =
     register_int_counter!("literpc_txs_sent_errors", "Number of errors while transactions forwarded to tpu").unwrap();
-    static ref TX_BATCH_SIZES: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tx_batch_size", "batchsize of tx sent by literpc")).unwrap();
-    static ref TT_SENT_TIMER: Histogram = register_histogram!(histogram_opts!(
-        "literpc_txs_send_timer",
-        "Time to send transaction batch",
-    ))
-    .unwrap();
     static ref TX_TIMED_OUT: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_tx_timeout", "Number of transactions that timeout")).unwrap();
     pub static ref TXS_IN_CHANNEL: GenericGauge<prometheus::core::AtomicI64> = register_int_gauge!(opts!("literpc_txs_in_channel", "Transactions in channel")).unwrap();
 
 }
+
+const INTERVAL_PER_BATCH_IN_MS: Duration = Duration::from_millis(400);
 
 /// Retry transactions to a maximum of `u16` times, keep a track of confirmed transactions
 #[derive(Clone)]
@@ -52,72 +47,28 @@ impl TxSender {
     }
 
     /// retry enqued_tx(s)
-    async fn forward_txs(
-        &self,
-        transaction_infos: Vec<SentTransactionInfo>,
-        notifier: Option<NotificationSender>,
-    ) {
-        if transaction_infos.is_empty() {
-            return;
-        }
-
-        let histo_timer = TT_SENT_TIMER.start_timer();
-        let start = Instant::now();
-
-        let tpu_client = self.tpu_service.clone();
-        let txs_sent = self.data_cache.txs.clone();
-        let forwarded_slot = self.data_cache.slot_cache.get_current_slot();
-        let forwarded_local_time = Utc::now();
-
-        let mut quic_responses = vec![];
-        for transaction_info in transaction_infos.iter() {
-            trace!("sending transaction {}", transaction_info.signature);
-            txs_sent.insert(
-                transaction_info.signature.clone(),
-                TxProps {
-                    status: None,
-                    last_valid_blockheight: transaction_info.last_valid_block_height,
-                    sent_by_lite_rpc: true,
-                },
-            );
-
-            let quic_response = match tpu_client.send_transaction(transaction_info) {
-                Ok(_) => {
-                    TXS_SENT.inc_by(1);
-                    1
-                }
-                Err(err) => {
-                    TXS_SENT_ERRORS.inc_by(1);
-                    warn!("{err}");
-                    0
-                }
-            };
-            quic_responses.push(quic_response);
-        }
-        if let Some(notifier) = &notifier {
-            let notification_msgs = transaction_infos
-                .iter()
-                .enumerate()
-                .map(|(index, transaction_info)| TransactionNotification {
-                    signature: transaction_info.signature.clone(),
-                    recent_slot: transaction_info.slot,
-                    forwarded_slot,
-                    forwarded_local_time,
-                    processed_slot: None,
-                    cu_consumed: None,
-                    cu_requested: None,
-                    quic_response: quic_responses[index],
-                })
-                .collect();
-            // ignore error on sent because the channel may be already closed
-            let _ = notifier.send(NotificationMsg::TxNotificationMsg(notification_msgs));
-        }
-        histo_timer.observe_duration();
-        trace!(
-            "It took {} ms to send a batch of {} transaction(s)",
-            start.elapsed().as_millis(),
-            transaction_infos.len()
+    async fn forward_txs(&self, transaction_info: &SentTransactionInfo) {
+        trace!("sending transaction {}", transaction_info.signature);
+        self.data_cache.txs.insert(
+            transaction_info.signature.clone(),
+            TxProps {
+                status: None,
+                last_valid_blockheight: transaction_info.last_valid_block_height,
+                sent_by_lite_rpc: true,
+            },
         );
+
+        match self.tpu_service.send_transaction(transaction_info) {
+            Ok(_) => {
+                TXS_SENT.inc_by(1);
+                1
+            }
+            Err(err) => {
+                TXS_SENT_ERRORS.inc_by(1);
+                warn!("{err}");
+                0
+            }
+        };
     }
 
     /// retry and confirm transactions every 2ms (avg time to confirm tx)
@@ -127,21 +78,55 @@ impl TxSender {
         notifier: Option<NotificationSender>,
     ) -> AnyhowJoinHandle {
         tokio::spawn(async move {
-            loop {
-                while let Some(transaction_info) = recv.recv().await {
-                    // duplicate transaction
-                    if self
-                        .data_cache
-                        .txs
-                        .contains_key(&transaction_info.signature)
-                    {
-                        continue;
-                    }
+            let mut notifications = vec![];
+            let mut interval = tokio::time::interval(INTERVAL_PER_BATCH_IN_MS);
+            let notify_transaction_messages = |notifications: &mut Vec<TransactionNotification>| {
+                if notifications.is_empty() {
+                    // no notifications to send
+                    return;
+                }
+                if let Some(notifier) = &notifier {
+                    // send notification for sent transactions
+                    let _ = notifier.send(NotificationMsg::TxNotificationMsg(
+                        notifications.drain(..).collect_vec(),
+                    ));
+                }
+            };
 
-                    self.forward_txs(vec![transaction_info], notifier.clone())
-                        .await;
+            loop {
+                tokio::select! {
+                    transaction_info = recv.recv() => {
+                        if let Some(transaction_info) = transaction_info {
+                            self.forward_txs(&transaction_info).await;
+
+                            if notifier.is_some() {
+                                let forwarded_slot = self.data_cache.slot_cache.get_current_slot();
+                                let forwarded_local_time = Utc::now();
+                                let tx_notification = TransactionNotification {
+                                    signature: transaction_info.signature,
+                                    recent_slot: transaction_info.slot,
+                                    forwarded_slot,
+                                    forwarded_local_time,
+                                    processed_slot: None,
+                                    cu_consumed: None,
+                                    cu_requested: None,
+                                    quic_response: 0,
+                                };
+                                notifications.push(tx_notification);
+                            }
+                        } else {
+                            notify_transaction_messages(&mut notifications);
+                            log::warn!("TxSender reciever broken");
+                            break;
+                        }
+
+                    },
+                    _ = interval.tick() => {
+                        notify_transaction_messages(&mut notifications);
+                    }
                 }
             }
+            bail!("Tx sender service stopped");
         })
     }
 }
