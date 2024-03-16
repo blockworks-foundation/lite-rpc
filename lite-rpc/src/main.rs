@@ -446,7 +446,7 @@ pub async fn main() -> anyhow::Result<()> {
     let Config { rpc_addr, .. } = &config;
     // rpc client
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
-    let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
+    let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start(config.use_grpc));
 
     info!("Use RPC address: {}", obfuscate_rpcurl(rpc_addr));
 
