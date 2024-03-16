@@ -3,6 +3,7 @@ use log::info;
 
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::{clock::MAX_RECENT_BLOCKHASHES, slot_history::Slot};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -42,6 +43,7 @@ impl BlockInformation {
 pub struct BlockInformationStore {
     // maps Block Hash -> Block information
     blocks: Arc<DashMap<Hash, BlockInformation>>,
+    last_blockheight: Arc<AtomicU64>,
     latest_confirmed_block: Arc<RwLock<BlockInformation>>,
     latest_finalized_block: Arc<RwLock<BlockInformation>>,
 }
@@ -56,6 +58,7 @@ impl BlockInformationStore {
         );
 
         Self {
+            last_blockheight: Arc::new(AtomicU64::new(latest_finalized_block.block_height)),
             latest_confirmed_block: Arc::new(RwLock::new(latest_finalized_block.clone())),
             latest_finalized_block: Arc::new(RwLock::new(latest_finalized_block)),
             blocks,
@@ -107,6 +110,17 @@ impl BlockInformationStore {
         // save slot copy to avoid borrow issues
         let slot = block_info.slot;
         let commitment_config = block_info.commitment_config;
+        if self
+            .last_blockheight
+            .load(std::sync::atomic::Ordering::Relaxed)
+            < block_info.block_height
+        {
+            // update last seen blockheight
+            self.last_blockheight.store(
+                block_info.block_height,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
         // check if the block has already been added with higher commitment level
         match self.blocks.get_mut(&block_info.blockhash) {
             Some(mut prev_block_info) => {
@@ -180,5 +194,10 @@ impl BlockInformationStore {
                 None
             }
         })
+    }
+
+    pub fn get_last_blockheight(&self) -> u64 {
+        self.last_blockheight
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
