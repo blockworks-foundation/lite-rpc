@@ -41,7 +41,9 @@ pub async fn main() {
     let block_store = PostgresBlockStore::new(epoch_cache, pg_config).await;
 
 
+    let mut total_save_times: Vec<f64> = Vec::with_capacity(1000);
     let mut block_save_times: Vec<f64> = Vec::with_capacity(1000);
+    let mut transactions_save_times: Vec<f64> = Vec::with_capacity(1000);
     let file = File::open(blockfiles_index_file).unwrap();
     let lines = io::BufReader::new(file).lines();
     for filename in lines {
@@ -63,9 +65,12 @@ pub async fn main() {
         let elapsed = started_at.elapsed();
 
         match result {
-            Ok(()) => {
-                info!("block {} saved in {} ms", produced_block.slot, elapsed.as_secs_f64() * 1000.0);
-                block_save_times.push(elapsed.as_secs_f64() * 1000.0);
+            Ok((elapsed_block, elapsed_txs)) => {
+                info!("block {} saved in {} ms ({:?} + {:?})",
+                    produced_block.slot, elapsed.as_secs_f64() * 1000.0, elapsed_block, elapsed_txs);
+                total_save_times.push(elapsed.as_secs_f64() * 1000.0);
+                block_save_times.push(elapsed_block.as_secs_f64() * 1000.0);
+                transactions_save_times.push(elapsed_txs.as_secs_f64() * 1000.0);
             }
             Err(err) => {
                 error!("block {} not saved: {}", produced_block.slot, err);
@@ -73,9 +78,12 @@ pub async fn main() {
         }
     } // -- END for
 
+    total_save_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
     block_save_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let histogram = solana_lite_rpc_util::histogram_percentiles::calculate_percentiles(&block_save_times);
-    info!("block save times histogram(ms): {}", histogram);
+    transactions_save_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    info!("total save times histogram(ms): {}", solana_lite_rpc_util::histogram_percentiles::calculate_percentiles(&total_save_times));
+    info!("block save times histogram(ms): {}", solana_lite_rpc_util::histogram_percentiles::calculate_percentiles(&block_save_times));
+    info!("txs save times histogram(ms): {}", solana_lite_rpc_util::histogram_percentiles::calculate_percentiles(&transactions_save_times));
 
 }
 

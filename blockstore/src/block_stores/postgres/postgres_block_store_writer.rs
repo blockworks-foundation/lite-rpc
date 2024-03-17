@@ -167,7 +167,7 @@ impl PostgresBlockStore {
     // }
 
     /// allow confirmed+finalized blocks
-    pub async fn save_confirmed_block(&self, block: &ProducedBlock) -> Result<()> {
+    pub async fn save_confirmed_block(&self, block: &ProducedBlock) -> Result<(Duration, Duration)> {
         let started_at = Instant::now();
         assert_eq!(
             block.commitment_config.commitment,
@@ -215,7 +215,7 @@ impl PostgresBlockStore {
 
         if !inserted {
             debug!("Block {} already exists - skip update", slot);
-            return Ok(());
+            return Ok((Duration::from_micros(999), Duration::from_micros(999)));
         }
         let elapsed_block_insert = started_block.elapsed();
 
@@ -247,7 +247,7 @@ impl PostgresBlockStore {
             chunk_size,
         );
 
-        Ok(())
+        Ok((elapsed_block_insert, elapsed_txs_insert))
     }
 
     fn tx_chunks(transactions: &Vec<PostgresTransaction>, n_sessions: usize) -> (usize, Vec<&[PostgresTransaction]>, usize) {
