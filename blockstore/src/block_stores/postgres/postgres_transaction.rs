@@ -26,6 +26,7 @@ use tokio::time::Instant;
 use tokio_postgres::binary_copy::BinaryCopyInWriter;
 use tokio_postgres::types::{ToSql, Type};
 use tokio_postgres::CopyInSink;
+use tracing::trace_span;
 use tracing_subscriber::EnvFilter;
 use crate::block_stores::postgres::postgres_block::PostgresBlock;
 use crate::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
@@ -64,6 +65,7 @@ pub struct PostgresTransaction {
 
 impl PostgresTransaction {
     pub fn new(value: &TransactionInfo, slot: Slot) -> Self {
+        let _span = trace_span!("PostgresTransaction::new", ?slot).entered();
         Self {
             signature: value.signature.to_string(),
             slot: slot as i64,

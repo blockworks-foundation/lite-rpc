@@ -13,6 +13,7 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::Reward;
 use std::time::Instant;
 use tokio_postgres::types::ToSql;
+use tracing::trace_span;
 
 #[derive(Debug)]
 pub struct PostgresBlock {
@@ -28,6 +29,8 @@ pub struct PostgresBlock {
 
 impl From<&ProducedBlock> for PostgresBlock {
     fn from(value: &ProducedBlock) -> Self {
+        let num_transactions = value.transactions.len();
+        let _span = trace_span!("PostgresBlock::from", ?value.slot, ?num_transactions).entered();
         let rewards_vec = value.rewards.as_ref().map(|list| {
             list.iter()
                 .map(|r| json_serialize::<Reward>(r))

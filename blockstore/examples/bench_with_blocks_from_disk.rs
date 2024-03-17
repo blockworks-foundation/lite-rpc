@@ -15,6 +15,8 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use tokio::time::Instant;
 
 use tracing::debug;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
 
 
 use yellowstone_grpc_proto::geyser::SubscribeUpdateBlock;
@@ -27,7 +29,10 @@ use solana_lite_rpc_util::histogram_nbuckets::histogram;
 
 #[tokio::main]
 pub async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_span_events(FmtSpan::CLOSE)
+        .init();
 
     let blockfiles_index_file = std::env::var("BLOCKS_LIST_FILE").expect("env var BLOCKS_LIST_FILE is mandatory");
     let blockfiles_index_file = PathBuf::from_str(&blockfiles_index_file).expect("must be filename");
