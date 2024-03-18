@@ -12,8 +12,7 @@ pub struct TenantConfig {
 pub fn get_funded_payer_from_env() -> Keypair {
     let keypair58_string: String = std::env::var("FUNDED_PAYER_KEYPAIR58")
         .expect("need funded payer keypair on env (variable FUNDED_PAYER_KEYPAIR58)");
-    let funded_payer = Keypair::from_base58_string(&keypair58_string);
-    funded_payer
+    Keypair::from_base58_string(&keypair58_string)
 }
 
 pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig> {
@@ -27,7 +26,7 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
 
     let values = map
         .iter()
-        .map(|(k, v)| TenantConfig {
+        .map(|(_k, v)| TenantConfig {
             tenant_id: v
                 .iter()
                 .find(|(k, _)| k.ends_with("_ID"))

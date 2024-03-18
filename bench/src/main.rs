@@ -12,15 +12,14 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signature;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
-    slot_history::Slot,
 };
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicU64},
     Arc,
 };
 use tokio::{
-    sync::{mpsc::UnboundedSender, RwLock},
-    time::{Duration, Instant},
+    sync::RwLock,
+    time::{Duration},
 };
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]

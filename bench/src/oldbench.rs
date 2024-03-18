@@ -1,18 +1,15 @@
 use crate::{
     helpers::BenchHelper,
-    metrics::{AvgMetric, Metric, TxMetricData},
-    Args,
+    metrics::Metric,
+    metrics::TxMetricData,
 };
-use clap::Parser;
 use dashmap::DashMap;
-use futures::future::join_all;
-use log::{error, info, warn};
+use log::{warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::Signature;
-use solana_sdk::{
-    commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
-    slot_history::Slot,
-};
+use solana_sdk::hash::Hash;
+use solana_sdk::signature::Keypair;
+use solana_sdk::slot_history::Slot;
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,

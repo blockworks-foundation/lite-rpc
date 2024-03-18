@@ -5,6 +5,7 @@ use log::warn;
 use postgres_types::ToSql;
 use std::time::SystemTime;
 
+#[allow(clippy::upper_case_acronyms)]
 pub enum BenchRunStatus {
     STARTED,
     FINISHED,
@@ -44,7 +45,6 @@ pub async fn upsert_benchrun_status(
 
     if let Err(err) = write_result {
         warn!("Failed to upsert status (err {:?}) - continue", err);
-        return;
     }
 }
 
@@ -54,7 +54,7 @@ pub async fn save_metrics_to_postgres(
     metric: &Metric,
     benchrun_at: SystemTime,
 ) {
-    let metricjson = serde_json::to_value(&metric).unwrap();
+    let metricjson = serde_json::to_value(metric).unwrap();
     let values: &[&(dyn ToSql + Sync)] = &[
         &bench_config.tenant,
         &benchrun_at,
@@ -86,6 +86,5 @@ pub async fn save_metrics_to_postgres(
 
     if let Err(err) = write_result {
         warn!("Failed to insert metrics (err {:?}) - continue", err);
-        return;
     }
 }
