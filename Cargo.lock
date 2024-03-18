@@ -4417,6 +4417,7 @@ version = "0.2.4"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bench",
  "chrono",
  "clap 4.5.3",
  "futures",

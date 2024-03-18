@@ -9,6 +9,8 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
+bench = { path = "../bench", version="0.2.4" }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
