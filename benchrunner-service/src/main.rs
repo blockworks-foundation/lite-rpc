@@ -4,7 +4,7 @@ mod postgres;
 mod postgres_session;
 mod prometheus;
 
-use crate::args::{get_funded_payer_from_env, read_tenant_configs};
+use crate::args::{get_funded_payer_from_env, get_prio_fees_from_env, read_tenant_configs};
 use crate::cli::Args;
 use crate::postgres::metrics_dbstore::{
     save_metrics_to_postgres, upsert_benchrun_status, BenchRunStatus,
@@ -46,8 +46,12 @@ async fn main() {
 
     let funded_payer = get_funded_payer_from_env();
 
+    let prio_fees = get_prio_fees_from_env();
+
     let tenant_configs = read_tenant_configs(std::env::vars().collect::<Vec<(String, String)>>());
 
+    info!("Use postgres config: {:?}", postgres_config.is_some());
+    info!("Use prio fees: {}", prio_fees);
     info!("Start running benchmarks every {:?}", bench_interval);
     info!(
         "Found tenants: {}",
@@ -78,7 +82,7 @@ async fn main() {
                 let bench_config = bench::service_adapter::BenchConfig {
                     tenant: tenant_config.tenant_id.clone(),
                     tx_count,
-                    cu_price_micro_lamports: 1,
+                    cu_price_micro_lamports: prio_fees,
                 };
 
                 if let Ok(postgres_session) = postgres_session.as_ref() {

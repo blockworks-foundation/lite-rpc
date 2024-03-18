@@ -8,6 +8,12 @@ pub struct TenantConfig {
     pub rpc_addr: String,
 }
 
+pub fn get_prio_fees_from_env() -> u64 {
+    std::env::var("PRIO_FEES")
+        .map(|v| v.parse::<u64>().expect("prio fees must be a number"))
+        .unwrap_or(0)
+}
+
 // recommend to use one payer keypair for all targets and fund that keypair with enough SOL
 pub fn get_funded_payer_from_env() -> Keypair {
     let keypair58_string: String = std::env::var("FUNDED_PAYER_KEYPAIR58")
