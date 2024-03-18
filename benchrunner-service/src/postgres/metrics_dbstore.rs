@@ -1,9 +1,9 @@
-use std::time::SystemTime;
-use log::warn;
-use postgres_types::ToSql;
+use crate::postgres_session::PostgresSession;
 use bench::metrics::Metric;
 use bench::service_adapter::BenchConfig;
-use crate::postgres_session::PostgresSession;
+use log::warn;
+use postgres_types::ToSql;
+use std::time::SystemTime;
 
 pub enum BenchRunStatus {
     STARTED,
@@ -23,7 +23,8 @@ pub async fn upsert_benchrun_status(
     postgres_session: &PostgresSession,
     bench_config: &BenchConfig,
     benchrun_at: SystemTime,
-    status: BenchRunStatus) {
+    status: BenchRunStatus,
+) {
     let values: &[&(dyn ToSql + Sync)] =
         &[
             &bench_config.tenant,
@@ -39,8 +40,10 @@ pub async fn upsert_benchrun_status(
              )
             VALUES ($1, $2, $3)
             ON CONFLICT (tenant, ts) DO UPDATE SET status = $3
-        "#, values).await;
-
+        "#,
+            values,
+        )
+        .await;
 
     if let Err(err) = write_result {
         warn!("Failed to upsert status (err {:?}) - continue", err);
@@ -48,27 +51,26 @@ pub async fn upsert_benchrun_status(
     }
 }
 
-
-
-
 pub async fn save_metrics_to_postgres(
     postgres_session: &PostgresSession,
-    bench_config: &BenchConfig, metric: &Metric,
-    benchrun_at: SystemTime) {
+    bench_config: &BenchConfig,
+    metric: &Metric,
+    benchrun_at: SystemTime,
+) {
     let metricjson = serde_json::to_value(&metric).unwrap();
-    let values: &[&(dyn ToSql + Sync)] =
-        &[
-            &bench_config.tenant,
-            &benchrun_at,
-            &(bench_config.cu_price_micro_lamports as i64),
-            &(metric.txs_sent as i64),
-            &(metric.txs_confirmed as i64),
-            &(metric.txs_un_confirmed as i64),
-            &(metric.average_confirmation_time_ms as f32),
-            &metricjson,
-        ];
-    let write_result = postgres_session.execute(
-        r#"
+    let values: &[&(dyn ToSql + Sync)] = &[
+        &bench_config.tenant,
+        &benchrun_at,
+        &(bench_config.cu_price_micro_lamports as i64),
+        &(metric.txs_sent as i64),
+        &(metric.txs_confirmed as i64),
+        &(metric.txs_un_confirmed as i64),
+        &(metric.average_confirmation_time_ms as f32),
+        &metricjson,
+    ];
+    let write_result = postgres_session
+        .execute(
+            r#"
             INSERT INTO
             benchrunner.bench_metrics (
                 tenant,
@@ -80,12 +82,13 @@ pub async fn save_metrics_to_postgres(
                 metric_json
              )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        "#, values).await;
-
+        "#,
+            values,
+        )
+        .await;
 
     if let Err(err) = write_result {
         warn!("Failed to insert metrics (err {:?}) - continue", err);
         return;
     }
 }
-
