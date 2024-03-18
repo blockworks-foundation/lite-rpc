@@ -19,13 +19,17 @@ use tokio::time::timeout;
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_0RTT_ATTEMPTED: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_quic_0RTT_successful", "Number of times 0RTT attempted")).unwrap();
+        register_int_gauge!(opts!("literpc_quic_0RTT_attempted", "Number of times 0RTT attempted")).unwrap();
     static ref NB_QUIC_CONN_ATTEMPTED: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_quic_0RTT_successful", "Number of times conn attempted")).unwrap();
+        register_int_gauge!(opts!("literpc_quic_connection_attempted", "Number of times conn attempted")).unwrap();
     static ref NB_QUIC_0RTT_SUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_0RTT_successful", "Number of times 0RTT successful")).unwrap();
+    static ref NB_QUIC_0RTT_FALLBACK_SUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_fallback_successful", "Number of times 0RTT successfully fallback to connection")).unwrap();
+        static ref NB_QUIC_0RTT_FALLBACK_UNSUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_fallback_unsuccessful", "Number of times 0RTT unsuccessfully fallback to connection")).unwrap();
     static ref NB_QUIC_CONN_SUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_quic_conn_successful", "Number of times conn successful")).unwrap();
+        register_int_gauge!(opts!("literpc_quic_connection_successful", "Number of times conn successful")).unwrap();
 
     static ref NB_QUIC_0RTT_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_0RTT_timedout", "Number of times 0RTT timedout")).unwrap();
@@ -136,7 +140,10 @@ impl QuicConnectionUtils {
         let connecting = endpoint.connect(addr, "connect")?;
         match timeout(connection_timeout, connecting).await {
             Ok(res) => match res {
-                Ok(connection) => Ok(connection),
+                Ok(connection) => {
+                    NB_QUIC_CONN_SUCCESSFUL.inc();
+                    Ok(connection)
+                }
                 Err(e) => {
                     NB_QUIC_CONNECTION_ERRORED.inc();
                     Err(e.into())
@@ -169,9 +176,9 @@ impl QuicConnectionUtils {
             Err(connecting) => {
                 if let Ok(connecting_result) = timeout(connection_timeout, connecting).await {
                     if connecting_result.is_err() {
-                        NB_QUIC_CONNECTION_ERRORED.inc();
+                        NB_QUIC_0RTT_FALLBACK_UNSUCCESSFUL.inc();
                     } else {
-                        NB_QUIC_CONN_SUCCESSFUL.inc();
+                        NB_QUIC_0RTT_FALLBACK_SUCCESSFUL.inc();
                     }
                     connecting_result?
                 } else {
