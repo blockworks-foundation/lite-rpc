@@ -3,13 +3,14 @@
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
-use std::time::{Duration};
+use std::time::{Duration, SystemTime};
 use log::{debug, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::Hash;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 use crate::helpers::BenchHelper;
@@ -17,13 +18,18 @@ use crate::metrics::{AvgMetric, Metric, TxMetricData};
 use crate::oldbench;
 use crate::oldbench::TransactionSize;
 
-pub async fn bench_servicerunner(rpc_addr: String, funded_payer: Keypair) -> Metric {
+pub struct BenchConfig {
+    pub tenant: String,
+    pub tx_count: usize,
+    pub cu_price_micro_lamports: u64,
+}
+
+pub async fn bench_servicerunner(bench_config: &BenchConfig, rpc_addr: String, funded_payer: Keypair) -> Metric {
     let started_at = Instant::now();
 
     // TODO extract
     // TODO
     let large_transactions = false;
-    let tx_count = 10;
 
     let transaction_size = if large_transactions {
         TransactionSize::Large
@@ -74,18 +80,19 @@ pub async fn bench_servicerunner(rpc_addr: String, funded_payer: Keypair) -> Met
     {
         // TODO what todo
         // not used unless log_txs is set to true
-        let (tx_log_sx_devnull, _tx_log_rx) = tokio::sync::mpsc::unbounded_channel::<TxMetricData>();
+        let (tx_log_sx_null, _tx_log_rx) = tokio::sync::mpsc::unbounded_channel::<TxMetricData>();
 
         let metric = oldbench::bench(
             rpc_client.clone(),
-            tx_count,
+            bench_config.tx_count,
             funded_payer,
-            42 as u64, // seed TODO check
+            started_at.elapsed().as_micros() as u64,
             block_hash.clone(),
             current_slot.clone(),
-            tx_log_sx_devnull.clone(),
+            tx_log_sx_null,
             false, // log_transactions
             transaction_size,
+            bench_config.cu_price_micro_lamports,
         ).await;
 
         return metric;

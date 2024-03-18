@@ -3,6 +3,8 @@ CREATE SCHEMA benchrunner;
 
 CREATE TABLE benchrunner.bench_metrics (
    ts timestamp NOT NULL PRIMARY KEY,
+   tenant text NOT NULL,
+   prio_fees int8 NOT NULL,
    txs_sent int8 NOT NULL,
    txs_confirmed int8 NOT NULL,
    txs_un_confirmed int8 NOT NULL,

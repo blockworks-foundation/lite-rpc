@@ -46,6 +46,7 @@ pub async fn bench(
     tx_metric_sx: UnboundedSender<TxMetricData>,
     log_txs: bool,
     transaction_size: TransactionSize,
+    cu_price_micro_lamports: u64,
 ) -> Metric {
     let map_of_txs: Arc<DashMap<Signature, TxSendData>> = Arc::new(DashMap::new());
     // transaction sender task
@@ -67,10 +68,10 @@ pub async fn bench(
                 let blockhash = { *block_hash.read().await };
                 let tx = match transaction_size {
                     TransactionSize::Small => {
-                        BenchHelper::create_memo_tx_small(rand_string, &funded_payer, blockhash)
+                        BenchHelper::create_memo_tx_small(rand_string, &funded_payer, blockhash, cu_price_micro_lamports)
                     }
                     TransactionSize::Large => {
-                        BenchHelper::create_memo_tx_large(rand_string, &funded_payer, blockhash)
+                        BenchHelper::create_memo_tx_large(rand_string, &funded_payer, blockhash, cu_price_micro_lamports)
                     }
                 };
                 let start_time = Instant::now();

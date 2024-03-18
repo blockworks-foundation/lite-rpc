@@ -1,6 +1,7 @@
 use bench::metrics::Metric;
 
 use prometheus::{Gauge, IntGauge, opts, register_gauge, register_int_gauge};
+use bench::service_adapter::BenchConfig;
 
 
 // https://github.com/blockworks-foundation/lite-rpc/blob/production/bench/src/metrics.rs
@@ -13,7 +14,7 @@ lazy_static::lazy_static! {
     // TODO add more
 }
 
-pub async fn publish_metrics_on_prometheus(metric: &Metric) {
+pub async fn publish_metrics_on_prometheus(metric1: &BenchConfig, metric: &Metric) {
     PROM_TXS_SENT.set(metric.txs_sent as i64);
     PROM_TXS_CONFIRMED.set(metric.txs_confirmed as i64);
     PROM_TXS_UN_CONFIRMED.set(metric.txs_un_confirmed as i64);
