@@ -8,6 +8,7 @@ use log::{debug, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::Hash;
+use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
@@ -16,19 +17,13 @@ use crate::metrics::{AvgMetric, Metric, TxMetricData};
 use crate::oldbench;
 use crate::oldbench::TransactionSize;
 
-pub async fn bench_servicerunner() -> Metric {
+pub async fn bench_servicerunner(rpc_addr: String, funded_payer: Keypair) -> Metric {
     let started_at = Instant::now();
 
     // TODO extract
     // TODO
     let large_transactions = false;
     let tx_count = 10;
-
-
-    let token: String = env!("TESTNET_API_TOKEN").parse().expect("need testnet token on env");
-
-    let lite_rpc_addr = format!("https://api.testnet.rpcpool.com/{}", token);
-
 
     let transaction_size = if large_transactions {
         TransactionSize::Large
@@ -38,11 +33,10 @@ pub async fn bench_servicerunner() -> Metric {
 
     let mut avg_metric = AvgMetric::default();
 
-    let funded_payer = BenchHelper::get_payer().await.unwrap();
-    info!("Payer: {}", funded_payer.pubkey());
+    debug!("Payer: {}", funded_payer.pubkey());
 
     let rpc_client = Arc::new(RpcClient::new_with_commitment(
-        lite_rpc_addr.clone(),
+        rpc_addr.clone(),
         CommitmentConfig::confirmed(),
     ));
     let bh = rpc_client.get_latest_blockhash().await.unwrap();
@@ -79,16 +73,17 @@ pub async fn bench_servicerunner() -> Metric {
 
     {
         // TODO what todo
-        let (tx_log_sx, mut tx_log_rx) = tokio::sync::mpsc::unbounded_channel::<TxMetricData>();
+        // not used unless log_txs is set to true
+        let (tx_log_sx_devnull, _tx_log_rx) = tokio::sync::mpsc::unbounded_channel::<TxMetricData>();
 
         let metric = oldbench::bench(
             rpc_client.clone(),
             tx_count,
             funded_payer,
-            42 as u64, // seed
+            42 as u64, // seed TODO check
             block_hash.clone(),
             current_slot.clone(),
-            tx_log_sx.clone(),
+            tx_log_sx_devnull.clone(),
             false, // log_transactions
             transaction_size,
         ).await;

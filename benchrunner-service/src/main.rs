@@ -1,5 +1,6 @@
-mod prometheus_sync;
 mod postgres_session;
+mod prometheus;
+mod postgres;
 
 use std::net::SocketAddr;
 use std::ops::AddAssign;
@@ -8,33 +9,33 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
-use prometheus::{Gauge, IntGauge, opts, register_gauge, register_int_gauge};
+use solana_sdk::signature::Keypair;
 use tokio::join;
 use tokio::sync::mpsc::Sender;
 use tokio_postgres::types::ToSql;
+use tracing_subscriber::filter::FilterExt;
 use bench::create_memo_tx;
+use bench::helpers::BenchHelper;
 use bench::metrics::Metric;
 use crate::postgres_session::{PostgresSession, PostgresSessionConfig};
-use crate::prometheus_sync::PrometheusSync;
+use crate::prometheus::metrics_prometheus::publish_metrics_on_prometheus;
+use crate::prometheus::prometheus_sync::PrometheusSync;
 
-
-// https://github.com/blockworks-foundation/lite-rpc/blob/production/bench/src/metrics.rs
-lazy_static::lazy_static! {
-    static ref PROM_TXS_SENT: IntGauge = register_int_gauge!(opts!("literpc_benchrunner_txs_sent", "Total number of transactions sent")).unwrap();
-    static ref PROM_TXS_CONFIRMED: IntGauge = register_int_gauge!(opts!("literpc_benchrunner_txs_confirmed", "Number of transactions confirmed")).unwrap();
-    static ref PROM_TXS_UN_CONFIRMED: IntGauge = register_int_gauge!(opts!("literpc_benchrunner_txs_un_confirmed", "Number of transactions not confirmed")).unwrap();
-    static ref PROM_AVG_CONFIRM: Gauge = register_gauge!(opts!("literpc_benchrunner_avg_confirmation_time", "Confirmation time(ms)")).unwrap();
-    // static ref RPC_RESPONDING: Gauge = register_gauge!(opts!("literpc_benchrunner_send_tps", "Transactions")).unwrap();
-    // TODO add more
-}
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    // TODO make it optional
     let postgres_config = PostgresSessionConfig::new_from_env().unwrap();
     let bench_interval = Duration::from_secs(10);
+
+    let token: String = std::env::var("TESTNET_API_TOKEN").expect("need testnet token on env");
+
+    let rpc_addr = format!("https://api.testnet.rpcpool.com/{}", token);
+
+    let keypair58_string: String = std::env::var("FUNDED_PAYER_KEYPAIR58").expect("need funded payer keypair on env (variable FUNDED_PAYER_KEYPAIR58)");
+
+    let funded_payer = Keypair::from_base58_string(&keypair58_string);
 
     info!("Start running benchmarks every {:?}", bench_interval);
 
@@ -44,10 +45,10 @@ async fn main() {
         let mut interval = tokio::time::interval(bench_interval);
         let postgres_session = PostgresSession::new(postgres_config.unwrap()).await;
         for run_count in 1.. {
-            info!("Invoke bench execution (#{})..", run_count);
+            debug!("Invoke bench execution (#{})..", run_count);
             let benchrun_at = SystemTime::now();
 
-            let metric = bench::service_adapter::bench_servicerunner().await;
+            let metric = bench::service_adapter::bench_servicerunner(rpc_addr.clone(), funded_payer.insecure_clone()).await;
 
             if let Ok(postgres_session) = &postgres_session {
                 save_metrics_to_postgres(postgres_session, &metric, benchrun_at).await;
@@ -55,6 +56,7 @@ async fn main() {
 
             publish_metrics_on_prometheus(&metric).await;
 
+            debug!("Bench execution (#{}) done in {:?}", run_count, benchrun_at.elapsed());
             interval.tick().await;
         }
     });
@@ -93,11 +95,4 @@ async fn save_metrics_to_postgres(
         warn!("Failed to insert metrics (err {:?}) - continue", err);
         return;
     }
-}
-
-async fn publish_metrics_on_prometheus(metric: &Metric) {
-    PROM_TXS_SENT.set(metric.txs_sent as i64);
-    PROM_TXS_CONFIRMED.set(metric.txs_confirmed as i64);
-    PROM_TXS_UN_CONFIRMED.set(metric.txs_un_confirmed as i64);
-    PROM_AVG_CONFIRM.set(metric.average_confirmation_time_ms);
 }
