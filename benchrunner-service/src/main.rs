@@ -1,8 +1,8 @@
-mod postgres_session;
-mod prometheus;
-mod postgres;
 mod args;
 mod cli;
+mod postgres;
+mod postgres_session;
+mod prometheus;
 
 use std::net::SocketAddr;
 use std::ops::AddAssign;
@@ -45,7 +45,6 @@ async fn main() {
     let bench_interval = Duration::from_millis(bench_interval);
 
     let funded_payer = get_funded_payer_from_env();
-
 
     let tenant_configs = read_tenant_configs(std::env::vars().collect::<Vec<(String, String)>>());
 
@@ -100,5 +99,4 @@ async fn main() {
     }
 
     join_all(jh_tenant_task).await;
-
 }

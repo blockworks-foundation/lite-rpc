@@ -1,6 +1,6 @@
 use bench::metrics::Metric;
 
-use prometheus::{Gauge, GaugeVec, IntGauge, IntGaugeVec, opts, register_gauge, register_gauge_vec, register_int_gauge, register_int_gauge_vec};
+use prometheus::{GaugeVec, IntGaugeVec, opts, register_gauge_vec, register_int_gauge_vec};
 use bench::service_adapter::BenchConfig;
 
 

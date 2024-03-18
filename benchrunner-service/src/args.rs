@@ -1,8 +1,5 @@
-use std::collections::HashMap;
-use clap::Parser;
 use itertools::Itertools;
 use solana_sdk::signature::Keypair;
-
 
 #[derive(Debug)]
 pub struct TenantConfig {
@@ -37,9 +34,6 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
     values
 }
 
-
-
-
 #[test]
 fn test_env_vars() {
     let env_vars = vec![(String::from("TENANT1_ID"), String::from("solana-rpc")),
@@ -54,4 +48,3 @@ fn test_env_vars() {
     assert_eq!(tenant_configs[1].tenant_id, "lite-rpc");
     assert_eq!(tenant_configs[1].rpc_addr, "http://localhost:8890");
 }
-

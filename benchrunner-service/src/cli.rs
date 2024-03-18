@@ -1,5 +1,5 @@
-use clap::Parser;
 use bench::tx_size::TxSize;
+use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -12,5 +12,3 @@ pub struct Args {
     #[clap(short, long, default_value_t = TxSize::Small)]
     pub size_tx: TxSize,
 }
-
-

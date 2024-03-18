@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::env;
 use std::sync::Arc;
 
@@ -24,7 +26,6 @@ pub struct PostgresSessionSslConfig {
     pub client_pks_b64: String,
     pub client_pks_pass: String,
 }
-
 
 impl PostgresSessionConfig {
     pub fn new_from_env() -> anyhow::Result<Option<Self>> {
@@ -66,7 +67,6 @@ impl PostgresSessionConfig {
         }))
     }
 }
-
 
 #[derive(Clone)]
 pub struct PostgresSession {
@@ -121,9 +121,9 @@ impl PostgresSession {
         pg_config: tokio_postgres::Config,
         connector: T,
     ) -> anyhow::Result<Client>
-        where
-            T: MakeTlsConnect<Socket> + Send + 'static,
-            <T as MakeTlsConnect<Socket>>::Stream: Send,
+    where
+        T: MakeTlsConnect<Socket> + Send + 'static,
+        <T as MakeTlsConnect<Socket>>::Stream: Send,
     {
         let (client, connection) = pg_config
             .connect(connector)
@@ -142,7 +142,6 @@ impl PostgresSession {
 
         Ok(client)
     }
-
 
     pub async fn execute(
         &self,
@@ -211,5 +210,4 @@ impl PostgresSession {
     ) -> Result<Vec<Row>, Error> {
         self.client.query(statement, params).await
     }
-
 }
