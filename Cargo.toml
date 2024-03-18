@@ -12,6 +12,7 @@ members = [
     "blockstore",
     "prioritization_fees",
     "bench",
+    "benchrunner-service",
     "address-lookup-tables",
     "accounts",
     "accounts-on-demand",
