@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, time::Duration};
 
 use crate::{
     DEFAULT_FANOUT_SIZE, DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
@@ -8,6 +8,7 @@ use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
 use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
+use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -67,6 +68,9 @@ pub struct Config {
     /// postgres config
     #[serde(default)]
     pub postgres: Option<PostgresSessionConfig>,
+
+    #[serde(default)]
+    pub quic_connection_parameters: Option<QuicConnectionParameters>,
 }
 
 impl Config {
@@ -174,7 +178,9 @@ impl Config {
             .unwrap_or(config.grpc_x_token4);
 
         config.postgres = PostgresSessionConfig::new_from_env()?.or(config.postgres);
-
+        config.quic_connection_parameters = config
+            .quic_connection_parameters
+            .or(quic_params_from_environment());
         Ok(config)
     }
 
@@ -255,4 +261,45 @@ impl Config {
 pub struct GrpcSource {
     pub addr: String,
     pub x_token: Option<String>,
+}
+
+fn quic_params_from_environment() -> Option<QuicConnectionParameters> {
+    let mut quic_connection_parameters = QuicConnectionParameters::default();
+
+    quic_connection_parameters.connection_timeout = env::var("QUIC_CONNECTION_TIMEOUT_MILLIS")
+        .map(|millis| Duration::from_millis(millis.parse().unwrap()))
+        .unwrap_or(quic_connection_parameters.connection_timeout);
+
+    quic_connection_parameters.unistream_timeout = env::var("QUIC_UNISTREAM_TIMEOUT_MILLIS")
+        .map(|millis| Duration::from_millis(millis.parse().unwrap()))
+        .unwrap_or(quic_connection_parameters.unistream_timeout);
+
+    quic_connection_parameters.write_timeout = env::var("QUIC_WRITE_TIMEOUT_MILLIS")
+        .map(|millis| Duration::from_millis(millis.parse().unwrap()))
+        .unwrap_or(quic_connection_parameters.write_timeout);
+
+    quic_connection_parameters.finalize_timeout = env::var("QUIC_FINALIZE_TIMEOUT_MILLIS")
+        .map(|millis| Duration::from_millis(millis.parse().unwrap()))
+        .unwrap_or(quic_connection_parameters.finalize_timeout);
+
+    quic_connection_parameters.connection_retry_count = env::var("QUIC_CONNECTION_RETRY_COUNT")
+        .map(|millis| millis.parse().unwrap())
+        .unwrap_or(quic_connection_parameters.connection_retry_count);
+
+    quic_connection_parameters.max_number_of_connections =
+        env::var("QUIC_MAX_NUMBER_OF_CONNECTIONS")
+            .map(|millis| millis.parse().unwrap())
+            .unwrap_or(quic_connection_parameters.max_number_of_connections);
+
+    quic_connection_parameters.number_of_transactions_per_unistream =
+        env::var("QUIC_NUMBER_OF_TRANSACTIONS_PER_TASK")
+            .map(|millis| millis.parse().unwrap())
+            .unwrap_or(quic_connection_parameters.number_of_transactions_per_unistream);
+
+    quic_connection_parameters.percentage_of_connection_limit_to_create_new =
+        env::var("QUIC_PERCENTAGE_TO_CREATE_NEW_CONNECTION")
+            .map(|millis| millis.parse().unwrap())
+            .unwrap_or(quic_connection_parameters.percentage_of_connection_limit_to_create_new);
+
+    Some(quic_connection_parameters)
 }

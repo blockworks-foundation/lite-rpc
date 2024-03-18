@@ -10,10 +10,10 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::{debug, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
-use solana_lite_rpc_cluster_endpoints::grpc_subscription_autoreconnect::{
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
+use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
@@ -36,7 +36,6 @@ use solana_lite_rpc_history::history::History;
 use solana_lite_rpc_history::postgres::postgres_config::PostgresSessionConfig;
 use solana_lite_rpc_history::postgres::postgres_session::PostgresSessionCache;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
-use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceConfig};
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
@@ -115,6 +114,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         transaction_retry_after_secs,
         quic_proxy_addr,
         use_grpc,
+        quic_connection_parameters,
         ..
     } = args;
 
@@ -135,6 +135,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             connect_timeout: Duration::from_secs(5),
             request_timeout: Duration::from_secs(5),
             subscribe_timeout: Duration::from_secs(5),
+            receive_timeout: Duration::from_secs(5),
         };
 
         create_grpc_subscription(
@@ -210,15 +211,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,
         maximum_transaction_in_queue: 20000,
-        quic_connection_params: QuicConnectionParameters {
-            connection_timeout: Duration::from_secs(1),
-            connection_retry_count: 10,
-            finalize_timeout: Duration::from_millis(1000),
-            max_number_of_connections: 8,
-            unistream_timeout: Duration::from_millis(500),
-            write_timeout: Duration::from_secs(1),
-            number_of_transactions_per_unistream: 1,
-        },
+        quic_connection_params: quic_connection_parameters.unwrap_or_default(),
         tpu_connection_path,
     };
 

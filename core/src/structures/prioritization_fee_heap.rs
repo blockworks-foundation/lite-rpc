@@ -198,7 +198,7 @@ mod tests {
                         };
                         p_heap.insert(info).await;
                     }
-                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
                     p_heap.remove_expired_transactions(height).await;
                     height += 1;
                 }

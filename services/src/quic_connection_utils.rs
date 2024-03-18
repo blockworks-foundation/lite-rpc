@@ -4,6 +4,7 @@ use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig, VarInt,
 };
+use serde::{Deserialize, Serialize};
 use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_sdk::pubkey::Pubkey;
 use std::{
@@ -17,6 +18,15 @@ use std::{
 use tokio::time::timeout;
 
 lazy_static::lazy_static! {
+    static ref NB_QUIC_0RTT_ATTEMPTED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_successful", "Number of times 0RTT attempted")).unwrap();
+    static ref NB_QUIC_CONN_ATTEMPTED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_successful", "Number of times conn attempted")).unwrap();
+    static ref NB_QUIC_0RTT_SUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_successful", "Number of times 0RTT successful")).unwrap();
+    static ref NB_QUIC_CONN_SUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_conn_successful", "Number of times conn successful")).unwrap();
+
     static ref NB_QUIC_0RTT_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_0RTT_timedout", "Number of times 0RTT timedout")).unwrap();
     static ref NB_QUIC_CONNECTION_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
@@ -40,7 +50,7 @@ pub enum QuicConnectionError {
     ConnectionError { retry: bool },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 pub struct QuicConnectionParameters {
     pub connection_timeout: Duration,
     pub unistream_timeout: Duration,
@@ -49,6 +59,22 @@ pub struct QuicConnectionParameters {
     pub connection_retry_count: usize,
     pub max_number_of_connections: usize,
     pub number_of_transactions_per_unistream: usize,
+    pub percentage_of_connection_limit_to_create_new: u8,
+}
+
+impl Default for QuicConnectionParameters {
+    fn default() -> Self {
+        Self {
+            connection_timeout: Duration::from_millis(5000),
+            unistream_timeout: Duration::from_millis(5000),
+            write_timeout: Duration::from_millis(5000),
+            finalize_timeout: Duration::from_millis(5000),
+            connection_retry_count: 20,
+            max_number_of_connections: 8,
+            number_of_transactions_per_unistream: 1,
+            percentage_of_connection_limit_to_create_new: 50,
+        }
+    }
 }
 
 pub struct QuicConnectionUtils {}
@@ -133,6 +159,7 @@ impl QuicConnectionUtils {
         let connection = match connecting.into_0rtt() {
             Ok((connection, zero_rtt)) => {
                 if (timeout(connection_timeout, zero_rtt).await).is_ok() {
+                    NB_QUIC_0RTT_SUCCESSFUL.inc();
                     connection
                 } else {
                     NB_QUIC_0RTT_TIMEOUT.inc();
@@ -143,6 +170,8 @@ impl QuicConnectionUtils {
                 if let Ok(connecting_result) = timeout(connection_timeout, connecting).await {
                     if connecting_result.is_err() {
                         NB_QUIC_CONNECTION_ERRORED.inc();
+                    } else {
+                        NB_QUIC_CONN_SUCCESSFUL.inc();
                     }
                     connecting_result?
                 } else {
@@ -166,8 +195,10 @@ impl QuicConnectionUtils {
     ) -> Option<Connection> {
         for _ in 0..connection_retry_count {
             let conn = if already_connected {
+                NB_QUIC_0RTT_ATTEMPTED.inc();
                 Self::make_connection_0rtt(endpoint.clone(), addr, connection_timeout).await
             } else {
+                NB_QUIC_CONN_ATTEMPTED.inc();
                 Self::make_connection(endpoint.clone(), addr, connection_timeout).await
             };
             match conn {
