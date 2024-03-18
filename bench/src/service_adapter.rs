@@ -18,7 +18,6 @@ use crate::oldbench::TransactionSize;
 
 pub async fn bench_servicerunner() -> Metric {
     let started_at = Instant::now();
-    debug!("Invoke bench service runner..");
 
     // TODO extract
     // TODO
@@ -94,7 +93,6 @@ pub async fn bench_servicerunner() -> Metric {
             transaction_size,
         ).await;
 
-        debug!("bench service run took {:?}", started_at.elapsed());
         return metric;
     }
 

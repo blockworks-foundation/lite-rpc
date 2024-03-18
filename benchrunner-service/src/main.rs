@@ -6,11 +6,11 @@ use std::ops::AddAssign;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
-use log::{info, trace, warn};
+use itertools::Itertools;
+use log::{debug, info, trace, warn};
 use prometheus::{Gauge, IntGauge, opts, register_gauge, register_int_gauge};
 use tokio::join;
 use tokio::sync::mpsc::Sender;
-use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
 use tokio_postgres::types::ToSql;
 use bench::create_memo_tx;
 use bench::metrics::Metric;
@@ -29,59 +29,46 @@ lazy_static::lazy_static! {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), JobSchedulerError> {
+async fn main() {
     tracing_subscriber::fmt::init();
 
     // TODO make it optional
     let postgres_config = PostgresSessionConfig::new_from_env().unwrap();
-    let postgres_session = Arc::new(PostgresSession::new(postgres_config.unwrap()).await.unwrap());
+    let bench_interval = Duration::from_secs(10);
+
+    info!("Start running benchmarks every {:?}", bench_interval);
 
     let _prometheus_task = PrometheusSync::sync(SocketAddr::from_str("[::]:9091").unwrap());
 
+    let jh_runner = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(bench_interval);
+        let postgres_session = PostgresSession::new(postgres_config.unwrap()).await;
+        for run_count in 1.. {
+            info!("Invoke bench execution (#{})..", run_count);
+            let benchrun_at = SystemTime::now();
 
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(10));
-        loop {
+            let metric = bench::service_adapter::bench_servicerunner().await;
 
-            work(postgres_session.clone()).await;
+            if let Ok(postgres_session) = &postgres_session {
+                save_metrics_to_postgres(postgres_session, &metric, benchrun_at).await;
+            }
+
+            publish_metrics_on_prometheus(&metric).await;
 
             interval.tick().await;
         }
     });
 
-    // Wait while the jobs run
-    tokio::time::sleep(Duration::from_secs(100)).await;
-
-
-    Ok(())
-}
-
-async fn work(postgres_session: Arc<PostgresSession>) {
-    info!("I run every 2 seconds");
-
-    let metric = bench::service_adapter::bench_servicerunner().await;
-
-    // Metric { txs_sent: 10, txs_confirmed: 10, txs_un_confirmed: 0,
-    // average_confirmation_time_ms: 3001.8, average_time_to_send_txs: 31.9,
-    // average_transaction_bytes: 179.0, send_tps: 30.408168850479996,
-    // total_sent_time: 319.813167ms, total_transaction_bytes: 1790,
-    // total_confirmation_time: 30.01841329s,
-    // total_gross_send_time_ms: 328.859 }
-    trace!("bench metric: {:?}", metric);
-
-    join!(
-        save_metrics_to_postgres(postgres_session.clone(), &metric),
-        publish_metrics_on_prometheus(&metric)
-    );
+    jh_runner.await.expect("benchrunner must not fail");
 
 }
 
-async fn save_metrics_to_postgres(postgres_session: Arc<PostgresSession>, metric: &Metric) {
-    let metric_timestamp = SystemTime::now();
+async fn save_metrics_to_postgres(
+    postgres_session: &PostgresSession, metric: &Metric, benchrun_at: SystemTime) {
     let metricjson = serde_json::to_value(&metric).unwrap();
     let values: &[&(dyn ToSql + Sync)] =
         &[
-            &metric_timestamp,
+            &benchrun_at,
             &(metric.txs_sent as i64),
             &(metric.txs_confirmed as i64),
             &(metric.txs_un_confirmed as i64),
