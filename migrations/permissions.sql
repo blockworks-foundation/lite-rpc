@@ -21,3 +21,7 @@ CREATE ROLE ro_literpc;
 GRANT ro_literpc TO literpc_app;
 
 GRANT CONNECT ON DATABASE literpc_integrationtest TO ro_literpc; -- TODO adjust database name
+
+-- required for benchrunner-service
+CREATE ROLE r_benchrunner;
+GRANT r_benchrunner TO literpc_app;

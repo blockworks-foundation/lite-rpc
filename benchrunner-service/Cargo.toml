@@ -12,6 +12,11 @@ license = "AGPL"
 solana-lite-rpc-util = { workspace = true }
 bench = { path = "../bench", version="0.2.4" }
 
+solana-sdk = { workspace = true }
+solana-rpc-client = { workspace = true }
+solana-transaction-status = { workspace = true }
+solana-rpc-client-api = { workspace = true }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 futures = { workspace = true }
@@ -30,5 +35,6 @@ itertools = { workspace = true }
 tokio-cron-scheduler = "*"
 native-tls = { workspace = true }
 postgres-native-tls = { workspace = true }
+postgres-types = { version = "0.2.6", features = ["derive", "with-serde_json-1"] }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 

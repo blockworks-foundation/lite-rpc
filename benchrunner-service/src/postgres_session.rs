@@ -70,7 +70,7 @@ impl PostgresSessionConfig {
 
 #[derive(Clone)]
 pub struct PostgresSession {
-    pub client: Arc<Client>,
+    client: Arc<Client>,
 }
 
 impl PostgresSession {
@@ -142,4 +142,74 @@ impl PostgresSession {
 
         Ok(client)
     }
+
+
+    pub async fn execute(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, tokio_postgres::error::Error> {
+        self.client.execute(statement, params).await
+    }
+
+    // execute statements seperated by semicolon
+    pub async fn execute_multiple(&self, statement: &str) -> Result<(), Error> {
+        self.client.batch_execute(statement).await
+    }
+
+    pub async fn execute_prepared_batch(
+        &self,
+        statement: &str,
+        params: &Vec<Vec<&(dyn ToSql + Sync)>>,
+    ) -> Result<u64, Error> {
+        let prepared_stmt = self.client.prepare(statement).await?;
+        let mut total_inserted = 0;
+        for row in params {
+            let result = self.client.execute(&prepared_stmt, row).await;
+            total_inserted += result?;
+        }
+        Ok(total_inserted)
+    }
+
+    pub async fn execute_prepared(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<u64, tokio_postgres::error::Error> {
+        let prepared_stmt = self.client.prepare(statement).await?;
+        self.client.execute(&prepared_stmt, params).await
+    }
+
+    pub async fn execute_and_return(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        self.client.query_opt(statement, params).await
+    }
+
+    pub async fn query_opt(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, Error> {
+        self.client.query_opt(statement, params).await
+    }
+
+    pub async fn query_one(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Row, Error> {
+        self.client.query_one(statement, params).await
+    }
+
+    pub async fn query_list(
+        &self,
+        statement: &str,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<Row>, Error> {
+        self.client.query(statement, params).await
+    }
+
 }
