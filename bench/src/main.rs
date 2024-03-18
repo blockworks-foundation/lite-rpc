@@ -37,6 +37,8 @@ async fn main() {
         large_transactions,
     } = Args::parse();
 
+    let cu_price_micro_lamports = 3;
+
     let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
 
     let transaction_size = if large_transactions {
@@ -114,6 +116,7 @@ async fn main() {
             tx_log_sx.clone(),
             log_transactions,
             transaction_size,
+            cu_price_micro_lamports,
         )));
         // wait for an interval
         run_interval_ms.tick().await;
