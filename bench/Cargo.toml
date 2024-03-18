@@ -8,7 +8,8 @@ name = "bench"
 path = "src/main.rs"
 
 [[bin]]
-name = "cli"
+# WIP
+name = "benchnew"
 path = "src/cli.rs"
 
 [dependencies]
