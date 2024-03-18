@@ -67,12 +67,18 @@ pub async fn bench(
             for rand_string in &rand_strings {
                 let blockhash = { *block_hash.read().await };
                 let tx = match transaction_size {
-                    TransactionSize::Small => {
-                        BenchHelper::create_memo_tx_small(rand_string, &funded_payer, blockhash, cu_price_micro_lamports)
-                    }
-                    TransactionSize::Large => {
-                        BenchHelper::create_memo_tx_large(rand_string, &funded_payer, blockhash, cu_price_micro_lamports)
-                    }
+                    TransactionSize::Small => BenchHelper::create_memo_tx_small(
+                        rand_string,
+                        &funded_payer,
+                        blockhash,
+                        cu_price_micro_lamports,
+                    ),
+                    TransactionSize::Large => BenchHelper::create_memo_tx_large(
+                        rand_string,
+                        &funded_payer,
+                        blockhash,
+                        cu_price_micro_lamports,
+                    ),
                 };
                 let start_time = Instant::now();
                 match rpc_client.send_transaction(&tx).await {

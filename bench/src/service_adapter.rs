@@ -1,23 +1,21 @@
 // adapter code for all from benchrunner-service
 
-
-use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
-use std::time::{Duration, SystemTime};
+use crate::helpers::BenchHelper;
+use crate::metrics::{AvgMetric, Metric, TxMetricData};
+use crate::oldbench;
+use crate::oldbench::TransactionSize;
+use crate::tx_size::TxSize;
 use log::{debug, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::Hash;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
-use tokio::sync::mpsc::UnboundedSender;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
-use crate::helpers::BenchHelper;
-use crate::metrics::{AvgMetric, Metric, TxMetricData};
-use crate::oldbench;
-use crate::oldbench::TransactionSize;
-use crate::tx_size::TxSize;
 
 pub struct BenchConfig {
     pub tenant: String,
@@ -25,8 +23,12 @@ pub struct BenchConfig {
     pub cu_price_micro_lamports: u64,
 }
 
-pub async fn bench_servicerunner(bench_config: &BenchConfig, rpc_addr: String,
-                                 funded_payer: Keypair, size_tx: TxSize) -> Metric {
+pub async fn bench_servicerunner(
+    bench_config: &BenchConfig,
+    rpc_addr: String,
+    funded_payer: Keypair,
+    size_tx: TxSize,
+) -> Metric {
     let started_at = Instant::now();
 
     let transaction_size = match size_tx {
@@ -88,9 +90,9 @@ pub async fn bench_servicerunner(bench_config: &BenchConfig, rpc_addr: String,
             false, // log_transactions
             transaction_size,
             bench_config.cu_price_micro_lamports,
-        ).await;
+        )
+        .await;
 
-        return metric;
+        metric
     }
-
 }

@@ -3,6 +3,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::instruction::AccountMeta;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -17,7 +18,6 @@ use solana_sdk::{
 };
 use std::path::PathBuf;
 use std::{str::FromStr, time::Duration};
-use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use tokio::time::Instant;
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
@@ -104,29 +104,43 @@ impl BenchHelper {
             .map(|_| {
                 let random_bytes: Vec<u8> = Alphanumeric.sample_iter(&mut rng).take(10).collect();
 
-                Self::create_memo_tx_small(&random_bytes, funded_payer, blockhash, cu_price_micro_lamports)
+                Self::create_memo_tx_small(
+                    &random_bytes,
+                    funded_payer,
+                    blockhash,
+                    cu_price_micro_lamports,
+                )
             })
             .collect()
     }
 
-    pub fn create_memo_tx_small(msg: &[u8], payer: &Keypair, blockhash: Hash, cu_price_micro_lamports: u64) -> Transaction {
+    pub fn create_memo_tx_small(
+        msg: &[u8],
+        payer: &Keypair,
+        blockhash: Hash,
+        cu_price_micro_lamports: u64,
+    ) -> Transaction {
         let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
         let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
 
-        let instructions =
-            if cu_price_micro_lamports > 0 {
-                let cu_budget_ix: Instruction =
-                    ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
-                vec![cu_budget_ix, instruction]
-            } else {
-                vec![instruction]
-            };
+        let instructions = if cu_price_micro_lamports > 0 {
+            let cu_budget_ix: Instruction =
+                ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
+            vec![cu_budget_ix, instruction]
+        } else {
+            vec![instruction]
+        };
 
         let message = Message::new(&instructions, Some(&payer.pubkey()));
         Transaction::new(&[payer], message, blockhash)
     }
 
-    pub fn create_memo_tx_large(msg: &[u8], payer: &Keypair, blockhash: Hash, cu_price_micro_lamports: u64) -> Transaction {
+    pub fn create_memo_tx_large(
+        msg: &[u8],
+        payer: &Keypair,
+        blockhash: Hash,
+        cu_price_micro_lamports: u64,
+    ) -> Transaction {
         let accounts = (0..8).map(|_| Keypair::new()).collect_vec();
         let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
         let instruction = Instruction::new_with_bytes(
@@ -138,14 +152,13 @@ impl BenchHelper {
                 .collect_vec(),
         );
 
-        let instructions =
-            if cu_price_micro_lamports > 0 {
-                let cu_budget_ix: Instruction =
-                    ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
-                vec![cu_budget_ix, instruction]
-            } else {
-                vec![instruction]
-            };
+        let instructions = if cu_price_micro_lamports > 0 {
+            let cu_budget_ix: Instruction =
+                ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
+            vec![cu_budget_ix, instruction]
+        } else {
+            vec![instruction]
+        };
 
         let message = Message::new(&instructions, Some(&payer.pubkey()));
 

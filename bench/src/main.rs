@@ -1,4 +1,9 @@
-use bench::{helpers::BenchHelper, metrics::{AvgMetric, Metric, TxMetricData}, Args, oldbench};
+use bench::oldbench::TransactionSize;
+use bench::{
+    helpers::BenchHelper,
+    metrics::{AvgMetric, Metric, TxMetricData},
+    oldbench, Args,
+};
 use clap::Parser;
 use dashmap::DashMap;
 use futures::future::join_all;
@@ -17,8 +22,6 @@ use tokio::{
     sync::{mpsc::UnboundedSender, RwLock},
     time::{Duration, Instant},
 };
-use bench::oldbench::TransactionSize;
-
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {
