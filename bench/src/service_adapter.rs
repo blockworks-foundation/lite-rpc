@@ -17,6 +17,7 @@ use crate::helpers::BenchHelper;
 use crate::metrics::{AvgMetric, Metric, TxMetricData};
 use crate::oldbench;
 use crate::oldbench::TransactionSize;
+use crate::tx_size::TxSize;
 
 pub struct BenchConfig {
     pub tenant: String,
@@ -24,20 +25,14 @@ pub struct BenchConfig {
     pub cu_price_micro_lamports: u64,
 }
 
-pub async fn bench_servicerunner(bench_config: &BenchConfig, rpc_addr: String, funded_payer: Keypair) -> Metric {
+pub async fn bench_servicerunner(bench_config: &BenchConfig, rpc_addr: String,
+                                 funded_payer: Keypair, size_tx: TxSize) -> Metric {
     let started_at = Instant::now();
 
-    // TODO extract
-    // TODO
-    let large_transactions = false;
-
-    let transaction_size = if large_transactions {
-        TransactionSize::Large
-    } else {
-        TransactionSize::Small
+    let transaction_size = match size_tx {
+        TxSize::Small => TransactionSize::Small,
+        TxSize::Large => TransactionSize::Large,
     };
-
-    let mut avg_metric = AvgMetric::default();
 
     debug!("Payer: {}", funded_payer.pubkey());
 

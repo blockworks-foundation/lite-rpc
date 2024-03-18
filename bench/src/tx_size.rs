@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use serde::Deserialize;
 
 // see https://spl.solana.com/memo for sizing of transactions
@@ -9,6 +10,15 @@ pub enum TxSize {
     Small,
     // 1186 bytes, 193175 CUs
     Large,
+}
+
+impl Display for TxSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TxSize::Small => write!(f, "small"),
+            TxSize::Large => write!(f, "large"),
+        }
+    }
 }
 
 impl TxSize {
