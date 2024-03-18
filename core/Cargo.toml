@@ -35,8 +35,7 @@ chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
 itertools = { workspace = true }
-btreemultimap = "0.1.1"
+prometheus = { workspace = true }
 
 [dev-dependencies]
 rand = "0.8.5"
-rand_chacha = "0.3.1"

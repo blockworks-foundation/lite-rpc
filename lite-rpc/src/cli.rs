@@ -1,10 +1,10 @@
 use std::borrow::Cow;
-use std::env;
 use std::fmt::{Debug, Display, Formatter};
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::{env, time::Duration};
 
-use crate::postgres_logger;
+use crate::postgres_logger::{self, PostgresSessionConfig};
 use crate::{
     DEFAULT_FANOUT_SIZE, DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
     DEFAULT_WS_ADDR, MAX_RETRIES,
@@ -12,6 +12,7 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
+use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 use solana_rpc_client_api::client_error::reqwest::Url;
 
 #[derive(Parser, Debug, Clone)]
@@ -90,6 +91,9 @@ pub struct Config {
 
     #[serde(default)]
     pub enable_accounts_on_demand_accounts_service: Option<bool>,
+
+    #[serde(default)]
+    pub quic_connection_parameters: Option<QuicConnectionParameters>,
 }
 
 impl Config {
@@ -207,9 +211,6 @@ impl Config {
             .map(|x| x.parse().ok())
             .unwrap_or(config.max_number_of_connection);
 
-        config.postgres =
-            postgres_logger::PostgresSessionConfig::new_from_env()?.or(config.postgres);
-
         config.enable_address_lookup_tables = env::var("ENABLE_ADDRESS_LOOKUP_TABLES")
             .map(|value| value.parse::<bool>().unwrap())
             .ok()
@@ -225,6 +226,11 @@ impl Config {
             .map(|value| value.parse::<bool>().unwrap())
             .ok()
             .or(config.enable_accounts_on_demand_accounts_service);
+
+        config.postgres = PostgresSessionConfig::new_from_env()?.or(config.postgres);
+        config.quic_connection_parameters = config
+            .quic_connection_parameters
+            .or(quic_params_from_environment());
         Ok(config)
     }
 
@@ -348,4 +354,45 @@ fn obfuscate_token(token: &Option<String>) -> String {
             token
         }
     }
+}
+
+fn quic_params_from_environment() -> Option<QuicConnectionParameters> {
+    let mut quic_connection_parameters = QuicConnectionParameters::default();
+
+    quic_connection_parameters.connection_timeout = env::var("QUIC_CONNECTION_TIMEOUT_MILLIS")
+        .map(|millis| Duration::from_millis(millis.parse().unwrap()))
+        .unwrap_or(quic_connection_parameters.connection_timeout);
+
+    quic_connection_parameters.unistream_timeout = env::var("QUIC_UNISTREAM_TIMEOUT_MILLIS")
+        .map(|millis| Duration::from_millis(millis.parse().unwrap()))
+        .unwrap_or(quic_connection_parameters.unistream_timeout);
+
+    quic_connection_parameters.write_timeout = env::var("QUIC_WRITE_TIMEOUT_MILLIS")
+        .map(|millis| Duration::from_millis(millis.parse().unwrap()))
+        .unwrap_or(quic_connection_parameters.write_timeout);
+
+    quic_connection_parameters.finalize_timeout = env::var("QUIC_FINALIZE_TIMEOUT_MILLIS")
+        .map(|millis| Duration::from_millis(millis.parse().unwrap()))
+        .unwrap_or(quic_connection_parameters.finalize_timeout);
+
+    quic_connection_parameters.connection_retry_count = env::var("QUIC_CONNECTION_RETRY_COUNT")
+        .map(|millis| millis.parse().unwrap())
+        .unwrap_or(quic_connection_parameters.connection_retry_count);
+
+    quic_connection_parameters.max_number_of_connections =
+        env::var("QUIC_MAX_NUMBER_OF_CONNECTIONS")
+            .map(|millis| millis.parse().unwrap())
+            .unwrap_or(quic_connection_parameters.max_number_of_connections);
+
+    quic_connection_parameters.number_of_transactions_per_unistream =
+        env::var("QUIC_NUMBER_OF_TRANSACTIONS_PER_TASK")
+            .map(|millis| millis.parse().unwrap())
+            .unwrap_or(quic_connection_parameters.number_of_transactions_per_unistream);
+
+    quic_connection_parameters.percentage_of_connection_limit_to_create_new =
+        env::var("QUIC_PERCENTAGE_TO_CREATE_NEW_CONNECTION")
+            .map(|millis| millis.parse().unwrap())
+            .unwrap_or(quic_connection_parameters.percentage_of_connection_limit_to_create_new);
+
+    Some(quic_connection_parameters)
 }
