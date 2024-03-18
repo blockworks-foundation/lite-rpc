@@ -1,6 +1,8 @@
 use dashmap::DashMap;
 use log::{error, trace};
-use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use prometheus::{
+    core::GenericGauge, histogram_opts, opts, register_histogram, register_int_gauge, Histogram,
+};
 use quinn::Endpoint;
 use solana_lite_rpc_core::{
     stores::data_cache::DataCache,
@@ -39,6 +41,15 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_connections_to_keep", "Number of connections to keep asked by tpu service")).unwrap();
     static ref NB_QUIC_TASKS: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_tasks", "Number of connections to keep asked by tpu service")).unwrap();
+
+    static ref TT_SENT_TIMER: Histogram = register_histogram!(histogram_opts!(
+            "literpc_txs_send_timer",
+            "Time to send transaction batch",
+        ))
+        .unwrap();
+
+        static ref TRANSACTIONS_IN_HEAP: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_transactions_in_priority_heap", "Number of transactions in priority heap")).unwrap();
 }
 
 #[derive(Clone)]
@@ -101,6 +112,8 @@ impl ActiveConnection {
                             }
 
                             priorization_heap.insert(transaction_sent_info).await;
+                            TRANSACTIONS_IN_HEAP.inc();
+
                             fill_notify.notify_one();
                             // give little more priority to read the transaction sender with this wait
                             let last_blockheight =
@@ -166,6 +179,7 @@ impl ActiveConnection {
                             // wait to get notification from fill event
                             break;
                         };
+                        TRANSACTIONS_IN_HEAP.dec();
 
                         // check if transaction is already confirmed
                         if self.data_cache.txs.is_transaction_confirmed(&tx.signature) {
@@ -186,8 +200,12 @@ impl ActiveConnection {
                         tokio::spawn(async move {
                             // permit will be used to send all the transaction and then destroyed
                             let _permit = permit;
+                            let timer = TT_SENT_TIMER.start_timer();
+
                             NB_QUIC_TASKS.inc();
+
                             connection.send_transaction(tx.transaction).await;
+                            timer.observe_duration();
                             NB_QUIC_TASKS.dec();
                         });
                     }

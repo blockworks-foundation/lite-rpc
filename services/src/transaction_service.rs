@@ -9,6 +9,7 @@ use crate::{
     tx_sender::TxSender,
 };
 use anyhow::bail;
+use prometheus::{histogram_opts, register_histogram, Histogram};
 use solana_lite_rpc_core::{
     solana_utils::SerializableTransaction, structures::transaction_sent_info::SentTransactionInfo,
     types::SlotStream,
@@ -27,6 +28,14 @@ use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
     time::Instant,
 };
+
+lazy_static::lazy_static! {
+static ref PRIORITY_FEES_HISTOGRAM: Histogram = register_histogram!(histogram_opts!(
+    "literpc_txs_priority_fee",
+    "Priority fees of transactions sent by lite-rpc",
+))
+.unwrap();
+}
 
 #[derive(Clone)]
 pub struct TransactionServiceBuilder {
@@ -156,6 +165,8 @@ impl TransactionService {
             }
             prioritization_fee
         };
+
+        PRIORITY_FEES_HISTOGRAM.observe(prioritization_fee as f64);
 
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         let transaction_info = SentTransactionInfo {

@@ -69,14 +69,14 @@ pub struct QuicConnectionParameters {
 impl Default for QuicConnectionParameters {
     fn default() -> Self {
         Self {
-            connection_timeout: Duration::from_millis(5000),
-            unistream_timeout: Duration::from_millis(5000),
-            write_timeout: Duration::from_millis(5000),
-            finalize_timeout: Duration::from_millis(5000),
+            connection_timeout: Duration::from_millis(10000),
+            unistream_timeout: Duration::from_millis(10000),
+            write_timeout: Duration::from_millis(10000),
+            finalize_timeout: Duration::from_millis(10000),
             connection_retry_count: 20,
             max_number_of_connections: 8,
             number_of_transactions_per_unistream: 1,
-            percentage_of_connection_limit_to_create_new: 50,
+            percentage_of_connection_limit_to_create_new: 75,
         }
     }
 }
