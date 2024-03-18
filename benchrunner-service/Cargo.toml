@@ -9,6 +9,7 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
+solana-lite-rpc-util = { workspace = true }
 bench = { path = "../bench", version="0.2.4" }
 
 serde = { workspace = true }
@@ -27,3 +28,7 @@ tokio-util = "0.7"
 chrono = { workspace = true }
 itertools = { workspace = true }
 tokio-cron-scheduler = "*"
+native-tls = { workspace = true }
+postgres-native-tls = { workspace = true }
+tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
+
