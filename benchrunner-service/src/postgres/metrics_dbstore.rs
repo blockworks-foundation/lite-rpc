@@ -26,13 +26,10 @@ pub async fn upsert_benchrun_status(
     status: BenchRunStatus,
 ) {
     let values: &[&(dyn ToSql + Sync)] =
-        &[
-            &bench_config.tenant,
-            &benchrun_at,
-            &status.to_db_string(),
-        ];
-    let write_result = postgres_session.execute(
-        r#"
+        &[&bench_config.tenant, &benchrun_at, &status.to_db_string()];
+    let write_result = postgres_session
+        .execute(
+            r#"
             INSERT INTO benchrunner.bench_runs (
                 tenant,
                 ts,

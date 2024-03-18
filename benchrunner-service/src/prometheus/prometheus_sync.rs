@@ -38,7 +38,9 @@ impl PrometheusSync {
         Ok(())
     }
 
-    pub fn sync(addr: impl ToSocketAddrs + Send + 'static) -> tokio::task::JoinHandle<anyhow::Result<()>> {
+    pub fn sync(
+        addr: impl ToSocketAddrs + Send + 'static,
+    ) -> tokio::task::JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
             let listener = TcpListener::bind(addr).await?;
 

@@ -1,8 +1,7 @@
 use bench::metrics::Metric;
 
-use prometheus::{GaugeVec, IntGaugeVec, opts, register_gauge_vec, register_int_gauge_vec};
 use bench::service_adapter::BenchConfig;
-
+use prometheus::{opts, register_gauge_vec, register_int_gauge_vec, GaugeVec, IntGaugeVec};
 
 // https://github.com/blockworks-foundation/lite-rpc/blob/production/bench/src/metrics.rs
 lazy_static::lazy_static! {
@@ -17,8 +16,16 @@ lazy_static::lazy_static! {
 pub async fn publish_metrics_on_prometheus(bench_config: &BenchConfig, metric: &Metric) {
     let dimensions: &[&str] = &[&bench_config.tenant];
 
-    PROM_TXS_SENT.with_label_values(dimensions).set(metric.txs_sent as i64);
-    PROM_TXS_CONFIRMED.with_label_values(dimensions).set(metric.txs_confirmed as i64);
-    PROM_TXS_UN_CONFIRMED.with_label_values(dimensions).set(metric.txs_un_confirmed as i64);
-    PROM_AVG_CONFIRM.with_label_values(dimensions).set(metric.average_confirmation_time_ms);
+    PROM_TXS_SENT
+        .with_label_values(dimensions)
+        .set(metric.txs_sent as i64);
+    PROM_TXS_CONFIRMED
+        .with_label_values(dimensions)
+        .set(metric.txs_confirmed as i64);
+    PROM_TXS_UN_CONFIRMED
+        .with_label_values(dimensions)
+        .set(metric.txs_un_confirmed as i64);
+    PROM_AVG_CONFIRM
+        .with_label_values(dimensions)
+        .set(metric.average_confirmation_time_ms);
 }
