@@ -1,18 +1,28 @@
 use std::path::Path;
 use std::time::Duration;
 
+use crate::metrics::{PingThing, PingThingTxType};
 use crate::tx_size::TxSize;
 use crate::{create_memo_tx, create_rng, Rng8};
 use log::{debug, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::{RpcSendTransactionConfig, RpcTransactionConfig};
-use solana_sdk::signature::{read_keypair_file, Signer};
+use solana_sdk::signature::{read_keypair_file, Signature, Signer};
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use solana_transaction_status::UiTransactionEncoding;
 use tokio::time::{sleep, Instant};
 use tracing::error;
 
+#[derive(Default, PartialEq, Eq)]
+pub struct ConfirmationSlotResult {
+    pub signature: Signature,
+    pub slot_sent: u64,
+    pub slot_landed: u64,
+    pub send_duration: Duration,
+}
+
+#[allow(clippy::too_many_arguments)]
 /// TC1 -- Send 2 txs to separate RPCs and compare confirmation slot.
 /// The benchmark attempts to minimize the effect of real-world distance and synchronize the time that each transaction reaches the RPC.
 /// This is achieved by delaying submission of the transaction to the "nearer" RPC.
@@ -25,6 +35,7 @@ pub async fn confirmation_slot(
     max_timeout_ms: u64,
     num_rounds: usize,
     cu_price_micro_lamports: u64,
+    ping_thing_token: Option<String>,
 ) -> anyhow::Result<()> {
     info!("START BENCHMARK: confirmation_slot");
     info!("RPC A: {}", rpc_a_url);
@@ -59,27 +70,37 @@ pub async fn confirmation_slot(
 
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
-            send_transaction_and_get_slot(&rpc_a, rpc_a_tx, max_timeout_ms)
+            send_transaction(&rpc_a, rpc_a_tx, max_timeout_ms)
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to confirm txn for A: {}", e);
-                    0
+                    ConfirmationSlotResult::default()
                 })
         });
 
         let b_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(b_delay)).await;
-            send_transaction_and_get_slot(&rpc_b, rpc_b_tx, max_timeout_ms)
+            send_transaction(&rpc_b, rpc_b_tx, max_timeout_ms)
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to confirm txn for B: {}", e);
-                    0
+                    ConfirmationSlotResult::default()
                 })
         });
 
-        let (a_slot, b_slot) = tokio::join!(a_task, b_task);
+        let (a, b) = tokio::join!(a_task, b_task);
+        let a_result = a?;
+        let b_result = b?;
 
-        info!("a_slot: {}, b_slot: {}\n", a_slot?, b_slot?);
+        if let Some(ref token) = ping_thing_token {
+            submit_ping_thing_stats(&a_result, token.as_str()).await?;
+            submit_ping_thing_stats(&b_result, token.as_str()).await?;
+        };
+
+        info!(
+            "a_slot: {}, b_slot: {}\n",
+            a_result.slot_landed, b_result.slot_landed
+        );
     }
 
     Ok(())
@@ -103,11 +124,11 @@ async fn create_tx(
     ))
 }
 
-async fn send_transaction_and_get_slot(
+async fn send_transaction(
     rpc: &RpcClient,
     tx: Transaction,
     timeout_ms: u64,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<ConfirmationSlotResult> {
     let send_config = RpcSendTransactionConfig {
         skip_preflight: true,
         preflight_commitment: None,
@@ -115,6 +136,9 @@ async fn send_transaction_and_get_slot(
         max_retries: Some(3),
         min_context_slot: None,
     };
+    let slot_sent = rpc
+        .get_slot_with_commitment(CommitmentConfig::confirmed())
+        .await?;
     let signature = rpc
         .send_transaction_with_config(&tx, send_config)
         .await
@@ -123,7 +147,7 @@ async fn send_transaction_and_get_slot(
     let start_time = Instant::now();
     loop {
         if start_time.elapsed() >= Duration::from_millis(timeout_ms) {
-            return Ok(0); // Timeout occurred
+            return Ok(ConfirmationSlotResult::default()); // Timeout occurred
         }
         let confirmed = rpc
             .confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed())
@@ -134,6 +158,8 @@ async fn send_transaction_and_get_slot(
         }
     }
 
+    let send_duration = start_time.elapsed();
+
     let fetch_config = RpcTransactionConfig {
         encoding: Some(UiTransactionEncoding::Json),
         commitment: Some(CommitmentConfig::confirmed()),
@@ -142,7 +168,13 @@ async fn send_transaction_and_get_slot(
     let transaction = rpc
         .get_transaction_with_config(&signature, fetch_config)
         .await?;
-    Ok(transaction.slot)
+
+    Ok(ConfirmationSlotResult {
+        signature,
+        slot_sent,
+        slot_landed: transaction.slot,
+        send_duration,
+    })
 }
 
 pub async fn rpc_roundtrip_duration(rpc: &RpcClient) -> anyhow::Result<Duration> {
@@ -150,4 +182,28 @@ pub async fn rpc_roundtrip_duration(rpc: &RpcClient) -> anyhow::Result<Duration>
     rpc.get_health().await?;
     let duration = start.elapsed();
     Ok(duration)
+}
+
+async fn submit_ping_thing_stats(
+    result: &ConfirmationSlotResult,
+    ping_thing_token: &str,
+) -> anyhow::Result<()> {
+    if result == &ConfirmationSlotResult::default() {
+        // ignore timed-out transactions
+        return Ok(());
+    };
+    let ping_client = PingThing {
+        cluster: crate::metrics::ClusterKeys::Mainnet,
+        va_api_key: ping_thing_token.to_string(),
+    };
+    ping_client
+        .submit_confirmed_stats(
+            result.send_duration,
+            result.signature,
+            PingThingTxType::Memo,
+            true,
+            result.slot_sent,
+            result.slot_landed,
+        )
+        .await
 }

@@ -70,6 +70,8 @@ enum SubCommand {
         #[clap(short, long, default_value_t = 300)]
         #[arg(short = 'f')]
         cu_price: u64,
+        #[clap(long)]
+        ping_thing_token: Option<String>,
     },
 }
 
@@ -122,6 +124,7 @@ async fn main() {
             max_timeout_ms,
             num_rounds,
             cu_price,
+            ping_thing_token,
         } => confirmation_slot(
             &payer_path,
             rpc_a,
@@ -130,6 +133,7 @@ async fn main() {
             max_timeout_ms,
             num_rounds,
             cu_price,
+            ping_thing_token,
         )
         .await
         .unwrap(),
