@@ -110,6 +110,14 @@ impl PrioritizationFeesHeap {
     pub async fn size(&self) -> usize {
         self.map.lock().await.signatures.len()
     }
+
+    pub async fn clear(&self) -> usize {
+        let mut lk = self.map.lock().await;
+        lk.map.clear();
+        let size = lk.signatures.len();
+        lk.signatures.clear();
+        size
+    }
 }
 
 #[cfg(test)]

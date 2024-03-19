@@ -45,6 +45,9 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_quic_finish_timedout", "Number of times finish timedout")).unwrap();
     static ref NB_QUIC_FINISH_ERRORED: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_finish_errored", "Number of times finish errored")).unwrap();
+
+    static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
 }
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
@@ -210,6 +213,7 @@ impl QuicConnectionUtils {
             };
             match conn {
                 Ok(conn) => {
+                    NB_QUIC_CONNECTIONS.inc();
                     return Some(conn);
                 }
                 Err(e) => {
