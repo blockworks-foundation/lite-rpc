@@ -5,7 +5,6 @@ use crate::oldbench;
 use crate::oldbench::TransactionSize;
 use crate::tx_size::TxSize;
 use log::debug;
-use log::Level::Debug;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::Hash;

@@ -16,7 +16,7 @@ lazy_static::lazy_static! {
 
 pub async fn publish_metrics_on_prometheus(
     tenant_config: &TenantConfig,
-    bench_config: &BenchConfig,
+    _bench_config: &BenchConfig,
     metric: &Metric,
 ) {
     let dimensions: &[&str] = &[&tenant_config.tenant_id];

@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use log::info;
 use solana_sdk::signature::Keypair;
 
 #[derive(Debug, Clone)]
@@ -26,10 +25,9 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .nth(0)
                 .expect("tenant prefix must be split by underscore (e.g. TENANT99_SOMETHING")
                 .replace("TENANT", "");
-            let tenant_counter = tenant_counter
-                .parse::<u32>()
-                .expect("tenant counter must be a number (e.g. TENANT99)");
             tenant_counter
+                .parse::<u32>()
+                .expect("tenant counter must be a number (e.g. TENANT99)")
         });
 
     let values = map

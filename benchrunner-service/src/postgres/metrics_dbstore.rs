@@ -24,7 +24,7 @@ impl BenchRunStatus {
 pub async fn upsert_benchrun_status(
     postgres_session: &PostgresSession,
     tenant_config: &TenantConfig,
-    bench_config: &BenchConfig,
+    _bench_config: &BenchConfig,
     benchrun_at: SystemTime,
     status: BenchRunStatus,
 ) {
