@@ -30,11 +30,11 @@ use tokio::{
 };
 
 lazy_static::lazy_static! {
-static ref PRIORITY_FEES_HISTOGRAM: Histogram = register_histogram!(histogram_opts!(
-    "literpc_txs_priority_fee",
-    "Priority fees of transactions sent by lite-rpc",
-))
-.unwrap();
+    static ref PRIORITY_FEES_HISTOGRAM: Histogram = register_histogram!(histogram_opts!(
+        "literpc_txs_priority_fee",
+        "Priority fees of transactions sent by lite-rpc",
+    ))
+    .unwrap();
 }
 
 #[derive(Clone)]
@@ -203,3 +203,5 @@ impl TransactionService {
         Ok(signature.to_string())
     }
 }
+
+mod test {}

@@ -296,10 +296,12 @@ fn quic_params_from_environment() -> Option<QuicConnectionParameters> {
             .map(|millis| millis.parse().unwrap())
             .unwrap_or(quic_connection_parameters.number_of_transactions_per_unistream);
 
-    quic_connection_parameters.percentage_of_connection_limit_to_create_new =
+    quic_connection_parameters.unistreams_to_create_new_connection_in_percentage =
         env::var("QUIC_PERCENTAGE_TO_CREATE_NEW_CONNECTION")
             .map(|millis| millis.parse().unwrap())
-            .unwrap_or(quic_connection_parameters.percentage_of_connection_limit_to_create_new);
+            .unwrap_or(
+                quic_connection_parameters.unistreams_to_create_new_connection_in_percentage,
+            );
 
     Some(quic_connection_parameters)
 }

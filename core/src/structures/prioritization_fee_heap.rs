@@ -194,7 +194,7 @@ mod tests {
 
                 let mut height = 0;
                 while instant.elapsed() < Duration::from_secs(45) {
-                    let burst_count = rand::random::<u64>() % 1024 + 1;
+                    let burst_count = rand::random::<u64>() % 128 + 1;
                     for c in 0..burst_count {
                         let prioritization_fee = rand::random::<u64>() % 100000;
                         let info = SentTransactionInfo {

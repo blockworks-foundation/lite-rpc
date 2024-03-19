@@ -1,5 +1,7 @@
 use log::trace;
-use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use prometheus::{
+    core::GenericGauge, histogram_opts, opts, register_histogram, register_int_gauge, Histogram,
+};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig, VarInt,
@@ -48,6 +50,23 @@ lazy_static::lazy_static! {
 
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
+
+    static ref TIME_OF_CONNECT: Histogram = register_histogram!(histogram_opts!(
+            "literpc_quic_connection_timer_histogram",
+            "Time to connect to the TPU port",
+        ))
+        .unwrap();
+    static ref TIME_TO_WRITE: Histogram = register_histogram!(histogram_opts!(
+        "literpc_quic_write_timer_histogram",
+        "Time to write on the TPU port",
+    ))
+    .unwrap();
+
+    static ref TIME_TO_FINISH: Histogram = register_histogram!(histogram_opts!(
+    "literpc_quic_finish_timer_histogram",
+    "Time to finish on the TPU port",
+))
+.unwrap();
 }
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
@@ -66,7 +85,7 @@ pub struct QuicConnectionParameters {
     pub connection_retry_count: usize,
     pub max_number_of_connections: usize,
     pub number_of_transactions_per_unistream: usize,
-    pub percentage_of_connection_limit_to_create_new: u8,
+    pub unistreams_to_create_new_connection_in_percentage: u8,
 }
 
 impl Default for QuicConnectionParameters {
@@ -79,7 +98,7 @@ impl Default for QuicConnectionParameters {
             connection_retry_count: 20,
             max_number_of_connections: 8,
             number_of_transactions_per_unistream: 1,
-            percentage_of_connection_limit_to_create_new: 75,
+            unistreams_to_create_new_connection_in_percentage: 50,
         }
     }
 }
@@ -140,10 +159,12 @@ impl QuicConnectionUtils {
         addr: SocketAddr,
         connection_timeout: Duration,
     ) -> anyhow::Result<Connection> {
+        let timer = TIME_OF_CONNECT.start_timer();
         let connecting = endpoint.connect(addr, "connect")?;
         match timeout(connection_timeout, connecting).await {
             Ok(res) => match res {
                 Ok(connection) => {
+                    timer.observe_duration();
                     NB_QUIC_CONN_SUCCESSFUL.inc();
                     Ok(connection)
                 }
@@ -233,6 +254,7 @@ impl QuicConnectionUtils {
         identity: Pubkey,
         connection_params: QuicConnectionParameters,
     ) -> Result<(), QuicConnectionError> {
+        let timer = TIME_TO_WRITE.start_timer();
         let write_timeout_res = timeout(
             connection_params.write_timeout,
             send_stream.write_all(tx.as_slice()),
@@ -248,6 +270,8 @@ impl QuicConnectionUtils {
                     );
                     NB_QUIC_WRITEALL_ERRORED.inc();
                     return Err(QuicConnectionError::ConnectionError { retry: true });
+                } else {
+                    timer.observe_duration();
                 }
             }
             Err(_) => {
@@ -257,6 +281,7 @@ impl QuicConnectionUtils {
             }
         }
 
+        let timer: prometheus::HistogramTimer = TIME_TO_FINISH.start_timer();
         let finish_timeout_res =
             timeout(connection_params.finalize_timeout, send_stream.finish()).await;
         match finish_timeout_res {
@@ -269,6 +294,8 @@ impl QuicConnectionUtils {
                     );
                     NB_QUIC_FINISH_ERRORED.inc();
                     return Err(QuicConnectionError::ConnectionError { retry: false });
+                } else {
+                    timer.observe_duration();
                 }
             }
             Err(_) => {
