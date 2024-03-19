@@ -2,7 +2,7 @@
 
 # Setup
 ### Hardware
-Hardware: recommend 512MB RAM, 1 CPU, small disk
+Hardware: recommend 1024MB RAM, 2 vCPUs, small disk
 
 
 ### Environment Variables
@@ -16,8 +16,6 @@ Hardware: recommend 512MB RAM, 1 CPU, small disk
 
 ### Command-line Arguments
 ```
-Usage: solana-lite-rpc-benchrunner-service [OPTIONS]
-
 Options:
   -b, --bench-interval <BENCH_INTERVAL>
           interval in milliseconds to run the benchmark [default: 60000]
@@ -25,12 +23,13 @@ Options:
           [default: 10]
   -s, --size-tx <SIZE_TX>
           [default: small] [possible values: small, large]
-  -h, --help
-          Print help
-  -V, --version
-          Print version
+  -p, --prio-fees <PRIO_FEES>
+          [default: 0]
 ```
 
 ```bash
---prio-fees 0 --prio-fees 1000 --prio-fees 100000
+solana-lite-rpc-benchrunner-service \
+  --bench-interval 600000 \
+  --tx-count 100 \
+  --prio-fees 0 --prio-fees 1000 --prio-fees 100000
 ```

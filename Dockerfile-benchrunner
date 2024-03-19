@@ -20,4 +20,7 @@ FROM debian:bookworm-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6 libssl3 libssl-dev openssl
 COPY --from=build /app/target/release/solana-lite-rpc-benchrunner-service /usr/local/bin/
 
-CMD solana-lite-rpc-benchrunner-service --tx-count 100 --prio-fees 0 --prio-fees 1000 --prio-fees 100000
+CMD solana-lite-rpc-benchrunner-service \
+    --bench-interval 600000 \
+    --tx-count 100 \
+    --prio-fees 100000 --prio-fees 1000 --prio-fees 0
