@@ -25,7 +25,7 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
     let map = env_vars
         .iter()
         .filter(|(k, _)| k.starts_with("TENANT"))
-        .into_group_map_by(|(k, v)| {
+        .into_group_map_by(|(k, _v)| {
             let tenant_id = k.split('_').nth(0).unwrap().replace("TENANT", "");
             tenant_id.to_string()
         });

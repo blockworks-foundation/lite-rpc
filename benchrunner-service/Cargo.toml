@@ -10,7 +10,7 @@ license = "AGPL"
 
 [dependencies]
 solana-lite-rpc-util = { workspace = true }
-bench = { path = "../bench", version="0.2.4" }
+bench = { workspace = true }
 
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
