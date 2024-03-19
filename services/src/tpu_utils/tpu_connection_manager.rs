@@ -160,6 +160,16 @@ impl ActiveConnection {
             })
         };
 
+        // create atleast one connection before waiting from transactions
+        if let Ok(PooledConnection { connection, permit }) =
+            connection_pool.get_pooled_connection().await
+        {
+            tokio::task::spawn(async move {
+                let _permit = permit;
+                connection.get_connection().await;
+            });
+        }
+
         'main_loop: loop {
             // exit signal set
             if exit_signal.load(Ordering::Relaxed) {
