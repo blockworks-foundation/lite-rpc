@@ -35,6 +35,9 @@ bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
 lazy_static = "1.4.0"
+websocket-tungstenite-retry = { git = "https://github.com/grooviegermanikus/websocket-tungstenite-retry.git", tag = "0.7.0" }
+url = "2.5.0"
+
 
 [dev-dependencies]
 bincode = { workspace = true }
