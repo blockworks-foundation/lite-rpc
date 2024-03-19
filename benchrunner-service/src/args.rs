@@ -1,17 +1,12 @@
 use itertools::Itertools;
+use log::info;
 use solana_sdk::signature::Keypair;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TenantConfig {
     // technical identifier for the tenant, e.g. "solana-rpc"
     pub tenant_id: String,
     pub rpc_addr: String,
-}
-
-pub fn get_prio_fees_from_env() -> u64 {
-    std::env::var("PRIO_FEES")
-        .map(|v| v.parse::<u64>().expect("prio fees must be a number"))
-        .unwrap_or(0)
 }
 
 // recommend to use one payer keypair for all targets and fund that keypair with enough SOL
@@ -26,22 +21,34 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
         .iter()
         .filter(|(k, _)| k.starts_with("TENANT"))
         .into_group_map_by(|(k, _v)| {
-            let tenant_id = k.split('_').nth(0).unwrap().replace("TENANT", "");
-            tenant_id.to_string()
+            let tenant_counter = k
+                .split('_')
+                .nth(0)
+                .expect("tenant prefix must be split by underscore (e.g. TENANT99_SOMETHING")
+                .replace("TENANT", "");
+            let tenant_counter = tenant_counter
+                .parse::<u32>()
+                .expect("tenant counter must be a number (e.g. TENANT99)");
+            tenant_counter
         });
 
     let values = map
         .iter()
-        .map(|(_k, v)| TenantConfig {
+        .sorted()
+        .map(|(tc, v)| TenantConfig {
             tenant_id: v
                 .iter()
-                .find(|(k, _)| k.ends_with("_ID"))
+                .find(|(v, _)| *v == format!("TENANT{}_ID", tc))
+                .iter()
+                .exactly_one()
                 .expect("need ID")
                 .1
                 .to_string(),
             rpc_addr: v
                 .iter()
-                .find(|(k, _)| k.ends_with("_RPC_ADDR"))
+                .find(|(v, _)| *v == format!("TENANT{}_RPC_ADDR", tc))
+                .iter()
+                .exactly_one()
                 .expect("need RPC_ADDR")
                 .1
                 .to_string(),

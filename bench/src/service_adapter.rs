@@ -4,22 +4,30 @@ use crate::metrics::{Metric, TxMetricData};
 use crate::oldbench;
 use crate::oldbench::TransactionSize;
 use crate::tx_size::TxSize;
-use log::{debug};
+use log::debug;
+use log::Level::Debug;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::hash::Hash;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use std::fmt::Display;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::Instant;
 
+#[derive(Debug, Clone)]
 pub struct BenchConfig {
-    pub tenant: String,
     pub tx_count: usize,
     pub cu_price_micro_lamports: u64,
+}
+
+impl Display for BenchConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 pub async fn bench_servicerunner(

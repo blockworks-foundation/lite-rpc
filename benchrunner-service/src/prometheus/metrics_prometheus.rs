@@ -1,5 +1,6 @@
 use bench::metrics::Metric;
 
+use crate::args::TenantConfig;
 use bench::service_adapter::BenchConfig;
 use prometheus::{opts, register_gauge_vec, register_int_gauge_vec, GaugeVec, IntGaugeVec};
 
@@ -13,8 +14,12 @@ lazy_static::lazy_static! {
     // TODO add more
 }
 
-pub async fn publish_metrics_on_prometheus(bench_config: &BenchConfig, metric: &Metric) {
-    let dimensions: &[&str] = &[&bench_config.tenant];
+pub async fn publish_metrics_on_prometheus(
+    tenant_config: &TenantConfig,
+    bench_config: &BenchConfig,
+    metric: &Metric,
+) {
+    let dimensions: &[&str] = &[&tenant_config.tenant_id];
 
     PROM_TXS_SENT
         .with_label_values(dimensions)

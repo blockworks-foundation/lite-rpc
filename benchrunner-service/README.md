@@ -30,3 +30,7 @@ Options:
   -V, --version
           Print version
 ```
+
+```bash
+--prio-fees 0 --prio-fees 1000 --prio-fees 100000
+```

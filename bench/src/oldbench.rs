@@ -1,14 +1,10 @@
-use crate::{
-    helpers::BenchHelper,
-    metrics::Metric,
-    metrics::TxMetricData,
-};
+use crate::{helpers::BenchHelper, metrics::Metric, metrics::TxMetricData};
 use dashmap::DashMap;
-use log::{warn};
+use log::warn;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::signature::Signature;
 use solana_sdk::hash::Hash;
 use solana_sdk::signature::Keypair;
+use solana_sdk::signature::Signature;
 use solana_sdk::slot_history::Slot;
 use std::sync::{
     atomic::{AtomicU64, Ordering},

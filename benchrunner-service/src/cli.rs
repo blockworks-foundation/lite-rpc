@@ -11,4 +11,6 @@ pub struct Args {
     pub tx_count: usize,
     #[clap(short, long, default_value_t = TxSize::Small)]
     pub size_tx: TxSize,
+    #[clap(short, long, default_values_t = [0])]
+    pub prio_fees: Vec<u64>,
 }

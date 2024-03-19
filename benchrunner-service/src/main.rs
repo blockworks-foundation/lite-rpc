@@ -4,7 +4,7 @@ mod postgres;
 mod postgres_session;
 mod prometheus;
 
-use crate::args::{get_funded_payer_from_env, get_prio_fees_from_env, read_tenant_configs};
+use crate::args::{get_funded_payer_from_env, read_tenant_configs};
 use crate::cli::Args;
 use crate::postgres::metrics_dbstore::{
     save_metrics_to_postgres, upsert_benchrun_status, BenchRunStatus,
@@ -39,6 +39,7 @@ async fn main() {
         bench_interval,
         tx_count,
         size_tx,
+        prio_fees,
     } = Args::parse();
 
     let postgres_config = PostgresSessionConfig::new_from_env().unwrap();
@@ -46,12 +47,10 @@ async fn main() {
 
     let funded_payer = get_funded_payer_from_env();
 
-    let prio_fees = get_prio_fees_from_env();
-
     let tenant_configs = read_tenant_configs(std::env::vars().collect::<Vec<(String, String)>>());
 
     info!("Use postgres config: {:?}", postgres_config.is_some());
-    info!("Use prio fees: {}", prio_fees);
+    info!("Use prio fees: [{}]", prio_fees.iter().join(","));
     info!("Start running benchmarks every {:?}", bench_interval);
     info!(
         "Found tenants: {}",
@@ -67,27 +66,35 @@ async fn main() {
 
     let mut jh_tenant_task = Vec::new();
     let postgres_session = Arc::new(PostgresSession::new(postgres_config.unwrap()).await);
-    for tenant_config in tenant_configs {
-        let postgres_session = postgres_session.clone();
+
+    let bench_configs = prio_fees
+        .iter()
+        .map(|prio_fees| BenchConfig {
+            tx_count,
+            cu_price_micro_lamports: *prio_fees,
+        })
+        .collect_vec();
+
+    for tenant_config in &tenant_configs {
         let funded_payer = funded_payer.insecure_clone();
+        let tenant_id = tenant_config.tenant_id.clone();
+        let postgres_session = postgres_session.clone();
+        let tenant_config = tenant_config.clone();
+        let bench_configs = bench_configs.clone();
         let jh_runner = tokio::spawn(async move {
             let mut interval = tokio::time::interval(bench_interval);
             for run_count in 1.. {
+                let bench_config = bench_configs[run_count % bench_configs.len()].clone();
                 debug!(
-                    "Invoke bench execution (#{}) on tenant <{}>..",
-                    run_count, tenant_config.tenant_id
+                    "Invoke bench execution (#{}) on tenant <{}> using {}",
+                    run_count, tenant_id, bench_config
                 );
                 let benchrun_at = SystemTime::now();
-
-                let bench_config = bench::service_adapter::BenchConfig {
-                    tenant: tenant_config.tenant_id.clone(),
-                    tx_count,
-                    cu_price_micro_lamports: prio_fees,
-                };
 
                 if let Ok(postgres_session) = postgres_session.as_ref() {
                     upsert_benchrun_status(
                         postgres_session,
+                        &tenant_config,
                         &bench_config,
                         benchrun_at,
                         BenchRunStatus::STARTED,
@@ -104,15 +111,22 @@ async fn main() {
                 .await;
 
                 if let Ok(postgres_session) = postgres_session.as_ref() {
-                    save_metrics_to_postgres(postgres_session, &bench_config, &metric, benchrun_at)
-                        .await;
+                    save_metrics_to_postgres(
+                        postgres_session,
+                        &tenant_config,
+                        &bench_config,
+                        &metric,
+                        benchrun_at,
+                    )
+                    .await;
                 }
 
-                publish_metrics_on_prometheus(&bench_config, &metric).await;
+                publish_metrics_on_prometheus(&tenant_config, &bench_config, &metric).await;
 
                 if let Ok(postgres_session) = postgres_session.as_ref() {
                     upsert_benchrun_status(
                         postgres_session,
+                        &tenant_config,
                         &bench_config,
                         benchrun_at,
                         BenchRunStatus::FINISHED,
@@ -128,7 +142,7 @@ async fn main() {
             }
         });
         jh_tenant_task.push(jh_runner);
-    }
+    } // -- END tenant loop
 
     join_all(jh_tenant_task).await;
 }

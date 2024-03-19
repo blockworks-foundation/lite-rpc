@@ -13,14 +13,8 @@ use solana_sdk::signature::Signature;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
 };
-use std::sync::{
-    atomic::{AtomicU64},
-    Arc,
-};
-use tokio::{
-    sync::RwLock,
-    time::{Duration},
-};
+use std::sync::{atomic::AtomicU64, Arc};
+use tokio::{sync::RwLock, time::Duration};
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {

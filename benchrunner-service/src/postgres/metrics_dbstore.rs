@@ -1,3 +1,4 @@
+use crate::args::TenantConfig;
 use crate::postgres_session::PostgresSession;
 use bench::metrics::Metric;
 use bench::service_adapter::BenchConfig;
@@ -22,12 +23,16 @@ impl BenchRunStatus {
 
 pub async fn upsert_benchrun_status(
     postgres_session: &PostgresSession,
+    tenant_config: &TenantConfig,
     bench_config: &BenchConfig,
     benchrun_at: SystemTime,
     status: BenchRunStatus,
 ) {
-    let values: &[&(dyn ToSql + Sync)] =
-        &[&bench_config.tenant, &benchrun_at, &status.to_db_string()];
+    let values: &[&(dyn ToSql + Sync)] = &[
+        &tenant_config.tenant_id,
+        &benchrun_at,
+        &status.to_db_string(),
+    ];
     let write_result = postgres_session
         .execute(
             r#"
@@ -50,13 +55,14 @@ pub async fn upsert_benchrun_status(
 
 pub async fn save_metrics_to_postgres(
     postgres_session: &PostgresSession,
+    tenant_config: &TenantConfig,
     bench_config: &BenchConfig,
     metric: &Metric,
     benchrun_at: SystemTime,
 ) {
     let metricjson = serde_json::to_value(metric).unwrap();
     let values: &[&(dyn ToSql + Sync)] = &[
-        &bench_config.tenant,
+        &tenant_config.tenant_id,
         &benchrun_at,
         &(bench_config.cu_price_micro_lamports as i64),
         &(metric.txs_sent as i64),
