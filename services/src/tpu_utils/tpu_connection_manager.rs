@@ -7,8 +7,8 @@ use quinn::Endpoint;
 use solana_lite_rpc_core::{
     stores::data_cache::DataCache,
     structures::{
-        identity_stakes::IdentityStakesData, rotating_queue::RotatingQueue,
-        transaction_sent_info::SentTransactionInfo,
+        identity_stakes::IdentityStakesData, prioritization_fee_heap::PrioritizationFeesHeap,
+        rotating_queue::RotatingQueue, transaction_sent_info::SentTransactionInfo,
     },
 };
 use solana_sdk::pubkey::Pubkey;
@@ -20,8 +20,12 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
+    time::Duration,
 };
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::{
+    broadcast::{Receiver, Sender},
+    Notify,
+};
 
 use crate::{
     quic_connection::{PooledConnection, QuicConnectionPool},
@@ -75,14 +79,62 @@ impl ActiveConnection {
     #[allow(clippy::too_many_arguments)]
     async fn listen(
         &self,
-        transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_notifier: Arc<tokio::sync::Notify>,
+        mut transaction_reciever: Receiver<SentTransactionInfo>,
+        exit_notifier: Arc<Notify>,
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
     ) {
-        NB_QUIC_ACTIVE_CONNECTIONS.inc();
-        let mut transaction_reciever = transaction_reciever;
+        let priorization_heap = PrioritizationFeesHeap::new(2048);
+        let fill_notify = Arc::new(Notify::new());
+
         let identity = self.identity;
+
+        let heap_filler_task = {
+            let priorization_heap = priorization_heap.clone();
+            let data_cache = self.data_cache.clone();
+            let fill_notify = fill_notify.clone();
+            tokio::spawn(async move {
+                let mut current_blockheight =
+                    data_cache.block_information_store.get_last_blockheight();
+                loop {
+                    let tx = transaction_reciever.recv().await;
+                    match tx {
+                        Ok(transaction_sent_info) => {
+                            if data_cache
+                                .check_if_confirmed_or_expired_blockheight(&transaction_sent_info)
+                            {
+                                // transactions is confirmed or expired
+                                continue;
+                            }
+
+                            priorization_heap.insert(transaction_sent_info).await;
+                            fill_notify.notify_one();
+                            // give little more priority to read the transaction sender with this wait
+                            let last_blockheight =
+                                data_cache.block_information_store.get_last_blockheight();
+                            if last_blockheight != current_blockheight {
+                                current_blockheight = last_blockheight;
+                                // give more priority to transaction sender
+                                tokio::time::sleep(Duration::from_micros(50)).await;
+                                // remove all expired transactions from the queue
+                                priorization_heap
+                                    .remove_expired_transactions(current_blockheight)
+                                    .await;
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "Broadcast channel error on recv for {} error {} - continue",
+                                identity, e
+                            );
+                            continue;
+                        }
+                    };
+                }
+            })
+        };
+
+        NB_QUIC_ACTIVE_CONNECTIONS.inc();
 
         let max_number_of_connections = self.connection_parameters.max_number_of_connections;
 
@@ -102,56 +154,50 @@ impl ActiveConnection {
             max_uni_stream_connections,
         );
 
-        loop {
+        'main_loop: loop {
             // exit signal set
             if exit_signal.load(Ordering::Relaxed) {
                 break;
             }
 
             tokio::select! {
-                tx = transaction_reciever.recv() => {
-                    // exit signal set
-                    if exit_signal.load(Ordering::Relaxed) {
-                        break;
-                    }
+                _ = fill_notify.notified() => {
 
-                    let tx: Vec<u8> = match tx {
-                        Ok(transaction_sent_info) => {
-                            if self.data_cache.check_if_confirmed_or_expired_blockheight(&transaction_sent_info).await {
-                                // transaction is already confirmed/ no need to send
-                                continue;
-                            }
-                            transaction_sent_info.transaction
-                        },
-                        Err(e) => {
-                            error!(
-                                "Broadcast channel error on recv for {} error {} - continue",
-                                identity, e
-                            );
+                    loop {
+                        // exit signal set
+                        if exit_signal.load(Ordering::Relaxed) {
+                            break 'main_loop;
+                        }
+
+                        let Some(tx) = priorization_heap.pop().await else {
+                            // wait to get notification from fill event
+                            break;
+                        };
+
+                        // check if transaction is already confirmed
+                        if self.data_cache.txs.is_transaction_confirmed(&tx.signature) {
                             continue;
                         }
-                    };
 
-                    let PooledConnection {
-                        connection,
-                        permit
-                    } = match connection_pool.get_pooled_connection().await {
-                        Ok(connection_pool) => connection_pool,
-                        Err(e) => {
-                            error!("error getting pooled connection {e:?}");
-                            break;
-                        },
-                    };
+                        let PooledConnection {
+                            connection,
+                            permit
+                        } = match connection_pool.get_pooled_connection().await {
+                            Ok(connection_pool) => connection_pool,
+                            Err(e) => {
+                                error!("error getting pooled connection {e:?}");
+                                break;
+                            },
+                        };
 
-                    tokio::spawn(async move {
-                        // permit will be used to send all the transaction and then destroyed
-                        let _permit = permit;
-                        NB_QUIC_TASKS.inc();
-                        let timer = TT_SENT_TIMER.start_timer();
-                        connection.send_transaction(tx).await;
-                        timer.observe_duration();
-                        NB_QUIC_TASKS.dec();
-                    });
+                        tokio::spawn(async move {
+                            // permit will be used to send all the transaction and then destroyed
+                            let _permit = permit;
+                            NB_QUIC_TASKS.inc();
+                            connection.send_transaction(tx.transaction).await;
+                            NB_QUIC_TASKS.dec();
+                        });
+                    }
                 },
                 _ = exit_notifier.notified() => {
                     // notified to exit
@@ -159,7 +205,8 @@ impl ActiveConnection {
                 }
             }
         }
-        drop(transaction_reciever);
+
+        heap_filler_task.abort();
         NB_QUIC_CONNECTIONS.dec();
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
     }

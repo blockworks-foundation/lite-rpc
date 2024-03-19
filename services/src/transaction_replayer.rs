@@ -3,7 +3,7 @@ use anyhow::{bail, Context};
 use log::error;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::{
-    stores::tx_store::TxStore, structures::transaction_sent_info::SentTransactionInfo,
+    stores::data_cache::DataCache, structures::transaction_sent_info::SentTransactionInfo,
     AnyhowJoinHandle,
 };
 use std::time::Duration;
@@ -34,15 +34,15 @@ pub struct TransactionReplay {
 #[derive(Clone)]
 pub struct TransactionReplayer {
     pub tpu_service: TpuService,
-    pub tx_store: TxStore,
+    pub data_cache: DataCache,
     pub retry_offset: Duration,
 }
 
 impl TransactionReplayer {
-    pub fn new(tpu_service: TpuService, tx_store: TxStore, retry_offset: Duration) -> Self {
+    pub fn new(tpu_service: TpuService, data_cache: DataCache, retry_offset: Duration) -> Self {
         Self {
             tpu_service,
-            tx_store,
+            data_cache,
             retry_offset,
         }
     }
@@ -53,7 +53,7 @@ impl TransactionReplayer {
         mut reciever: UnboundedReceiver<TransactionReplay>,
     ) -> AnyhowJoinHandle {
         let tpu_service = self.tpu_service.clone();
-        let tx_store = self.tx_store.clone();
+        let data_cache = self.data_cache.clone();
         let retry_offset = self.retry_offset;
 
         tokio::spawn(async move {
@@ -69,13 +69,8 @@ impl TransactionReplayer {
                     }
                     tokio::time::sleep_until(tx_replay.replay_at).await;
                 }
-                if let Some(tx) = tx_store.get(&tx_replay.transaction.signature) {
-                    if tx.status.is_some() {
-                        // transaction has been confirmed / no retry needed
-                        continue;
-                    }
-                } else {
-                    // transaction timed out
+                if data_cache.check_if_confirmed_or_expired_blockheight(&tx_replay.transaction) {
+                    // transaction has already expired or confirmed
                     continue;
                 }
                 // ignore reset error

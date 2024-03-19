@@ -60,6 +60,7 @@ const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameter
     unistream_timeout: Duration::from_secs(2),
     write_timeout: Duration::from_secs(2),
     number_of_transactions_per_unistream: 10,
+    percentage_of_connection_limit_to_create_new: 10,
 };
 
 #[test]
@@ -749,6 +750,7 @@ pub fn build_raw_sample_tx(i: u32) -> SentTransactionInfo {
         slot: 1,
         transaction,
         last_valid_block_height: 300,
+        prioritization_fee: 0,
     }
 }
 

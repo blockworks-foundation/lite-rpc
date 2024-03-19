@@ -18,7 +18,11 @@ use solana_lite_rpc_core::{
     structures::notifications::NotificationSender,
     AnyhowJoinHandle,
 };
-use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::{
+    borsh0_10::try_from_slice_unchecked,
+    compute_budget::{self, ComputeBudgetInstruction},
+    transaction::VersionedTransaction,
+};
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
     time::Instant,
@@ -132,12 +136,34 @@ impl TransactionService {
             bail!("Blockhash not found in block store".to_string());
         };
 
+        if self.block_information_store.get_last_blockheight() > last_valid_blockheight {
+            bail!("Blockhash is expired");
+        }
+
+        let prioritization_fee = {
+            let mut prioritization_fee = 0;
+            for ix in tx.message.instructions() {
+                if ix
+                    .program_id(tx.message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    let ix_which =
+                        try_from_slice_unchecked::<ComputeBudgetInstruction>(ix.data.as_slice());
+                    if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(fees)) = ix_which {
+                        prioritization_fee = fees;
+                    }
+                }
+            }
+            prioritization_fee
+        };
+
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         let transaction_info = SentTransactionInfo {
             signature,
             last_valid_block_height: last_valid_blockheight,
             slot,
             transaction: raw_tx,
+            prioritization_fee,
         };
         if let Err(e) = self
             .transaction_channel

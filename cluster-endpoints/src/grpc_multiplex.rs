@@ -1,4 +1,3 @@
-use crate::grpc_subscription::from_grpc_block_update;
 use anyhow::{bail, Context};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
@@ -19,6 +18,8 @@ use tokio::time::{sleep, Instant};
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+
+use crate::grpc_subscription::from_grpc_block_update;
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:

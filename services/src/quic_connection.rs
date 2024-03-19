@@ -251,7 +251,10 @@ impl QuicConnectionPool {
                 v
             },
             permit_threshold: max_number_of_unistream_connection
-                .saturating_mul(90)
+                .saturating_mul(std::cmp::max(
+                    connection_parameters.percentage_of_connection_limit_to_create_new,
+                    100,
+                ) as usize)
                 .saturating_div(100),
         }
     }
