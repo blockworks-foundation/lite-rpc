@@ -98,7 +98,7 @@ impl Default for QuicConnectionParameters {
             connection_retry_count: 20,
             max_number_of_connections: 8,
             number_of_transactions_per_unistream: 1,
-            unistreams_to_create_new_connection_in_percentage: 50,
+            unistreams_to_create_new_connection_in_percentage: 10,
         }
     }
 }
