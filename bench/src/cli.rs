@@ -26,6 +26,10 @@ enum SubCommand {
         rpc_url: String,
         #[clap(short, long)]
         time_ms: u64,
+        /// The CU price in micro lamports
+        #[clap(short, long, default_value_t = 3)]
+        #[arg(short = 'f')]
+        cu_price: u64,
     },
     ConfirmationRate {
         #[clap(short, long)]
@@ -38,18 +42,34 @@ enum SubCommand {
         txns_per_round: usize,
         #[clap(short, long)]
         num_rounds: usize,
+        /// The CU price in micro lamports
+        #[clap(short, long, default_value_t = 300)]
+        #[arg(short = 'f')]
+        cu_price: u64,
     },
+    /// Compares the confirmation slot of txns sent to 2 different RPCs
     ConfirmationSlot {
         #[clap(short, long)]
         payer_path: PathBuf,
+        /// URL of the 1st RPC
         #[clap(short, long)]
         #[arg(short = 'a')]
         rpc_a: String,
+        /// URL of the 2nd RPC
         #[clap(short, long)]
         #[arg(short = 'b')]
         rpc_b: String,
         #[clap(short, long)]
         size_tx: TxSize,
+        /// Maximum confirmation time in milliseconds. After this, the txn is considered unconfirmed
+        #[clap(short, long, default_value_t = 15_000)]
+        max_timeout_ms: u64,
+        #[clap(short, long)]
+        num_rounds: usize,
+        /// The CU price in micro lamports
+        #[clap(short, long, default_value_t = 300)]
+        #[arg(short = 'f')]
+        cu_price: u64,
     },
 }
 
@@ -71,8 +91,11 @@ async fn main() {
             payer_path,
             rpc_url,
             time_ms,
+            cu_price,
         } => {
-            api_load(&payer_path, rpc_url, time_ms).await.unwrap();
+            api_load(&payer_path, rpc_url, time_ms, cu_price)
+                .await
+                .unwrap();
         }
         SubCommand::ConfirmationRate {
             payer_path,
@@ -80,16 +103,35 @@ async fn main() {
             size_tx,
             txns_per_round,
             num_rounds,
-        } => confirmation_rate(&payer_path, rpc_url, size_tx, txns_per_round, num_rounds)
-            .await
-            .unwrap(),
+            cu_price,
+        } => confirmation_rate(
+            &payer_path,
+            rpc_url,
+            size_tx,
+            txns_per_round,
+            num_rounds,
+            cu_price,
+        )
+        .await
+        .unwrap(),
         SubCommand::ConfirmationSlot {
             payer_path,
             rpc_a,
             rpc_b,
             size_tx,
-        } => confirmation_slot(&payer_path, rpc_a, rpc_b, size_tx)
-            .await
-            .unwrap(),
+            max_timeout_ms,
+            num_rounds,
+            cu_price,
+        } => confirmation_slot(
+            &payer_path,
+            rpc_a,
+            rpc_b,
+            size_tx,
+            max_timeout_ms,
+            num_rounds,
+            cu_price,
+        )
+        .await
+        .unwrap(),
     }
 }
