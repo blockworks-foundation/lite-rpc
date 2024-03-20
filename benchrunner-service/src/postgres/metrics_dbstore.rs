@@ -1,11 +1,10 @@
 use crate::args::TenantConfig;
+use crate::postgres::postgres_session_cache::PostgresSessionCache;
 use bench::metrics::Metric;
 use bench::service_adapter::BenchConfig;
 use log::warn;
 use postgres_types::ToSql;
 use std::time::SystemTime;
-use crate::postgres::postgres_session::PostgresSession;
-use crate::postgres::postgres_session_cache::PostgresSessionCache;
 
 #[allow(clippy::upper_case_acronyms)]
 pub enum BenchRunStatus {
@@ -34,7 +33,9 @@ pub async fn upsert_benchrun_status(
         &benchrun_at,
         &status.to_db_string(),
     ];
-    let write_result = postgres_session.get_session().await?
+    let write_result = postgres_session
+        .get_session()
+        .await?
         .execute(
             r#"
             INSERT INTO benchrunner.bench_runs (
@@ -74,7 +75,9 @@ pub async fn save_metrics_to_postgres(
         &(metric.average_confirmation_time_ms as f32),
         &metricjson,
     ];
-    let write_result = postgres_session.get_session().await?
+    let write_result = postgres_session
+        .get_session()
+        .await?
         .execute(
             r#"
             INSERT INTO

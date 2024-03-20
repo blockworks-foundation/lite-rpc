@@ -8,28 +8,18 @@ use crate::cli::Args;
 use crate::postgres::metrics_dbstore::{
     save_metrics_to_postgres, upsert_benchrun_status, BenchRunStatus,
 };
-use crate::postgres::postgres_session::{PostgresSession, PostgresSessionConfig};
+use crate::postgres::postgres_session::PostgresSessionConfig;
+use crate::postgres::postgres_session_cache::PostgresSessionCache;
 use crate::prometheus::metrics_prometheus::publish_metrics_on_prometheus;
 use crate::prometheus::prometheus_sync::PrometheusSync;
-use bench::create_memo_tx;
-use bench::helpers::BenchHelper;
-use bench::metrics::{Metric, TxMetricData};
 use bench::service_adapter::BenchConfig;
 use clap::Parser;
 use futures_util::future::join_all;
 use itertools::Itertools;
-use log::{debug, error, info, trace, warn};
-use solana_sdk::signature::Keypair;
+use log::{debug, error, info};
 use std::net::SocketAddr;
-use std::ops::AddAssign;
 use std::str::FromStr;
-use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
-use tokio::join;
-use tokio::sync::mpsc::Sender;
-use tokio_postgres::types::ToSql;
-use tracing_subscriber::filter::FilterExt;
-use crate::postgres::postgres_session_cache::PostgresSessionCache;
+use std::time::{Duration, SystemTime};
 
 #[tokio::main]
 async fn main() {
@@ -43,6 +33,7 @@ async fn main() {
     } = Args::parse();
 
     let postgres_config = PostgresSessionConfig::new_from_env().unwrap();
+
     let bench_interval = Duration::from_millis(bench_interval);
 
     let funded_payer = get_funded_payer_from_env();
@@ -70,7 +61,9 @@ async fn main() {
     let postgres_session = match postgres_config {
         None => None,
         Some(x) => {
-            let session_cache = PostgresSessionCache::new(x).await.expect("PostgreSQL session cache");
+            let session_cache = PostgresSessionCache::new(x)
+                .await
+                .expect("PostgreSQL session cache");
             Some(session_cache)
         }
     };

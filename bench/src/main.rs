@@ -5,11 +5,11 @@ use bench::{
     oldbench, Args,
 };
 use clap::Parser;
-use dashmap::DashMap;
+
 use futures::future::join_all;
-use log::{error, info, warn};
+use log::{error, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::signature::Signature;
+
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
 };

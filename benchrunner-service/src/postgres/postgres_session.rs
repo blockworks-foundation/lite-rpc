@@ -4,14 +4,11 @@ use std::env;
 use std::sync::Arc;
 
 use anyhow::Context;
-use log::debug;
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
 use solana_lite_rpc_util::encoding::BinaryEncoding;
-use tokio::sync::RwLock;
 use tokio_postgres::{
-    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, CopyInSink, Error, NoTls, Row,
-    Socket,
+    config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, Error, NoTls, Row, Socket,
 };
 
 #[derive(serde::Deserialize, Debug, Clone)]

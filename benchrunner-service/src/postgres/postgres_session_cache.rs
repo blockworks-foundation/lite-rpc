@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use log::info;
-use tokio::sync::RwLock;
 use crate::postgres::postgres_session::{PostgresSession, PostgresSessionConfig};
+use log::info;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub struct PostgresSessionCache {
