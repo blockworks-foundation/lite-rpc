@@ -1,2 +1,3 @@
 pub mod encoding;
-mod secrets;
+pub mod secrets;
+pub mod statistics;
