@@ -143,6 +143,10 @@ impl PostgresSession {
         Ok(client)
     }
 
+    pub fn is_closed(&self) -> bool {
+        self.client.is_closed()
+    }
+
     pub async fn execute(
         &self,
         statement: &str,

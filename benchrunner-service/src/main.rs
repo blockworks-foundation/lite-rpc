@@ -29,6 +29,7 @@ use tokio::join;
 use tokio::sync::mpsc::Sender;
 use tokio_postgres::types::ToSql;
 use tracing_subscriber::filter::FilterExt;
+use crate::postgres::postgres_session_cache::PostgresSessionCache;
 
 #[tokio::main]
 async fn main() {
@@ -64,7 +65,15 @@ async fn main() {
     let _prometheus_task = PrometheusSync::sync(SocketAddr::from_str("[::]:9091").unwrap());
 
     let mut jh_tenant_task = Vec::new();
-    let postgres_session = Arc::new(PostgresSession::new(postgres_config.unwrap()).await);
+    // let postgres_session = Arc::new(PostgresSession::new(postgres_config.unwrap()).await);
+
+    let postgres_session = match postgres_config {
+        None => None,
+        Some(x) => {
+            let session_cache = PostgresSessionCache::new(x).await.expect("PostgreSQL session cache");
+            Some(session_cache)
+        }
+    };
 
     let bench_configs = prio_fees
         .iter()
@@ -90,8 +99,8 @@ async fn main() {
                 );
                 let benchrun_at = SystemTime::now();
 
-                if let Ok(postgres_session) = postgres_session.as_ref() {
-                    upsert_benchrun_status(
+                if let Some(postgres_session) = postgres_session.as_ref() {
+                    let _dbstatus = upsert_benchrun_status(
                         postgres_session,
                         &tenant_config,
                         &bench_config,
@@ -109,8 +118,8 @@ async fn main() {
                 )
                 .await;
 
-                if let Ok(postgres_session) = postgres_session.as_ref() {
-                    save_metrics_to_postgres(
+                if let Some(postgres_session) = postgres_session.as_ref() {
+                    let _dbstatus = save_metrics_to_postgres(
                         postgres_session,
                         &tenant_config,
                         &bench_config,
@@ -122,8 +131,8 @@ async fn main() {
 
                 publish_metrics_on_prometheus(&tenant_config, &bench_config, &metric).await;
 
-                if let Ok(postgres_session) = postgres_session.as_ref() {
-                    upsert_benchrun_status(
+                if let Some(postgres_session) = postgres_session.as_ref() {
+                    let _dbstatus = upsert_benchrun_status(
                         postgres_session,
                         &tenant_config,
                         &bench_config,

@@ -5,6 +5,7 @@ use log::warn;
 use postgres_types::ToSql;
 use std::time::SystemTime;
 use crate::postgres::postgres_session::PostgresSession;
+use crate::postgres::postgres_session_cache::PostgresSessionCache;
 
 #[allow(clippy::upper_case_acronyms)]
 pub enum BenchRunStatus {
@@ -22,18 +23,18 @@ impl BenchRunStatus {
 }
 
 pub async fn upsert_benchrun_status(
-    postgres_session: &PostgresSession,
+    postgres_session: &PostgresSessionCache,
     tenant_config: &TenantConfig,
     _bench_config: &BenchConfig,
     benchrun_at: SystemTime,
     status: BenchRunStatus,
-) {
+) -> anyhow::Result<()> {
     let values: &[&(dyn ToSql + Sync)] = &[
         &tenant_config.tenant_id,
         &benchrun_at,
         &status.to_db_string(),
     ];
-    let write_result = postgres_session
+    let write_result = postgres_session.get_session().await?
         .execute(
             r#"
             INSERT INTO benchrunner.bench_runs (
@@ -51,15 +52,17 @@ pub async fn upsert_benchrun_status(
     if let Err(err) = write_result {
         warn!("Failed to upsert status (err {:?}) - continue", err);
     }
+
+    Ok(())
 }
 
 pub async fn save_metrics_to_postgres(
-    postgres_session: &PostgresSession,
+    postgres_session: &PostgresSessionCache,
     tenant_config: &TenantConfig,
     bench_config: &BenchConfig,
     metric: &Metric,
     benchrun_at: SystemTime,
-) {
+) -> anyhow::Result<()> {
     let metricjson = serde_json::to_value(metric).unwrap();
     let values: &[&(dyn ToSql + Sync)] = &[
         &tenant_config.tenant_id,
@@ -71,7 +74,7 @@ pub async fn save_metrics_to_postgres(
         &(metric.average_confirmation_time_ms as f32),
         &metricjson,
     ];
-    let write_result = postgres_session
+    let write_result = postgres_session.get_session().await?
         .execute(
             r#"
             INSERT INTO
@@ -93,4 +96,6 @@ pub async fn save_metrics_to_postgres(
     if let Err(err) = write_result {
         warn!("Failed to insert metrics (err {:?}) - continue", err);
     }
+
+    Ok(())
 }
