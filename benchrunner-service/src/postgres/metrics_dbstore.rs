@@ -1,10 +1,10 @@
 use crate::args::TenantConfig;
-use crate::postgres_session::PostgresSession;
 use bench::metrics::Metric;
 use bench::service_adapter::BenchConfig;
 use log::warn;
 use postgres_types::ToSql;
 use std::time::SystemTime;
+use crate::postgres::postgres_session::PostgresSession;
 
 #[allow(clippy::upper_case_acronyms)]
 pub enum BenchRunStatus {

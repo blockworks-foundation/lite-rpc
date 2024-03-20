@@ -1,7 +1,6 @@
 mod args;
 mod cli;
 mod postgres;
-mod postgres_session;
 mod prometheus;
 
 use crate::args::{get_funded_payer_from_env, read_tenant_configs};
@@ -9,7 +8,7 @@ use crate::cli::Args;
 use crate::postgres::metrics_dbstore::{
     save_metrics_to_postgres, upsert_benchrun_status, BenchRunStatus,
 };
-use crate::postgres_session::{PostgresSession, PostgresSessionConfig};
+use crate::postgres::postgres_session::{PostgresSession, PostgresSessionConfig};
 use crate::prometheus::metrics_prometheus::publish_metrics_on_prometheus;
 use crate::prometheus::prometheus_sync::PrometheusSync;
 use bench::create_memo_tx;
