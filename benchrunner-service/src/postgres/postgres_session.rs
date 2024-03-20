@@ -134,7 +134,7 @@ impl PostgresSession {
             log::info!("Connecting to Postgres");
 
             if let Err(err) = connection.await {
-                log::error!("Connection to Postgres broke {err:?}");
+                log::error!("Connection to Postgres broke: {err:?}");
                 return;
             }
             log::debug!("Postgres thread shutting down");
