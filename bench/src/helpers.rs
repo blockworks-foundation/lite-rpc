@@ -3,6 +3,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::compute_budget;
 use solana_sdk::instruction::AccountMeta;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -111,7 +112,10 @@ impl BenchHelper {
         let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
 
         let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
-        let message = Message::new(&[instruction], Some(&payer.pubkey()));
+        let cu = compute_budget::ComputeBudgetInstruction::set_compute_unit_limit(10000);
+        let price: Instruction =
+            compute_budget::ComputeBudgetInstruction::set_compute_unit_price(1000000);
+        let message = Message::new(&[cu, price, instruction], Some(&payer.pubkey()));
         Transaction::new(&[payer], message, blockhash)
     }
 
@@ -119,6 +123,10 @@ impl BenchHelper {
         let accounts = (0..8).map(|_| Keypair::new()).collect_vec();
 
         let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
+
+        let cu = compute_budget::ComputeBudgetInstruction::set_compute_unit_limit(10000);
+        let price: Instruction =
+            compute_budget::ComputeBudgetInstruction::set_compute_unit_price(1000000);
 
         let instruction = Instruction::new_with_bytes(
             memo,
@@ -128,7 +136,7 @@ impl BenchHelper {
                 .map(|keypair| AccountMeta::new_readonly(keypair.pubkey(), true))
                 .collect_vec(),
         );
-        let message = Message::new(&[instruction], Some(&payer.pubkey()));
+        let message = Message::new(&[cu, price, instruction], Some(&payer.pubkey()));
 
         let mut signers = vec![payer];
         signers.extend(accounts.iter());

@@ -220,8 +220,7 @@ impl ActiveConnection {
                     }
                 },
                 _ = exit_notifier.notified() => {
-                    // notified to exit
-                    break;
+                    break 'main_loop;
                 }
             }
         }
@@ -235,7 +234,7 @@ impl ActiveConnection {
     pub fn start_listening(
         &self,
         transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_notifier: Arc<tokio::sync::Notify>,
+        exit_notifier: Arc<Notify>,
         identity_stakes: IdentityStakesData,
     ) {
         let addr = self.tpu_address;
@@ -247,14 +246,14 @@ impl ActiveConnection {
     }
 }
 
-struct ActiveConnectionWithExitChannel {
+struct ActiveConnectionWithExitNotifier {
     pub active_connection: ActiveConnection,
-    pub exit_notifier: Arc<tokio::sync::Notify>,
+    pub exit_notifier: Arc<Notify>,
 }
 
 pub struct TpuConnectionManager {
     endpoints: RotatingQueue<Endpoint>,
-    identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitChannel>>>,
+    identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitNotifier>>>,
 }
 
 impl TpuConnectionManager {
@@ -292,7 +291,7 @@ impl TpuConnectionManager {
                     connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
-                let exit_notifier = Arc::new(tokio::sync::Notify::new());
+                let exit_notifier = Arc::new(Notify::new());
 
                 let broadcast_receiver = broadcast_sender.subscribe();
                 active_connection.start_listening(
@@ -302,7 +301,7 @@ impl TpuConnectionManager {
                 );
                 self.identity_to_active_connection.insert(
                     *identity,
-                    Arc::new(ActiveConnectionWithExitChannel {
+                    Arc::new(ActiveConnectionWithExitNotifier {
                         active_connection,
                         exit_notifier,
                     }),
@@ -311,22 +310,19 @@ impl TpuConnectionManager {
         }
 
         // remove connections which are no longer needed
-        let collect_current_active_connections = self
-            .identity_to_active_connection
-            .iter()
-            .map(|x| (*x.key(), x.value().clone()))
-            .collect::<Vec<_>>();
-        for (identity, value) in collect_current_active_connections.iter() {
-            if !connections_to_keep.contains_key(identity) {
-                trace!("removing a connection for {}", identity);
+        self.identity_to_active_connection.retain(|key, value| {
+            if !connections_to_keep.contains_key(key) {
+                trace!("removing a connection for {}", key.to_string());
                 // ignore error for exit channel
                 value
                     .active_connection
                     .exit_signal
                     .store(true, Ordering::Relaxed);
                 value.exit_notifier.notify_one();
-                self.identity_to_active_connection.remove(identity);
+                false
+            } else {
+                true
             }
-        }
+        });
     }
 }
