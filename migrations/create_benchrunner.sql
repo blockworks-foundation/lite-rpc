@@ -22,3 +22,5 @@ CREATE TABLE benchrunner.bench_runs (
 
 GRANT USAGE ON SCHEMA benchrunner TO r_benchrunner;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA benchrunner TO r_benchrunner;
+GRANT USAGE ON SCHEMA benchrunner TO ro_benchrunner;
+GRANT SELECT ON ALL TABLES IN SCHEMA benchrunner TO ro_benchrunner;

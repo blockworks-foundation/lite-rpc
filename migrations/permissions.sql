@@ -24,4 +24,8 @@ GRANT CONNECT ON DATABASE literpc_integrationtest TO ro_literpc; -- TODO adjust 
 
 -- required for benchrunner-service
 CREATE ROLE r_benchrunner;
+CREATE ROLE ro_benchrunner;
+GRANT ro_benchrunner TO r_benchrunner;
+
 GRANT r_benchrunner TO literpc_app;
+GRANT ro_benchrunner TO literpc_app;
