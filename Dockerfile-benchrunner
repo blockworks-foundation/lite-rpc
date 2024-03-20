@@ -14,11 +14,12 @@ FROM base as build
 COPY --from=plan /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN cargo build --release --bin solana-lite-rpc-benchrunner-service
+RUN cargo build --release --bin solana-lite-rpc-benchrunner-service --bin cert
 
 FROM debian:bookworm-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6 libssl3 libssl-dev openssl
 COPY --from=build /app/target/release/solana-lite-rpc-benchrunner-service /usr/local/bin/
+COPY --from=build /app/target/release/cert /usr/local/bin/
 
 CMD solana-lite-rpc-benchrunner-service \
     --bench-interval 600000 \
