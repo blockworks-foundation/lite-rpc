@@ -116,9 +116,11 @@ impl BlockInformationStore {
         }
 
         // update latest block
-        let latest_block = self.get_latest_block_arc(commitment_config);
-        if slot > latest_block.read().await.slot {
-            *latest_block.write().await = block_info.clone();
+        {
+            let latest_block = self.get_latest_block_arc(commitment_config);
+            if slot > latest_block.read().await.slot {
+                *latest_block.write().await = block_info.clone();
+            }
         }
 
         match self.blocks.entry(block_info.blockhash) {
