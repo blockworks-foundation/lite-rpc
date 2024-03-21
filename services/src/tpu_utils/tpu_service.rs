@@ -140,11 +140,17 @@ impl TpuService {
                 (x.pubkey, tpu_port)
             })
             .filter(|x| x.1.is_some())
-            .map(|x| {
-                let mut addr = x.1.unwrap();
+            .flat_map(|x| {
+                let mut tpu_addr = x.1.unwrap();
                 // add quic port offset
-                addr.set_port(addr.port() + QUIC_PORT_OFFSET);
-                (x.0, addr)
+                tpu_addr.set_port(tpu_addr.port() + QUIC_PORT_OFFSET);
+
+                // Technically the forwards port could be anywhere and unfortunately getClusterNodes
+                // does not report it. However it's nearly always directly after the tpu port.
+                let mut tpu_forwards_addr = tpu_addr.clone();
+                tpu_forwards_addr.set_port(tpu_addr.port() + 1);
+
+                [(x.0, tpu_addr), (x.0, tpu_forwards_addr)]
             })
             .collect();
 

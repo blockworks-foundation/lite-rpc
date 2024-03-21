@@ -475,27 +475,27 @@ async fn start_literpc_client_direct_mode(
         TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
 
     // this effectively controls how many connections we will have
-    let mut connections_to_keep: HashMap<Pubkey, SocketAddr> = HashMap::new();
+    let mut connections_to_keep = HashSet::<(Pubkey, SocketAddr)>::new();
     let addr1 = UdpSocket::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
         .unwrap();
-    connections_to_keep.insert(
+    connections_to_keep.insert((
         Pubkey::from_str("1111111jepwNWbYG87sgwnBbUJnQHrPiUJzMpqJXZ")?,
         addr1,
-    );
+    ));
 
     let addr2 = UdpSocket::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
         .unwrap();
-    connections_to_keep.insert(
+    connections_to_keep.insert((
         Pubkey::from_str("1111111k4AYMctpyJakWNvGcte6tR8BLyZw54R8qu")?,
         addr2,
-    );
+    ));
 
     // this is the real streamer
-    connections_to_keep.insert(literpc_validator_identity.pubkey(), streamer_listen_addrs);
+    connections_to_keep.insert((literpc_validator_identity.pubkey(), streamer_listen_addrs));
 
     // get information about the optional validator identity stake
     // populated from get_stakes_for_identity()

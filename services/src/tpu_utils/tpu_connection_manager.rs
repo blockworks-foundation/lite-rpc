@@ -242,7 +242,7 @@ impl ActiveConnection {
 
 pub struct TpuConnectionManager {
     endpoints: RotatingQueue<Endpoint>,
-    identity_to_active_connection: Arc<DashMap<Pubkey, ActiveConnection>>,
+    active_connections: Arc<DashMap<(Pubkey, SocketAddr), ActiveConnection>>,
 }
 
 impl TpuConnectionManager {
@@ -256,21 +256,22 @@ impl TpuConnectionManager {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
             }),
-            identity_to_active_connection: Arc::new(DashMap::new()),
+            active_connections: Arc::new(DashMap::new()),
         }
     }
 
     pub async fn update_connections(
         &self,
         broadcast_sender: Arc<Sender<SentTransactionInfo>>,
-        connections_to_keep: HashMap<Pubkey, SocketAddr>,
+        connections_to_keep: HashSet<(Pubkey, SocketAddr)>,
         identity_stakes: IdentityStakesData,
         data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) {
         NB_CONNECTIONS_TO_KEEP.set(connections_to_keep.len() as i64);
         for (identity, socket_addr) in &connections_to_keep {
-            if self.identity_to_active_connection.get(identity).is_none() {
+            let connection_key = (*identity, *socket_addr);
+            if self.active_connections.get(&connection_key).is_none() {
                 trace!("added a connection for {}, {}", identity, socket_addr);
                 let active_connection = ActiveConnection::new(
                     self.endpoints.clone(),
@@ -288,9 +289,9 @@ impl TpuConnectionManager {
         }
 
         // remove connections which are no longer needed
-        self.identity_to_active_connection.retain(|key, value| {
-            if !connections_to_keep.contains_key(key) {
-                trace!("removing a connection for {}", key.to_string());
+        self.active_connections.retain(|key, value| {
+            if !connections_to_keep.contains(key) {
+                trace!("removing a connection for {} {}", key.0, key.1);
                 // ignore error for exit channel
                 let _ = value.exit_notifier.send(());
                 false
