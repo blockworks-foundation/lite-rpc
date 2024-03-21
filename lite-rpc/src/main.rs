@@ -377,6 +377,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         pubsub_service,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
+        None,
     ));
     drop(slot_notifier);
 

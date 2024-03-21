@@ -149,7 +149,7 @@ impl LiteRpcServer for LiteBridge {
         let BlockInformation { slot, .. } = self
             .data_cache
             .block_information_store
-            .get_latest_block(commitment_config)
+            .get_latest_block_information(commitment_config)
             .await;
         Ok(slot)
     }
@@ -161,7 +161,7 @@ impl LiteRpcServer for LiteBridge {
         let block_info = self
             .data_cache
             .block_information_store
-            .get_latest_block(commitment_config)
+            .get_latest_block_information(commitment_config)
             .await;
         Ok(block_info.block_height)
     }
@@ -200,7 +200,7 @@ impl LiteRpcServer for LiteBridge {
         } = self
             .data_cache
             .block_information_store
-            .get_latest_block(commitment_config)
+            .get_latest_block_information(commitment_config)
             .await;
 
         log::trace!("glb {blockhash} {slot} {block_height}");
@@ -252,7 +252,7 @@ impl LiteRpcServer for LiteBridge {
         let block_info = self
             .data_cache
             .block_information_store
-            .get_latest_block_info(commitment_config)
+            .get_latest_block_information(commitment_config)
             .await;
 
         //TODO manage transaction_count of epoch info. Currently None.
@@ -294,7 +294,7 @@ impl LiteRpcServer for LiteBridge {
                 slot: self
                     .data_cache
                     .block_information_store
-                    .get_latest_block_info(CommitmentConfig::finalized())
+                    .get_latest_block_information(CommitmentConfig::finalized())
                     .await
                     .slot,
                 api_version: None,

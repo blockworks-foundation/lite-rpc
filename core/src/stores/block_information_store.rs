@@ -89,17 +89,10 @@ impl BlockInformationStore {
             .blockhash
     }
 
-    pub async fn get_latest_block_info(
+    pub async fn get_latest_block_information(
         &self,
         commitment_config: CommitmentConfig,
     ) -> BlockInformation {
-        self.get_latest_block_arc(commitment_config)
-            .read()
-            .await
-            .clone()
-    }
-
-    pub async fn get_latest_block(&self, commitment_config: CommitmentConfig) -> BlockInformation {
         self.get_latest_block_arc(commitment_config)
             .read()
             .await
@@ -121,10 +114,16 @@ impl BlockInformationStore {
                 std::sync::atomic::Ordering::Relaxed,
             );
         }
-        // check if the block has already been added with higher commitment level
-        match self.blocks.get_mut(&block_info.blockhash) {
-            Some(mut prev_block_info) => {
-                let should_update = match prev_block_info.commitment_config.commitment {
+
+        // update latest block
+        let latest_block = self.get_latest_block_arc(commitment_config);
+        if slot > latest_block.read().await.slot {
+            *latest_block.write().await = block_info.clone();
+        }
+
+        match self.blocks.entry(block_info.blockhash) {
+            dashmap::mapref::entry::Entry::Occupied(entry) => {
+                let should_update = match entry.get().commitment_config.commitment {
                     CommitmentLevel::Finalized => false, // should never update blocks of finalized commitment
                     CommitmentLevel::Confirmed => {
                         commitment_config == CommitmentConfig::finalized()
@@ -134,27 +133,21 @@ impl BlockInformationStore {
                             || commitment_config == CommitmentConfig::finalized()
                     }
                 };
-                if !should_update {
-                    return false;
+                if should_update {
+                    entry.replace_entry(block_info);
                 }
-                *prev_block_info = block_info.clone();
+                should_update
             }
-            None => {
-                self.blocks.insert(block_info.blockhash, block_info.clone());
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(block_info);
+                true
             }
         }
-
-        // update latest block
-        let latest_block = self.get_latest_block_arc(commitment_config);
-        if slot > latest_block.read().await.slot {
-            *latest_block.write().await = block_info;
-        }
-        true
     }
 
     pub async fn clean(&self) {
         let finalized_block_information = self
-            .get_latest_block_info(CommitmentConfig::finalized())
+            .get_latest_block_information(CommitmentConfig::finalized())
             .await;
         let before_length = self.blocks.len();
         self.blocks
@@ -175,7 +168,7 @@ impl BlockInformationStore {
         blockhash: &Hash,
         commitment_config: CommitmentConfig,
     ) -> (bool, Slot) {
-        let latest_block = self.get_latest_block(commitment_config).await;
+        let latest_block = self.get_latest_block_information(commitment_config).await;
         match self.blocks.get(blockhash) {
             Some(block_information) => (
                 latest_block.block_height <= block_information.last_valid_blockheight,
