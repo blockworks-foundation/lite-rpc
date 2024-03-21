@@ -526,7 +526,7 @@ impl LiteRpcServer for LiteBridge {
             let current_block_info = self
                 .data_cache
                 .block_information_store
-                .get_latest_block_info(commitment)
+                .get_latest_block_information(commitment)
                 .await;
             match account_service.get_account(pubkey, config).await {
                 Ok((_, ui_account)) => Ok(RpcResponse {
@@ -585,7 +585,7 @@ impl LiteRpcServer for LiteBridge {
             let current_block_info = self
                 .data_cache
                 .block_information_store
-                .get_latest_block_info(commitment)
+                .get_latest_block_information(commitment)
                 .await;
             assert_eq!(ui_accounts.len(), pubkey_strs.len());
             Ok(RpcResponse {
@@ -621,7 +621,7 @@ impl LiteRpcServer for LiteBridge {
         let current_block_info = self
             .data_cache
             .block_information_store
-            .get_latest_block_info(commitment)
+            .get_latest_block_information(commitment)
             .await;
 
         if let Some(account_service) = &self.accounts_service {
@@ -678,7 +678,7 @@ impl LiteRpcServer for LiteBridge {
         let current_block_info = self
             .data_cache
             .block_information_store
-            .get_latest_block_info(commitment)
+            .get_latest_block_information(commitment)
             .await;
 
         if let Some(account_service) = &self.accounts_service {
