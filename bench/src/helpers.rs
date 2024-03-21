@@ -114,6 +114,7 @@ impl BenchHelper {
             .collect()
     }
 
+    // note: there is another version of this
     pub fn create_memo_tx_small(
         msg: &[u8],
         payer: &Keypair,
@@ -123,12 +124,15 @@ impl BenchHelper {
         let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
         let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
 
+        let cu_request: Instruction =
+            ComputeBudgetInstruction::set_compute_unit_limit(14000);
+
         let instructions = if cu_price_micro_lamports > 0 {
             let cu_budget_ix: Instruction =
                 ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
-            vec![cu_budget_ix, instruction]
+            vec![cu_request, cu_budget_ix, instruction]
         } else {
-            vec![instruction]
+            vec![cu_request, instruction]
         };
 
         let message = Message::new(&instructions, Some(&payer.pubkey()));

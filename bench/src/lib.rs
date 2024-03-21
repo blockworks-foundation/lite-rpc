@@ -210,6 +210,7 @@ pub fn create_memo_tx(
     }
 }
 
+// note: there is another version of this
 pub fn create_memo_tx_small(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
     let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
 
