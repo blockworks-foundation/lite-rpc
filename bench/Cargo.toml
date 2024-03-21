@@ -16,6 +16,7 @@ path = "src/cli.rs"
 clap = { workspace = true }
 csv = "1.2.1"
 dirs = "5.0.0"
+solana-lite-rpc-util = { workspace = true }
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-transaction-status = { workspace = true }

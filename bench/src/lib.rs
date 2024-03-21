@@ -20,6 +20,7 @@ use solana_sdk::{
 use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
+use tx_size::TxSize;
 
 pub mod benches;
 pub mod helpers;
@@ -49,6 +50,11 @@ pub struct Args {
     // choose between small (179 bytes) and large (1186 bytes) transactions
     #[arg(short = 'L', long, default_value_t = false)]
     pub large_transactions: bool,
+}
+
+pub struct BenchmarkTransactionParams {
+    pub tx_size: TxSize,
+    pub cu_price_micro_lamports: u64,
 }
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
@@ -187,11 +193,10 @@ pub fn generate_txs(
     payer: &Keypair,
     blockhash: Hash,
     rng: &mut Rng8,
-    size: tx_size::TxSize,
-    cu_price_micro_lamports: u64,
+    tx_params: &BenchmarkTransactionParams,
 ) -> Vec<Transaction> {
     (0..num_of_txs)
-        .map(|_| create_memo_tx(payer, blockhash, rng, size, cu_price_micro_lamports))
+        .map(|_| create_memo_tx(payer, blockhash, rng, tx_params))
         .collect()
 }
 
@@ -199,18 +204,23 @@ pub fn create_memo_tx(
     payer: &Keypair,
     blockhash: Hash,
     rng: &mut Rng8,
-    size: tx_size::TxSize,
-    cu_price_micro_lamports: u64,
+    tx_params: &BenchmarkTransactionParams,
 ) -> Transaction {
-    let rand_str = generate_random_string(rng, size.memo_size());
+    let rand_str = generate_random_string(rng, tx_params.tx_size.memo_size());
 
-    match size {
-        tx_size::TxSize::Small => {
-            create_memo_tx_small(&rand_str, payer, blockhash, cu_price_micro_lamports)
-        }
-        tx_size::TxSize::Large => {
-            create_memo_tx_large(&rand_str, payer, blockhash, cu_price_micro_lamports)
-        }
+    match tx_params.tx_size {
+        tx_size::TxSize::Small => create_memo_tx_small(
+            &rand_str,
+            payer,
+            blockhash,
+            tx_params.cu_price_micro_lamports,
+        ),
+        tx_size::TxSize::Large => create_memo_tx_large(
+            &rand_str,
+            payer,
+            blockhash,
+            tx_params.cu_price_micro_lamports,
+        ),
     }
 }
 

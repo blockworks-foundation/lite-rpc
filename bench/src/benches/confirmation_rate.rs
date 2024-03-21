@@ -1,5 +1,4 @@
-use crate::tx_size::TxSize;
-use crate::{create_rng, generate_txs};
+use crate::{create_rng, generate_txs, BenchmarkTransactionParams};
 use anyhow::{bail, Error};
 use futures::future::join_all;
 use futures::TryFutureExt;
@@ -34,10 +33,9 @@ pub struct RpcStat {
 pub async fn confirmation_rate(
     payer_path: &Path,
     rpc_url: String,
-    tx_size: TxSize,
+    tx_params: BenchmarkTransactionParams,
     txns_per_round: usize,
-    num_rounds: usize,
-    cu_price_micro_lamports: u64,
+    num_of_runs: usize,
 ) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
 
@@ -47,17 +45,11 @@ pub async fn confirmation_rate(
     let payer: Arc<Keypair> = Arc::new(read_keypair_file(payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
 
-    let mut rpc_results = Vec::with_capacity(num_rounds);
+    let mut rpc_results = Vec::with_capacity(num_of_runs);
 
-    for _ in 0..num_rounds {
-        let stat: RpcStat = send_bulk_txs_and_wait(
-            &rpc,
-            &payer,
-            txns_per_round,
-            tx_size,
-            cu_price_micro_lamports,
-        )
-        .await?;
+    for _ in 0..num_of_runs {
+        let stat: RpcStat =
+            send_bulk_txs_and_wait(&rpc, &payer, txns_per_round, &tx_params).await?;
         rpc_results.push(stat);
     }
 
@@ -69,19 +61,11 @@ pub async fn send_bulk_txs_and_wait(
     rpc: &RpcClient,
     payer: &Keypair,
     num_txns: usize,
-    tx_size: TxSize,
-    cu_price_micro_lamports: u64,
+    tx_params: &BenchmarkTransactionParams,
 ) -> anyhow::Result<RpcStat> {
     let hash = rpc.get_latest_blockhash().await?;
     let mut rng = create_rng(None);
-    let txs = generate_txs(
-        num_txns,
-        payer,
-        hash,
-        &mut rng,
-        tx_size,
-        cu_price_micro_lamports,
-    );
+    let txs = generate_txs(num_txns, payer, hash, &mut rng, tx_params);
 
     let started_at = tokio::time::Instant::now();
 

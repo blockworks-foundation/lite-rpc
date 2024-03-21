@@ -585,6 +585,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "solana-lite-rpc-util",
  "solana-rpc-client",
  "solana-rpc-client-api",
  "solana-sdk",

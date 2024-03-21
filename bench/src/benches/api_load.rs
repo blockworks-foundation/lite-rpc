@@ -16,7 +16,7 @@ use crate::create_memo_tx_small;
 pub async fn api_load(
     payer_path: &Path,
     rpc_url: String,
-    time_ms: u64,
+    test_duration_ms: u64,
     cu_price_micro_lamports: u64,
 ) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
@@ -34,7 +34,7 @@ pub async fn api_load(
     let hash = rpc.get_latest_blockhash().await?;
     let time = tokio::time::Instant::now();
 
-    while time.elapsed().as_millis() < time_ms.into() {
+    while time.elapsed().as_millis() < test_duration_ms.into() {
         let rpc = rpc.clone();
         let payer = payer.clone();
 
@@ -55,7 +55,7 @@ pub async fn api_load(
         txs += 1;
     }
 
-    let calls_per_second = txs as f64 / (time_ms as f64 * 1000.0);
+    let calls_per_second = txs as f64 / (test_duration_ms as f64 * 1000.0);
     info!("calls_per_second: {}", calls_per_second);
     info!("failed: {}", failed.load(Ordering::Relaxed));
     info!("success: {}", success.load(Ordering::Relaxed));

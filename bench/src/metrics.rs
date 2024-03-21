@@ -148,31 +148,30 @@ pub struct TxMetricData {
     pub time_to_confirm_in_millis: u64,
 }
 
-/// note: do not change - used on Rest Url
 #[derive(Clone, Debug)]
-pub enum ClusterKeys {
+pub enum PingThingCluster {
     Mainnet,
     Testnet,
     Devnet,
 }
 
-impl ClusterKeys {
+impl PingThingCluster {
     pub fn from_arg(cluster: String) -> Self {
         match cluster.to_lowercase().as_str() {
-            "mainnet" => ClusterKeys::Mainnet,
-            "testnet" => ClusterKeys::Testnet,
-            "devnet" => ClusterKeys::Devnet,
+            "mainnet" => PingThingCluster::Mainnet,
+            "testnet" => PingThingCluster::Testnet,
+            "devnet" => PingThingCluster::Devnet,
             _ => panic!("incorrect cluster name"),
         }
     }
 }
 
-impl ClusterKeys {
+impl PingThingCluster {
     pub fn to_url_part(&self) -> String {
         match self {
-            ClusterKeys::Mainnet => "mainnet",
-            ClusterKeys::Testnet => "testnet",
-            ClusterKeys::Devnet => "devnet",
+            PingThingCluster::Mainnet => "mainnet",
+            PingThingCluster::Testnet => "testnet",
+            PingThingCluster::Devnet => "devnet",
         }
         .to_string()
     }
@@ -194,8 +193,7 @@ impl Display for PingThingTxType {
 }
 
 pub struct PingThing {
-    // e.g. mainnet
-    pub cluster: ClusterKeys,
+    pub cluster: PingThingCluster,
     pub va_api_key: String,
 }
 
@@ -240,7 +238,7 @@ impl PingThing {
 /// Assumes that the txn was sent on Mainnet and had the "confirmed" commitment level
 #[allow(clippy::too_many_arguments)]
 async fn submit_stats_to_ping_thing(
-    cluster: ClusterKeys,
+    cluster: PingThingCluster,
     va_api_key: String,
     tx_elapsed: Duration,
     tx_sig: Signature,
@@ -287,7 +285,7 @@ async fn test_ping_thing() {
     assert!(token.is_empty(), "Empty token for ping thing test");
 
     let ping_thing = PingThing {
-        cluster: ClusterKeys::Mainnet,
+        cluster: PingThingCluster::Mainnet,
         va_api_key: token,
     };
 

@@ -5,7 +5,9 @@ use bench::{
         api_load::api_load, confirmation_rate::confirmation_rate,
         confirmation_slot::confirmation_slot,
     },
+    metrics::{PingThing, PingThingCluster},
     tx_size::TxSize,
+    BenchmarkTransactionParams,
 };
 use clap::{Parser, Subcommand};
 
@@ -25,7 +27,7 @@ enum SubCommand {
         #[clap(short, long)]
         rpc_url: String,
         #[clap(short, long)]
-        time_ms: u64,
+        test_duration_ms: u64,
         /// The CU price in micro lamports
         #[clap(short, long, default_value_t = 3)]
         #[arg(short = 'f')]
@@ -41,7 +43,7 @@ enum SubCommand {
         #[clap(short, long)]
         txns_per_round: usize,
         #[clap(short, long)]
-        num_rounds: usize,
+        num_of_runs: usize,
         /// The CU price in micro lamports
         #[clap(short, long, default_value_t = 300)]
         #[arg(short = 'f')]
@@ -65,7 +67,7 @@ enum SubCommand {
         #[clap(short, long, default_value_t = 15_000)]
         max_timeout_ms: u64,
         #[clap(short, long)]
-        num_rounds: usize,
+        num_of_runs: usize,
         /// The CU price in micro lamports
         #[clap(short, long, default_value_t = 300)]
         #[arg(short = 'f')]
@@ -92,10 +94,10 @@ async fn main() {
         SubCommand::ApiLoad {
             payer_path,
             rpc_url,
-            time_ms,
+            test_duration_ms,
             cu_price,
         } => {
-            api_load(&payer_path, rpc_url, time_ms, cu_price)
+            api_load(&payer_path, rpc_url, test_duration_ms, cu_price)
                 .await
                 .unwrap();
         }
@@ -104,15 +106,17 @@ async fn main() {
             rpc_url,
             size_tx,
             txns_per_round,
-            num_rounds,
+            num_of_runs,
             cu_price,
         } => confirmation_rate(
             &payer_path,
             rpc_url,
-            size_tx,
+            BenchmarkTransactionParams {
+                tx_size: size_tx,
+                cu_price_micro_lamports: cu_price,
+            },
             txns_per_round,
-            num_rounds,
-            cu_price,
+            num_of_runs,
         )
         .await
         .unwrap(),
@@ -122,18 +126,23 @@ async fn main() {
             rpc_b,
             size_tx,
             max_timeout_ms,
-            num_rounds,
+            num_of_runs,
             cu_price,
             ping_thing_token,
         } => confirmation_slot(
             &payer_path,
             rpc_a,
             rpc_b,
-            size_tx,
+            BenchmarkTransactionParams {
+                tx_size: size_tx,
+                cu_price_micro_lamports: cu_price,
+            },
             max_timeout_ms,
-            num_rounds,
-            cu_price,
-            ping_thing_token,
+            num_of_runs,
+            ping_thing_token.map(|t| PingThing {
+                cluster: PingThingCluster::Mainnet,
+                va_api_key: t,
+            }),
         )
         .await
         .unwrap(),
