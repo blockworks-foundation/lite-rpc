@@ -192,6 +192,7 @@ impl Display for PingThingTxType {
     }
 }
 
+#[derive(Clone)]
 pub struct PingThing {
     pub cluster: PingThingCluster,
     pub va_api_key: String,

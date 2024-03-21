@@ -7,6 +7,7 @@ use log::{debug, info};
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::config::{RpcSendTransactionConfig, RpcTransactionConfig};
+use solana_sdk::clock::Slot;
 use solana_sdk::signature::{read_keypair_file, Signature, Signer};
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
@@ -15,12 +16,29 @@ use std::ops::Add;
 use tokio::time::{sleep, Instant};
 use tracing::error;
 
-#[derive(Default)]
-pub struct ConfirmationSlotResult {
+#[derive(Clone)]
+pub struct ConfirmationSlotInfo {
+    pub result: ConfirmationSlotResult,
     pub signature: Signature,
     pub slot_sent: u64,
-    pub slot_landed: u64,
     pub confirmation_time: Duration,
+}
+
+impl ConfirmationSlotInfo {
+    pub fn timed_out(duration: Duration) -> Self {
+        ConfirmationSlotInfo {
+            result: ConfirmationSlotResult::Timeout(duration),
+            signature: Signature::default(),
+            slot_sent: 0,
+            confirmation_time: duration,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum ConfirmationSlotResult {
+    Timeout(Duration),
+    Success(Slot),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -44,6 +62,7 @@ pub async fn confirmation_slot(
     let mut rng = create_rng(None);
     let payer = read_keypair_file(payer_path).expect("payer file");
     info!("Payer: {}", payer.pubkey().to_string());
+    let mut ping_thing_tasks = vec![];
 
     for _ in 0..num_of_runs {
         let rpc_a = RpcClient::new(rpc_a_url.clone());
@@ -74,7 +93,7 @@ pub async fn confirmation_slot(
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to send_and_confirm_transaction for A: {}", e);
-                    ConfirmationSlotResult::default()
+                    ConfirmationSlotInfo::timed_out(Duration::from_millis(max_timeout_ms))
                 })
         });
 
@@ -84,7 +103,7 @@ pub async fn confirmation_slot(
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to send_and_confirm_transaction for B: {}", e);
-                    ConfirmationSlotResult::default()
+                    ConfirmationSlotInfo::timed_out(Duration::from_millis(max_timeout_ms))
                 })
         });
 
@@ -92,16 +111,30 @@ pub async fn confirmation_slot(
         let a_result = a?;
         let b_result = b?;
 
-        if let Some(ref ping_thing) = maybe_ping_thing {
-            submit_ping_thing_stats(&a_result, &ping_thing).await?;
-            submit_ping_thing_stats(&b_result, &ping_thing).await?;
-        };
+        if let ConfirmationSlotResult::Success(slot_landed) = a_result.result {
+            info!("txn A confirmed at slot: {}", slot_landed);
+        } else {
+            info!("txn A unconfirmed after {} ms", max_timeout_ms);
+        }
+        if let ConfirmationSlotResult::Success(slot_landed) = b_result.result {
+            info!("txn B confirmed at slot: {}", slot_landed);
+        } else {
+            info!("txn B unconfirmed after {} ms", max_timeout_ms);
+        }
 
-        info!(
-            "a_slot: {}, b_slot: {}\n",
-            a_result.slot_landed, b_result.slot_landed
-        );
+        if let Some(ping_thing) = maybe_ping_thing.clone() {
+            ping_thing_tasks.push(tokio::spawn(async move {
+                submit_ping_thing_stats(&a_result, &ping_thing)
+                    .await
+                    .unwrap();
+                submit_ping_thing_stats(&b_result, &ping_thing)
+                    .await
+                    .unwrap();
+            }));
+        };
     }
+
+    futures::future::join_all(ping_thing_tasks).await;
 
     Ok(())
 }
@@ -121,7 +154,7 @@ async fn send_and_confirm_transaction(
     rpc: &RpcClient,
     tx: Transaction,
     timeout_ms: u64,
-) -> anyhow::Result<ConfirmationSlotResult> {
+) -> anyhow::Result<ConfirmationSlotInfo> {
     let send_config = RpcSendTransactionConfig {
         skip_preflight: true,
         preflight_commitment: None,
@@ -139,9 +172,15 @@ async fn send_and_confirm_transaction(
 
     let started_at = Instant::now();
     let mut throttle_barrier = Instant::now();
+    let timeout_duration = Duration::from_millis(timeout_ms);
     loop {
-        if started_at.elapsed() >= Duration::from_millis(timeout_ms) {
-            return Ok(ConfirmationSlotResult::default()); // Timeout occurred
+        if started_at.elapsed() >= timeout_duration {
+            return Ok(ConfirmationSlotInfo {
+                result: ConfirmationSlotResult::Timeout(timeout_duration),
+                signature,
+                slot_sent,
+                confirmation_time: timeout_duration,
+            });
         }
         let confirmed = rpc
             .confirm_transaction_with_commitment(&signature, CommitmentConfig::confirmed())
@@ -152,7 +191,6 @@ async fn send_and_confirm_transaction(
         if confirmed.value {
             break;
         }
-        info!("try confirm: {:?}", throttle_barrier); // TOOD: delete this comment
         tokio::time::sleep_until(throttle_barrier).await;
         throttle_barrier = Instant::now().add(Duration::from_millis(1000));
     }
@@ -168,10 +206,10 @@ async fn send_and_confirm_transaction(
         .get_transaction_with_config(&signature, fetch_config)
         .await?;
 
-    Ok(ConfirmationSlotResult {
+    Ok(ConfirmationSlotInfo {
+        result: ConfirmationSlotResult::Success(transaction.slot),
         signature,
         slot_sent,
-        slot_landed: transaction.slot,
         confirmation_time,
     })
 }
@@ -184,17 +222,22 @@ pub async fn rpc_roundtrip_duration(rpc: &RpcClient) -> anyhow::Result<Duration>
 }
 
 async fn submit_ping_thing_stats(
-    result: &ConfirmationSlotResult,
+    confirmation_info: &ConfirmationSlotInfo,
     ping_thing: &PingThing,
 ) -> anyhow::Result<()> {
-    ping_thing
-        .submit_confirmed_stats(
-            result.confirmation_time,
-            result.signature,
-            PingThingTxType::Memo,
-            true,
-            result.slot_sent,
-            result.slot_landed,
-        )
-        .await
+    match confirmation_info.result {
+        ConfirmationSlotResult::Timeout(_) => Ok(()),
+        ConfirmationSlotResult::Success(slot_landed) => {
+            ping_thing
+                .submit_confirmed_stats(
+                    confirmation_info.confirmation_time,
+                    confirmation_info.signature,
+                    PingThingTxType::Memo,
+                    true,
+                    confirmation_info.slot_sent,
+                    slot_landed,
+                )
+                .await
+        }
+    }
 }

@@ -255,6 +255,7 @@ pub fn create_memo_tx_large(
     let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
     let cu_budget_ix: Instruction =
         ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
+    let cu_limit_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(14000);
 
     let instruction = Instruction::new_with_bytes(
         memo,
@@ -264,7 +265,10 @@ pub fn create_memo_tx_large(
             .map(|keypair| AccountMeta::new_readonly(keypair.pubkey(), true))
             .collect_vec(),
     );
-    let message = Message::new(&[cu_budget_ix, instruction], Some(&payer.pubkey()));
+    let message = Message::new(
+        &[cu_budget_ix, cu_limit_ix, instruction],
+        Some(&payer.pubkey()),
+    );
 
     let mut signers = vec![payer];
     signers.extend(accounts.iter());
