@@ -14,7 +14,7 @@ FROM base as build
 COPY --from=plan /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
-RUN cargo build --release --bin solana-lite-rpc-benchrunner-service --bin cert
+RUN cargo build --release --bin solana-lite-rpc-benchrunner-service
 
 FROM debian:bookworm-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6 libssl3 libssl-dev openssl
@@ -22,7 +22,6 @@ RUN apt-get update && apt-get -y install ca-certificates libc6 libssl3 libssl-de
 COPY openssl-legacy.cnf /etc/ssl/openssl-legacy.cnf
 
 COPY --from=build /app/target/release/solana-lite-rpc-benchrunner-service /usr/local/bin/
-COPY --from=build /app/target/release/cert /usr/local/bin/
 
 ENV OPENSSL_CONF=/etc/ssl/openssl-legacy.cnf
 
