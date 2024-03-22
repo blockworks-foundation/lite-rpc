@@ -54,6 +54,11 @@ use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 
+// jemalloc seems to be better at keeping the memory footprint reasonable over
+// longer periods of time
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 async fn get_latest_block(
     mut block_stream: BlockStream,
     commitment_config: CommitmentConfig,
