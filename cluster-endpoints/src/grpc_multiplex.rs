@@ -212,7 +212,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 let finalized_block = cached_processed_block.to_finalized_block();
                                 last_finalized_slot = finalized_block.slot;
                                 startup_completed = true;
-                                log::info!("sending finalized block");
                                 debug!("got finalized blockmeta {} with blockhash {}",
                                     finalized_block.slot, finalized_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(finalized_block) {
