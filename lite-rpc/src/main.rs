@@ -196,6 +196,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let EndpointStreaming {
         // note: blocks_notifier will be dropped at some point
         blocks_notifier,
+        blockinfo_notifier,
         cluster_info_notifier,
         slot_notifier,
         vote_account_notifier,

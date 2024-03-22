@@ -271,7 +271,7 @@ pub fn create_grpc_subscription(
     let (slot_multiplex_channel, jh_multiplex_slotstream) =
         create_grpc_multiplex_processed_slots_subscription(grpc_sources.clone());
 
-    let (block_multiplex_channel, jh_multiplex_blockstream) =
+    let (block_multiplex_channel, blockmeta_channel, jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources.clone());
 
     let cluster_info_polling = poll_cluster_info(rpc_client.clone(), cluster_info_sx);
@@ -283,6 +283,7 @@ pub fn create_grpc_subscription(
             create_grpc_account_streaming(grpc_sources, accounts_filter);
         let streamers = EndpointStreaming {
             blocks_notifier: block_multiplex_channel,
+            blockinfo_notifier: blockmeta_channel,
             slot_notifier: slot_multiplex_channel,
             cluster_info_notifier,
             vote_account_notifier,
@@ -300,6 +301,7 @@ pub fn create_grpc_subscription(
     } else {
         let streamers = EndpointStreaming {
             blocks_notifier: block_multiplex_channel,
+            blockinfo_notifier: blockmeta_channel,
             slot_notifier: slot_multiplex_channel,
             cluster_info_notifier,
             vote_account_notifier,

@@ -194,7 +194,7 @@ fn create_grpc_multiplex_block_meta_task(
 /// the channel must never be closed
 pub fn create_grpc_multiplex_blocks_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
-) -> (Receiver<ProducedBlock>, AnyhowJoinHandle) {
+) -> (Receiver<ProducedBlock>, Receiver<BlockInfo>, AnyhowJoinHandle) {
     info!("Setup grpc multiplexed blocks connection...");
     if grpc_sources.is_empty() {
         info!("- no grpc connection configured");
@@ -207,9 +207,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
     // must NEVER be closed from inside this method
     let (producedblock_sender, blocks_output_stream) =
         tokio::sync::broadcast::channel::<ProducedBlock>(32);
-
-
-    let (finalizedmeta_sender, finalizedmeta_output_stream) =
+    // provide information about finalized blocks as quickly as possible
+    // note that produced block stream might most probably lag behind
+    let (blockmeta_sender, blockmeta_output_stream) =
         tokio::sync::broadcast::channel::<BlockInfo>(32);
 
     let mut reconnect_attempts = 0;
@@ -300,6 +300,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             cleanup_without_confirmed_recv_blocks_meta = 0;
                             let meta_confirmed = meta_confirmed.expect("confirmed block meta from stream");
                             let blockhash = meta_confirmed.blockhash;
+                             trace!("got confirmed blockmeta {} with blockhash {}",
+                                meta_confirmed.slot, blockhash);
+                            if let Err(e) = blockmeta_sender.send(meta_confirmed) {
+                                warn!("Confirmed blockmeta channel has no receivers {e:?}");
+                            }
+
                             if let Some(cached_processed_block) = recent_processed_blocks.get(&blockhash) {
                                 let confirmed_block = cached_processed_block.to_confirmed_block();
                                 debug!("got confirmed blockmeta {} with blockhash {}",
@@ -320,9 +326,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             let blockhash = meta_finalized.blockhash;
                              trace!("got finalized blockmeta {} with blockhash {}",
                                 meta_finalized.slot, blockhash);
-                            // if let Err(e) = finalizedmeta_sender.send(processed_block.clone()) {
-                            //     warn!("produced block channel has no receivers {e:?}");
-                            // }
+                            if let Err(e) = blockmeta_sender.send(meta_finalized) {
+                                warn!("Finalized blockmeta channel has no receivers {e:?}");
+                            }
 
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
@@ -367,7 +373,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
         } // -- END reconnect loop
     });
 
-    (blocks_output_stream, jh_block_emitter_task)
+    (blocks_output_stream, blockmeta_output_stream, jh_block_emitter_task)
 }
 
 pub fn create_grpc_multiplex_processed_slots_subscription(
