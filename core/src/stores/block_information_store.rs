@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 
 use crate::structures::produced_block::ProducedBlock;
 use solana_sdk::hash::Hash;
+use crate::structures::block_info::BlockInfo;
 
 #[derive(Clone, Debug)]
 pub struct BlockInformation {
@@ -22,6 +23,7 @@ pub struct BlockInformation {
 }
 
 impl BlockInformation {
+    // TODO remove
     pub fn from_block(block: &ProducedBlock) -> Self {
         BlockInformation {
             slot: block.slot,
@@ -31,6 +33,17 @@ impl BlockInformation {
             blockhash: block.blockhash,
             commitment_config: block.commitment_config,
             block_time: block.block_time,
+        }
+    }
+    pub fn from_block_info(block_info: &BlockInfo) -> Self {
+        BlockInformation {
+            slot: block_info.slot,
+            block_height: block_info.block_height,
+            last_valid_blockheight: block_info.block_height + MAX_RECENT_BLOCKHASHES as u64,
+            cleanup_slot: block_info.block_height + 1000,
+            blockhash: block_info.blockhash,
+            commitment_config: block_info.commitment_config,
+            block_time: block_info.block_time,
         }
     }
 }

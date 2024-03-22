@@ -277,6 +277,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     // to avoid laggin we resubscribe to block notification
     let data_caching_service = data_cache_service.listen(
         blocks_notifier.resubscribe(),
+        blockinfo_notifier.resubscribe(),
         slot_notifier.resubscribe(),
         cluster_info_notifier,
         vote_account_notifier,
