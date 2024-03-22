@@ -169,7 +169,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let mut cleanup_without_confirmed_recv_blocks_meta: u32 = 0;
                 let mut cleanup_without_finalized_recv_blocks_meta: u32 = 0;
                 let mut confirmed_block_not_yet_processed = HashSet::<String>::new();
-                let mut finalized_block_not_yet_processed = HashSet::<String>::new();
 
                 //  start logging errors when we recieve first finalized block
                 let mut startup_completed = false;
@@ -186,11 +185,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             }
                             if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
                                 if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
-                                    warn!("produced block channel has no receivers {e:?}");
-                                }
-                            }
-                            if finalized_block_not_yet_processed.remove(&processed_block.blockhash) {
-                                if let Err(e) = producedblock_sender.send(processed_block.to_finalized_block()) {
                                     warn!("produced block channel has no receivers {e:?}");
                                 }
                             }
@@ -226,7 +220,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             } else if startup_completed {
                                 // this warning is ok for first few blocks when we start lrpc
                                 log::warn!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
-                                finalized_block_not_yet_processed.insert(blockhash);
                             }
                         },
                         _ = cleanup_tick.tick() => {
