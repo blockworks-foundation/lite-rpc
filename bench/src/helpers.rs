@@ -144,3 +144,33 @@ impl BenchHelper {
         Transaction::new(&signers, message, blockhash)
     }
 }
+
+#[test]
+fn transaction_size_small() {
+    let blockhash = Hash::default();
+    let payer_keypair = Keypair::from_base58_string(
+        "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
+    );
+
+    let seed = 42;
+    let random_strings = BenchHelper::generate_random_strings(1, Some(seed), 10);
+    let rand_string = random_strings.first().unwrap();
+    let tx = BenchHelper::create_memo_tx_small(rand_string, &payer_keypair, blockhash);
+
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 231);
+}
+
+#[test]
+fn transaction_size_large() {
+    let blockhash = Hash::default();
+    let payer_keypair = Keypair::from_base58_string(
+        "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
+    );
+
+    let seed = 42;
+    let random_strings = BenchHelper::generate_random_strings(1, Some(seed), 232);
+    let rand_string = random_strings.first().unwrap();
+    let tx = BenchHelper::create_memo_tx_large(rand_string, &payer_keypair, blockhash);
+
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1230);
+}

@@ -70,6 +70,11 @@ use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
 
+// jemalloc seems to be better at keeping the memory footprint reasonable over
+// longer periods of time
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 async fn get_latest_block_info(
     mut blockinfo_stream: BlockInfoStream,
     commitment_config: CommitmentConfig,
