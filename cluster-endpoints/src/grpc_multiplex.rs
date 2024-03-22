@@ -304,6 +304,11 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             let processed_block = processed_block.expect("processed block from stream");
                             trace!("got processed block {} with blockhash {}",
                                 processed_block.slot, processed_block.blockhash.clone());
+
+                            if processed_block.commitment_config.is_finalized() {
+                                 last_finalized_slot = last_finalized_slot.max(processed_block.slot);
+                            }
+
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
                                 warn!("produced block channel has no receivers {e:?}");
                             }
@@ -318,6 +323,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             }
                             recent_processed_blocks.insert(processed_block.blockhash, processed_block);
+
                         },
                         blockinfo_processed = block_info_reciever_processed.recv() => {
                             let blockinfo_processed = blockinfo_processed.expect("processed block info from stream");
@@ -354,6 +360,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         blockinfo_finalized = block_info_reciever_finalized.recv() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
                             let blockinfo_finalized = blockinfo_finalized.expect("finalized block info from stream");
+                            last_finalized_slot = last_finalized_slot.max(blockinfo_finalized.slot);
+
                             let blockhash = blockinfo_finalized.blockhash;
                              trace!("got finalized blockinfo {} with blockhash {}",
                                 blockinfo_finalized.slot, blockhash);
@@ -363,7 +371,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
-                                last_finalized_slot = finalized_block.slot;
                                 startup_completed = true;
                                 debug!("got finalized blockinfo {} with blockhash {}",
                                     finalized_block.slot, finalized_block.blockhash.clone());
