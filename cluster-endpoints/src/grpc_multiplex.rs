@@ -109,9 +109,9 @@ fn create_grpc_multiplex_processed_block_task(
 }
 
 // backpressure: the mpsc sender will block grpc stream until capacity is available
-fn create_grpc_multiplex_block_meta_task(
+fn create_grpc_multiplex_block_info_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    block_meta_sender: tokio::sync::mpsc::Sender<BlockInfo>,
+    block_info_sender: tokio::sync::mpsc::Sender<BlockInfo>,
     commitment_config: CommitmentConfig,
 ) -> Vec<AbortHandle> {
     let (autoconnect_tx, mut blocks_rx) = tokio::sync::mpsc::channel(10);
@@ -151,7 +151,7 @@ fn create_grpc_multiplex_block_meta_task(
                                     };
 
                                     let send_started_at = Instant::now();
-                                    let send_result = block_meta_sender
+                                    let send_result = block_info_sender
                                         .send(block_meta)
                                         .await
                                         .context("Send block to channel");
@@ -224,11 +224,11 @@ pub fn create_grpc_multiplex_blocks_subscription(
             // channels must NEVER GET CLOSED (unless full restart of multiplexer)
             let (processed_block_sender, mut processed_block_reciever) =
                 tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
-            let (block_meta_sender_processed, mut block_meta_reciever_processed) =
+            let (block_info_sender_processed, mut block_info_reciever_processed) =
                 tokio::sync::mpsc::channel::<BlockInfo>(500);
-            let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) =
+            let (block_info_sender_confirmed, mut block_info_reciever_confirmed) =
                 tokio::sync::mpsc::channel::<BlockInfo>(500);
-            let (block_meta_sender_finalized, mut block_meta_reciever_finalized) =
+            let (block_info_sender_finalized, mut block_info_reciever_finalized) =
                 tokio::sync::mpsc::channel::<BlockInfo>(500);
 
             let processed_block_sender = processed_block_sender.clone();
@@ -251,21 +251,21 @@ pub fn create_grpc_multiplex_blocks_subscription(
 
             // TODO apply same pattern as in create_grpc_multiplex_processed_block_task
 
-            let jh_meta_task_processed = create_grpc_multiplex_block_meta_task(
+            let jh_meta_task_processed = create_grpc_multiplex_block_info_task(
                 &grpc_sources,
-                block_meta_sender_processed.clone(),
+                block_info_sender_processed.clone(),
                 CommitmentConfig::processed(),
             );
             task_list.extend(jh_meta_task_processed);
-            let jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(
+            let jh_meta_task_confirmed = create_grpc_multiplex_block_info_task(
                 &grpc_sources,
-                block_meta_sender_confirmed.clone(),
+                block_info_sender_confirmed.clone(),
                 CommitmentConfig::confirmed(),
             );
             task_list.extend(jh_meta_task_confirmed);
-            let jh_meta_task_finalized = create_grpc_multiplex_block_meta_task(
+            let jh_meta_task_finalized = create_grpc_multiplex_block_info_task(
                 &grpc_sources,
-                block_meta_sender_finalized.clone(),
+                block_info_sender_finalized.clone(),
                 CommitmentConfig::finalized(),
             );
             task_list.extend(jh_meta_task_finalized);
@@ -287,10 +287,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let mut startup_completed = false;
             const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
             'recv_loop: loop {
-                debug!("processed_block_sender: {}, block_meta_sender_confirmed: {}, block_meta_sender_finalized: {}",
+                debug!("channel capacities: processed_block_sender={}, block_info_sender_confirmed={}, block_info_sender_finalized={}",
                     processed_block_sender.capacity(),
-                    block_meta_sender_confirmed.capacity(),
-                    block_meta_sender_finalized.capacity()
+                    block_info_sender_confirmed.capacity(),
+                    block_info_sender_finalized.capacity()
                 );
                 tokio::select! {
                     processed_block = processed_block_reciever.recv() => {
@@ -309,16 +309,16 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             }
                             recent_processed_blocks.insert(processed_block.blockhash, processed_block);
                         },
-                        meta_processed = block_meta_reciever_processed.recv() => {
-                            let meta_processed = meta_processed.expect("processed block meta from stream");
-                            let blockhash = meta_processed.blockhash;
+                        blockinfo_processed = block_info_reciever_processed.recv() => {
+                            let blockinfo_processed = blockinfo_processed.expect("processed block meta from stream");
+                            let blockhash = blockinfo_processed.blockhash;
                              trace!("got processed blockmeta {} with blockhash {}",
-                                meta_processed.slot, blockhash);
-                            if let Err(e) = blockmeta_sender.send(meta_processed) {
+                                blockinfo_processed.slot, blockhash);
+                            if let Err(e) = blockmeta_sender.send(blockinfo_processed) {
                                 warn!("Processed blockmeta channel has no receivers {e:?}");
                             }
                         },
-                        meta_confirmed = block_meta_reciever_confirmed.recv() => {
+                        blockinfo_confirmed = block_info_reciever_confirmed.recv() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
                             let meta_confirmed = meta_confirmed.expect("confirmed block meta from stream");
                             let blockhash = meta_confirmed.blockhash;
@@ -341,10 +341,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 confirmed_block_not_yet_processed.len(), recent_processed_blocks.len());
                             }
                         },
-                        meta_finalized = block_meta_reciever_finalized.recv() => {
+                        blockinfo_finalized = block_info_reciever_finalized.recv() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
                             let meta_finalized = meta_finalized.expect("finalized block meta from stream");
-                            // let _span = debug_span!("sequence_block_meta_finalized", ?meta_finalized.slot).entered();
                             let blockhash = meta_finalized.blockhash;
                              trace!("got finalized blockmeta {} with blockhash {}",
                                 meta_finalized.slot, blockhash);
