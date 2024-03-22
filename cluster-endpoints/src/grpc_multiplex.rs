@@ -213,7 +213,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
         tokio::sync::broadcast::channel::<ProducedBlock>(32);
     // provide information about finalized blocks as quickly as possible
     // note that produced block stream might most probably lag behind
-    let (blockmeta_sender, blockmeta_output_stream) =
+    let (blockinfo_sender, blockinfo_output_stream) =
         tokio::sync::broadcast::channel::<BlockInfo>(32);
 
     let mut reconnect_attempts = 0;
@@ -310,27 +310,27 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             recent_processed_blocks.insert(processed_block.blockhash, processed_block);
                         },
                         blockinfo_processed = block_info_reciever_processed.recv() => {
-                            let blockinfo_processed = blockinfo_processed.expect("processed block meta from stream");
+                            let blockinfo_processed = blockinfo_processed.expect("processed block info from stream");
                             let blockhash = blockinfo_processed.blockhash;
-                             trace!("got processed blockmeta {} with blockhash {}",
+                             trace!("got processed blockinfo {} with blockhash {}",
                                 blockinfo_processed.slot, blockhash);
-                            if let Err(e) = blockmeta_sender.send(blockinfo_processed) {
-                                warn!("Processed blockmeta channel has no receivers {e:?}");
+                            if let Err(e) = blockinfo_sender.send(blockinfo_processed) {
+                                warn!("Processed blockinfo channel has no receivers {e:?}");
                             }
                         },
                         blockinfo_confirmed = block_info_reciever_confirmed.recv() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;
-                            let meta_confirmed = meta_confirmed.expect("confirmed block meta from stream");
-                            let blockhash = meta_confirmed.blockhash;
-                             trace!("got confirmed blockmeta {} with blockhash {}",
-                                meta_confirmed.slot, blockhash);
-                            if let Err(e) = blockmeta_sender.send(meta_confirmed) {
-                                warn!("Confirmed blockmeta channel has no receivers {e:?}");
+                            let blockinfo_confirmed = blockinfo_confirmed.expect("confirmed block info from stream");
+                            let blockhash = blockinfo_confirmed.blockhash;
+                             trace!("got confirmed blockinfo {} with blockhash {}",
+                                blockinfo_confirmed.slot, blockhash);
+                            if let Err(e) = blockinfo_sender.send(blockinfo_confirmed) {
+                                warn!("Confirmed blockinfo channel has no receivers {e:?}");
                             }
 
                             if let Some(cached_processed_block) = recent_processed_blocks.get(&blockhash) {
                                 let confirmed_block = cached_processed_block.to_confirmed_block();
-                                debug!("got confirmed blockmeta {} with blockhash {}",
+                                debug!("got confirmed blockinfo {} with blockhash {}",
                                     confirmed_block.slot, confirmed_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(confirmed_block) {
                                     warn!("confirmed block channel has no receivers {e:?}");
@@ -343,26 +343,26 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         },
                         blockinfo_finalized = block_info_reciever_finalized.recv() => {
                             cleanup_without_finalized_recv_blocks_meta = 0;
-                            let meta_finalized = meta_finalized.expect("finalized block meta from stream");
-                            let blockhash = meta_finalized.blockhash;
-                             trace!("got finalized blockmeta {} with blockhash {}",
-                                meta_finalized.slot, blockhash);
-                            if let Err(e) = blockmeta_sender.send(meta_finalized) {
-                                warn!("Finalized blockmeta channel has no receivers {e:?}");
+                            let blockinfo_finalized = blockinfo_finalized.expect("finalized block info from stream");
+                            let blockhash = blockinfo_finalized.blockhash;
+                             trace!("got finalized blockinfo {} with blockhash {}",
+                                blockinfo_finalized.slot, blockhash);
+                            if let Err(e) = blockinfo_sender.send(blockinfo_finalized) {
+                                warn!("Finalized blockinfo channel has no receivers {e:?}");
                             }
 
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
                                 last_finalized_slot = finalized_block.slot;
                                 startup_completed = true;
-                                debug!("got finalized blockmeta {} with blockhash {}",
+                                debug!("got finalized blockinfo {} with blockhash {}",
                                     finalized_block.slot, finalized_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(finalized_block) {
                                     warn!("Finalized block channel has no receivers {e:?}");
                                 }
                             } else if startup_completed {
                                 // this warning is ok for first few blocks when we start lrpc
-                                log::warn!("finalized block meta received for blockhash {} which was never seen or already emitted", blockhash);
+                                log::warn!("finalized blockinfo received for blockhash {} which was never seen or already emitted", blockhash);
                             }
                         },
                     _ = cleanup_tick.tick() => {
@@ -370,7 +370,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         if cleanup_without_recv_full_blocks > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
                             cleanup_without_confirmed_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV ||
                             cleanup_without_finalized_recv_blocks_meta > MAX_ALLOWED_CLEANUP_WITHOUT_RECV {
-                            log::error!("block or block meta geyser stream stopped - restarting multiplexer ({}-{}-{})",
+                            log::error!("block or block info geyser stream stopped - restarting multiplexer ({}-{}-{})",
                             cleanup_without_recv_full_blocks, cleanup_without_confirmed_recv_blocks_meta, cleanup_without_finalized_recv_blocks_meta,);
                             // throttle a bit
                             sleep(Duration::from_millis(1500)).await;
@@ -394,7 +394,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
         } // -- END reconnect loop
     });
 
-    (blocks_output_stream, blockmeta_output_stream, jh_block_emitter_task)
+    (blocks_output_stream, blockinfo_output_stream, jh_block_emitter_task)
 }
 
 pub fn create_grpc_multiplex_processed_slots_subscription(
