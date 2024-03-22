@@ -7,9 +7,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::structures::block_info::BlockInfo;
 use crate::structures::produced_block::ProducedBlock;
 use solana_sdk::hash::Hash;
-use crate::structures::block_info::BlockInfo;
 
 #[derive(Clone, Debug)]
 pub struct BlockInformation {

@@ -9,6 +9,7 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 
 use solana_lite_rpc_core::solana_utils::hash_from_str;
+use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
@@ -17,7 +18,6 @@ use tokio::time::{sleep, Instant};
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
-use solana_lite_rpc_core::structures::block_info::BlockInfo;
 
 use crate::grpc_subscription::from_grpc_block_update;
 
@@ -198,7 +198,11 @@ fn create_grpc_multiplex_block_info_task(
 /// the channel must never be closed
 pub fn create_grpc_multiplex_blocks_subscription(
     grpc_sources: Vec<GrpcSourceConfig>,
-) -> (Receiver<ProducedBlock>, Receiver<BlockInfo>, AnyhowJoinHandle) {
+) -> (
+    Receiver<ProducedBlock>,
+    Receiver<BlockInfo>,
+    AnyhowJoinHandle,
+) {
     info!("Setup grpc multiplexed blocks connection...");
     if grpc_sources.is_empty() {
         info!("- no grpc connection configured");
@@ -394,7 +398,11 @@ pub fn create_grpc_multiplex_blocks_subscription(
         } // -- END reconnect loop
     });
 
-    (blocks_output_stream, blockinfo_output_stream, jh_block_emitter_task)
+    (
+        blocks_output_stream,
+        blockinfo_output_stream,
+        jh_block_emitter_task,
+    )
 }
 
 pub fn create_grpc_multiplex_processed_slots_subscription(

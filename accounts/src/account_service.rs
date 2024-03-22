@@ -4,13 +4,13 @@ use anyhow::bail;
 use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_account_decoder::{UiAccount, UiDataSliceConfig};
+use solana_lite_rpc_core::types::BlockInfoStream;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
         account_data::{AccountData, AccountNotificationMessage, AccountStream},
         account_filter::AccountFilters,
     },
-    types::BlockStream,
     AnyhowJoinHandle,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -20,7 +20,6 @@ use solana_rpc_client_api::{
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use tokio::sync::broadcast::Sender;
-use solana_lite_rpc_core::types::BlockInfoStream;
 
 use crate::account_store_interface::AccountStorageInterface;
 
