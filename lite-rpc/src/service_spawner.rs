@@ -1,3 +1,4 @@
+use solana_lite_rpc_core::types::BlockInfoStream;
 use solana_lite_rpc_core::{
     stores::data_cache::DataCache,
     structures::notifications::NotificationSender,
@@ -14,6 +15,7 @@ use solana_lite_rpc_services::{
     tx_sender::TxSender,
 };
 use std::time::Duration;
+
 pub struct ServiceSpawner {
     pub prometheus_addr: String,
     pub data_cache: DataCache,
@@ -38,9 +40,11 @@ impl ServiceSpawner {
         }
     }
 
-    pub async fn spawn_data_caching_service(
+    // TODO remove
+    pub async fn _spawn_data_caching_service(
         &self,
         block_notifier: BlockStream,
+        blockinfo_notifier: BlockInfoStream,
         slot_notification: SlotStream,
         cluster_info_notification: ClusterInfoStream,
         va_notification: VoteAccountStream,
@@ -52,6 +56,7 @@ impl ServiceSpawner {
 
         data_service.listen(
             block_notifier,
+            blockinfo_notifier,
             slot_notification,
             cluster_info_notification,
             va_notification,
