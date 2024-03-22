@@ -69,6 +69,11 @@ impl DataCachingService {
                     }
                 };
 
+                // note: most likely the block has been added from blockinfo_notifier stream already
+                block_information_store_block_info
+                    .add_block(BlockInformation::from_block(&block))
+                    .await;
+
                 let confirmation_status = match block.commitment_config.commitment {
                     CommitmentLevel::Finalized => TransactionConfirmationStatus::Finalized,
                     CommitmentLevel::Confirmed => TransactionConfirmationStatus::Confirmed,
