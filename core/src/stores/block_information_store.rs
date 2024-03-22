@@ -123,7 +123,7 @@ impl BlockInformationStore {
             }
         }
 
-        match self.blocks.entry(block_info.blockhash) {
+        match self.blocks.entry(block_info.blockhash.clone()) {
             dashmap::mapref::entry::Entry::Occupied(entry) => {
                 let should_update = match entry.get().commitment_config.commitment {
                     CommitmentLevel::Finalized => false, // should never update blocks of finalized commitment
