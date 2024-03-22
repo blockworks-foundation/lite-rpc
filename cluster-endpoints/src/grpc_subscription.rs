@@ -298,6 +298,7 @@ pub fn create_block_processing_task(
 
                 match update {
                     UpdateOneof::Block(block) => {
+                        log::info!("received block, hash: {} slot: {}", block.blockhash, block.slot);
                         block_sx
                             .send(block)
                             .await
