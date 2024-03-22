@@ -42,10 +42,9 @@ use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
-    produced_block::ProducedBlock,
 };
 use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
-use solana_lite_rpc_core::types::BlockStream;
+use solana_lite_rpc_core::types::{BlockInfoStream, BlockStream};
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
@@ -69,28 +68,29 @@ use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
+use solana_lite_rpc_core::structures::block_info::BlockInfo;
 
-async fn get_latest_block(
-    mut block_stream: BlockStream,
+async fn get_latest_block_info(
+    mut blockinfo_stream: BlockInfoStream,
     commitment_config: CommitmentConfig,
-) -> ProducedBlock {
+) -> BlockInfo {
     let started = Instant::now();
     loop {
-        match timeout(Duration::from_millis(500), block_stream.recv()).await {
-            Ok(Ok(block)) => {
-                if block.commitment_config == commitment_config {
-                    return block;
+        match timeout(Duration::from_millis(500), blockinfo_stream.recv()).await {
+            Ok(Ok(block_info)) => {
+                if block_info.commitment_config == commitment_config {
+                    return block_info;
                 }
             }
             Err(_elapsed) => {
                 debug!(
-                    "waiting for latest block ({}) ... {:.02}ms",
+                    "waiting for latest block info ({}) ... {:.02}ms",
                     commitment_config.commitment,
                     started.elapsed().as_secs_f32() * 1000.0
                 );
             }
             Ok(Err(_error)) => {
-                panic!("Did not recv blocks");
+                panic!("Did not recv block info");
             }
         }
     }
@@ -246,21 +246,21 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         None
     };
 
-    info!("Waiting for first finalized block...");
-    let finalized_block =
-        get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::finalized()).await;
-    info!("Got finalized block: {:?}", finalized_block.slot);
+    info!("Waiting for first finalized block info...");
+    let finalized_block_info =
+        get_latest_block_info(blockinfo_notifier.resubscribe(), CommitmentConfig::finalized()).await;
+    info!("Got finalized block info: {:?}", finalized_block_info.slot);
 
     let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
 
     let block_information_store =
-        BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
+        BlockInformationStore::new(BlockInformation::from_block_info(&finalized_block_info));
 
     let data_cache = DataCache {
         block_information_store,
         cluster_info: ClusterInfo::default(),
         identity_stakes: IdentityStakes::new(validator_identity.pubkey()),
-        slot_cache: SlotCache::new(finalized_block.slot),
+        slot_cache: SlotCache::new(finalized_block_info.slot),
         tx_subs: SubscriptionStore::default(),
         txs: TxStore {
             store: Arc::new(DashMap::new()),

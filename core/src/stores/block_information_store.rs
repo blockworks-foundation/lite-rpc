@@ -23,18 +23,6 @@ pub struct BlockInformation {
 }
 
 impl BlockInformation {
-    // TODO remove
-    pub fn from_block(block: &ProducedBlock) -> Self {
-        BlockInformation {
-            slot: block.slot,
-            block_height: block.block_height,
-            last_valid_blockheight: block.block_height + MAX_RECENT_BLOCKHASHES as u64,
-            cleanup_slot: block.block_height + 1000,
-            blockhash: block.blockhash,
-            commitment_config: block.commitment_config,
-            block_time: block.block_time,
-        }
-    }
     pub fn from_block_info(block_info: &BlockInfo) -> Self {
         BlockInformation {
             slot: block_info.slot,

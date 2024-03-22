@@ -458,9 +458,6 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
     (multiplexed_messages_rx, jh_multiplex_task)
 }
 
-struct BlockMetaExtractor(CommitmentConfig);
-
-
 fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
     match update.update_oneof {
         Some(UpdateOneof::Slot(update_slot_message)) => Some(update_slot_message.slot),
