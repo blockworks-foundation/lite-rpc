@@ -224,6 +224,8 @@ pub fn create_grpc_multiplex_blocks_subscription(
             // channels must NEVER GET CLOSED (unless full restart of multiplexer)
             let (processed_block_sender, mut processed_block_reciever) =
                 tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
+            let (block_meta_sender_processed, mut block_meta_reciever_processed) =
+                tokio::sync::mpsc::channel::<BlockInfo>(500);
             let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) =
                 tokio::sync::mpsc::channel::<BlockInfo>(500);
             let (block_meta_sender_finalized, mut block_meta_reciever_finalized) =
@@ -248,6 +250,13 @@ pub fn create_grpc_multiplex_blocks_subscription(
             task_list.extend(processed_blocks_tasks);
 
             // TODO apply same pattern as in create_grpc_multiplex_processed_block_task
+
+            let jh_meta_task_processed = create_grpc_multiplex_block_meta_task(
+                &grpc_sources,
+                block_meta_sender_processed.clone(),
+                CommitmentConfig::processed(),
+            );
+            task_list.extend(jh_meta_task_processed);
             let jh_meta_task_confirmed = create_grpc_multiplex_block_meta_task(
                 &grpc_sources,
                 block_meta_sender_confirmed.clone(),
@@ -299,6 +308,15 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 }
                             }
                             recent_processed_blocks.insert(processed_block.blockhash, processed_block);
+                        },
+                        meta_processed = block_meta_reciever_processed.recv() => {
+                            let meta_processed = meta_processed.expect("processed block meta from stream");
+                            let blockhash = meta_processed.blockhash;
+                             trace!("got processed blockmeta {} with blockhash {}",
+                                meta_processed.slot, blockhash);
+                            if let Err(e) = blockmeta_sender.send(meta_processed) {
+                                warn!("Processed blockmeta channel has no receivers {e:?}");
+                            }
                         },
                         meta_confirmed = block_meta_reciever_confirmed.recv() => {
                             cleanup_without_confirmed_recv_blocks_meta = 0;

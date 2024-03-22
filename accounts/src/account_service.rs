@@ -20,6 +20,7 @@ use solana_rpc_client_api::{
 };
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use tokio::sync::broadcast::Sender;
+use solana_lite_rpc_core::types::BlockInfoStream;
 
 use crate::account_store_interface::AccountStorageInterface;
 
@@ -151,7 +152,7 @@ impl AccountService {
     pub fn process_account_stream(
         &self,
         mut account_stream: AccountStream,
-        mut block_stream: BlockStream,
+        mut blockinfo_stream: BlockInfoStream,
     ) -> Vec<AnyhowJoinHandle> {
         let this = self.clone();
         let processed_task = tokio::spawn(async move {
@@ -187,19 +188,19 @@ impl AccountService {
         let this = self.clone();
         let block_processing_task = tokio::spawn(async move {
             loop {
-                match block_stream.recv().await {
-                    Ok(block_notification) => {
-                        if block_notification.commitment_config.is_processed() {
+                match blockinfo_stream.recv().await {
+                    Ok(block_info) => {
+                        if block_info.commitment_config.is_processed() {
                             // processed commitment is not processed in this loop
                             continue;
                         }
-                        let commitment = Commitment::from(block_notification.commitment_config);
+                        let commitment = Commitment::from(block_info.commitment_config);
                         let updated_accounts = this
                             .account_store
-                            .process_slot_data(block_notification.slot, commitment)
+                            .process_slot_data(block_info.slot, commitment)
                             .await;
 
-                        if block_notification.commitment_config.is_finalized() {
+                        if block_info.commitment_config.is_finalized() {
                             ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
                         } else {
                             ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);
