@@ -18,6 +18,7 @@ use tokio::time::{sleep, Instant};
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
+use solana_lite_rpc_core::structures::block_info::BlockInfo;
 
 use crate::grpc_subscription::from_grpc_block_update;
 
@@ -111,7 +112,7 @@ fn create_grpc_multiplex_processed_block_task(
 // backpressure: the mpsc sender will block grpc stream until capacity is available
 fn create_grpc_multiplex_block_meta_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
-    block_meta_sender: tokio::sync::mpsc::Sender<BlockMeta>,
+    block_meta_sender: tokio::sync::mpsc::Sender<BlockInfo>,
     commitment_config: CommitmentConfig,
 ) -> Vec<AbortHandle> {
     let (autoconnect_tx, mut blocks_rx) = tokio::sync::mpsc::channel(10);
@@ -134,10 +135,15 @@ fn create_grpc_multiplex_block_meta_task(
                                 let proposed_slot = block_meta.slot;
                                 if proposed_slot > tip {
                                     tip = proposed_slot;
-                                    let block_meta = BlockMeta {
+                                    let block_meta = BlockInfo {
                                         slot: proposed_slot,
+                                        block_height: block_meta.block_height
+                                            .expect("block_height from geyser block meta").block_height,
                                         blockhash: hash_from_str(&block_meta.blockhash)
                                             .expect("valid blockhash"),
+                                        commitment_config,
+                                        block_time: block_meta.block_time
+                                            .expect("block_time from geyser block meta").timestamp as u64
                                     };
 
                                     let send_started_at = Instant::now();
@@ -198,9 +204,13 @@ pub fn create_grpc_multiplex_blocks_subscription(
     }
 
     // return value is the broadcast receiver
-    // must NEVER be closed form inside this method
+    // must NEVER be closed from inside this method
     let (producedblock_sender, blocks_output_stream) =
         tokio::sync::broadcast::channel::<ProducedBlock>(32);
+
+
+    let (finalizedmeta_sender, finalizedmeta_output_stream) =
+        tokio::sync::broadcast::channel::<BlockInfo>(32);
 
     let mut reconnect_attempts = 0;
 
@@ -211,9 +221,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let (processed_block_sender, mut processed_block_reciever) =
                 tokio::sync::mpsc::channel::<ProducedBlock>(10); // experiemental
             let (block_meta_sender_confirmed, mut block_meta_reciever_confirmed) =
-                tokio::sync::mpsc::channel::<BlockMeta>(500);
+                tokio::sync::mpsc::channel::<BlockInfo>(500);
             let (block_meta_sender_finalized, mut block_meta_reciever_finalized) =
-                tokio::sync::mpsc::channel::<BlockMeta>(500);
+                tokio::sync::mpsc::channel::<BlockInfo>(500);
 
             let processed_block_sender = processed_block_sender.clone();
             reconnect_attempts += 1;
@@ -308,6 +318,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             let meta_finalized = meta_finalized.expect("finalized block meta from stream");
                             // let _span = debug_span!("sequence_block_meta_finalized", ?meta_finalized.slot).entered();
                             let blockhash = meta_finalized.blockhash;
+                             trace!("got finalized blockmeta {} with blockhash {}",
+                                meta_finalized.slot, blockhash);
+                            // if let Err(e) = finalizedmeta_sender.send(processed_block.clone()) {
+                            //     warn!("produced block channel has no receivers {e:?}");
+                            // }
+
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
                                 let finalized_block = cached_processed_block.to_finalized_block();
                                 last_finalized_slot = finalized_block.slot;
@@ -436,29 +452,8 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
     (multiplexed_messages_rx, jh_multiplex_task)
 }
 
-#[allow(dead_code)]
-struct BlockMeta {
-    pub slot: Slot,
-    pub blockhash: solana_sdk::hash::Hash,
-}
-
 struct BlockMetaExtractor(CommitmentConfig);
 
-impl FromYellowstoneExtractor for BlockMetaExtractor {
-    type Target = BlockMeta;
-    fn map_yellowstone_update(&self, update: SubscribeUpdate) -> Option<(u64, BlockMeta)> {
-        match update.update_oneof {
-            Some(UpdateOneof::BlockMeta(block_meta)) => Some((
-                block_meta.slot,
-                BlockMeta {
-                    slot: block_meta.slot,
-                    blockhash: hash_from_str(&block_meta.blockhash).unwrap(),
-                },
-            )),
-            _ => None,
-        }
-    }
-}
 
 fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
     match update.update_oneof {
