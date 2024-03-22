@@ -3,8 +3,8 @@ use crate::grpc_subscription::{
 };
 use anyhow::Context;
 use futures::{Stream, StreamExt};
-use geyser_grpc_connector::grpc_subscription_autoreconnect::{
-    create_geyser_reconnecting_stream, GeyserFilter, GrpcSourceConfig,
+use geyser_grpc_connector::{
+    GeyserFilter, GrpcSourceConfig,
 };
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
@@ -19,6 +19,7 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use tokio::sync::broadcast::Receiver;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;

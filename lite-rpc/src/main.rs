@@ -11,7 +11,7 @@ use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::{debug, info};
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 
-use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::grpc_subscription_autoreconnect::{
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
 use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
@@ -138,9 +138,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         info!("Creating geyser subscription...");
 
         let timeouts = GrpcConnectionTimeouts {
-            connect_timeout: Duration::from_secs(5),
-            request_timeout: Duration::from_secs(5),
-            subscribe_timeout: Duration::from_secs(5),
+            connect_timeout: Duration::from_secs(25),
+            request_timeout: Duration::from_secs(25),
+            subscribe_timeout: Duration::from_secs(25),
+            receive_timeout: Duration::from_secs(25),
         };
 
         create_grpc_subscription(
