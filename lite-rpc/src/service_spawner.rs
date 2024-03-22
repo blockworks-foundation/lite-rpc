@@ -1,3 +1,4 @@
+use solana_lite_rpc_core::types::BlockInfoStream;
 use solana_lite_rpc_core::{
     stores::data_cache::DataCache,
     structures::notifications::NotificationSender,
@@ -14,7 +15,6 @@ use solana_lite_rpc_services::{
     tx_sender::TxSender,
 };
 use std::time::Duration;
-use solana_lite_rpc_core::types::BlockInfoStream;
 
 pub struct ServiceSpawner {
     pub prometheus_addr: String,

@@ -54,6 +54,7 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
 use lite_rpc::postgres_logger;
+use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -68,7 +69,6 @@ use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
-use solana_lite_rpc_core::structures::block_info::BlockInfo;
 
 async fn get_latest_block_info(
     mut blockinfo_stream: BlockInfoStream,
@@ -247,8 +247,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     };
 
     info!("Waiting for first finalized block info...");
-    let finalized_block_info =
-        get_latest_block_info(blockinfo_notifier.resubscribe(), CommitmentConfig::finalized()).await;
+    let finalized_block_info = get_latest_block_info(
+        blockinfo_notifier.resubscribe(),
+        CommitmentConfig::finalized(),
+    )
+    .await;
     info!("Got finalized block info: {:?}", finalized_block_info.slot);
 
     let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;

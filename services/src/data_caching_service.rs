@@ -7,6 +7,7 @@ use prometheus::{opts, register_int_counter, register_int_gauge, IntCounter};
 use solana_lite_rpc_core::stores::{
     block_information_store::BlockInformation, data_cache::DataCache,
 };
+use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use solana_lite_rpc_core::types::{BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream};
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::MAX_RECENT_BLOCKHASHES;
@@ -14,7 +15,6 @@ use solana_sdk::commitment_config::CommitmentLevel;
 use solana_transaction_status::{TransactionConfirmationStatus, TransactionStatus};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
-use solana_lite_rpc_core::structures::block_info::BlockInfo;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -50,11 +50,10 @@ impl DataCachingService {
         cluster_info_notification: ClusterInfoStream,
         va_notification: VoteAccountStream,
     ) -> Vec<AnyhowJoinHandle> {
-        // clone the ledger to move into the processor task
         let data_cache = self.data_cache.clone();
+        let block_information_store_block = data_cache.block_information_store.clone();
         let block_information_store_block_info = data_cache.block_information_store.clone();
 
-        // process all the data into the ledger
         let block_cache_jh = tokio::spawn(async move {
             let mut block_notifier = block_notifier;
             loop {
@@ -70,7 +69,7 @@ impl DataCachingService {
                 };
 
                 // note: most likely the block has been added from blockinfo_notifier stream already
-                block_information_store_block_info
+                block_information_store_block
                     .add_block(BlockInformation::from_block(&block))
                     .await;
 
@@ -81,9 +80,8 @@ impl DataCachingService {
                 };
 
                 for tx in &block.transactions {
-                    let block_info = data_cache
-                        .block_information_store
-                        .get_block_info(&tx.recent_blockhash);
+                    let block_info =
+                        block_information_store_block.get_block_info(&tx.recent_blockhash);
                     let last_valid_blockheight = if let Some(block_info) = block_info {
                         block_info.last_valid_blockheight
                     } else {
@@ -140,7 +138,6 @@ impl DataCachingService {
                 block_information_store_block_info
                     .add_block(BlockInformation::from_block_info(&block_info))
                     .await;
-
             }
         });
 

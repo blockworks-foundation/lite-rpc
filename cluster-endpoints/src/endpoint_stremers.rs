@@ -1,6 +1,6 @@
 use solana_lite_rpc_core::{
     structures::account_data::AccountStream,
-    types::{BlockStream, BlockInfoStream, ClusterInfoStream, SlotStream, VoteAccountStream},
+    types::{BlockInfoStream, BlockStream, ClusterInfoStream, SlotStream, VoteAccountStream},
 };
 
 /// subscribers to broadcast channels should assume that channels are not getting closed unless the system is shutting down

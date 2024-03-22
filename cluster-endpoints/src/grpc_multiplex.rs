@@ -1,6 +1,5 @@
 use anyhow::{bail, Context};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
-use geyser_grpc_connector::grpcmultiplex_fastestwins::FromYellowstoneExtractor;
 use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig, Message};
 use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
@@ -137,13 +136,18 @@ fn create_grpc_multiplex_block_meta_task(
                                     tip = proposed_slot;
                                     let block_meta = BlockInfo {
                                         slot: proposed_slot,
-                                        block_height: block_meta.block_height
-                                            .expect("block_height from geyser block meta").block_height,
+                                        block_height: block_meta
+                                            .block_height
+                                            .expect("block_height from geyser block meta")
+                                            .block_height,
                                         blockhash: hash_from_str(&block_meta.blockhash)
                                             .expect("valid blockhash"),
                                         commitment_config,
-                                        block_time: block_meta.block_time
-                                            .expect("block_time from geyser block meta").timestamp as u64
+                                        block_time: block_meta
+                                            .block_time
+                                            .expect("block_time from geyser block meta")
+                                            .timestamp
+                                            as u64,
                                     };
 
                                     let send_started_at = Instant::now();

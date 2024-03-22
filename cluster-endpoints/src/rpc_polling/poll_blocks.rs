@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
+use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
 use solana_lite_rpc_core::{
     structures::{
@@ -26,7 +27,6 @@ use solana_transaction_status::{
 };
 use std::{sync::Arc, time::Duration};
 use tokio::sync::broadcast::{Receiver, Sender};
-use solana_lite_rpc_core::structures::block_info::BlockInfo;
 
 pub const NUM_PARALLEL_TASKS_DEFAULT: usize = 16;
 
@@ -339,15 +339,13 @@ pub fn from_ui_block(
     ProducedBlock::new(inner, commitment_config)
 }
 
-
 fn map_block_info(produced_block: &ProducedBlock) -> BlockInfo {
     BlockInfo {
         slot: produced_block.slot,
         block_height: produced_block.block_height,
         blockhash: produced_block.blockhash,
-        commitment_config: produced_block.commitment_config.clone(),
+        commitment_config: produced_block.commitment_config,
         block_time: produced_block.block_time,
-
     }
 }
 
