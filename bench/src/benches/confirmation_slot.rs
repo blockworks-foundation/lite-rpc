@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::metrics::{PingThing, PingThingTxType};
-use crate::{create_memo_tx, create_rng, BenchmarkTransactionParams, Rng8};
+use crate::{create_memo_tx, create_rng, BenchmarkTransactionParams, Rng8, create_rpc_client};
 use log::{debug, info};
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -13,8 +13,10 @@ use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use solana_transaction_status::UiTransactionEncoding;
 use std::ops::Add;
+use anyhow::anyhow;
 use tokio::time::{sleep, Instant};
 use tracing::error;
+use url::Url;
 
 #[derive(Clone)]
 pub struct ConfirmationSlotInfo {
@@ -59,14 +61,21 @@ pub async fn confirmation_slot(
     info!("RPC A: {}", obfuscate_rpcurl(&rpc_a_url));
     info!("RPC B: {}", obfuscate_rpcurl(&rpc_b_url));
 
+    let rpc_a_url = Url::parse(&rpc_a_url).map_err(|e| {
+        anyhow!("Failed to parse RPC A URL: {}", e)
+    })?;
+    let rpc_b_url = Url::parse(&rpc_b_url).map_err(|e| {
+        anyhow!("Failed to parse RPC B URL: {}", e)
+    })?;
+
     let mut rng = create_rng(None);
     let payer = read_keypair_file(payer_path).expect("payer file");
     info!("Payer: {}", payer.pubkey().to_string());
     let mut ping_thing_tasks = vec![];
 
     for _ in 0..num_of_runs {
-        let rpc_a = RpcClient::new(rpc_a_url.clone());
-        let rpc_b = RpcClient::new(rpc_b_url.clone());
+        let rpc_a = create_rpc_client(&rpc_a_url);
+        let rpc_b = create_rpc_client(&rpc_b_url);
         // measure network time to reach the respective RPC endpoints,
         // used to mitigate the difference in distance by delaying the txn sending
         let time_a = rpc_roundtrip_duration(&rpc_a).await?.as_secs_f64();
@@ -85,7 +94,7 @@ pub async fn confirmation_slot(
             (one_way_delay, 0f64)
         };
 
-        debug!("A delay: {}, B delay: {}", a_delay, b_delay);
+        debug!("A delay: {}s, B delay: {}s", a_delay, b_delay);
 
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
@@ -145,9 +154,10 @@ async fn create_tx(
     rng: &mut Rng8,
     tx_params: &BenchmarkTransactionParams,
 ) -> anyhow::Result<Transaction> {
-    let hash = rpc.get_latest_blockhash().await?;
+    let (blockhash, _) =
+        rpc.get_latest_blockhash_with_commitment(CommitmentConfig::confirmed()).await?;
 
-    Ok(create_memo_tx(payer, hash, rng, tx_params))
+    Ok(create_memo_tx(payer, blockhash, rng, tx_params))
 }
 
 async fn send_and_confirm_transaction(

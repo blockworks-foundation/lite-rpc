@@ -19,6 +19,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, time::Duration};
+use reqwest::Url;
 use tokio::time::Instant;
 use tx_size::TxSize;
 
@@ -61,6 +62,13 @@ const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 const WAIT_LIMIT_IN_SECONDS: u64 = 60;
 
 pub type Rng8 = rand_chacha::ChaCha8Rng;
+
+pub fn create_rpc_client(rpc_url: &Url) -> RpcClient {
+    RpcClient::new_with_commitment(
+        rpc_url.to_string(),
+        CommitmentConfig::confirmed(),
+    )
+}
 
 pub async fn wait_till_signature_status(
     rpc_client: &RpcClient,
