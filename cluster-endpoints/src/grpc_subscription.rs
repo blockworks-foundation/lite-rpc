@@ -253,6 +253,45 @@ pub fn from_grpc_block_update(
     }
 }
 
+// TODO: use function from geyser-grpc-connector
+use bytes::Bytes;
+use std::time::Duration;
+use tonic::metadata::{errors::InvalidMetadataValue, AsciiMetadataValue};
+use tonic::service::Interceptor;
+use tonic::transport::ClientTlsConfig;
+use tonic_health::pb::health_client::HealthClient;
+use yellowstone_grpc_client::InterceptorXToken;
+use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
+use yellowstone_grpc_proto::tonic;
+async fn connect_with_timeout_hacked<E, T>(
+    endpoint: E,
+    x_token: Option<T>,
+) -> anyhow::Result<GeyserGrpcClient<impl Interceptor>>
+where
+    E: Into<Bytes>,
+    T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
+{
+    let endpoint = tonic::transport::Endpoint::from_shared(endpoint)?
+        .buffer_size(Some(65536))
+        .initial_connection_window_size(4194304)
+        .initial_stream_window_size(4194304)
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(10))
+        // .http2_adaptive_window()
+        .tls_config(ClientTlsConfig::new())?;
+
+    let x_token: Option<AsciiMetadataValue> = x_token.map(|v| v.try_into()).transpose()?;
+    let interceptor = InterceptorXToken { x_token };
+
+    let channel = endpoint.connect_lazy();
+    let client = GeyserGrpcClient::new(
+        HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
+        GeyserClient::with_interceptor(channel, interceptor)
+            .max_decoding_message_size(GeyserGrpcClient::max_decoding_message_size()),
+    );
+    Ok(client)
+}
+
 pub fn create_block_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
@@ -274,7 +313,7 @@ pub fn create_block_processing_task(
 
             // connect to grpc
             let mut client =
-                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
+                connect_with_timeout_hacked(grpc_addr.clone(), grpc_x_token.clone()).await?;
             let mut stream = client
                 .subscribe_once(
                     HashMap::new(),
@@ -298,7 +337,11 @@ pub fn create_block_processing_task(
 
                 match update {
                     UpdateOneof::Block(block) => {
-                        log::trace!("received block, hash: {} slot: {}", block.blockhash, block.slot);
+                        log::trace!(
+                            "received block, hash: {} slot: {}",
+                            block.blockhash,
+                            block.slot
+                        );
                         block_sx
                             .send(block)
                             .await

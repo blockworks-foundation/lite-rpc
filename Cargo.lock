@@ -4371,6 +4371,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tonic-health",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]

@@ -3,13 +3,12 @@ use crate::grpc_subscription::{
 };
 use anyhow::Context;
 use futures::{Stream, StreamExt};
-use geyser_grpc_connector::{
-    GeyserFilter, GrpcSourceConfig,
-};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
+use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig};
 
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
@@ -19,7 +18,6 @@ use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, Instant};
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
 use tokio::sync::broadcast::Receiver;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
@@ -79,7 +77,10 @@ fn create_grpc_multiplex_processed_block_stream(
             let block_message = futures::stream::select_all(streams.clone()).next().await;
             if last_metrics.elapsed() > Duration::from_secs(10) {
                 last_metrics = Instant::now();
-                info!("merging block streams: queue length {:?}", streams.iter().map(|s| s.len()).collect_vec());
+                info!(
+                    "merging block streams: queue length {:?}",
+                    streams.iter().map(|s| s.len()).collect_vec()
+                );
             }
             if let Some(block) = block_message {
                 let slot = block.slot;
