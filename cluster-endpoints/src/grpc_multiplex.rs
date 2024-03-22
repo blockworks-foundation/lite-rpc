@@ -3,11 +3,13 @@ use crate::grpc_subscription::{
 };
 use anyhow::Context;
 use futures::{Stream, StreamExt};
-use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
+use geyser_grpc_connector::grpc_subscription_autoreconnect::{
+    create_geyser_reconnecting_stream, GeyserFilter, GrpcSourceConfig,
+};
 use geyser_grpc_connector::grpcmultiplex_fastestwins::{
     create_multiplexed_stream, FromYellowstoneExtractor,
 };
-use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig};
+
 use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
