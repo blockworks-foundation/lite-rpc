@@ -1,3 +1,13 @@
+use crate::grpc_subscription::{
+    from_grpc_block_update,
+};
+use futures::{Stream, StreamExt};
+use geyser_grpc_connector::grpcmultiplex_fastestwins::{
+    create_multiplexed_stream, FromYellowstoneExtractor,
+};
+
+use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
+use itertools::Itertools;
 use anyhow::{bail, Context};
 use geyser_grpc_connector::grpc_subscription_autoreconnect_tasks::create_geyser_autoconnection_task_with_mpsc;
 use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig, Message};
@@ -11,15 +21,13 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast::Receiver;
 use tokio::task::AbortHandle;
-use tokio::time::{sleep, Instant};
+use tokio::time::sleep;
 use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
-
-use crate::grpc_subscription::from_grpc_block_update;
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
@@ -41,18 +49,10 @@ fn create_grpc_multiplex_processed_block_task(
     }
 
     let jh_merging_streams = tokio::task::spawn(async move {
+        const MAX_SIZE: usize = 1024;
         let mut slots_processed = BTreeSet::<u64>::new();
-        let mut last_tick = Instant::now();
         loop {
             // recv loop
-            if last_tick.elapsed() > Duration::from_millis(800) {
-                warn!(
-                    "(soft_realtime) slow multiplex loop interation: {:?}",
-                    last_tick.elapsed()
-                );
-            }
-            last_tick = Instant::now();
-
             const MAX_SIZE: usize = 1024;
             match blocks_rx.recv().await {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
@@ -292,11 +292,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let mut startup_completed = false;
             const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
             'recv_loop: loop {
-                debug!("channel capacities: processed_block_sender={}, block_info_sender_confirmed={}, block_info_sender_finalized={}",
-                    processed_block_sender.capacity(),
-                    block_info_sender_confirmed.capacity(),
-                    block_info_sender_finalized.capacity()
-                );
                 tokio::select! {
                     processed_block = processed_block_reciever.recv() => {
                             cleanup_without_recv_full_blocks = 0;
