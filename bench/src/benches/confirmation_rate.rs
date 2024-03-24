@@ -1,25 +1,15 @@
 use crate::{create_rng, generate_txs, BenchmarkTransactionParams};
-use anyhow::{bail, Error};
-use futures::future::join_all;
-use futures::TryFutureExt;
-use itertools::Itertools;
-use log::{debug, info, trace, warn};
-use std::collections::{HashMap, HashSet};
-use std::iter::zip;
+use log::{debug, info, warn};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
+use crate::benches::rpc_interface::{
+    send_and_confirm_bulk_transactions, ConfirmationResponseFromRpc,
+};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client::rpc_client::SerializableTransaction;
-use solana_rpc_client_api::client_error::ErrorKind;
-use solana_sdk::signature::{read_keypair_file, Signature, Signer};
+use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
 use solana_sdk::slot_history::Slot;
-use solana_sdk::transaction::Transaction;
-use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
-use solana_transaction_status::TransactionConfirmationStatus;
-use tokio::time::Instant;
-use crate::benches::rpc_interface::{ConfirmationResponseFromRpc, send_and_confirm_bulk_transactions};
 
 #[derive(Debug, serde::Serialize)]
 pub struct RpcStat {
@@ -77,13 +67,13 @@ pub async fn send_bulk_txs_and_wait(
 
     for (tx_sig, confirmation) in &tx_and_confirmations_from_rpc {
         match confirmation {
-            ConfirmationResponseFromRpc::Success(slots_elapsed, level, elapsed) => {
+            ConfirmationResponseFromRpc::Success(sent_slot, confirmed_slot, level, elapsed) => {
                 debug!(
                     "Signature {} confirmed with level {:?} after {:.02}ms, {} slots",
                     tx_sig,
                     level,
                     elapsed.as_secs_f32() * 1000.0,
-                    slots_elapsed
+                    confirmed_slot - sent_slot
                 );
             }
             ConfirmationResponseFromRpc::Timeout(elapsed) => {
@@ -104,9 +94,9 @@ pub async fn send_bulk_txs_and_wait(
 
     for (_, result_from_rpc) in tx_and_confirmations_from_rpc {
         match result_from_rpc {
-            ConfirmationResponseFromRpc::Success(slot, _, _) => {
+            ConfirmationResponseFromRpc::Success(_, confirmed_slot, _, _) => {
                 confirmed += 1;
-                *slot_hz.entry(slot).or_default() += 1;
+                *slot_hz.entry(confirmed_slot).or_default() += 1;
             }
             ConfirmationResponseFromRpc::Timeout(_) => {
                 unconfirmed += 1;
@@ -174,4 +164,3 @@ fn calc_stats_avg(stats: &[RpcStat]) -> RpcStat {
 
     avg
 }
-

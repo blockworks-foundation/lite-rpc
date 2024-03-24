@@ -1,24 +1,22 @@
-use std::iter::zip;
 use std::path::Path;
 use std::time::Duration;
 
+use crate::benches::rpc_interface::{
+    create_rpc_client, send_and_confirm_bulk_transactions, ConfirmationResponseFromRpc,
+};
 use crate::metrics::{PingThing, PingThingTxType};
 use crate::{create_memo_tx, create_rng, BenchmarkTransactionParams, Rng8};
-use log::{debug, info, trace};
+use anyhow::anyhow;
+use log::{debug, info};
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::config::{RpcSendTransactionConfig, RpcTransactionConfig};
 use solana_sdk::clock::Slot;
 use solana_sdk::signature::{read_keypair_file, Signature, Signer};
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
-use solana_transaction_status::UiTransactionEncoding;
-use std::ops::Add;
-use anyhow::anyhow;
 use tokio::time::{sleep, Instant};
 use tracing::error;
 use url::Url;
-use crate::benches::rpc_interface::{ConfirmationResponseFromRpc, create_rpc_client, send_and_confirm_bulk_transactions};
 
 #[derive(Clone)]
 pub struct ConfirmationSlotInfo {
@@ -59,16 +57,17 @@ pub async fn confirmation_slot(
     num_of_runs: usize,
     maybe_ping_thing: Option<PingThing>,
 ) -> anyhow::Result<()> {
-    info!("START BENCHMARK: confirmation_slot (prio_fees={})", tx_params.cu_price_micro_lamports);
+    info!(
+        "START BENCHMARK: confirmation_slot (prio_fees={})",
+        tx_params.cu_price_micro_lamports
+    );
     info!("RPC A: {}", obfuscate_rpcurl(&rpc_a_url));
     info!("RPC B: {}", obfuscate_rpcurl(&rpc_b_url));
 
-    let rpc_a_url = Url::parse(&rpc_a_url).map_err(|e| {
-        anyhow!("Failed to parse RPC A URL: {}", e)
-    })?;
-    let rpc_b_url = Url::parse(&rpc_b_url).map_err(|e| {
-        anyhow!("Failed to parse RPC B URL: {}", e)
-    })?;
+    let rpc_a_url =
+        Url::parse(&rpc_a_url).map_err(|e| anyhow!("Failed to parse RPC A URL: {}", e))?;
+    let rpc_b_url =
+        Url::parse(&rpc_b_url).map_err(|e| anyhow!("Failed to parse RPC B URL: {}", e))?;
 
     let mut rng = create_rng(None);
     let payer = read_keypair_file(payer_path).expect("payer file");
@@ -101,7 +100,7 @@ pub async fn confirmation_slot(
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
             debug!("(A) send tx {}", rpc_a_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_a, rpc_a_tx, max_timeout_ms)
+            send_and_confirm_transaction(&rpc_a, rpc_a_tx)
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to send_and_confirm_transaction for A: {}", e);
@@ -112,7 +111,7 @@ pub async fn confirmation_slot(
         let b_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(b_delay)).await;
             debug!("(B) send tx {}", rpc_b_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_b, rpc_b_tx, max_timeout_ms)
+            send_and_confirm_transaction(&rpc_b, rpc_b_tx)
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to send_and_confirm_transaction for B: {}", e);
@@ -158,8 +157,9 @@ async fn create_tx(
     rng: &mut Rng8,
     tx_params: &BenchmarkTransactionParams,
 ) -> anyhow::Result<Transaction> {
-    let (blockhash, _) =
-        rpc.get_latest_blockhash_with_commitment(CommitmentConfig::confirmed()).await?;
+    let (blockhash, _) = rpc
+        .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
+        .await?;
 
     Ok(create_memo_tx(payer, blockhash, rng, tx_params))
 }
@@ -167,10 +167,9 @@ async fn create_tx(
 async fn send_and_confirm_transaction(
     rpc: &RpcClient,
     tx: Transaction,
-    timeout_ms: u64,
 ) -> anyhow::Result<ConfirmationSlotInfo> {
-    let result_vec: Vec<(Signature, ConfirmationResponseFromRpc)> = send_and_confirm_bulk_transactions(rpc, &[tx])
-        .await?;
+    let result_vec: Vec<(Signature, ConfirmationResponseFromRpc)> =
+        send_and_confirm_bulk_transactions(rpc, &[tx]).await?;
 
     let (signature, confirmation_response) = result_vec.into_iter().next().unwrap();
 
@@ -179,28 +178,21 @@ async fn send_and_confirm_transaction(
         ConfirmationResponseFromRpc::SendError(_) => {
             todo!("handle send error")
         }
-        ConfirmationResponseFromRpc::Success(slot_sent, _, confirmation_time) => {
-            // TOOD check what "slot" that is (sent/ confirmed)
-            return Ok(ConfirmationSlotInfo {
-                result: ConfirmationSlotResult::Success(slot_sent),
+        ConfirmationResponseFromRpc::Success(slot_sent, slot_confirmed, _, confirmation_time) => {
+            Ok(ConfirmationSlotInfo {
+                result: ConfirmationSlotResult::Success(slot_confirmed),
                 signature,
                 slot_sent,
                 confirmation_time,
-            });
+            })
         }
-        ConfirmationResponseFromRpc::Timeout(timeout) => {
-            return Ok(ConfirmationSlotInfo {
-                result: ConfirmationSlotResult::Timeout(timeout),
-                signature,
-                slot_sent: 0,
-                confirmation_time: Duration::from_millis(999), // FIXME
-            });
-        }
-    };
-
-
-
-
+        ConfirmationResponseFromRpc::Timeout(timeout) => Ok(ConfirmationSlotInfo {
+            result: ConfirmationSlotResult::Timeout(timeout),
+            signature,
+            slot_sent: 0,
+            confirmation_time: timeout,
+        }),
+    }
 }
 
 pub async fn rpc_roundtrip_duration(rpc: &RpcClient) -> anyhow::Result<Duration> {

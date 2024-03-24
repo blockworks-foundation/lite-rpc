@@ -1,7 +1,3 @@
-use std::collections::{HashMap, HashSet};
-use std::iter::zip;
-use std::sync::Arc;
-use std::time::Duration;
 use anyhow::{bail, Error};
 use futures::future::join_all;
 use futures::TryFutureExt;
@@ -16,23 +12,22 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::Transaction;
 use solana_transaction_status::TransactionConfirmationStatus;
+use std::collections::{HashMap, HashSet};
+use std::iter::zip;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::time::Instant;
 use url::Url;
 
 pub fn create_rpc_client(rpc_url: &Url) -> RpcClient {
-    RpcClient::new_with_commitment(
-        rpc_url.to_string(),
-        CommitmentConfig::confirmed(),
-    )
+    RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed())
 }
-
-
 
 #[derive(Clone)]
 pub enum ConfirmationResponseFromRpc {
     SendError(Arc<ErrorKind>),
-    // elapsed slot: current slot (confirmed) at beginning til the slot where transaction showed up with status CONFIRMED
-    Success(Slot, TransactionConfirmationStatus, Duration),
+    // (sent slot at confirmed commitment, confirmed slot, ..., ...)
+    Success(Slot, Slot, TransactionConfirmationStatus, Duration),
     Timeout(Duration),
 }
 
@@ -51,18 +46,19 @@ pub async fn send_and_confirm_bulk_transactions(
     };
 
     let started_at = Instant::now();
-    let batch_sigs_or_fails = join_all(
-        txs.iter()
-            .map(|tx| rpc_client.send_transaction_with_config(tx, send_config).map_err(|e| e.kind)),
-    )
-        .await;
+    let batch_sigs_or_fails = join_all(txs.iter().map(|tx| {
+        rpc_client
+            .send_transaction_with_config(tx, send_config)
+            .map_err(|e| e.kind)
+    }))
+    .await;
 
     let after_send_slot = rpc_client
         .get_slot_with_commitment(CommitmentConfig::confirmed())
         .await?;
 
     // optimal value is "0"
-    debug!(
+    info!(
         "slots passed while sending: {}",
         after_send_slot - send_slot
     );
@@ -79,17 +75,17 @@ pub async fn send_and_confirm_bulk_transactions(
     for (i, tx_sig) in txs.iter().enumerate() {
         let tx_sent = batch_sigs_or_fails[i].is_ok();
         if tx_sent {
-            debug!("- tx_sent {}", tx_sig.get_signature());
+            info!("- tx_sent {}", tx_sig.get_signature());
         } else {
-            debug!("- tx_fail {}", tx_sig.get_signature());
+            info!("- tx_fail {}", tx_sig.get_signature());
         }
     }
-    debug!(
+    info!(
         "{} transactions sent successfully in {:.02}ms",
         num_sent_ok,
         started_at.elapsed().as_secs_f32() * 1000.0
     );
-    debug!(
+    info!(
         "{} transactions failed to send in {:.02}ms",
         num_sent_failed,
         started_at.elapsed().as_secs_f32() * 1000.0
@@ -131,9 +127,7 @@ pub async fn send_and_confirm_bulk_transactions(
             iteration
         );
         // TODO warn if get_status api calles are slow
-        let batch_responses = rpc_client
-            .get_signature_statuses(&tx_batch)
-            .await?;
+        let batch_responses = rpc_client.get_signature_statuses(&tx_batch).await?;
         let elapsed = started_at.elapsed();
 
         for (tx_sig, status_response) in zip(tx_batch, batch_responses.value) {
@@ -153,7 +147,8 @@ pub async fn send_and_confirm_bulk_transactions(
                     let prev_value = result_status_map.insert(
                         tx_sig,
                         ConfirmationResponseFromRpc::Success(
-                            tx_status.slot - send_slot,
+                            send_slot,
+                            tx_status.slot,
                             tx_status.confirmation_status(),
                             elapsed,
                         ),
@@ -172,12 +167,12 @@ pub async fn send_and_confirm_bulk_transactions(
         }
 
         if pending_status_set.is_empty() {
-            debug!("All transactions confirmed after {} iterations", iteration);
+            info!("All transactions confirmed after {} iterations", iteration);
             break 'pooling_loop;
         }
 
         if iteration == 100 {
-            debug!("Timeout waiting for transactions to confirmed after {} iterations - giving up on {}", iteration, pending_status_set.len());
+            info!("Timeout waiting for transactions to confirmed after {} iterations - giving up on {}", iteration, pending_status_set.len());
             break 'pooling_loop;
         }
         iteration += 1;
@@ -220,7 +215,6 @@ pub async fn send_and_confirm_bulk_transactions(
     Ok(result_as_vec)
 }
 
-
 pub async fn poll_next_slot_start(rpc_client: &RpcClient) -> Result<Slot, Error> {
     let started_at = Instant::now();
     let mut last_slot: Option<Slot> = None;
@@ -247,4 +241,3 @@ pub async fn poll_next_slot_start(rpc_client: &RpcClient) -> Result<Slot, Error>
     };
     Ok(send_slot)
 }
-

@@ -19,7 +19,6 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, time::Duration};
-use reqwest::Url;
 use tokio::time::Instant;
 use tx_size::TxSize;
 
