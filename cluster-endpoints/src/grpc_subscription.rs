@@ -277,6 +277,7 @@ use yellowstone_grpc_client::{GeyserGrpcClient, InterceptorXToken};
 use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
 use yellowstone_grpc_proto::tonic;
 
+// note: not called
 async fn connect_with_timeout_hacked<E, T>(
     endpoint: E,
     x_token: Option<T>,
@@ -306,6 +307,7 @@ where
     Ok(client)
 }
 
+// note used
 pub fn create_block_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
@@ -375,6 +377,7 @@ pub fn create_block_processing_task(
     })
 }
 
+// not used
 pub fn create_slot_stream_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
