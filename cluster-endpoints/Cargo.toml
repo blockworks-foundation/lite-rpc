@@ -9,7 +9,7 @@ license = "AGPL"
 
 [dependencies]
 #geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.3+yellowstone.1.12+solana.1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+geyser-grpc-connector = { tag = "v0.10.3+yellowstone.1.12+solana.1.17.15-hacked-windowsize3", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
@@ -47,3 +47,4 @@ yellowstone-grpc-proto = { workspace = true }
 itertools = {workspace = true}
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
+tonic-health = { workspace = true }
