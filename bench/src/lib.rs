@@ -21,10 +21,10 @@ use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
 
+pub mod bench1;
 pub mod benches;
 pub mod helpers;
 pub mod metrics;
-pub mod bench1;
 pub mod service_adapter;
 pub mod tx_size;
 

@@ -1,8 +1,8 @@
 // adapter code for all from benchrunner-service
 
-use crate::metrics::{Metric, TxMetricData};
 use crate::bench1;
 use crate::bench1::TransactionSize;
+use crate::metrics::{Metric, TxMetricData};
 use crate::tx_size::TxSize;
 use log::debug;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;

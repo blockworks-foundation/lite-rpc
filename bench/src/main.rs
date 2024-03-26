@@ -1,7 +1,8 @@
 use bench::{
+    bench1,
     helpers::BenchHelper,
     metrics::{AvgMetric, Metric, TxMetricData},
-    bench1, Args,
+    Args,
 };
 use clap::Parser;
 
