@@ -2,9 +2,9 @@ name: Deploy benchrunner to Fly
 
 on:
   push:
-      # TODO decide how to deploy benchrunner
-      # for now use tag format "experimental/benchrunner-20240318-1930"
-      tags: ['experimental/benchrunner-*']
+      tags:
+        - 'production/benchrunner-*'
+        - 'experimental/benchrunner-*'
 
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
