@@ -10,7 +10,6 @@ use bench::{
     BenchmarkTransactionParams,
 };
 use clap::{Parser, Subcommand};
-use log::trace;
 
 #[derive(Parser, Debug)]
 #[clap(version, about)]
@@ -41,6 +40,9 @@ enum SubCommand {
         rpc_url: String,
         #[clap(short, long)]
         size_tx: TxSize,
+        /// Maximum confirmation time in milliseconds. After this, the txn is considered unconfirmed
+        #[clap(short, long, default_value_t = 15_000)]
+        max_timeout_ms: u64,
         #[clap(short, long)]
         txns_per_round: usize,
         #[clap(short, long)]
@@ -106,6 +108,7 @@ async fn main() {
             payer_path,
             rpc_url,
             size_tx,
+            max_timeout_ms,
             txns_per_round,
             num_of_runs,
             cu_price,
@@ -116,6 +119,7 @@ async fn main() {
                 tx_size: size_tx,
                 cu_price_micro_lamports: cu_price,
             },
+            max_timeout_ms,
             txns_per_round,
             num_of_runs,
         )

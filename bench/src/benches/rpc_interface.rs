@@ -15,7 +15,7 @@ use solana_transaction_status::TransactionConfirmationStatus;
 use std::collections::{HashMap, HashSet};
 use std::iter::zip;
 use std::sync::Arc;
-use std::time::{Duration};
+use std::time::Duration;
 use tokio::time::Instant;
 use url::Url;
 
@@ -36,9 +36,12 @@ pub enum ConfirmationResponseFromRpc {
 pub async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
     txs: &[Transaction],
+    max_timeout_ms: u64,
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
     trace!("Polling for next slot ..");
-    let send_slot = poll_next_slot_start(rpc_client).await.context("poll for next start slot")?;
+    let send_slot = poll_next_slot_start(rpc_client)
+        .await
+        .context("poll for next start slot")?;
     trace!("Send slot: {}", send_slot);
 
     let send_config = RpcSendTransactionConfig {
@@ -60,12 +63,14 @@ pub async fn send_and_confirm_bulk_transactions(
 
     let after_send_slot = rpc_client
         .get_slot_with_commitment(CommitmentConfig::confirmed())
-        .await.context("get slot afterwards")?;
+        .await
+        .context("get slot afterwards")?;
 
     // optimal value is "0"
     debug!(
         "Sent {} transactions within {} slots",
-        txs.len(), after_send_slot - send_slot
+        txs.len(),
+        after_send_slot - send_slot
     );
 
     let num_sent_ok = batch_sigs_or_fails
@@ -139,11 +144,17 @@ pub async fn send_and_confirm_bulk_transactions(
         // "Too many inputs provided; max 256"
         for chunk in tx_batch.chunks(256) {
             // fail hard if not possible to poll status
-            let chunk_responses = rpc_client.get_signature_statuses(&chunk).await.expect("get signature statuses");
+            let chunk_responses = rpc_client
+                .get_signature_statuses(chunk)
+                .await
+                .expect("get signature statuses");
             batch_status.extend(chunk_responses.value);
-        };
+        }
         if status_started_at.elapsed() > Duration::from_millis(100) {
-            warn!("SLOW get_signature_statuses took {:?}", status_started_at.elapsed());
+            warn!(
+                "SLOW get_signature_statuses took {:?}",
+                status_started_at.elapsed()
+            );
         }
         let elapsed = started_at.elapsed();
 
@@ -188,7 +199,7 @@ pub async fn send_and_confirm_bulk_transactions(
             break 'pooling_loop;
         }
 
-        if iteration == 100 {
+        if started_at.elapsed() > Duration::from_millis(max_timeout_ms) {
             info!("Timeout waiting for transactions to confirmed after {} iterations - giving up on {}", iteration, pending_status_set.len());
             break 'pooling_loop;
         }

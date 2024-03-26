@@ -1,10 +1,10 @@
 use crate::{create_rng, generate_txs, BenchmarkTransactionParams};
+use anyhow::Context;
 use log::{debug, info, trace, warn};
 use std::ops::Add;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use anyhow::{Context};
 
 use crate::benches::rpc_interface::{
     send_and_confirm_bulk_transactions, ConfirmationResponseFromRpc,
@@ -14,11 +14,11 @@ use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
 
 #[derive(Debug, serde::Serialize)]
 pub struct RpcStat {
-//     confirmation_time: f32,
-//     mode_slot: u64,
-//     confirmed: u64,
-//     unconfirmed: u64,
-//     failed: u64,
+    //     confirmation_time: f32,
+    //     mode_slot: u64,
+    //     confirmed: u64,
+    //     unconfirmed: u64,
+    //     failed: u64,
     tx_sent: u64,
     tx_confirmed: u64,
     // in ms
@@ -34,6 +34,7 @@ pub async fn confirmation_rate(
     payer_path: &Path,
     rpc_url: String,
     tx_params: BenchmarkTransactionParams,
+    max_timeout_ms: u64,
     txs_per_round: usize,
     num_of_runs: usize,
 ) -> anyhow::Result<()> {
@@ -50,17 +51,23 @@ pub async fn confirmation_rate(
     let mut rpc_results = Vec::with_capacity(num_of_runs);
 
     for _ in 0..num_of_runs {
-        match send_bulk_txs_and_wait(&rpc, &payer, txs_per_round, &tx_params).await.context("send bulk tx and wait") {
+        match send_bulk_txs_and_wait(&rpc, &payer, txs_per_round, &tx_params, max_timeout_ms)
+            .await
+            .context("send bulk tx and wait")
+        {
             Ok(stat) => {
                 rpc_results.push(stat);
             }
             Err(err) => {
-                warn!("Failed to send bulk txs and wait - no rpc stats available: {}", err);
+                warn!(
+                    "Failed to send bulk txs and wait - no rpc stats available: {}",
+                    err
+                );
             }
         }
     }
 
-    if rpc_results.len() > 0 {
+    if !rpc_results.is_empty() {
         info!("avg_rpc: {:?}", calc_stats_avg(&rpc_results));
     } else {
         info!("avg_rpc: n/a");
@@ -73,19 +80,21 @@ pub async fn send_bulk_txs_and_wait(
     payer: &Keypair,
     num_txns: usize,
     tx_params: &BenchmarkTransactionParams,
+    max_timeout_ms: u64,
 ) -> anyhow::Result<RpcStat> {
     trace!("Get latest blockhash and generate transactions");
-    let hash = rpc.get_latest_blockhash().await
-        .map_err(|err| {
-            log::error!("Error get latest blockhash : {err:?}");
-            err
-        })?;
+    let hash = rpc.get_latest_blockhash().await.map_err(|err| {
+        log::error!("Error get latest blockhash : {err:?}");
+        err
+    })?;
     let mut rng = create_rng(None);
     let txs = generate_txs(num_txns, payer, hash, &mut rng, tx_params);
 
     trace!("Sending {} transactions in bulk ..", txs.len());
     let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, &txs).await.context("send and confirm bulk tx")?;
+        send_and_confirm_bulk_transactions(rpc, &txs, max_timeout_ms)
+            .await
+            .context("send and confirm bulk tx")?;
     trace!("Done sending {} transaction.", txs.len());
 
     let mut tx_sent = 0;
@@ -96,7 +105,12 @@ pub async fn send_bulk_txs_and_wait(
     let mut sum_slot_confirmation_time = 0;
     for (tx_sig, confirmation_response) in tx_and_confirmations_from_rpc {
         match confirmation_response {
-            ConfirmationResponseFromRpc::Success(slot_sent, slot_confirmed, commitment_status, confirmation_time) => {
+            ConfirmationResponseFromRpc::Success(
+                slot_sent,
+                slot_confirmed,
+                commitment_status,
+                confirmation_time,
+            ) => {
                 debug!(
                     "Signature {} confirmed with level {:?} after {:.02}ms, {} slots",
                     tx_sig,

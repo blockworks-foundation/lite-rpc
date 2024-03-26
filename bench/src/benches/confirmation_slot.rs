@@ -109,7 +109,7 @@ pub async fn confirmation_slot(
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
             debug!("(A) send tx {}", rpc_a_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_a, rpc_a_tx)
+            send_and_confirm_transaction(&rpc_a, rpc_a_tx, max_timeout_ms)
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to send_and_confirm_transaction for A: {}", e);
@@ -120,7 +120,7 @@ pub async fn confirmation_slot(
         let b_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(b_delay)).await;
             debug!("(B) send tx {}", rpc_b_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_b, rpc_b_tx)
+            send_and_confirm_transaction(&rpc_b, rpc_b_tx, max_timeout_ms)
                 .await
                 .unwrap_or_else(|e| {
                     error!("Failed to send_and_confirm_transaction for B: {}", e);
@@ -176,9 +176,10 @@ async fn create_tx(
 async fn send_and_confirm_transaction(
     rpc: &RpcClient,
     tx: Transaction,
+    max_timeout_ms: u64,
 ) -> anyhow::Result<ConfirmationSlotInfo> {
     let result_vec: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, &[tx]).await?;
+        send_and_confirm_bulk_transactions(rpc, &[tx], max_timeout_ms).await?;
 
     let (signature, confirmation_response) = result_vec.into_iter().next().unwrap();
 
