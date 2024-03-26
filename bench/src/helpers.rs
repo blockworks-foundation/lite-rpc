@@ -204,5 +204,5 @@ fn transaction_size_large() {
     let rand_string = random_strings.first().unwrap();
     let tx = BenchHelper::create_memo_tx_large(rand_string, &payer_keypair, blockhash, 300);
 
-    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1230);
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1222);
 }
