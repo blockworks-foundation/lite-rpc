@@ -98,14 +98,14 @@ pub async fn confirmation_slot(
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
             debug!("(A) sending tx {}", rpc_a_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_a, rpc_a_tx)
+            send_and_confirm_transaction(&rpc_a, rpc_a_tx, max_timeout_ms)
                 .await
         });
 
         let b_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(b_delay)).await;
             debug!("(B) sending tx {}", rpc_b_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_b, rpc_b_tx)
+            send_and_confirm_transaction(&rpc_b, rpc_b_tx, max_timeout_ms)
                 .await
         });
 
@@ -158,10 +158,10 @@ async fn create_tx(
 async fn send_and_confirm_transaction(
     rpc: &RpcClient,
     tx: Transaction,
+    max_timeout_ms: u64,
 ) -> anyhow::Result<ConfirmationResponseFromRpc> {
-
     let result_vec: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, &[tx]).await?;
+        send_and_confirm_bulk_transactions(rpc, &[tx], max_timeout_ms).await?;
     assert_eq!(result_vec.len(), 1, "expected 1 result");
     let (_sig, confirmation_response) = result_vec.into_iter().next().unwrap();
 

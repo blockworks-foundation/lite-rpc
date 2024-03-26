@@ -29,6 +29,7 @@ pub async fn confirmation_rate(
     payer_path: &Path,
     rpc_url: String,
     tx_params: BenchmarkTransactionParams,
+    max_timeout_ms: u64,
     txs_per_round: usize,
     num_of_runs: usize,
 ) -> anyhow::Result<()> {
@@ -45,7 +46,7 @@ pub async fn confirmation_rate(
     let mut rpc_results = Vec::with_capacity(num_of_runs);
 
     for _ in 0..num_of_runs {
-        match send_bulk_txs_and_wait(&rpc, &payer, txs_per_round, &tx_params)
+        match send_bulk_txs_and_wait(&rpc, &payer, txs_per_round, &tx_params, max_timeout_ms)
             .await
             .context("send bulk tx and wait")
         {
@@ -74,6 +75,7 @@ pub async fn send_bulk_txs_and_wait(
     payer: &Keypair,
     num_txns: usize,
     tx_params: &BenchmarkTransactionParams,
+    max_timeout_ms: u64,
 ) -> anyhow::Result<RpcStat> {
     trace!("Get latest blockhash and generate transactions");
     let hash = rpc.get_latest_blockhash().await.map_err(|err| {
@@ -85,7 +87,7 @@ pub async fn send_bulk_txs_and_wait(
 
     trace!("Sending {} transactions in bulk ..", txs.len());
     let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, &txs)
+        send_and_confirm_bulk_transactions(rpc, &txs, max_timeout_ms)
             .await
             .context("send and confirm bulk tx")?;
     trace!("Done sending {} transaction.", txs.len());

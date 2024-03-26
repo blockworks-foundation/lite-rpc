@@ -12,6 +12,7 @@ members = [
     "blockstore",
     "prioritization_fees",
     "bench",
+    "benchrunner-service",
     "address-lookup-tables",
     "accounts",
     "accounts-on-demand",
@@ -27,20 +28,19 @@ license = "AGPL"
 edition = "2021"
 
 [workspace.dependencies]
-solana-sdk = "~1.17.25"
-solana-rpc-client = "~1.17.25"
-solana-rpc-client-api = "~1.17.25"
-solana-transaction-status = "~1.17.25"
-solana-version = "~1.17.25"
-solana-client = "~1.17.25"
-solana-net-utils = "~1.17.25"
-solana-pubsub-client = "~1.17.25"
-solana-streamer = "~1.17.25"
-solana-account-decoder = "~1.17.25"
-solana-ledger = "~1.17.25"
-solana-program = "~1.17.25"
-solana-address-lookup-table-program = "~1.17.25"
-
+solana-sdk = "~1.17.15"
+solana-rpc-client = "~1.17.15"
+solana-rpc-client-api = "~1.17.15"
+solana-transaction-status = "~1.17.15"
+solana-version = "~1.17.15"
+solana-client = "~1.17.15"
+solana-net-utils = "~1.17.15"
+solana-pubsub-client = "~1.17.15"
+solana-streamer = "~1.17.15"
+solana-account-decoder = "~1.17.15"
+solana-ledger = "~1.17.15"
+solana-program = "~1.17.15"
+solana-address-lookup-table-program = "~1.17.15"
 itertools = "0.10.5"
 rangetools = "0.1.4"
 serde = { version = "1.0.160", features = ["derive"] }
@@ -69,6 +69,7 @@ lazy_static = "1.4.0"
 dotenv = "0.15.0"
 async-channel = "1.8.0"
 merge-streams = "0.1.2"
+jemallocator = "0.5"
 
 quinn = "0.10.2"
 quinn-proto = "0.10.5"
@@ -84,7 +85,9 @@ solana-lite-rpc-prioritization-fees = {path = "prioritization_fees", version="0.
 solana-lite-rpc-address-lookup-tables = {path = "address-lookup-tables", version="0.2.4"}
 solana-lite-rpc-accounts = {path = "accounts", version = "0.2.4"}
 solana-lite-rpc-accounts-on-demand = {path = "accounts-on-demand", version = "0.2.4"}
+bench = { path = "bench", version="0.2.4" }
 
 async-trait = "0.1.68"
-yellowstone-grpc-client = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.13.0+solana.1.17.25" }
-yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.13.0+solana.1.17.25" }
+yellowstone-grpc-client = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.12.0+solana.1.17.15" }
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.12.0+solana.1.17.15" }
+tonic-health = "0.10"

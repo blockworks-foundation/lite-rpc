@@ -22,9 +22,11 @@ use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
 use tx_size::TxSize;
 
+pub mod bench1;
 pub mod benches;
 pub mod helpers;
 pub mod metrics;
+pub mod service_adapter;
 pub mod tx_size;
 
 #[derive(Parser, Debug)]

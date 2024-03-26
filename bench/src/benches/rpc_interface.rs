@@ -37,6 +37,7 @@ pub enum ConfirmationResponseFromRpc {
 pub async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
     txs: &[Transaction],
+    max_timeout_ms: u64,
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
     trace!("Polling for next slot ..");
     let send_slot = poll_next_slot_start(rpc_client)
@@ -74,7 +75,8 @@ pub async fn send_and_confirm_bulk_transactions(
     } else {
         debug!(
             "Slot did not advance during sending transactions: {} -> {}",
-            send_slot, after_send_slot
+            send_slot,
+        after_send_slot
         );
     }
 
