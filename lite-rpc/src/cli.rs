@@ -100,20 +100,20 @@ impl Config {
     pub async fn load() -> anyhow::Result<Self> {
         dotenv().ok();
 
-        let args = Args::parse();
+        // let args = Args::parse();
+        let config_path: Option<&str> = None;
+        // let config_path = if args.config.is_some() {
+        //     args.config
+        // } else {
+        //     let default_config_path = "config.json";
 
-        let config_path = if args.config.is_some() {
-            args.config
-        } else {
-            let default_config_path = "config.json";
-
-            // check if config.json exists in current directory
-            if tokio::fs::metadata(default_config_path).await.is_err() {
-                None
-            } else {
-                Some(default_config_path.to_string())
-            }
-        };
+        //     // check if config.json exists in current directory
+        //     if tokio::fs::metadata(default_config_path).await.is_err() {
+        //         None
+        //     } else {
+        //         Some(default_config_path.to_string())
+        //     }
+        // };
 
         let config = if let Some(config_path) = config_path {
             tokio::fs::read_to_string(config_path)

@@ -5,6 +5,7 @@ members = [
     "core",
     "util",
     "services",
+    "services-integration-test",
     "lite-rpc",
     "quic-forward-proxy",
     "quic-forward-proxy-integration-test",
