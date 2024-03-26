@@ -65,7 +65,7 @@ impl PostgresSession {
             .context("Connecting to Postgres failed")?;
 
         tokio::spawn(async move {
-            log::info!("Connecting to Postgres");
+            log::debug!("Connecting to Postgres");
 
             if let Err(err) = connection.await {
                 log::error!("Connection to Postgres broke {err:?}");

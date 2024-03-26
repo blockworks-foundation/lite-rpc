@@ -1,12 +1,16 @@
 use crate::endpoint_stremers::EndpointStreaming;
-use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
+use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
+use crate::grpc::grpc_utils::connect_with_timeout_hacked;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
+use anyhow::Context;
+use futures::StreamExt;
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::trace;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_lite_rpc_core::structures::account_data::AccountNotificationMessage;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
     structures::produced_block::{ProducedBlock, TransactionInfo},
@@ -30,8 +34,15 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
+use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tracing::trace_span;
+use yellowstone_grpc_client::GeyserGrpcClient;
+use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
+use yellowstone_grpc_proto::geyser::{
+    CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots, SubscribeUpdateSlot,
+};
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
@@ -259,6 +270,138 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
     (cu_requested, prioritization_fees)
 }
 
+// not called
+pub fn create_block_processing_task(
+    grpc_addr: String,
+    grpc_x_token: Option<String>,
+    block_sx: async_channel::Sender<SubscribeUpdateBlock>,
+    commitment_level: CommitmentLevel,
+) -> AnyhowJoinHandle {
+    tokio::spawn(async move {
+        loop {
+            let mut blocks_subs = HashMap::new();
+            blocks_subs.insert(
+                "block_client".to_string(),
+                SubscribeRequestFilterBlocks {
+                    account_include: Default::default(),
+                    include_transactions: Some(true),
+                    include_accounts: Some(false),
+                    include_entries: Some(false),
+                },
+            );
+
+            // connect to grpc
+            let mut client =
+                connect_with_timeout_hacked(grpc_addr.clone(), grpc_x_token.clone()).await?;
+            let mut stream = client
+                .subscribe_once(
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    blocks_subs,
+                    Default::default(),
+                    Some(commitment_level),
+                    Default::default(),
+                    None,
+                )
+                .await?;
+
+            while let Some(message) = stream.next().await {
+                let message = message?;
+
+                let Some(update) = message.update_oneof else {
+                    continue;
+                };
+
+                match update {
+                    UpdateOneof::Block(block) => {
+                        log::trace!(
+                            "received block, hash: {} slot: {}",
+                            block.blockhash,
+                            block.slot
+                        );
+                        block_sx
+                            .send(block)
+                            .await
+                            .context("Problem sending on block channel")?;
+                    }
+                    UpdateOneof::Ping(_) => {
+                        log::trace!("GRPC Ping");
+                    }
+                    _ => {
+                        log::trace!("unknown GRPC notification");
+                    }
+                };
+            }
+            log::error!("Grpc block subscription broken (resubscribing)");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    })
+}
+
+// not used
+pub fn create_slot_stream_task(
+    grpc_addr: String,
+    grpc_x_token: Option<String>,
+    slot_sx: async_channel::Sender<SubscribeUpdateSlot>,
+    commitment_level: CommitmentLevel,
+) -> AnyhowJoinHandle {
+    tokio::spawn(async move {
+        loop {
+            let mut slots = HashMap::new();
+            slots.insert(
+                "client_slot".to_string(),
+                SubscribeRequestFilterSlots {
+                    filter_by_commitment: Some(true),
+                },
+            );
+
+            // connect to grpc
+            let mut client =
+                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
+            let mut stream = client
+                .subscribe_once(
+                    slots,
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    HashMap::new(),
+                    Default::default(),
+                    Some(commitment_level),
+                    Default::default(),
+                    None,
+                )
+                .await?;
+
+            while let Some(message) = stream.next().await {
+                let message = message?;
+
+                let Some(update) = message.update_oneof else {
+                    continue;
+                };
+
+                match update {
+                    UpdateOneof::Slot(slot) => {
+                        slot_sx
+                            .send(slot)
+                            .await
+                            .context("Problem sending on block channel")?;
+                    }
+                    UpdateOneof::Ping(_) => {
+                        log::trace!("GRPC Ping");
+                    }
+                    _ => {
+                        log::trace!("unknown GRPC notification");
+                    }
+                };
+            }
+            log::error!("Grpc block subscription broken (resubscribing)");
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    })
+}
+
 pub fn create_grpc_subscription(
     rpc_client: Arc<RpcClient>,
     grpc_sources: Vec<GrpcSourceConfig>,
@@ -271,22 +414,28 @@ pub fn create_grpc_subscription(
     let (slot_multiplex_channel, jh_multiplex_slotstream) =
         create_grpc_multiplex_processed_slots_subscription(grpc_sources.clone());
 
-    let (block_multiplex_channel, jh_multiplex_blockstream) =
+    let (block_multiplex_channel, blockmeta_channel, jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources.clone());
 
     let cluster_info_polling = poll_cluster_info(rpc_client.clone(), cluster_info_sx);
     let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
-
     // accounts
     if !accounts_filter.is_empty() {
-        let (account_jh, processed_account_stream) =
-            create_grpc_account_streaming(grpc_sources, accounts_filter);
+        let (account_sender, accounts_stream) =
+            tokio::sync::broadcast::channel::<AccountNotificationMessage>(1024);
+        let account_jh = create_grpc_account_streaming(
+            grpc_sources,
+            accounts_filter,
+            account_sender,
+            Arc::new(Notify::new()),
+        );
         let streamers = EndpointStreaming {
             blocks_notifier: block_multiplex_channel,
+            blockinfo_notifier: blockmeta_channel,
             slot_notifier: slot_multiplex_channel,
             cluster_info_notifier,
             vote_account_notifier,
-            processed_account_stream: Some(processed_account_stream),
+            processed_account_stream: Some(accounts_stream),
         };
 
         let endpoint_tasks = vec![
@@ -300,6 +449,7 @@ pub fn create_grpc_subscription(
     } else {
         let streamers = EndpointStreaming {
             blocks_notifier: block_multiplex_channel,
+            blockinfo_notifier: blockmeta_channel,
             slot_notifier: slot_multiplex_channel,
             cluster_info_notifier,
             vote_account_notifier,
