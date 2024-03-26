@@ -83,7 +83,7 @@ impl PrioritizationFeesHeap {
         }
     }
 
-    pub async fn remove_expired_transactions(&self, current_blockheight: u64) {
+    pub async fn remove_expired_transactions(&self, current_blockheight: u64) -> usize {
         let mut write_lock = self.map.lock().await;
         let mut cells_to_remove = vec![];
         let mut signatures_to_remove = vec![];
@@ -102,9 +102,11 @@ impl PrioritizationFeesHeap {
         for p in cells_to_remove {
             write_lock.map.remove(&p);
         }
+        let signatures_len = signatures_to_remove.len();
         for sig in signatures_to_remove {
             write_lock.signatures.remove(&sig);
         }
+        signatures_len
     }
 
     pub async fn size(&self) -> usize {
