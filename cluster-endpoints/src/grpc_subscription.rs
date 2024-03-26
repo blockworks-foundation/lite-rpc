@@ -1,6 +1,6 @@
 use crate::endpoint_stremers::EndpointStreaming;
-use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
-use crate::grpc::gprc_utils::connect_with_timeout_hacked;
+use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
+use crate::grpc::grpc_utils::connect_with_timeout_hacked;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };

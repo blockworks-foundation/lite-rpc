@@ -5,7 +5,7 @@ use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_cluster_endpoints::{
     geyser_grpc_connector::GrpcSourceConfig,
-    grpc::gprc_accounts_streaming::start_account_streaming_tasks,
+    grpc::grpc_accounts_streaming::start_account_streaming_tasks,
 };
 use solana_lite_rpc_core::{
     structures::{
