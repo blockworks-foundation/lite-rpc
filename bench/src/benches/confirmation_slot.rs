@@ -18,6 +18,15 @@ use tokio::time::{sleep, Instant};
 use tracing::error;
 use url::Url;
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Metric {
+    pub txs_sent: u64,
+    pub txs_confirmed: u64,
+    pub txs_un_confirmed: u64,
+    pub average_confirmation_time_ms: f64,
+    pub average_time_to_send_txs: f64,
+}
+
 #[derive(Clone)]
 pub struct ConfirmationSlotInfo {
     pub result: ConfirmationSlotResult,

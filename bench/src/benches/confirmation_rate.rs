@@ -1,23 +1,32 @@
 use crate::{create_rng, generate_txs, BenchmarkTransactionParams};
 use log::{debug, info, warn};
-use std::collections::HashMap;
+use std::ops::Add;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
+use anyhow::{Context};
 
 use crate::benches::rpc_interface::{
     send_and_confirm_bulk_transactions, ConfirmationResponseFromRpc,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
-use solana_sdk::slot_history::Slot;
 
 #[derive(Debug, serde::Serialize)]
 pub struct RpcStat {
-    confirmation_time: f32,
-    mode_slot: u64,
-    confirmed: u64,
-    unconfirmed: u64,
-    failed: u64,
+//     confirmation_time: f32,
+//     mode_slot: u64,
+//     confirmed: u64,
+//     unconfirmed: u64,
+//     failed: u64,
+    tx_sent: u64,
+    tx_confirmed: u64,
+    // in ms
+    average_confirmation_time: f32,
+    // in slots
+    average_slot_confirmation_time: f32,
+    tx_send_errors: u64,
+    tx_unconfirmed: u64,
 }
 
 /// TC2 send multiple runs of num_txns, measure the confirmation rate
@@ -25,10 +34,12 @@ pub async fn confirmation_rate(
     payer_path: &Path,
     rpc_url: String,
     tx_params: BenchmarkTransactionParams,
-    txns_per_round: usize,
+    txs_per_round: usize,
     num_of_runs: usize,
 ) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
+
+    assert!(num_of_runs > 0, "num_of_runs must be greater than 0");
 
     let rpc = Arc::new(RpcClient::new(rpc_url));
     info!("RPC: {}", rpc.as_ref().url());
@@ -39,12 +50,21 @@ pub async fn confirmation_rate(
     let mut rpc_results = Vec::with_capacity(num_of_runs);
 
     for _ in 0..num_of_runs {
-        let stat: RpcStat =
-            send_bulk_txs_and_wait(&rpc, &payer, txns_per_round, &tx_params).await?;
-        rpc_results.push(stat);
+        match send_bulk_txs_and_wait(&rpc, &payer, txs_per_round, &tx_params).await.context("send bulk tx and wait") {
+            Ok(stat) => {
+                rpc_results.push(stat);
+            }
+            Err(err) => {
+                warn!("Failed to send bulk txs and wait - no rpc stats available: {}", err);
+            }
+        }
     }
 
-    info!("avg_rpc: {:?}", calc_stats_avg(&rpc_results));
+    if rpc_results.len() > 0 {
+        info!("avg_rpc: {:?}", calc_stats_avg(&rpc_results));
+    } else {
+        info!("avg_rpc: n/a");
+    }
     Ok(())
 }
 
@@ -58,23 +78,36 @@ pub async fn send_bulk_txs_and_wait(
     let mut rng = create_rng(None);
     let txs = generate_txs(num_txns, payer, hash, &mut rng, tx_params);
 
-    let started_at = tokio::time::Instant::now();
-
     let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, &txs).await?;
+        send_and_confirm_bulk_transactions(rpc, &txs).await.context("send and confirm bulk tx")?;
 
-    let elapsed_total = started_at.elapsed();
-
-    for (tx_sig, confirmation) in &tx_and_confirmations_from_rpc {
-        match confirmation {
-            ConfirmationResponseFromRpc::Success(sent_slot, confirmed_slot, level, elapsed) => {
+    let mut tx_sent = 0;
+    let mut tx_send_errors = 0;
+    let mut tx_confirmed = 0;
+    let mut tx_unconfirmed = 0;
+    let mut sum_confirmation_time = Duration::default();
+    let mut sum_slot_confirmation_time = 0;
+    for (tx_sig, confirmation_response) in tx_and_confirmations_from_rpc {
+        match confirmation_response {
+            ConfirmationResponseFromRpc::Success(slot_sent, slot_confirmed, commitment_status, confirmation_time) => {
                 debug!(
                     "Signature {} confirmed with level {:?} after {:.02}ms, {} slots",
                     tx_sig,
-                    level,
-                    elapsed.as_secs_f32() * 1000.0,
-                    confirmed_slot - sent_slot
+                    commitment_status,
+                    confirmation_time.as_secs_f64() * 1000.0,
+                    slot_confirmed - slot_sent
                 );
+                tx_sent += 1;
+                tx_confirmed += 1;
+                sum_confirmation_time = sum_confirmation_time.add(confirmation_time);
+                sum_slot_confirmation_time += slot_confirmed - slot_sent;
+            }
+            ConfirmationResponseFromRpc::SendError(error_kind) => {
+                debug!(
+                    "Signature {} failed to get send via RPC: {:?}",
+                    tx_sig, error_kind
+                );
+                tx_send_errors += 1;
             }
             ConfirmationResponseFromRpc::Timeout(elapsed) => {
                 debug!(
@@ -82,60 +115,30 @@ pub async fn send_bulk_txs_and_wait(
                     tx_sig,
                     elapsed.as_secs_f32() * 1000.0
                 );
-            }
-            ConfirmationResponseFromRpc::SendError(_) => {
-                unreachable!()
+                tx_sent += 1;
+                tx_unconfirmed += 1;
             }
         }
     }
 
-    let (mut confirmed, mut unconfirmed, mut failed) = (0, 0, 0);
-    let mut slot_hz: HashMap<Slot, u64> = Default::default();
-
-    for (_, result_from_rpc) in tx_and_confirmations_from_rpc {
-        match result_from_rpc {
-            ConfirmationResponseFromRpc::Success(_, confirmed_slot, _, _) => {
-                confirmed += 1;
-                *slot_hz.entry(confirmed_slot).or_default() += 1;
-            }
-            ConfirmationResponseFromRpc::Timeout(_) => {
-                unconfirmed += 1;
-            }
-            ConfirmationResponseFromRpc::SendError(_) => {
-                failed += 1;
-            }
-        }
-        //
-        // match tx {
-        //     Ok(Some(status)) => {
-        //         if status.satisfies_commitment(CommitmentConfig::confirmed()) {
-        //             confirmed += 1;
-        //             *slot_hz.entry(status.slot).or_default() += 1;
-        //         } else {
-        //             unconfirmed += 1;
-        //         }
-        //     }
-        //     Ok(None) => {
-        //         unconfirmed += 1;
-        //     }
-        //     Err(_) => {
-        //         failed += 1;
-        //     }
-        // }
-    }
-
-    let mode_slot = slot_hz
-        .into_iter()
-        .max_by_key(|(_, v)| *v)
-        .map(|(k, _)| k)
-        .unwrap_or_default();
+    let average_confirmation_time_ms = if tx_confirmed > 0 {
+        sum_confirmation_time.as_secs_f32() * 1000.0 / tx_confirmed as f32
+    } else {
+        0.0
+    };
+    let average_slot_confirmation_time = if tx_confirmed > 0 {
+        sum_slot_confirmation_time as f32 / tx_confirmed as f32
+    } else {
+        0.0
+    };
 
     Ok(RpcStat {
-        confirmation_time: elapsed_total.as_secs_f32(),
-        mode_slot,
-        confirmed,
-        unconfirmed,
-        failed,
+        tx_sent,
+        tx_send_errors,
+        tx_confirmed,
+        tx_unconfirmed,
+        average_confirmation_time: average_confirmation_time_ms,
+        average_slot_confirmation_time,
     })
 }
 
@@ -143,24 +146,29 @@ fn calc_stats_avg(stats: &[RpcStat]) -> RpcStat {
     let len = stats.len();
 
     let mut avg = RpcStat {
-        confirmation_time: 0.0,
-        mode_slot: 0,
-        confirmed: 0,
-        unconfirmed: 0,
-        failed: 0,
+        tx_sent: 0,
+        tx_send_errors: 0,
+        tx_confirmed: 0,
+        tx_unconfirmed: 0,
+        average_confirmation_time: 0.0,
+        average_slot_confirmation_time: 0.0,
     };
 
     for stat in stats {
-        avg.confirmation_time += stat.confirmation_time;
-        avg.confirmed += stat.confirmed;
-        avg.unconfirmed += stat.unconfirmed;
-        avg.failed += stat.failed;
+        avg.tx_sent += stat.tx_sent;
+        avg.tx_send_errors += stat.tx_send_errors;
+        avg.tx_confirmed += stat.tx_confirmed;
+        avg.tx_unconfirmed += stat.tx_unconfirmed;
+        avg.average_confirmation_time += stat.average_confirmation_time;
+        avg.average_slot_confirmation_time += stat.average_slot_confirmation_time;
     }
 
-    avg.confirmation_time /= len as f32;
-    avg.confirmed /= len as u64;
-    avg.unconfirmed /= len as u64;
-    avg.failed /= len as u64;
+    avg.tx_sent /= len as u64;
+    avg.tx_send_errors /= len as u64;
+    avg.tx_confirmed /= len as u64;
+    avg.tx_unconfirmed /= len as u64;
+    avg.average_confirmation_time /= len as f32;
+    avg.average_slot_confirmation_time /= len as f32;
 
     avg
 }

@@ -1,4 +1,4 @@
-use anyhow::{bail, Error};
+use anyhow::{bail, Context, Error};
 use futures::future::join_all;
 use futures::TryFutureExt;
 use itertools::Itertools;
@@ -15,7 +15,7 @@ use solana_transaction_status::TransactionConfirmationStatus;
 use std::collections::{HashMap, HashSet};
 use std::iter::zip;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration};
 use tokio::time::Instant;
 use url::Url;
 
@@ -25,9 +25,11 @@ pub fn create_rpc_client(rpc_url: &Url) -> RpcClient {
 
 #[derive(Clone)]
 pub enum ConfirmationResponseFromRpc {
+    // RPC error on send_transaction
     SendError(Arc<ErrorKind>),
     // (sent slot at confirmed commitment, confirmed slot, ..., ...)
     Success(Slot, Slot, TransactionConfirmationStatus, Duration),
+    // timout waiting for confirmation status
     Timeout(Duration),
 }
 
@@ -35,7 +37,7 @@ pub async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
     txs: &[Transaction],
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
-    let send_slot = poll_next_slot_start(rpc_client).await?;
+    let send_slot = poll_next_slot_start(rpc_client).await.context("poll for next start slot")?;
 
     let send_config = RpcSendTransactionConfig {
         skip_preflight: true,
@@ -55,7 +57,7 @@ pub async fn send_and_confirm_bulk_transactions(
 
     let after_send_slot = rpc_client
         .get_slot_with_commitment(CommitmentConfig::confirmed())
-        .await?;
+        .await.context("get slot afterwards")?;
 
     // optimal value is "0"
     info!(
@@ -127,10 +129,22 @@ pub async fn send_and_confirm_bulk_transactions(
             iteration
         );
         // TODO warn if get_status api calles are slow
-        let batch_responses = rpc_client.get_signature_statuses(&tx_batch).await?;
+        // TOOD the max batch size is limited which is not respected here
+
+        let status_started_at = Instant::now();
+        let mut batch_status = Vec::new();
+        // "Too many inputs provided; max 256"
+        for chunk in tx_batch.chunks(256) {
+            // fail hard if not possible to poll status
+            let chunk_responses = rpc_client.get_signature_statuses(&chunk).await.expect("get signature statuses");
+            batch_status.extend(chunk_responses.value);
+        };
+        if status_started_at.elapsed() > Duration::from_millis(100) {
+            warn!("SLOW get_signature_statuses took {:?}", status_started_at.elapsed());
+        }
         let elapsed = started_at.elapsed();
 
-        for (tx_sig, status_response) in zip(tx_batch, batch_responses.value) {
+        for (tx_sig, status_response) in zip(tx_batch, batch_status) {
             match status_response {
                 Some(tx_status) => {
                     trace!(
