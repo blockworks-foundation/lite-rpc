@@ -9,7 +9,6 @@ use geyser_grpc_connector::grpcmultiplex_fastestwins::{
 use geyser_grpc_connector::{GeyserFilter, GrpcSourceConfig};
 
 use geyser_grpc_connector::grpc_subscription_autoreconnect_streams::create_geyser_reconnecting_stream;
-use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_lite_rpc_core::structures::slot_notification::SlotNotification;
@@ -17,8 +16,11 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::time::{Duration, Instant};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
+use tokio::sync::Notify;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
@@ -54,6 +56,7 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
 fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     processed_block_sender: async_channel::Sender<ProducedBlock>,
+    exit_notfier: Arc<Notify>,
 ) -> Vec<AnyhowJoinHandle> {
     let commitment_config = CommitmentConfig::processed();
 
@@ -66,22 +69,15 @@ fn create_grpc_multiplex_processed_block_stream(
             grpc_source.grpc_x_token.clone(),
             block_sender,
             yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
+            exit_notfier.clone(),
         ));
         streams.push(block_reciever)
     }
     let merging_streams: AnyhowJoinHandle = tokio::task::spawn(async move {
         const MAX_SIZE: usize = 1024;
         let mut slots_processed = BTreeSet::<u64>::new();
-        let mut last_metrics = Instant::now();
         loop {
             let block_message = futures::stream::select_all(streams.clone()).next().await;
-            if last_metrics.elapsed() > Duration::from_secs(10) {
-                last_metrics = Instant::now();
-                info!(
-                    "merging block streams: queue length {:?}",
-                    streams.iter().map(|s| s.len()).collect_vec()
-                );
-            }
             if let Some(block) = block_message {
                 let slot = block.slot;
                 // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
@@ -144,9 +140,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let (processed_block_sender, processed_block_reciever) =
                     async_channel::unbounded::<ProducedBlock>();
 
+                let exit_signal = Arc::new(AtomicBool::new(false));
+                let exit_notify = Arc::new(Notify::new());
                 let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
                     &grpc_sources,
                     processed_block_sender,
+                    exit_notify.clone(),
                 );
 
                 let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
@@ -234,8 +233,6 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 break;
                             }
 
-                            info!("processed block receiver queue length: {}", processed_block_reciever.len());
-
                             cleanup_without_recv_blocks += 1;
                             cleanup_without_finalized_recv_blocks_meta += 1;
                             cleanup_without_confirmed_recv_blocks_meta += 1;
@@ -250,8 +247,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         }
                     }
                 }
-                // abort all the tasks
-                processed_blocks_tasks.iter().for_each(|task| task.abort());
+                exit_signal.store(true, std::sync::atomic::Ordering::Relaxed);
+                exit_notify.notify_waiters();
+                futures::future::join_all(processed_blocks_tasks).await;
             }
         })
     };

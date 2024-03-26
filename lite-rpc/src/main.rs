@@ -291,7 +291,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 pub async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    console_subscriber::init();
 
     let config = Config::load().await?;
 
