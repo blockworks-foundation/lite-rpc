@@ -51,7 +51,7 @@ pub async fn bench(
             let map_of_txs = map_of_txs.clone();
             let n_chars = match transaction_size {
                 TransactionSize::Small => 10,
-                TransactionSize::Large => 240, // 565 is max but we need to lower that to not burn the CUs
+                TransactionSize::Large => 232, // 565 is max but we need to lower that to not burn the CUs
             };
             let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed), n_chars);
 

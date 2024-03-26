@@ -1,4 +1,3 @@
-use bench::oldbench::TransactionSize;
 use bench::{
     helpers::BenchHelper,
     metrics::{AvgMetric, Metric, TxMetricData},
@@ -15,6 +14,7 @@ use solana_sdk::{
 };
 use std::sync::{atomic::AtomicU64, Arc};
 use tokio::{sync::RwLock, time::Duration};
+use bench::oldbench::TransactionSize;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {

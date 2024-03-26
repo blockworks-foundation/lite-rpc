@@ -60,6 +60,7 @@ const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameter
     unistream_timeout: Duration::from_secs(2),
     write_timeout: Duration::from_secs(2),
     number_of_transactions_per_unistream: 10,
+    unistreams_to_create_new_connection_in_percentage: 10,
 };
 
 #[test]

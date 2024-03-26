@@ -3,7 +3,7 @@ use itertools::Itertools;
 use lazy_static::lazy_static;
 use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::compute_budget;
 use solana_sdk::instruction::AccountMeta;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
@@ -125,11 +125,11 @@ impl BenchHelper {
         let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
 
         let cu_request: Instruction =
-            ComputeBudgetInstruction::set_compute_unit_limit(14000);
+            compute_budget::ComputeBudgetInstruction::set_compute_unit_limit(14000);
 
         let instructions = if cu_price_micro_lamports > 0 {
             let cu_budget_ix: Instruction =
-                ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
+                compute_budget::ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
             vec![cu_request, cu_budget_ix, instruction]
         } else {
             vec![cu_request, instruction]
@@ -158,7 +158,7 @@ impl BenchHelper {
 
         let instructions = if cu_price_micro_lamports > 0 {
             let cu_budget_ix: Instruction =
-                ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
+                compute_budget::ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
             vec![cu_budget_ix, instruction]
         } else {
             vec![instruction]
@@ -171,4 +171,34 @@ impl BenchHelper {
 
         Transaction::new(&signers, message, blockhash)
     }
+}
+
+#[test]
+fn transaction_size_small() {
+    let blockhash = Hash::default();
+    let payer_keypair = Keypair::from_base58_string(
+        "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
+    );
+
+    let seed = 42;
+    let random_strings = BenchHelper::generate_random_strings(1, Some(seed), 10);
+    let rand_string = random_strings.first().unwrap();
+    let tx = BenchHelper::create_memo_tx_small(rand_string, &payer_keypair, blockhash, 300);
+
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 231);
+}
+
+#[test]
+fn transaction_size_large() {
+    let blockhash = Hash::default();
+    let payer_keypair = Keypair::from_base58_string(
+        "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
+    );
+
+    let seed = 42;
+    let random_strings = BenchHelper::generate_random_strings(1, Some(seed), 232);
+    let rand_string = random_strings.first().unwrap();
+    let tx = BenchHelper::create_memo_tx_large(rand_string, &payer_keypair, blockhash, 300);
+
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1230);
 }

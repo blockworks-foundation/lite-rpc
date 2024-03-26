@@ -149,7 +149,7 @@ impl LiteRpcServer for LiteBridge {
         let BlockInformation { slot, .. } = self
             .data_cache
             .block_information_store
-            .get_latest_block(commitment_config)
+            .get_latest_block_information(commitment_config)
             .await;
         Ok(slot)
     }
@@ -161,7 +161,7 @@ impl LiteRpcServer for LiteBridge {
         let block_info = self
             .data_cache
             .block_information_store
-            .get_latest_block(commitment_config)
+            .get_latest_block_information(commitment_config)
             .await;
         Ok(block_info.block_height)
     }
@@ -189,7 +189,7 @@ impl LiteRpcServer for LiteBridge {
         RPC_GET_LATEST_BLOCKHASH.inc();
 
         let commitment_config = config
-            .map(|config| config.commitment.unwrap_or_default())
+            .map(|config| config.commitment.unwrap_or(CommitmentConfig::confirmed()))
             .unwrap_or_default();
 
         let BlockInformation {
@@ -200,7 +200,7 @@ impl LiteRpcServer for LiteBridge {
         } = self
             .data_cache
             .block_information_store
-            .get_latest_block(commitment_config)
+            .get_latest_block_information(commitment_config)
             .await;
 
         log::trace!("glb {blockhash} {slot} {block_height}");
@@ -252,7 +252,7 @@ impl LiteRpcServer for LiteBridge {
         let block_info = self
             .data_cache
             .block_information_store
-            .get_latest_block_info(commitment_config)
+            .get_latest_block_information(commitment_config)
             .await;
 
         //TODO manage transaction_count of epoch info. Currently None.
@@ -294,7 +294,7 @@ impl LiteRpcServer for LiteBridge {
                 slot: self
                     .data_cache
                     .block_information_store
-                    .get_latest_block_info(CommitmentConfig::finalized())
+                    .get_latest_block_information(CommitmentConfig::finalized())
                     .await
                     .slot,
                 api_version: None,
@@ -424,6 +424,7 @@ impl LiteRpcServer for LiteBridge {
             .await;
         Ok(schedule)
     }
+
     async fn get_slot_leaders(&self, start_slot: u64, limit: u64) -> RpcResult<Vec<Pubkey>> {
         let epock_schedule = self.data_cache.epoch_data.get_epoch_schedule();
 
@@ -518,10 +519,19 @@ impl LiteRpcServer for LiteBridge {
             return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
         };
         if let Some(account_service) = &self.accounts_service {
+            let commitment = config
+                .as_ref()
+                .and_then(|x| x.commitment)
+                .unwrap_or_default();
+            let current_block_info = self
+                .data_cache
+                .block_information_store
+                .get_latest_block_information(commitment)
+                .await;
             match account_service.get_account(pubkey, config).await {
-                Ok((slot, ui_account)) => Ok(RpcResponse {
+                Ok((_, ui_account)) => Ok(RpcResponse {
                     context: RpcResponseContext {
-                        slot,
+                        slot: current_block_info.slot,
                         api_version: None,
                     },
                     value: ui_account,
@@ -555,16 +565,12 @@ impl LiteRpcServer for LiteBridge {
 
         if let Some(account_service) = &self.accounts_service {
             let mut ui_accounts = vec![];
-            let mut max_slot = 0;
             for pubkey in pubkeys {
                 match account_service
                     .get_account(pubkey.unwrap(), config.clone())
                     .await
                 {
-                    Ok((slot, ui_account)) => {
-                        if slot > max_slot {
-                            max_slot = slot;
-                        }
+                    Ok((_, ui_account)) => {
                         ui_accounts.push(ui_account);
                     }
                     Err(_) => {
@@ -572,10 +578,19 @@ impl LiteRpcServer for LiteBridge {
                     }
                 }
             }
+            let commitment = config
+                .as_ref()
+                .and_then(|x| x.commitment)
+                .unwrap_or_default();
+            let current_block_info = self
+                .data_cache
+                .block_information_store
+                .get_latest_block_information(commitment)
+                .await;
             assert_eq!(ui_accounts.len(), pubkey_strs.len());
             Ok(RpcResponse {
                 context: RpcResponseContext {
-                    slot: max_slot,
+                    slot: current_block_info.slot,
                     api_version: None,
                 },
                 value: ui_accounts,
@@ -599,16 +614,26 @@ impl LiteRpcServer for LiteBridge {
             .map(|value| value.with_context.unwrap_or_default())
             .unwrap_or_default();
 
+        let commitment: CommitmentConfig = config
+            .as_ref()
+            .and_then(|x| x.account_config.commitment)
+            .unwrap_or_default();
+        let current_block_info = self
+            .data_cache
+            .block_information_store
+            .get_latest_block_information(commitment)
+            .await;
+
         if let Some(account_service) = &self.accounts_service {
             match account_service
                 .get_program_accounts(program_id, config)
                 .await
             {
-                Ok((slot, ui_account)) => {
+                Ok((_, ui_account)) => {
                     if with_context {
                         Ok(OptionalContext::Context(RpcResponse {
                             context: RpcResponseContext {
-                                slot,
+                                slot: current_block_info.slot,
                                 api_version: None,
                             },
                             value: ui_account,
@@ -645,11 +670,22 @@ impl LiteRpcServer for LiteBridge {
             commitment: x.commitment,
             min_context_slot: x.min_context_slot,
         });
+
+        let commitment = config
+            .as_ref()
+            .and_then(|x| x.commitment)
+            .unwrap_or_default();
+        let current_block_info = self
+            .data_cache
+            .block_information_store
+            .get_latest_block_information(commitment)
+            .await;
+
         if let Some(account_service) = &self.accounts_service {
             match account_service.get_account(pubkey, config).await {
-                Ok((slot, ui_account)) => Ok(RpcResponse {
+                Ok((_, ui_account)) => Ok(RpcResponse {
                     context: RpcResponseContext {
-                        slot,
+                        slot: current_block_info.slot,
                         api_version: None,
                     },
                     value: ui_account.map(|x| x.lamports).unwrap_or_default(),
