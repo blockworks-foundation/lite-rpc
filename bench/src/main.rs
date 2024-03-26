@@ -9,12 +9,12 @@ use futures::future::join_all;
 use log::{error, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
+use bench::oldbench::TransactionSize;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
 };
 use std::sync::{atomic::AtomicU64, Arc};
 use tokio::{sync::RwLock, time::Duration};
-use bench::oldbench::TransactionSize;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 16)]
 async fn main() {

@@ -129,7 +129,9 @@ impl BenchHelper {
 
         let instructions = if cu_price_micro_lamports > 0 {
             let cu_budget_ix: Instruction =
-                compute_budget::ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
+                compute_budget::ComputeBudgetInstruction::set_compute_unit_price(
+                    cu_price_micro_lamports,
+                );
             vec![cu_request, cu_budget_ix, instruction]
         } else {
             vec![cu_request, instruction]
@@ -158,7 +160,9 @@ impl BenchHelper {
 
         let instructions = if cu_price_micro_lamports > 0 {
             let cu_budget_ix: Instruction =
-                compute_budget::ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
+                compute_budget::ComputeBudgetInstruction::set_compute_unit_price(
+                    cu_price_micro_lamports,
+                );
             vec![cu_budget_ix, instruction]
         } else {
             vec![instruction]
