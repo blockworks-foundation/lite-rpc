@@ -7,6 +7,7 @@ use crate::benches::rpc_interface::{
 use crate::metrics::{PingThing, PingThingTxType};
 use crate::{create_memo_tx, create_rng, BenchmarkTransactionParams, Rng8};
 use anyhow::anyhow;
+use itertools::Itertools;
 use log::{debug, info};
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -177,9 +178,10 @@ async fn send_and_confirm_transaction(
     rpc: &RpcClient,
     tx: Transaction,
 ) -> anyhow::Result<ConfirmationSlotInfo> {
+
     let result_vec: Vec<(Signature, ConfirmationResponseFromRpc)> =
         send_and_confirm_bulk_transactions(rpc, &[tx]).await?;
-
+    assert_eq!(result_vec.len(), 1, "expected 1 result");
     let (signature, confirmation_response) = result_vec.into_iter().next().unwrap();
 
     // TODO improve

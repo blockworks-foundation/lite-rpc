@@ -14,11 +14,6 @@ use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
 
 #[derive(Debug, serde::Serialize)]
 pub struct RpcStat {
-    //     confirmation_time: f32,
-    //     mode_slot: u64,
-    //     confirmed: u64,
-    //     unconfirmed: u64,
-    //     failed: u64,
     tx_sent: u64,
     tx_confirmed: u64,
     // in ms
