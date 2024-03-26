@@ -21,9 +21,9 @@ pub struct ServerConfiguration {
 impl Default for ServerConfiguration {
     fn default() -> Self {
         Self {
-            max_request_body_size: 50 * (1 << 10),      // 50kb
-            max_response_body_size: 50_000 * (1 << 10), // 50MB response size
-            max_connection: 10000,
+            max_request_body_size: 50 * (1 << 10),       // 50kb
+            max_response_body_size: 500_000 * (1 << 10), // 500MB response size
+            max_connection: 1000000,
         }
     }
 }

@@ -42,7 +42,7 @@ pub struct AccountsOnDemand {
     accounts_subscribed: Arc<DashSet<Pubkey>>,
     program_filters: Arc<RwLock<AccountFilters>>,
     subscription_manager: SubscriptionManger,
-    accounts_is_loading: Arc<Mutex<HashMap<Pubkey, Arc<Notify>>>>,
+    accounts_in_loading: Arc<Mutex<HashMap<Pubkey, Arc<Notify>>>>,
 }
 
 impl AccountsOnDemand {
@@ -62,7 +62,7 @@ impl AccountsOnDemand {
                 accounts_storage,
                 account_notification_sender,
             ),
-            accounts_is_loading: Arc::new(Mutex::new(HashMap::new())),
+            accounts_in_loading: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -124,7 +124,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                 // account does not exist in account store
                 // first check if we have already subscribed to the required account
                 // This is to avoid resetting geyser subscription because of accounts that do not exists.
-                let mut lk = self.accounts_is_loading.lock().await;
+                let mut lk = self.accounts_in_loading.lock().await;
                 match lk.get(&account_pk).cloned() {
                     Some(loading_account) => {
                         drop(lk);
@@ -192,7 +192,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                             }
                             // update loading lock
                             {
-                                let mut write_lock = self.accounts_is_loading.lock().await;
+                                let mut write_lock = self.accounts_in_loading.lock().await;
                                 let notify = write_lock.remove(&account_pk);
                                 drop(write_lock);
                                 if let Some(notify) = notify {

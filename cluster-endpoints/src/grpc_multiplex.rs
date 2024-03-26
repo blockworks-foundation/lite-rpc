@@ -391,7 +391,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             log::error!("block or block info geyser stream stopped - restarting multiplexer ({}-{}-{})",
                             cleanup_without_recv_full_blocks, cleanup_without_confirmed_recv_blocks_meta, cleanup_without_finalized_recv_blocks_meta,);
                             // throttle a bit
-                            sleep(Duration::from_millis(1500)).await;
+                            sleep(Duration::from_millis(200)).await;
                             break 'recv_loop;
                         }
                         cleanup_without_recv_full_blocks += 1;
