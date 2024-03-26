@@ -31,7 +31,7 @@ async fn main() {
         large_transactions,
     } = Args::parse();
 
-    let cu_price_micro_lamports = 3;
+    let cu_price_micro_lamports = 300;
 
     let mut run_interval_ms = tokio::time::interval(Duration::from_millis(run_interval_ms));
 
