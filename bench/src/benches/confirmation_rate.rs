@@ -1,5 +1,5 @@
 use crate::{create_rng, generate_txs, BenchmarkTransactionParams};
-use log::{debug, info, warn};
+use log::{debug, info, trace, warn};
 use std::ops::Add;
 use std::path::Path;
 use std::sync::Arc;
@@ -74,12 +74,19 @@ pub async fn send_bulk_txs_and_wait(
     num_txns: usize,
     tx_params: &BenchmarkTransactionParams,
 ) -> anyhow::Result<RpcStat> {
-    let hash = rpc.get_latest_blockhash().await?;
+    trace!("Get latest blockhash and generate transactions");
+    let hash = rpc.get_latest_blockhash().await
+        .map_err(|err| {
+            log::error!("Error get latest blockhash : {err:?}");
+            err
+        })?;
     let mut rng = create_rng(None);
     let txs = generate_txs(num_txns, payer, hash, &mut rng, tx_params);
 
+    trace!("Sending {} transactions in bulk ..", txs.len());
     let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
         send_and_confirm_bulk_transactions(rpc, &txs).await.context("send and confirm bulk tx")?;
+    trace!("Done sending {} transaction.", txs.len());
 
     let mut tx_sent = 0;
     let mut tx_send_errors = 0;

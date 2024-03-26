@@ -37,7 +37,9 @@ pub async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
     txs: &[Transaction],
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
+    trace!("Polling for next slot ..");
     let send_slot = poll_next_slot_start(rpc_client).await.context("poll for next start slot")?;
+    trace!("Send slot: {}", send_slot);
 
     let send_config = RpcSendTransactionConfig {
         skip_preflight: true,
@@ -48,6 +50,7 @@ pub async fn send_and_confirm_bulk_transactions(
     };
 
     let started_at = Instant::now();
+    trace!("Sending {} transactions via RPC ..", txs.len());
     let batch_sigs_or_fails = join_all(txs.iter().map(|tx| {
         rpc_client
             .send_transaction_with_config(tx, send_config)
@@ -60,9 +63,9 @@ pub async fn send_and_confirm_bulk_transactions(
         .await.context("get slot afterwards")?;
 
     // optimal value is "0"
-    info!(
-        "slots passed while sending: {}",
-        after_send_slot - send_slot
+    debug!(
+        "Sent {} transactions within {} slots",
+        txs.len(), after_send_slot - send_slot
     );
 
     let num_sent_ok = batch_sigs_or_fails
@@ -77,17 +80,17 @@ pub async fn send_and_confirm_bulk_transactions(
     for (i, tx_sig) in txs.iter().enumerate() {
         let tx_sent = batch_sigs_or_fails[i].is_ok();
         if tx_sent {
-            info!("- tx_sent {}", tx_sig.get_signature());
+            trace!("- tx_sent {}", tx_sig.get_signature());
         } else {
-            info!("- tx_fail {}", tx_sig.get_signature());
+            trace!("- tx_fail {}", tx_sig.get_signature());
         }
     }
-    info!(
+    debug!(
         "{} transactions sent successfully in {:.02}ms",
         num_sent_ok,
         started_at.elapsed().as_secs_f32() * 1000.0
     );
-    info!(
+    debug!(
         "{} transactions failed to send in {:.02}ms",
         num_sent_failed,
         started_at.elapsed().as_secs_f32() * 1000.0

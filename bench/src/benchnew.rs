@@ -10,6 +10,7 @@ use bench::{
     BenchmarkTransactionParams,
 };
 use clap::{Parser, Subcommand};
+use log::trace;
 
 #[derive(Parser, Debug)]
 #[clap(version, about)]
