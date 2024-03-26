@@ -24,7 +24,7 @@ use tokio::time::Instant;
 pub mod benches;
 pub mod helpers;
 pub mod metrics;
-pub mod oldbench;
+pub mod bench1;
 pub mod service_adapter;
 pub mod tx_size;
 

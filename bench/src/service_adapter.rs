@@ -1,8 +1,8 @@
 // adapter code for all from benchrunner-service
 
 use crate::metrics::{Metric, TxMetricData};
-use crate::oldbench;
-use crate::oldbench::TransactionSize;
+use crate::bench1;
+use crate::bench1::TransactionSize;
 use crate::tx_size::TxSize;
 use log::debug;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -85,7 +85,7 @@ pub async fn bench_servicerunner(
         // not used unless log_txs is set to true
         let (tx_log_sx_null, _tx_log_rx) = tokio::sync::mpsc::unbounded_channel::<TxMetricData>();
 
-        oldbench::bench(
+        bench1::bench(
             rpc_client.clone(),
             bench_config.tx_count,
             funded_payer,

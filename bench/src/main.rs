@@ -1,7 +1,7 @@
 use bench::{
     helpers::BenchHelper,
     metrics::{AvgMetric, Metric, TxMetricData},
-    oldbench, Args,
+    bench1, Args,
 };
 use clap::Parser;
 
@@ -9,7 +9,7 @@ use futures::future::join_all;
 use log::{error, info};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
-use bench::oldbench::TransactionSize;
+use bench::bench1::TransactionSize;
 use solana_sdk::{
     commitment_config::CommitmentConfig, hash::Hash, signature::Keypair, signer::Signer,
 };
@@ -99,7 +99,7 @@ async fn main() {
 
     for seed in 0..runs {
         let funded_payer = Keypair::from_bytes(funded_payer.to_bytes().as_slice()).unwrap();
-        tasks.push(tokio::spawn(oldbench::bench(
+        tasks.push(tokio::spawn(bench1::bench(
             rpc_client.clone(),
             tx_count,
             funded_payer,
