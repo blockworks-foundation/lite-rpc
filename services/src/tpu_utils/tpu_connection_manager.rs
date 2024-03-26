@@ -143,9 +143,10 @@ impl ActiveConnection {
                                 // give more priority to transaction sender
                                 tokio::time::sleep(Duration::from_micros(50)).await;
                                 // remove all expired transactions from the queue
-                                priorization_heap
+                                let elements_removed = priorization_heap
                                     .remove_expired_transactions(current_blockheight)
                                     .await;
+                                TRANSACTIONS_IN_HEAP.sub(elements_removed as i64);
                             }
                         }
                         Err(e) => {
@@ -168,7 +169,7 @@ impl ActiveConnection {
                 let _permit = permit;
                 connection.get_connection().await;
             });
-        }
+        };
 
         'main_loop: loop {
             // exit signal set
@@ -179,7 +180,7 @@ impl ActiveConnection {
             tokio::select! {
                 _ = fill_notify.notified() => {
 
-                    loop {
+                    'process_heap: loop {
                         // exit signal set
                         if exit_signal.load(Ordering::Relaxed) {
                             break 'main_loop;
@@ -187,7 +188,7 @@ impl ActiveConnection {
 
                         let Some(tx) = priorization_heap.pop().await else {
                             // wait to get notification from fill event
-                            break;
+                            break 'process_heap;
                         };
                         TRANSACTIONS_IN_HEAP.dec();
 
