@@ -1,5 +1,6 @@
 use crate::endpoint_stremers::EndpointStreaming;
-use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
+use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
+use crate::grpc::grpc_utils::connect_with_timeout_hacked;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
@@ -9,6 +10,7 @@ use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::trace;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_lite_rpc_core::structures::account_data::AccountNotificationMessage;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
     structures::produced_block::{ProducedBlock, TransactionInfo},
@@ -34,7 +36,9 @@ use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tracing::trace_span;
+use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots, SubscribeUpdateSlot,
@@ -266,48 +270,7 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
     (cu_requested, prioritization_fees)
 }
 
-// TODO: use function from geyser-grpc-connector
-use bytes::Bytes;
-use std::time::Duration;
-use tonic::metadata::{errors::InvalidMetadataValue, AsciiMetadataValue};
-use tonic::service::Interceptor;
-use tonic::transport::ClientTlsConfig;
-use tonic_health::pb::health_client::HealthClient;
-use yellowstone_grpc_client::{GeyserGrpcClient, InterceptorXToken};
-use yellowstone_grpc_proto::geyser::geyser_client::GeyserClient;
-use yellowstone_grpc_proto::tonic;
-
-// note: not called
-async fn connect_with_timeout_hacked<E, T>(
-    endpoint: E,
-    x_token: Option<T>,
-) -> anyhow::Result<GeyserGrpcClient<impl Interceptor>>
-where
-    E: Into<Bytes>,
-    T: TryInto<AsciiMetadataValue, Error = InvalidMetadataValue>,
-{
-    let endpoint = tonic::transport::Endpoint::from_shared(endpoint)?
-        .buffer_size(Some(65536))
-        .initial_connection_window_size(4194304)
-        .initial_stream_window_size(4194304)
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(10))
-        // .http2_adaptive_window()
-        .tls_config(ClientTlsConfig::new())?;
-
-    let x_token: Option<AsciiMetadataValue> = x_token.map(|v| v.try_into()).transpose()?;
-    let interceptor = InterceptorXToken { x_token };
-
-    let channel = endpoint.connect_lazy();
-    let client = GeyserGrpcClient::new(
-        HealthClient::with_interceptor(channel.clone(), interceptor.clone()),
-        GeyserClient::with_interceptor(channel, interceptor)
-            .max_decoding_message_size(GeyserGrpcClient::max_decoding_message_size()),
-    );
-    Ok(client)
-}
-
-// note used
+// not called
 pub fn create_block_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
@@ -456,18 +419,23 @@ pub fn create_grpc_subscription(
 
     let cluster_info_polling = poll_cluster_info(rpc_client.clone(), cluster_info_sx);
     let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
-
     // accounts
     if !accounts_filter.is_empty() {
-        let (account_jh, processed_account_stream) =
-            create_grpc_account_streaming(grpc_sources, accounts_filter);
+        let (account_sender, accounts_stream) =
+            tokio::sync::broadcast::channel::<AccountNotificationMessage>(1024);
+        let account_jh = create_grpc_account_streaming(
+            grpc_sources,
+            accounts_filter,
+            account_sender,
+            Arc::new(Notify::new()),
+        );
         let streamers = EndpointStreaming {
             blocks_notifier: block_multiplex_channel,
             blockinfo_notifier: blockmeta_channel,
             slot_notifier: slot_multiplex_channel,
             cluster_info_notifier,
             vote_account_notifier,
-            processed_account_stream: Some(processed_account_stream),
+            processed_account_stream: Some(accounts_stream),
         };
 
         let endpoint_tasks = vec![

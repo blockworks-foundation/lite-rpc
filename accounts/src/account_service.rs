@@ -21,7 +21,7 @@ use solana_rpc_client_api::{
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use tokio::sync::broadcast::Sender;
 
-use crate::account_store_interface::AccountStorageInterface;
+use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
 
 lazy_static::lazy_static! {
     static ref ACCOUNT_UPDATES: IntGauge =
@@ -250,7 +250,7 @@ impl AccountService {
         &self,
         account: Pubkey,
         config: Option<RpcAccountInfoConfig>,
-    ) -> anyhow::Result<(Slot, Option<UiAccount>)> {
+    ) -> Result<(Slot, Option<UiAccount>), AccountLoadingError> {
         GET_ACCOUNT_CALLED.inc();
         let commitment = config
             .as_ref()
@@ -259,7 +259,7 @@ impl AccountService {
 
         let commitment = Commitment::from(commitment);
 
-        if let Some(account_data) = self.account_store.get_account(account, commitment).await {
+        if let Some(account_data) = self.account_store.get_account(account, commitment).await? {
             // if minimum context slot is not satisfied return Null
             let minimum_context_slot = config
                 .as_ref()
@@ -273,10 +273,7 @@ impl AccountService {
                 Ok((account_data.updated_slot, None))
             }
         } else {
-            bail!(
-                "Account {} does not satisfy any configured filters",
-                account.to_string()
-            )
+            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         }
     }
 
