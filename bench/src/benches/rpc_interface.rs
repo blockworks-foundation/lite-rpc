@@ -48,12 +48,12 @@ pub async fn send_and_confirm_bulk_transactions(
         skip_preflight: true,
         preflight_commitment: None,
         encoding: None,
-        max_retries: Some(3),
+        max_retries: None,
         min_context_slot: None,
     };
 
     let started_at = Instant::now();
-    trace!("Sending {} transactions via RPC ..", txs.len());
+    trace!("Sending {} transactions via RPC (retries=off) ..", txs.len());
     let batch_sigs_or_fails = join_all(txs.iter().map(|tx| {
         rpc_client
             .send_transaction_with_config(tx, send_config)
@@ -66,12 +66,17 @@ pub async fn send_and_confirm_bulk_transactions(
         .await
         .context("get slot afterwards")?;
 
-    // optimal value is "0"
-    debug!(
-        "Sent {} transactions within {} slots",
-        txs.len(),
-        after_send_slot - send_slot
-    );
+    if after_send_slot - send_slot > 0 {
+        warn!(
+            "Slot advanced during sending transactions: {} -> {}",
+            send_slot, after_send_slot
+        );
+    } else {
+        debug!(
+            "Slot did not advance during sending transactions: {} -> {}",
+            send_slot, after_send_slot
+        );
+    }
 
     let num_sent_ok = batch_sigs_or_fails
         .iter()
@@ -148,9 +153,10 @@ pub async fn send_and_confirm_bulk_transactions(
                 .expect("get signature statuses");
             batch_status.extend(chunk_responses.value);
         }
-        if status_started_at.elapsed() > Duration::from_millis(100) {
+        if status_started_at.elapsed() > Duration::from_millis(500) {
             warn!(
-                "SLOW get_signature_statuses took {:?}",
+                "SLOW get_signature_statuses for {} transactions took {:?}",
+                tx_batch.len(),
                 status_started_at.elapsed()
             );
         }
@@ -193,7 +199,7 @@ pub async fn send_and_confirm_bulk_transactions(
         }
 
         if pending_status_set.is_empty() {
-            info!("All transactions confirmed after {} iterations", iteration);
+            debug!("All transactions confirmed after {} iterations / {:?}", iteration, started_at.elapsed());
             break 'polling_loop;
         }
 
