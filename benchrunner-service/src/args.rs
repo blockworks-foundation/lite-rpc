@@ -21,8 +21,7 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
         .filter(|(k, _)| k.starts_with("TENANT"))
         .into_group_map_by(|(k, _v)| {
             let tenant_counter = k
-                .split('_')
-                .nth(0)
+                .split('_').next()
                 .expect("tenant prefix must be split by underscore (e.g. TENANT99_SOMETHING")
                 .replace("TENANT", "");
             tenant_counter
