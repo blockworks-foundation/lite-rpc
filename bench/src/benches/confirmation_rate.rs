@@ -12,8 +12,8 @@ use crate::benches::rpc_interface::{
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
 
-#[derive(Debug, serde::Serialize)]
-pub struct RpcStat {
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct Metric {
     tx_sent: u64,
     tx_confirmed: u64,
     // in ms
@@ -76,7 +76,7 @@ pub async fn send_bulk_txs_and_wait(
     num_txs: usize,
     tx_params: &BenchmarkTransactionParams,
     max_timeout: Duration,
-) -> anyhow::Result<RpcStat> {
+) -> anyhow::Result<Metric> {
     trace!("Get latest blockhash and generate transactions");
     let hash = rpc.get_latest_blockhash().await.map_err(|err| {
         log::error!("Error get latest blockhash : {err:?}");
@@ -148,7 +148,7 @@ pub async fn send_bulk_txs_and_wait(
         0.0
     };
 
-    Ok(RpcStat {
+    Ok(Metric {
         tx_sent,
         tx_send_errors,
         tx_confirmed,
@@ -158,10 +158,10 @@ pub async fn send_bulk_txs_and_wait(
     })
 }
 
-fn calc_stats_avg(stats: &[RpcStat]) -> RpcStat {
+fn calc_stats_avg(stats: &[Metric]) -> Metric {
     let len = stats.len();
 
-    let mut avg = RpcStat {
+    let mut avg = Metric {
         tx_sent: 0,
         tx_send_errors: 0,
         tx_confirmed: 0,

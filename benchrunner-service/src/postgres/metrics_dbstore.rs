@@ -1,6 +1,7 @@
 use crate::args::TenantConfig;
 use crate::postgres::postgres_session_cache::PostgresSessionCache;
-use bench::metrics::Metric;
+use bench::metrics;
+use bench::benches::confirmation_rate;
 use bench::service_adapter1::BenchConfig;
 use log::warn;
 use postgres_types::ToSql;
@@ -62,8 +63,9 @@ pub async fn upsert_benchrun_status(
 
 
 #[async_trait]
-impl BenchMetricsPostgresSaver<Metric> for BenchRunnerBench1Impl {
-    async fn try_save_results_postgres(&self, metric: &Metric, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
+impl BenchMetricsPostgresSaver for BenchRunnerBench1Impl {
+    async fn try_save_results_postgres(&self, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
+        let metric = self.metric.get().expect("metric not set");
         let metricjson = serde_json::to_value(metric).unwrap();
         let values: &[&(dyn ToSql + Sync)] = &[
             &self.tenant_config.tenant_id,
@@ -103,8 +105,8 @@ impl BenchMetricsPostgresSaver<Metric> for BenchRunnerBench1Impl {
 
 
 #[async_trait]
-impl BenchMetricsPostgresSaver<Metric> for BenchRunnerConfirmationRateImpl {
-    async fn try_save_results_postgres(&self, metric: &Metric, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
+impl BenchMetricsPostgresSaver for BenchRunnerConfirmationRateImpl {
+    async fn try_save_results_postgres(&self, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
         todo!();
     }
 }

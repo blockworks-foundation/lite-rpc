@@ -24,7 +24,9 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use postgres_types::ToSql;
 use solana_sdk::signature::Keypair;
-use bench::metrics::Metric;
+use tokio::sync::OnceCell;
+use bench::metrics;
+use bench::benches::confirmation_rate;
 use bench::tx_size::TxSize;
 
 #[tokio::main]
@@ -97,11 +99,11 @@ async fn main() {
 
                 let benchrun_at = SystemTime::now();
 
-                let factors = factorize(run_count, &[bench_configs.len(), NUM_BENCH_IMPLS]);
+                let permutation = factorize(run_count, &[bench_configs.len(), NUM_BENCH_IMPLS]);
 
-                let bench_config = bench_configs[factors[0]].clone();
+                let bench_config = bench_configs[permutation[0]].clone();
 
-                let bench_impl: Box<dyn BenchTrait<Metric>> = match factors[1] {
+                let bench_impl: Box<dyn BenchTrait> = match permutation[1] {
                     0 => {
                         Box::new(BenchRunnerBench1Impl {
                             benchrun_at,
@@ -109,6 +111,7 @@ async fn main() {
                             bench_config: bench_config.clone(),
                             funded_payer: funded_payer.clone(),
                             size_tx,
+                            metric: OnceCell::new(),
                         })
                     }
                     1 => {
@@ -118,6 +121,7 @@ async fn main() {
                             bench_config: bench_config.clone(),
                             funded_payer: funded_payer.clone(),
                             size_tx,
+                            metric: OnceCell::new(),
                         })
                     }
                     _ => unreachable!(),
@@ -127,25 +131,6 @@ async fn main() {
                     "Invoke bench execution (#{}) on tenant <{}> using {}",
                     run_count, tenant_id, &bench_config
                 );
-
-
-                // let bench_impl: Box<dyn BenchTrait<Metric>> = if true {
-                //     Box::new(BenchRunnerBench1Impl {
-                //         benchrun_at,
-                //         tenant_config: tenant_config.clone(),
-                //         bench_config: bench_config.clone(),
-                //         funded_payer: funded_payer.clone(),
-                //         size_tx,
-                //     })
-                // } else {
-                //    Box::new(BenchRunnerConfirmationRateImpl {
-                //         benchrun_at,
-                //         tenant_config: tenant_config.clone(),
-                //         bench_config: bench_config.clone(),
-                //         funded_payer: funded_payer.clone(),
-                //         size_tx,
-                //     })
-                // };
 
                 if let Some(postgres_session) = postgres_session.as_ref() {
                     let _dbstatus = upsert_benchrun_status(
@@ -161,14 +146,14 @@ async fn main() {
                 let metric = bench_impl.run_bench().await;
 
                 if let Some(postgres_session) = postgres_session.as_ref() {
-                    let save_result = bench_impl.try_save_results_postgres(&metric, postgres_session).await;
+                    let save_result = bench_impl.try_save_results_postgres(postgres_session).await;
                     if let Err(err) = save_result {
                         warn!("Failed to save metrics to postgres (err {:?}) - continue", err);
                     }
 
                 }
 
-                publish_metrics_on_prometheus(&tenant_config, &bench_config, &metric).await;
+                // publish_metrics_on_prometheus(&tenant_config, &bench_config).await;
 
                 if let Some(postgres_session) = postgres_session.as_ref() {
                     let _dbstatus = upsert_benchrun_status(
@@ -219,16 +204,16 @@ fn test_factorize() {
 
 // R: result
 #[async_trait]
-trait BenchRunner<M>: Send + Sync + 'static {
-    async fn run_bench(&self) -> M;
+trait BenchRunner: Send + Sync + 'static {
+    async fn run_bench(&self);
 }
 
-trait BenchTrait<M>: BenchRunner<M> + BenchMetricsPostgresSaver<M> {}
+trait BenchTrait: BenchRunner + BenchMetricsPostgresSaver {}
 
 // R: result
 #[async_trait]
-trait BenchMetricsPostgresSaver<M>: Send + Sync + 'static {
-    async fn try_save_results_postgres(&self, metric: &M, postgres_session: &PostgresSessionCache) -> anyhow::Result<()>;
+trait BenchMetricsPostgresSaver: Send + Sync + 'static {
+    async fn try_save_results_postgres(&self, postgres_session: &PostgresSessionCache) -> anyhow::Result<()>;
 }
 
 struct BenchRunnerBench1Impl {
@@ -237,26 +222,27 @@ struct BenchRunnerBench1Impl {
     pub bench_config: BenchConfig,
     pub funded_payer: Arc<Keypair>,
     pub size_tx: TxSize,
+    pub metric: OnceCell<metrics::Metric>,
 }
 
-impl BenchTrait<Metric> for BenchRunnerBench1Impl {}
+impl BenchTrait for BenchRunnerBench1Impl {}
 
 
 #[async_trait]
-impl BenchRunner<Metric> for BenchRunnerBench1Impl {
-    async fn run_bench(&self) -> Metric {
-        bench::service_adapter1::bench_servicerunner(
+impl BenchRunner for BenchRunnerBench1Impl {
+    async fn run_bench(&self) {
+        let metric = bench::service_adapter1::bench_servicerunner(
             &self.bench_config,
             self.tenant_config.rpc_addr.clone(),
             self.funded_payer.insecure_clone(),
             self.size_tx,
         )
-        .await
+        .await;
     }
 }
 
 
-impl BenchTrait<Metric> for BenchRunnerConfirmationRateImpl {}
+impl BenchTrait for BenchRunnerConfirmationRateImpl {}
 
 struct BenchRunnerConfirmationRateImpl {
     pub benchrun_at: SystemTime,
@@ -264,18 +250,19 @@ struct BenchRunnerConfirmationRateImpl {
     pub bench_config: BenchConfig,
     pub funded_payer: Arc<Keypair>,
     pub size_tx: TxSize,
+    pub metric: OnceCell<confirmation_rate::Metric>,
 }
 
 #[async_trait]
-impl BenchRunner<Metric> for BenchRunnerConfirmationRateImpl {
-    async fn run_bench(&self) -> Metric {
-        bench::service_adapter_new::benchnew_confirmation_rate_servicerunner(
+impl BenchRunner for BenchRunnerConfirmationRateImpl {
+    async fn run_bench(&self) {
+        let metric = bench::service_adapter_new::benchnew_confirmation_rate_servicerunner(
             &self.bench_config,
             self.tenant_config.rpc_addr.clone(),
             self.funded_payer.insecure_clone(),
-            self.size_tx,
         )
-            .await
+            .await;
+        self.metric.set(metric).unwrap();
     }
 }
 
