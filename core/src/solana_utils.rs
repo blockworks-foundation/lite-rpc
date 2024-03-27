@@ -40,7 +40,7 @@ pub async fn get_current_confirmed_slot(data_cache: &DataCache) -> u64 {
     let commitment = CommitmentConfig::confirmed();
     let BlockInformation { slot, .. } = data_cache
         .block_information_store
-        .get_latest_block(commitment)
+        .get_latest_block_information(commitment)
         .await;
     slot
 }

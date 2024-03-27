@@ -1,9 +1,12 @@
 use log::trace;
-use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use prometheus::{
+    core::GenericGauge, histogram_opts, opts, register_histogram, register_int_gauge, Histogram,
+};
 use quinn::{
     ClientConfig, Connection, ConnectionError, Endpoint, EndpointConfig, IdleTimeout, SendStream,
     TokioRuntime, TransportConfig, VarInt,
 };
+use serde::{Deserialize, Serialize};
 use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_sdk::pubkey::Pubkey;
 use std::{
@@ -17,6 +20,19 @@ use std::{
 use tokio::time::timeout;
 
 lazy_static::lazy_static! {
+    static ref NB_QUIC_0RTT_ATTEMPTED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_attempted", "Number of times 0RTT attempted")).unwrap();
+    static ref NB_QUIC_CONN_ATTEMPTED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_attempted", "Number of times conn attempted")).unwrap();
+    static ref NB_QUIC_0RTT_SUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_successful", "Number of times 0RTT successful")).unwrap();
+    static ref NB_QUIC_0RTT_FALLBACK_SUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_fallback_successful", "Number of times 0RTT successfully fallback to connection")).unwrap();
+        static ref NB_QUIC_0RTT_FALLBACK_UNSUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_0RTT_fallback_unsuccessful", "Number of times 0RTT unsuccessfully fallback to connection")).unwrap();
+    static ref NB_QUIC_CONN_SUCCESSFUL: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_successful", "Number of times conn successful")).unwrap();
+
     static ref NB_QUIC_0RTT_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_0RTT_timedout", "Number of times 0RTT timedout")).unwrap();
     static ref NB_QUIC_CONNECTION_TIMEOUT: GenericGauge<prometheus::core::AtomicI64> =
@@ -31,6 +47,26 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_quic_finish_timedout", "Number of times finish timedout")).unwrap();
     static ref NB_QUIC_FINISH_ERRORED: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_finish_errored", "Number of times finish errored")).unwrap();
+
+    static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
+
+    static ref TIME_OF_CONNECT: Histogram = register_histogram!(histogram_opts!(
+            "literpc_quic_connection_timer_histogram",
+            "Time to connect to the TPU port",
+        ))
+        .unwrap();
+    static ref TIME_TO_WRITE: Histogram = register_histogram!(histogram_opts!(
+        "literpc_quic_write_timer_histogram",
+        "Time to write on the TPU port",
+    ))
+    .unwrap();
+
+    static ref TIME_TO_FINISH: Histogram = register_histogram!(histogram_opts!(
+    "literpc_quic_finish_timer_histogram",
+    "Time to finish on the TPU port",
+))
+.unwrap();
 }
 
 const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
@@ -40,7 +76,7 @@ pub enum QuicConnectionError {
     ConnectionError { retry: bool },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 pub struct QuicConnectionParameters {
     pub connection_timeout: Duration,
     pub unistream_timeout: Duration,
@@ -49,6 +85,22 @@ pub struct QuicConnectionParameters {
     pub connection_retry_count: usize,
     pub max_number_of_connections: usize,
     pub number_of_transactions_per_unistream: usize,
+    pub unistreams_to_create_new_connection_in_percentage: u8,
+}
+
+impl Default for QuicConnectionParameters {
+    fn default() -> Self {
+        Self {
+            connection_timeout: Duration::from_millis(10000),
+            unistream_timeout: Duration::from_millis(10000),
+            write_timeout: Duration::from_millis(10000),
+            finalize_timeout: Duration::from_millis(10000),
+            connection_retry_count: 20,
+            max_number_of_connections: 8,
+            number_of_transactions_per_unistream: 1,
+            unistreams_to_create_new_connection_in_percentage: 10,
+        }
+    }
 }
 
 pub struct QuicConnectionUtils {}
@@ -107,10 +159,15 @@ impl QuicConnectionUtils {
         addr: SocketAddr,
         connection_timeout: Duration,
     ) -> anyhow::Result<Connection> {
+        let timer = TIME_OF_CONNECT.start_timer();
         let connecting = endpoint.connect(addr, "connect")?;
         match timeout(connection_timeout, connecting).await {
             Ok(res) => match res {
-                Ok(connection) => Ok(connection),
+                Ok(connection) => {
+                    timer.observe_duration();
+                    NB_QUIC_CONN_SUCCESSFUL.inc();
+                    Ok(connection)
+                }
                 Err(e) => {
                     NB_QUIC_CONNECTION_ERRORED.inc();
                     Err(e.into())
@@ -133,6 +190,7 @@ impl QuicConnectionUtils {
         let connection = match connecting.into_0rtt() {
             Ok((connection, zero_rtt)) => {
                 if (timeout(connection_timeout, zero_rtt).await).is_ok() {
+                    NB_QUIC_0RTT_SUCCESSFUL.inc();
                     connection
                 } else {
                     NB_QUIC_0RTT_TIMEOUT.inc();
@@ -142,7 +200,9 @@ impl QuicConnectionUtils {
             Err(connecting) => {
                 if let Ok(connecting_result) = timeout(connection_timeout, connecting).await {
                     if connecting_result.is_err() {
-                        NB_QUIC_CONNECTION_ERRORED.inc();
+                        NB_QUIC_0RTT_FALLBACK_UNSUCCESSFUL.inc();
+                    } else {
+                        NB_QUIC_0RTT_FALLBACK_SUCCESSFUL.inc();
                     }
                     connecting_result?
                 } else {
@@ -166,12 +226,15 @@ impl QuicConnectionUtils {
     ) -> Option<Connection> {
         for _ in 0..connection_retry_count {
             let conn = if already_connected {
+                NB_QUIC_0RTT_ATTEMPTED.inc();
                 Self::make_connection_0rtt(endpoint.clone(), addr, connection_timeout).await
             } else {
+                NB_QUIC_CONN_ATTEMPTED.inc();
                 Self::make_connection(endpoint.clone(), addr, connection_timeout).await
             };
             match conn {
                 Ok(conn) => {
+                    NB_QUIC_CONNECTIONS.inc();
                     return Some(conn);
                 }
                 Err(e) => {
@@ -191,6 +254,7 @@ impl QuicConnectionUtils {
         identity: Pubkey,
         connection_params: QuicConnectionParameters,
     ) -> Result<(), QuicConnectionError> {
+        let timer = TIME_TO_WRITE.start_timer();
         let write_timeout_res = timeout(
             connection_params.write_timeout,
             send_stream.write_all(tx.as_slice()),
@@ -206,6 +270,8 @@ impl QuicConnectionUtils {
                     );
                     NB_QUIC_WRITEALL_ERRORED.inc();
                     return Err(QuicConnectionError::ConnectionError { retry: true });
+                } else {
+                    timer.observe_duration();
                 }
             }
             Err(_) => {
@@ -215,6 +281,7 @@ impl QuicConnectionUtils {
             }
         }
 
+        let timer: prometheus::HistogramTimer = TIME_TO_FINISH.start_timer();
         let finish_timeout_res =
             timeout(connection_params.finalize_timeout, send_stream.finish()).await;
         match finish_timeout_res {
@@ -227,6 +294,8 @@ impl QuicConnectionUtils {
                     );
                     NB_QUIC_FINISH_ERRORED.inc();
                     return Err(QuicConnectionError::ConnectionError { retry: false });
+                } else {
+                    timer.observe_duration();
                 }
             }
             Err(_) => {

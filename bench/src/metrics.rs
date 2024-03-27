@@ -1,9 +1,13 @@
 use std::{
+    fmt::{self, Display},
     ops::{AddAssign, DivAssign},
     time::Duration,
 };
 
-use solana_sdk::slot_history::Slot;
+use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
+use solana_sdk::{signature::Signature, slot_history::Slot};
+use tracing::debug;
 
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct Metric {
@@ -142,4 +146,159 @@ pub struct TxMetricData {
     pub confirmed_slot: Slot,
     pub time_to_send_in_millis: u64,
     pub time_to_confirm_in_millis: u64,
+}
+
+#[derive(Clone, Debug)]
+pub enum PingThingCluster {
+    Mainnet,
+    Testnet,
+    Devnet,
+}
+
+impl PingThingCluster {
+    pub fn from_arg(cluster: String) -> Self {
+        match cluster.to_lowercase().as_str() {
+            "mainnet" => PingThingCluster::Mainnet,
+            "testnet" => PingThingCluster::Testnet,
+            "devnet" => PingThingCluster::Devnet,
+            _ => panic!("incorrect cluster name"),
+        }
+    }
+}
+
+impl PingThingCluster {
+    pub fn to_url_part(&self) -> String {
+        match self {
+            PingThingCluster::Mainnet => "mainnet",
+            PingThingCluster::Testnet => "testnet",
+            PingThingCluster::Devnet => "devnet",
+        }
+        .to_string()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum PingThingTxType {
+    Transfer,
+    Memo,
+}
+
+impl Display for PingThingTxType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            PingThingTxType::Transfer => write!(f, "transfer"),
+            PingThingTxType::Memo => write!(f, "memo"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PingThing {
+    pub cluster: PingThingCluster,
+    pub va_api_key: String,
+}
+
+/// request format see https://github.com/Block-Logic/ping-thing-client/blob/4c008c741164702a639c282f1503a237f7d95e64/ping-thing-client.mjs#L160
+#[derive(Debug, Serialize, Deserialize)]
+struct PingThingData {
+    pub time: u128,
+    pub signature: String,        // Tx sig
+    pub transaction_type: String, // 'transfer',
+    pub success: bool,            // txSuccess
+    pub application: String,      // e.g. 'web3'
+    pub commitment_level: String, // e.g. 'confirmed'
+    pub slot_sent: Slot,
+    pub slot_landed: Slot,
+}
+
+impl PingThing {
+    pub async fn submit_confirmed_stats(
+        &self,
+        tx_elapsed: Duration,
+        tx_sig: Signature,
+        tx_type: PingThingTxType,
+        tx_success: bool,
+        slot_sent: Slot,
+        slot_landed: Slot,
+    ) -> anyhow::Result<()> {
+        submit_stats_to_ping_thing(
+            self.cluster.clone(),
+            self.va_api_key.clone(),
+            tx_elapsed,
+            tx_sig,
+            tx_type,
+            tx_success,
+            slot_sent,
+            slot_landed,
+        )
+        .await
+    }
+}
+
+/// submits to https://www.validators.app/ping-thing?network=mainnet
+/// Assumes that the txn was sent on Mainnet and had the "confirmed" commitment level
+#[allow(clippy::too_many_arguments)]
+async fn submit_stats_to_ping_thing(
+    cluster: PingThingCluster,
+    va_api_key: String,
+    tx_elapsed: Duration,
+    tx_sig: Signature,
+    tx_type: PingThingTxType,
+    tx_success: bool,
+    slot_sent: Slot,
+    slot_landed: Slot,
+) -> anyhow::Result<()> {
+    let submit_data_request = PingThingData {
+        time: tx_elapsed.as_millis(),
+        signature: tx_sig.to_string(),
+        transaction_type: tx_type.to_string(),
+        success: tx_success,
+        application: "LiteRPC.bench".to_string(),
+        commitment_level: "confirmed".to_string(),
+        slot_sent,
+        slot_landed,
+    };
+
+    let client = reqwest::Client::new();
+    // cluster: 'mainnet'
+    let response = client
+        .post(format!(
+            "https://www.validators.app/api/v1/ping-thing/{}",
+            cluster.to_url_part()
+        ))
+        .header("Content-Type", "application/json")
+        .header("Token", va_api_key)
+        .json(&submit_data_request)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+
+    debug!("Sent data for tx {} to ping-thing server", tx_sig);
+    Ok(())
+}
+
+#[ignore]
+#[tokio::test]
+async fn test_ping_thing() {
+    let token = "".to_string();
+    assert!(token.is_empty(), "Empty token for ping thing test");
+
+    let ping_thing = PingThing {
+        cluster: PingThingCluster::Mainnet,
+        va_api_key: token,
+    };
+
+    ping_thing
+        .submit_confirmed_stats(
+            Duration::from_secs(2),
+            Signature::new_unique(),
+            PingThingTxType::Transfer,
+            true,
+            123,
+            124,
+        )
+        .await
+        .unwrap();
 }
