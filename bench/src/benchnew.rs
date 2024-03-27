@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use bench::{
     benches::{
@@ -119,7 +120,7 @@ async fn main() {
                 tx_size: size_tx,
                 cu_price_micro_lamports: cu_price,
             },
-            max_timeout_ms,
+            Duration::from_millis(max_timeout_ms),
             txns_per_round,
             num_of_runs,
         )
@@ -142,7 +143,7 @@ async fn main() {
                 tx_size: size_tx,
                 cu_price_micro_lamports: cu_price,
             },
-            max_timeout_ms,
+            Duration::from_millis(max_timeout_ms),
             num_of_runs,
             ping_thing_token.map(|t| PingThing {
                 cluster: PingThingCluster::Mainnet,

@@ -37,7 +37,7 @@ pub enum ConfirmationResponseFromRpc {
 pub async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
     txs: &[Transaction],
-    max_timeout_ms: u64,
+    max_timeout: Duration,
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
     trace!("Polling for next slot ..");
     let send_slot = poll_next_slot_start(rpc_client)
@@ -129,9 +129,9 @@ pub async fn send_and_confirm_bulk_transactions(
     // items get moved from pending_status_set to result_status_map
 
     let started_at = Instant::now();
-    let timeout_at = started_at + Duration::from_secs(60);
+    let timeout_at = started_at + max_timeout;
     'polling_loop: for iteration in 1.. {
-        let iteration_ends_at = started_at + Duration::from_millis(iteration * 200);
+        let iteration_ends_at = started_at + Duration::from_millis(iteration * 400);
         assert_eq!(
             pending_status_set.len() + result_status_map.len(),
             num_sent_ok,
