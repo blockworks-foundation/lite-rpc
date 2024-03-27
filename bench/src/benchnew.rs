@@ -110,7 +110,7 @@ async fn main() {
             rpc_url,
             size_tx,
             max_timeout_ms,
-            txs_per_run: txs_per_run,
+            txs_per_run,
             num_of_runs,
             cu_price,
         } => confirmation_rate(

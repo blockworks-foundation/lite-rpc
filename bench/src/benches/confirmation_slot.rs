@@ -7,7 +7,7 @@ use crate::benches::rpc_interface::{
 use crate::metrics::PingThing;
 use crate::{create_memo_tx, create_rng, BenchmarkTransactionParams, Rng8};
 use anyhow::anyhow;
-use log::{debug, info};
+use log::{debug, info, warn};
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Signature, Signer};
@@ -55,6 +55,7 @@ pub async fn confirmation_slot(
         "START BENCHMARK: confirmation_slot (prio_fees={})",
         tx_params.cu_price_micro_lamports
     );
+    warn!("THIS IS WORK IN PROGRESS");
     info!("RPC A: {}", obfuscate_rpcurl(&rpc_a_url));
     info!("RPC B: {}", obfuscate_rpcurl(&rpc_b_url));
 
