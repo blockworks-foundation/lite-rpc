@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::Duration;
 
 use bench::{
     benches::{
@@ -40,8 +41,11 @@ enum SubCommand {
         rpc_url: String,
         #[clap(short, long)]
         size_tx: TxSize,
+        /// Maximum confirmation time in milliseconds. After this, the txn is considered unconfirmed
+        #[clap(short, long, default_value_t = 15_000)]
+        max_timeout_ms: u64,
         #[clap(short, long)]
-        txns_per_round: usize,
+        txs_per_run: usize,
         #[clap(short, long)]
         num_of_runs: usize,
         /// The CU price in micro lamports
@@ -49,7 +53,7 @@ enum SubCommand {
         #[arg(short = 'f')]
         cu_price: u64,
     },
-    /// Compares the confirmation slot of txns sent to 2 different RPCs
+    /// Compares the confirmation slot of txs sent to 2 different RPCs
     ConfirmationSlot {
         #[clap(short, long)]
         payer_path: PathBuf,
@@ -105,7 +109,8 @@ async fn main() {
             payer_path,
             rpc_url,
             size_tx,
-            txns_per_round,
+            max_timeout_ms,
+            txs_per_run,
             num_of_runs,
             cu_price,
         } => confirmation_rate(
@@ -115,7 +120,8 @@ async fn main() {
                 tx_size: size_tx,
                 cu_price_micro_lamports: cu_price,
             },
-            txns_per_round,
+            Duration::from_millis(max_timeout_ms),
+            txs_per_run,
             num_of_runs,
         )
         .await
@@ -137,7 +143,7 @@ async fn main() {
                 tx_size: size_tx,
                 cu_price_micro_lamports: cu_price,
             },
-            max_timeout_ms,
+            Duration::from_millis(max_timeout_ms),
             num_of_runs,
             ping_thing_token.map(|t| PingThing {
                 cluster: PingThingCluster::Mainnet,

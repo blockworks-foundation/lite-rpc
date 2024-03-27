@@ -19,7 +19,10 @@ RUN cargo build --release --bin lite-rpc --bin solana-lite-rpc-quic-forward-prox
 
 FROM debian:bookworm-slim as run
 RUN apt-get update && apt-get -y install ca-certificates libc6 libssl3 libssl-dev openssl
+
 COPY --from=build /app/target/release/solana-lite-rpc-quic-forward-proxy /usr/local/bin/
 COPY --from=build /app/target/release/lite-rpc /usr/local/bin/
+COPY openssl-legacy.cnf /etc/ssl/openssl-legacy.cnf
 
+ENV OPENSSL_CONF=/etc/ssl/openssl-legacy.cnf
 CMD lite-rpc

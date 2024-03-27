@@ -13,15 +13,7 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::{
     broadcast::{Receiver, Sender},
     Notify,
@@ -54,9 +46,9 @@ struct ActiveConnection {
     endpoints: RotatingQueue<Endpoint>,
     identity: Pubkey,
     tpu_address: SocketAddr,
-    exit_signal: Arc<AtomicBool>,
     data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
+    exit_notifier: Arc<Notify>,
 }
 
 impl ActiveConnection {
@@ -71,9 +63,9 @@ impl ActiveConnection {
             endpoints,
             tpu_address,
             identity,
-            exit_signal: Arc::new(AtomicBool::new(false)),
             data_cache,
             connection_parameters,
+            exit_notifier: Arc::new(Notify::new()),
         }
     }
 
@@ -81,13 +73,13 @@ impl ActiveConnection {
     async fn listen(
         &self,
         mut transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_notifier: Arc<Notify>,
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
     ) {
         let fill_notify = Arc::new(Notify::new());
 
         let identity = self.identity;
+        let exit_notifier = self.exit_notifier.clone();
 
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
 
@@ -98,13 +90,12 @@ impl ActiveConnection {
             identity_stakes.stakes,
             identity_stakes.total_stakes,
         );
-        let exit_signal = self.exit_signal.clone();
         let connection_pool = QuicConnectionPool::new(
             identity,
             self.endpoints.clone(),
             addr,
             self.connection_parameters,
-            exit_signal.clone(),
+            exit_notifier.clone(),
             max_number_of_connections,
             max_uni_stream_connections,
         );
@@ -115,12 +106,19 @@ impl ActiveConnection {
             let priorization_heap = priorization_heap.clone();
             let data_cache = self.data_cache.clone();
             let fill_notify = fill_notify.clone();
-            let exit_signal = exit_signal.clone();
+            let exit_notifier = exit_notifier.clone();
             tokio::spawn(async move {
                 let mut current_blockheight =
                     data_cache.block_information_store.get_last_blockheight();
-                while !exit_signal.load(Ordering::Relaxed) {
-                    let tx = transaction_reciever.recv().await;
+                loop {
+                    let tx = tokio::select! {
+                        tx = transaction_reciever.recv() => {
+                            tx
+                        },
+                        _ = exit_notifier.notified() => {
+                            break;
+                        }
+                    };
                     match tx {
                         Ok(transaction_sent_info) => {
                             if data_cache
@@ -142,9 +140,10 @@ impl ActiveConnection {
                                 // give more priority to transaction sender
                                 tokio::time::sleep(Duration::from_micros(50)).await;
                                 // remove all expired transactions from the queue
-                                priorization_heap
+                                let elements_removed = priorization_heap
                                     .remove_expired_transactions(current_blockheight)
                                     .await;
+                                TRANSACTIONS_IN_HEAP.sub(elements_removed as i64);
                             }
                         }
                         Err(e) => {
@@ -167,26 +166,16 @@ impl ActiveConnection {
                 let _permit = permit;
                 connection.get_connection().await;
             });
-        }
+        };
 
         'main_loop: loop {
-            // exit signal set
-            if exit_signal.load(Ordering::Relaxed) {
-                break;
-            }
-
             tokio::select! {
                 _ = fill_notify.notified() => {
 
-                    loop {
-                        // exit signal set
-                        if exit_signal.load(Ordering::Relaxed) {
-                            break 'main_loop;
-                        }
-
+                    'process_heap: loop {
                         let Some(tx) = priorization_heap.pop().await else {
                             // wait to get notification from fill event
-                            break;
+                            break 'process_heap;
                         };
                         TRANSACTIONS_IN_HEAP.dec();
 
@@ -225,7 +214,7 @@ impl ActiveConnection {
             }
         }
 
-        heap_filler_task.abort();
+        let _ = heap_filler_task.await;
         let elements_removed = priorization_heap.clear().await;
         TRANSACTIONS_IN_HEAP.sub(elements_removed as i64);
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
@@ -234,26 +223,20 @@ impl ActiveConnection {
     pub fn start_listening(
         &self,
         transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_notifier: Arc<Notify>,
         identity_stakes: IdentityStakesData,
     ) {
         let addr = self.tpu_address;
         let this = self.clone();
         tokio::spawn(async move {
-            this.listen(transaction_reciever, exit_notifier, addr, identity_stakes)
+            this.listen(transaction_reciever, addr, identity_stakes)
                 .await;
         });
     }
 }
 
-struct ActiveConnectionWithExitNotifier {
-    pub active_connection: ActiveConnection,
-    pub exit_notifier: Arc<Notify>,
-}
-
 pub struct TpuConnectionManager {
     endpoints: RotatingQueue<Endpoint>,
-    identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitNotifier>>>,
+    identity_to_active_connection: Arc<DashMap<Pubkey, ActiveConnection>>,
 }
 
 impl TpuConnectionManager {
@@ -291,21 +274,10 @@ impl TpuConnectionManager {
                     connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
-                let exit_notifier = Arc::new(Notify::new());
-
                 let broadcast_receiver = broadcast_sender.subscribe();
-                active_connection.start_listening(
-                    broadcast_receiver,
-                    exit_notifier.clone(),
-                    identity_stakes,
-                );
-                self.identity_to_active_connection.insert(
-                    *identity,
-                    Arc::new(ActiveConnectionWithExitNotifier {
-                        active_connection,
-                        exit_notifier,
-                    }),
-                );
+                active_connection.start_listening(broadcast_receiver, identity_stakes);
+                self.identity_to_active_connection
+                    .insert(*identity, active_connection);
             }
         }
 
@@ -314,11 +286,7 @@ impl TpuConnectionManager {
             if !connections_to_keep.contains_key(key) {
                 trace!("removing a connection for {}", key.to_string());
                 // ignore error for exit channel
-                value
-                    .active_connection
-                    .exit_signal
-                    .store(true, Ordering::Relaxed);
-                value.exit_notifier.notify_one();
+                value.exit_notifier.notify_waiters();
                 false
             } else {
                 true
