@@ -6,6 +6,8 @@ use log::{debug, warn};
 use rand::{distributions::Alphanumeric, prelude::Distribution, SeedableRng};
 use solana_rpc_client::{nonblocking::rpc_client::RpcClient, rpc_client::SerializableTransaction};
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_sdk::message::v0;
+use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     hash::Hash,
@@ -190,13 +192,26 @@ pub fn generate_random_string(rng: &mut Rng8, n_chars: usize) -> Vec<u8> {
 }
 
 #[inline]
+pub fn generate_random_strings(
+    num_of_txs: usize,
+    random_seed: Option<u64>,
+    n_chars: usize,
+) -> Vec<Vec<u8>> {
+    let seed = random_seed.map_or(0, |x| x);
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+    (0..num_of_txs)
+        .map(|_| Alphanumeric.sample_iter(&mut rng).take(n_chars).collect())
+        .collect()
+}
+
+#[inline]
 pub fn generate_txs(
     num_of_txs: usize,
     payer: &Keypair,
     blockhash: Hash,
     rng: &mut Rng8,
     tx_params: &BenchmarkTransactionParams,
-) -> Vec<Transaction> {
+) -> Vec<VersionedTransaction> {
     (0..num_of_txs)
         .map(|_| create_memo_tx(payer, blockhash, rng, tx_params))
         .collect()
@@ -207,7 +222,7 @@ pub fn create_memo_tx(
     blockhash: Hash,
     rng: &mut Rng8,
     tx_params: &BenchmarkTransactionParams,
-) -> Transaction {
+) -> VersionedTransaction {
     let rand_str = generate_random_string(rng, tx_params.tx_size.memo_size());
 
     match tx_params.tx_size {
@@ -231,19 +246,22 @@ pub fn create_memo_tx_small(
     payer: &Keypair,
     blockhash: Hash,
     cu_price_micro_lamports: u64,
-) -> Transaction {
+) -> VersionedTransaction {
     let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
-
     let cu_budget_ix: Instruction =
         ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
     // Program consumed: 12775 of 13700 compute units
     let cu_limit_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(14000);
     let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
-    let message = Message::new(
+    let message = v0::Message::try_compile(
+        &payer.pubkey(),
         &[cu_budget_ix, cu_limit_ix, instruction],
-        Some(&payer.pubkey()),
-    );
-    Transaction::new(&[payer], message, blockhash)
+        &[],
+        blockhash,
+    )
+    .unwrap();
+    let versioned_message = solana_sdk::message::VersionedMessage::V0(message);
+    VersionedTransaction::try_new(versioned_message, &[&payer]).unwrap()
 }
 
 pub fn create_memo_tx_large(
@@ -251,7 +269,7 @@ pub fn create_memo_tx_large(
     payer: &Keypair,
     blockhash: Hash,
     cu_price_micro_lamports: u64,
-) -> Transaction {
+) -> VersionedTransaction {
     let accounts = (0..8).map(|_| Keypair::new()).collect_vec();
 
     let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
@@ -267,15 +285,18 @@ pub fn create_memo_tx_large(
             .map(|keypair| AccountMeta::new_readonly(keypair.pubkey(), true))
             .collect_vec(),
     );
-    let message = Message::new(
+    let message = v0::Message::try_compile(
+        &payer.pubkey(),
         &[cu_budget_ix, cu_limit_ix, instruction],
-        Some(&payer.pubkey()),
-    );
-
+        &[],
+        blockhash,
+    )
+    .unwrap();
+    let versioned_message = solana_sdk::message::VersionedMessage::V0(message);
     let mut signers = vec![payer];
     signers.extend(accounts.iter());
 
-    Transaction::new(&signers, message, blockhash)
+    VersionedTransaction::try_new(versioned_message, &signers).unwrap()
 }
 
 #[test]
@@ -284,12 +305,12 @@ fn transaction_size_small() {
     let payer_keypair = Keypair::from_base58_string(
         "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
     );
-    let mut rng = create_rng(Some(42));
-    let rand_string = generate_random_string(&mut rng, 10);
-    let priority_fee = 100;
+    let seed = 42;
+    let random_strings = generate_random_strings(1, Some(seed), 10);
+    let rand_string = random_strings.first().unwrap();
+    let tx = create_memo_tx_small(rand_string, &payer_keypair, blockhash, 300);
 
-    let tx = create_memo_tx_small(&rand_string, &payer_keypair, blockhash, priority_fee);
-    assert_eq!(bincode::serialized_size(&tx).unwrap(), 231);
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 233);
 }
 
 #[test]
@@ -298,10 +319,10 @@ fn transaction_size_large() {
     let payer_keypair = Keypair::from_base58_string(
         "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
     );
-    let mut rng = create_rng(Some(42));
-    let rand_string = generate_random_string(&mut rng, 240);
-    let priority_fee = 100;
+    let seed = 42;
+    let random_strings = generate_random_strings(1, Some(seed), 232);
+    let rand_string = random_strings.first().unwrap();
+    let tx = create_memo_tx_large(rand_string, &payer_keypair, blockhash, 300);
 
-    let tx = create_memo_tx_large(&rand_string, &payer_keypair, blockhash, priority_fee);
-    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1238);
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1232);
 }

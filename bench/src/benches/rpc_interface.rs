@@ -10,7 +10,7 @@ use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Signature;
-use solana_sdk::transaction::Transaction;
+use solana_sdk::transaction::VersionedTransaction;
 use solana_transaction_status::TransactionConfirmationStatus;
 use std::collections::{HashMap, HashSet};
 use std::iter::zip;
@@ -36,7 +36,7 @@ pub enum ConfirmationResponseFromRpc {
 
 pub async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
-    txs: &[Transaction],
+    txs: &[VersionedTransaction],
     max_timeout: Duration,
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
     trace!("Polling for next slot ..");

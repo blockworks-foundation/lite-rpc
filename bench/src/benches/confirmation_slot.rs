@@ -11,7 +11,7 @@ use log::{debug, info, warn};
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Signature, Signer};
-use solana_sdk::transaction::Transaction;
+use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use tokio::time::{sleep, Instant};
 use url::Url;
@@ -146,7 +146,7 @@ async fn create_tx(
     payer: &Keypair,
     rng: &mut Rng8,
     tx_params: &BenchmarkTransactionParams,
-) -> anyhow::Result<Transaction> {
+) -> anyhow::Result<VersionedTransaction> {
     let (blockhash, _) = rpc
         .get_latest_blockhash_with_commitment(CommitmentConfig::confirmed())
         .await?;
@@ -156,7 +156,7 @@ async fn create_tx(
 
 async fn send_and_confirm_transaction(
     rpc: &RpcClient,
-    tx: Transaction,
+    tx: VersionedTransaction,
     max_timeout: Duration,
 ) -> anyhow::Result<ConfirmationResponseFromRpc> {
     let result_vec: Vec<(Signature, ConfirmationResponseFromRpc)> =
