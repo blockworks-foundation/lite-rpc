@@ -4422,6 +4422,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tonic-health",
  "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
@@ -4610,6 +4611,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]

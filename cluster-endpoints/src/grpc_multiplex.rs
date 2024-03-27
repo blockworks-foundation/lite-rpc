@@ -16,10 +16,9 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
-use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
@@ -55,7 +54,7 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
 fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     processed_block_sender: async_channel::Sender<ProducedBlock>,
-    exit_notfier: Arc<Notify>,
+    exit_notfier: CancellationToken,
 ) -> Vec<AnyhowJoinHandle> {
     let commitment_config = CommitmentConfig::processed();
 
@@ -139,7 +138,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let (processed_block_sender, processed_block_reciever) =
                     async_channel::unbounded::<ProducedBlock>();
 
-                let exit_notify = Arc::new(Notify::new());
+                let exit_notify = CancellationToken::new();
                 let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
                     &grpc_sources,
                     processed_block_sender,
@@ -245,7 +244,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         }
                     }
                 }
-                exit_notify.notify_waiters();
+                exit_notify.cancel();
                 futures::future::join_all(processed_blocks_tasks).await;
             }
         })

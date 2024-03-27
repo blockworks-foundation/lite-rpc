@@ -33,7 +33,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::{collections::HashMap, sync::Arc};
-use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::{SubscribeRequestFilterSlots, SubscribeUpdateSlot};
 
@@ -298,7 +298,7 @@ pub fn create_block_processing_task(
     grpc_x_token: Option<String>,
     block_sx: async_channel::Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
-    exit_notfier: Arc<Notify>,
+    exit_notfier: CancellationToken,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
         loop {
@@ -361,7 +361,7 @@ pub fn create_block_processing_task(
                             }
                         };
                     },
-                    _ = exit_notfier.notified() => {
+                    _ = exit_notfier.cancelled() => {
                         break;
                     }
                 }
