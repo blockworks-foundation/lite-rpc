@@ -15,7 +15,7 @@ lazy_static::lazy_static! {
 }
 
 // TODO implement
-pub async fn publish_metrics_on_prometheus(
+pub async fn _publish_metrics_on_prometheus(
     tenant_config: &TenantConfig,
     _bench_config: &BenchConfig,
     metric: &Metric,

@@ -1,13 +1,11 @@
 use crate::args::TenantConfig;
 use crate::postgres::postgres_session_cache::PostgresSessionCache;
-use bench::metrics;
-use bench::benches::confirmation_rate;
+use crate::{BenchMetricsPostgresSaver, BenchRunnerBench1Impl, BenchRunnerConfirmationRateImpl};
+use async_trait::async_trait;
 use bench::service_adapter1::BenchConfig;
 use log::warn;
 use postgres_types::ToSql;
 use std::time::SystemTime;
-use async_trait::async_trait;
-use crate::{BenchMetricsPostgresSaver, BenchRunner, BenchRunnerBench1Impl, BenchRunnerConfirmationRateImpl};
 
 #[allow(clippy::upper_case_acronyms)]
 pub enum BenchRunStatus {
@@ -60,11 +58,12 @@ pub async fn upsert_benchrun_status(
     Ok(())
 }
 
-
-
 #[async_trait]
 impl BenchMetricsPostgresSaver for BenchRunnerBench1Impl {
-    async fn try_save_results_postgres(&self, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
+    async fn try_save_results_postgres(
+        &self,
+        postgres_session: &PostgresSessionCache,
+    ) -> anyhow::Result<()> {
         let metric = self.metric.get().expect("metric not set");
         let metricjson = serde_json::to_value(metric).unwrap();
         let values: &[&(dyn ToSql + Sync)] = &[
@@ -98,15 +97,16 @@ impl BenchMetricsPostgresSaver for BenchRunnerBench1Impl {
             )
             .await?;
 
-
         Ok(())
     }
 }
 
-
 #[async_trait]
 impl BenchMetricsPostgresSaver for BenchRunnerConfirmationRateImpl {
-    async fn try_save_results_postgres(&self, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
+    async fn try_save_results_postgres(
+        &self,
+        postgres_session: &PostgresSessionCache,
+    ) -> anyhow::Result<()> {
         let metric = self.metric.get().expect("metric not set");
         let metricjson = serde_json::to_value(metric).unwrap();
         let values: &[&(dyn ToSql + Sync)] = &[
@@ -116,8 +116,8 @@ impl BenchMetricsPostgresSaver for BenchRunnerConfirmationRateImpl {
             &(metric.txs_sent as i64),
             &(metric.txs_confirmed as i64),
             &(metric.txs_un_confirmed as i64),
-            &(metric.average_confirmation_time as f32),
-            &(metric.average_slot_confirmation_time as f32),
+            &(metric.average_confirmation_time),
+            &(metric.average_slot_confirmation_time),
             &metricjson,
         ];
         postgres_session
@@ -143,8 +143,6 @@ impl BenchMetricsPostgresSaver for BenchRunnerConfirmationRateImpl {
             )
             .await?;
 
-
         Ok(())
     }
 }
-
