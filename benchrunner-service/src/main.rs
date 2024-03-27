@@ -93,30 +93,59 @@ async fn main() {
         let jh_runner = tokio::spawn(async move {
             let mut interval = tokio::time::interval(bench_interval);
             for run_count in 1.. {
-                let bench_config = bench_configs[run_count % bench_configs.len()].clone();
-                debug!(
-                    "Invoke bench execution (#{}) on tenant <{}> using {}",
-                    run_count, tenant_id, bench_config
-                );
+                const NUM_BENCH_IMPLS: usize = 2;
+
                 let benchrun_at = SystemTime::now();
 
-                let bench_impl: Box<dyn BenchTrait<Metric>> = if true {
-                    Box::new(BenchRunnerBench1Impl {
-                        benchrun_at,
-                        tenant_config: tenant_config.clone(),
-                        bench_config: bench_config.clone(),
-                        funded_payer: funded_payer.clone(),
-                        size_tx,
-                    })
-                } else {
-                   Box::new(BenchRunnerConfirmationRateImpl {
-                        benchrun_at,
-                        tenant_config: tenant_config.clone(),
-                        bench_config: bench_config.clone(),
-                        funded_payer: funded_payer.clone(),
-                        size_tx,
-                    })
+                let factors = factorize(run_count, &[bench_configs.len(), NUM_BENCH_IMPLS]);
+
+                let bench_config = bench_configs[factors[0]].clone();
+
+                let bench_impl: Box<dyn BenchTrait<Metric>> = match factors[1] {
+                    0 => {
+                        Box::new(BenchRunnerBench1Impl {
+                            benchrun_at,
+                            tenant_config: tenant_config.clone(),
+                            bench_config: bench_config.clone(),
+                            funded_payer: funded_payer.clone(),
+                            size_tx,
+                        })
+                    }
+                    1 => {
+                        Box::new(BenchRunnerConfirmationRateImpl {
+                            benchrun_at,
+                            tenant_config: tenant_config.clone(),
+                            bench_config: bench_config.clone(),
+                            funded_payer: funded_payer.clone(),
+                            size_tx,
+                        })
+                    }
+                    _ => unreachable!(),
                 };
+
+                debug!(
+                    "Invoke bench execution (#{}) on tenant <{}> using {}",
+                    run_count, tenant_id, &bench_config
+                );
+
+
+                // let bench_impl: Box<dyn BenchTrait<Metric>> = if true {
+                //     Box::new(BenchRunnerBench1Impl {
+                //         benchrun_at,
+                //         tenant_config: tenant_config.clone(),
+                //         bench_config: bench_config.clone(),
+                //         funded_payer: funded_payer.clone(),
+                //         size_tx,
+                //     })
+                // } else {
+                //    Box::new(BenchRunnerConfirmationRateImpl {
+                //         benchrun_at,
+                //         tenant_config: tenant_config.clone(),
+                //         bench_config: bench_config.clone(),
+                //         funded_payer: funded_payer.clone(),
+                //         size_tx,
+                //     })
+                // };
 
                 if let Some(postgres_session) = postgres_session.as_ref() {
                     let _dbstatus = upsert_benchrun_status(
@@ -163,6 +192,29 @@ async fn main() {
     } // -- END tenant loop
 
     join_all(jh_tenant_task).await;
+}
+
+
+
+// dimensions: least-significant first
+fn factorize(i: usize, dimensions: &[usize]) -> Vec<usize> {
+    let mut i = i;
+    let mut result = Vec::new();
+    for &dim in dimensions {
+        result.push(i % dim);
+        i /= dim;
+    }
+    result
+}
+
+#[test]
+fn test_factorize() {
+    assert_eq!(factorize(0, &[2, 3]), vec![0, 0]);
+    assert_eq!(factorize(1, &[2, 3]), vec![1, 0]);
+    assert_eq!(factorize(2, &[2, 3]), vec![0, 1]);
+    assert_eq!(factorize(3, &[2, 3]), vec![1, 1]);
+    assert_eq!(factorize(4, &[2, 3]), vec![0, 2]);
+    assert_eq!(factorize(5, &[2, 3]), vec![1, 2]);
 }
 
 // R: result
