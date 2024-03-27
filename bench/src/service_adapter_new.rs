@@ -22,7 +22,7 @@ pub async fn benchnew_confirmation_rate_servicerunner(
         cu_price_micro_lamports: bench_config.cu_price_micro_lamports,
     };
     let max_timeout = Duration::from_secs(60);
-    let result = send_bulk_txs_and_wait(&rpc, &funded_payer, 1, &tx_params, max_timeout).await;
+    let result = send_bulk_txs_and_wait(&rpc, &funded_payer, bench_config.tx_count, &tx_params, max_timeout).await;
     result.unwrap_or_else(|err| {
         error!("Failed to send bulk txs and wait: {}", err);
         confirmation_rate::Metric::default()

@@ -99,13 +99,13 @@ async fn main() {
 
                 let benchrun_at = SystemTime::now();
 
-                let permutation = factorize(run_count, &[bench_configs.len(), NUM_BENCH_IMPLS]);
+                let permutation = factorize(run_count, &[NUM_BENCH_IMPLS, bench_configs.len()]);
 
-                let bench_config = bench_configs[permutation[0]].clone();
+                let bench_config = bench_configs[permutation[1]].clone();
 
-                let bench_impl: Box<dyn BenchTrait> = match permutation[1] {
+                let bench_impl: Box<dyn BenchTrait> = match permutation[0] {
                     0 => {
-                        Box::new(BenchRunnerBench1Impl {
+                        Box::new(BenchRunnerConfirmationRateImpl {
                             benchrun_at,
                             tenant_config: tenant_config.clone(),
                             bench_config: bench_config.clone(),
@@ -115,7 +115,7 @@ async fn main() {
                         })
                     }
                     1 => {
-                        Box::new(BenchRunnerConfirmationRateImpl {
+                        Box::new(BenchRunnerBench1Impl {
                             benchrun_at,
                             tenant_config: tenant_config.clone(),
                             bench_config: bench_config.clone(),
@@ -238,6 +238,7 @@ impl BenchRunner for BenchRunnerBench1Impl {
             self.size_tx,
         )
         .await;
+        self.metric.set(metric).unwrap();
     }
 }
 

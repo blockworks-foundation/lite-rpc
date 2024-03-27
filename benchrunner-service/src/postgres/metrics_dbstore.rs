@@ -83,7 +83,7 @@ impl BenchMetricsPostgresSaver for BenchRunnerBench1Impl {
             .execute(
                 r#"
             INSERT INTO
-            benchrunner.bench_metrics (
+            benchrunner.bench_metrics_bench1 (
                 tenant,
                 ts,
                 prio_fees,
@@ -107,7 +107,44 @@ impl BenchMetricsPostgresSaver for BenchRunnerBench1Impl {
 #[async_trait]
 impl BenchMetricsPostgresSaver for BenchRunnerConfirmationRateImpl {
     async fn try_save_results_postgres(&self, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
-        todo!();
+        let metric = self.metric.get().expect("metric not set");
+        let metricjson = serde_json::to_value(metric).unwrap();
+        let values: &[&(dyn ToSql + Sync)] = &[
+            &self.tenant_config.tenant_id,
+            &self.benchrun_at,
+            &(self.bench_config.cu_price_micro_lamports as i64),
+            &(metric.txs_sent as i64),
+            &(metric.txs_confirmed as i64),
+            &(metric.txs_un_confirmed as i64),
+            &(metric.average_confirmation_time as f32),
+            &(metric.average_slot_confirmation_time as f32),
+            &metricjson,
+        ];
+        postgres_session
+            .get_session()
+            .await?
+            .execute(
+                r#"
+            INSERT INTO
+            benchrunner.bench_metrics_confirmation_rate (
+                tenant,
+                ts,
+                prio_fees,
+                txs_sent,
+                txs_confirmed,
+                txs_un_confirmed,
+                average_confirmation_time_ms,
+                average_slot_confirmation_time_ms,
+                metric_json
+             )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        "#,
+                values,
+            )
+            .await?;
+
+
+        Ok(())
     }
 }
 
