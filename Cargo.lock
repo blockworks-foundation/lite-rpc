@@ -1779,7 +1779,7 @@ dependencies = [
 [[package]]
 name = "geyser-grpc-connector"
 version = "0.10.1+yellowstone.1.12"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.3+yellowstone.1.12+solana.1.17.15-hacked-windowsize4#ce6ca26028c4466e0236657a76b9db2cccf4d535"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.3+yellowstone.1.12+solana.1.17.15-hacked-windowsize5#85258149711ec75a58be9e7bd2c3f732bd3b074f"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1792,6 +1792,7 @@ dependencies = [
  "merge-streams",
  "solana-sdk",
  "tokio",
+ "tokio-util",
  "tonic-health",
  "tracing",
  "url",
@@ -4632,6 +4633,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tokio-util",
  "tonic-health",
  "tracing",
  "yellowstone-grpc-client",
@@ -4808,6 +4810,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
