@@ -108,6 +108,7 @@ impl LiteBridge {
 
         let http_server_handle = ServerBuilder::default()
             .http_only()
+            .max_connections(1_000_000)
             .build(http_addr.clone())
             .await?
             .start(rpc)?;

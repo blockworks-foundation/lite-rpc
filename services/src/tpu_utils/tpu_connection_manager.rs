@@ -13,15 +13,7 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
-use std::{
-    collections::HashMap,
-    net::SocketAddr,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    time::Duration,
-};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::{
     broadcast::{Receiver, Sender},
     Notify,
@@ -55,9 +47,9 @@ struct ActiveConnection {
     endpoints: RotatingQueue<Endpoint>,
     identity: Pubkey,
     tpu_address: SocketAddr,
-    exit_signal: Arc<AtomicBool>,
     data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
+    exit_notifier: Arc<Notify>,
 }
 
 impl ActiveConnection {
@@ -72,9 +64,9 @@ impl ActiveConnection {
             endpoints,
             tpu_address,
             identity,
-            exit_signal: Arc::new(AtomicBool::new(false)),
             data_cache,
             connection_parameters,
+            exit_notifier: Arc::new(Notify::new()),
         }
     }
 
@@ -99,13 +91,12 @@ impl ActiveConnection {
             identity_stakes.stakes,
             identity_stakes.total_stakes,
         );
-        let exit_signal = self.exit_signal.clone();
         let connection_pool = QuicConnectionPool::new(
             identity,
             self.endpoints.clone(),
             addr,
             self.connection_parameters,
-            exit_signal.clone(),
+            exit_notifier.clone(),
             max_number_of_connections,
             max_uni_stream_connections,
         );
@@ -116,12 +107,19 @@ impl ActiveConnection {
             let priorization_heap = priorization_heap.clone();
             let data_cache = self.data_cache.clone();
             let fill_notify = fill_notify.clone();
-            let exit_signal = exit_signal.clone();
+            let exit_notifier = exit_notifier.clone();
             tokio::spawn(async move {
                 let mut current_blockheight =
                     data_cache.block_information_store.get_last_blockheight();
-                while !exit_signal.load(Ordering::Relaxed) {
-                    let tx = transaction_reciever.recv().await;
+                loop {
+                    let tx = tokio::select! {
+                        tx = transaction_reciever.recv() => {
+                            tx
+                        },
+                        _ = exit_notifier.notified() => {
+                            break;
+                        }
+                    };
                     match tx {
                         Ok(transaction_sent_info) => {
                             if data_cache
@@ -172,20 +170,10 @@ impl ActiveConnection {
         };
 
         'main_loop: loop {
-            // exit signal set
-            if exit_signal.load(Ordering::Relaxed) {
-                break;
-            }
-
             tokio::select! {
                 _ = fill_notify.notified() => {
 
                     'process_heap: loop {
-                        // exit signal set
-                        if exit_signal.load(Ordering::Relaxed) {
-                            break 'main_loop;
-                        }
-
                         let Some(tx) = priorization_heap.pop().await else {
                             // wait to get notification from fill event
                             break 'process_heap;
@@ -248,14 +236,9 @@ impl ActiveConnection {
     }
 }
 
-struct ActiveConnectionWithExitNotifier {
-    pub active_connection: ActiveConnection,
-    pub exit_notifier: Arc<Notify>,
-}
-
 pub struct TpuConnectionManager {
     endpoints: RotatingQueue<Endpoint>,
-    identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitNotifier>>>,
+    identity_to_active_connection: Arc<DashMap<Pubkey, ActiveConnection>>,
 }
 
 impl TpuConnectionManager {
@@ -301,13 +284,8 @@ impl TpuConnectionManager {
                     exit_notifier.clone(),
                     identity_stakes,
                 );
-                self.identity_to_active_connection.insert(
-                    *identity,
-                    Arc::new(ActiveConnectionWithExitNotifier {
-                        active_connection,
-                        exit_notifier,
-                    }),
-                );
+                self.identity_to_active_connection
+                    .insert(*identity, active_connection);
             }
         }
 
@@ -316,11 +294,7 @@ impl TpuConnectionManager {
             if !connections_to_keep.contains_key(key) {
                 trace!("removing a connection for {}", key.to_string());
                 // ignore error for exit channel
-                value
-                    .active_connection
-                    .exit_signal
-                    .store(true, Ordering::Relaxed);
-                value.exit_notifier.notify_one();
+                value.exit_notifier.notify_waiters();
                 false
             } else {
                 true
