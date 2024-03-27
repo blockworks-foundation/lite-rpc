@@ -56,6 +56,7 @@ use solana_lite_rpc_services::tx_sender::TxSender;
 use lite_rpc::postgres_logger;
 use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
+use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
@@ -498,14 +499,6 @@ fn parse_host_port(host_port: &str) -> Result<SocketAddr, String> {
     } else {
         Ok(addrs[0])
     }
-}
-
-// http://mango.rpcpool.com/c232ab232ba2323
-fn obfuscate_rpcurl(rpc_addr: &str) -> String {
-    if rpc_addr.contains("rpcpool.com") {
-        return rpc_addr.replacen(char::is_numeric, "X", 99);
-    }
-    rpc_addr.to_string()
 }
 
 fn setup_tracing_subscriber() {

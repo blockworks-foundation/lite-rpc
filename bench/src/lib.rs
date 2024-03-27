@@ -20,6 +20,7 @@ use solana_sdk::{
 use solana_transaction_status::TransactionStatus;
 use std::{str::FromStr, time::Duration};
 use tokio::time::Instant;
+use tx_size::TxSize;
 
 pub mod bench1;
 pub mod benches;
@@ -51,6 +52,11 @@ pub struct Args {
     // choose between small (179 bytes) and large (1186 bytes) transactions
     #[arg(short = 'L', long, default_value_t = false)]
     pub large_transactions: bool,
+}
+
+pub struct BenchmarkTransactionParams {
+    pub tx_size: TxSize,
+    pub cu_price_micro_lamports: u64,
 }
 
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
@@ -189,10 +195,10 @@ pub fn generate_txs(
     payer: &Keypair,
     blockhash: Hash,
     rng: &mut Rng8,
-    size: tx_size::TxSize,
+    tx_params: &BenchmarkTransactionParams,
 ) -> Vec<Transaction> {
     (0..num_of_txs)
-        .map(|_| create_memo_tx(payer, blockhash, rng, size))
+        .map(|_| create_memo_tx(payer, blockhash, rng, tx_params))
         .collect()
 }
 
@@ -200,38 +206,58 @@ pub fn create_memo_tx(
     payer: &Keypair,
     blockhash: Hash,
     rng: &mut Rng8,
-    size: tx_size::TxSize,
+    tx_params: &BenchmarkTransactionParams,
 ) -> Transaction {
-    let rand_str = generate_random_string(rng, size.memo_size());
+    let rand_str = generate_random_string(rng, tx_params.tx_size.memo_size());
 
-    match size {
-        tx_size::TxSize::Small => create_memo_tx_small(&rand_str, payer, blockhash),
-        tx_size::TxSize::Large => create_memo_tx_large(&rand_str, payer, blockhash),
+    match tx_params.tx_size {
+        tx_size::TxSize::Small => create_memo_tx_small(
+            &rand_str,
+            payer,
+            blockhash,
+            tx_params.cu_price_micro_lamports,
+        ),
+        tx_size::TxSize::Large => create_memo_tx_large(
+            &rand_str,
+            payer,
+            blockhash,
+            tx_params.cu_price_micro_lamports,
+        ),
     }
 }
 
-// note: there is another version of this
-pub fn create_memo_tx_small(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
+pub fn create_memo_tx_small(
+    msg: &[u8],
+    payer: &Keypair,
+    blockhash: Hash,
+    cu_price_micro_lamports: u64,
+) -> Transaction {
     let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
 
-    // TODO make configurable
-    // 3 -> 6 slots
-    // 1 -> 31 slots
-    let cu_budget: Instruction = ComputeBudgetInstruction::set_compute_unit_price(3);
+    let cu_budget_ix: Instruction =
+        ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
     // Program consumed: 12775 of 13700 compute units
-    let priority_fees: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(14000);
+    let cu_limit_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(14000);
     let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
     let message = Message::new(
-        &[cu_budget, priority_fees, instruction],
+        &[cu_budget_ix, cu_limit_ix, instruction],
         Some(&payer.pubkey()),
     );
     Transaction::new(&[payer], message, blockhash)
 }
 
-pub fn create_memo_tx_large(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
+pub fn create_memo_tx_large(
+    msg: &[u8],
+    payer: &Keypair,
+    blockhash: Hash,
+    cu_price_micro_lamports: u64,
+) -> Transaction {
     let accounts = (0..8).map(|_| Keypair::new()).collect_vec();
 
     let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
+    let cu_budget_ix: Instruction =
+        ComputeBudgetInstruction::set_compute_unit_price(cu_price_micro_lamports);
+    let cu_limit_ix: Instruction = ComputeBudgetInstruction::set_compute_unit_limit(14000);
 
     let instruction = Instruction::new_with_bytes(
         memo,
@@ -241,7 +267,10 @@ pub fn create_memo_tx_large(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Tra
             .map(|keypair| AccountMeta::new_readonly(keypair.pubkey(), true))
             .collect_vec(),
     );
-    let message = Message::new(&[instruction], Some(&payer.pubkey()));
+    let message = Message::new(
+        &[cu_budget_ix, cu_limit_ix, instruction],
+        Some(&payer.pubkey()),
+    );
 
     let mut signers = vec![payer];
     signers.extend(accounts.iter());
@@ -257,8 +286,9 @@ fn transaction_size_small() {
     );
     let mut rng = create_rng(Some(42));
     let rand_string = generate_random_string(&mut rng, 10);
+    let priority_fee = 100;
 
-    let tx = create_memo_tx_small(&rand_string, &payer_keypair, blockhash);
+    let tx = create_memo_tx_small(&rand_string, &payer_keypair, blockhash, priority_fee);
     assert_eq!(bincode::serialized_size(&tx).unwrap(), 231);
 }
 
@@ -270,7 +300,8 @@ fn transaction_size_large() {
     );
     let mut rng = create_rng(Some(42));
     let rand_string = generate_random_string(&mut rng, 240);
+    let priority_fee = 100;
 
-    let tx = create_memo_tx_large(&rand_string, &payer_keypair, blockhash);
-    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1186);
+    let tx = create_memo_tx_large(&rand_string, &payer_keypair, blockhash, priority_fee);
+    assert_eq!(bincode::serialized_size(&tx).unwrap(), 1238);
 }

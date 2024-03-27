@@ -10,12 +10,13 @@ path = "src/main.rs"
 [[bin]]
 # WIP
 name = "benchnew"
-path = "src/cli.rs"
+path = "src/benchnew.rs"
 
 [dependencies]
 clap = { workspace = true }
 csv = "1.2.1"
 dirs = "5.0.0"
+solana-lite-rpc-util = { workspace = true }
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
 solana-transaction-status = { workspace = true }
@@ -34,6 +35,8 @@ dashmap = { workspace = true }
 bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
+url = "*"
+reqwest = "0.11.26"
 lazy_static = "1.4.0"
 
 [dev-dependencies]
