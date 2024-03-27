@@ -5,6 +5,13 @@ use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::slot_history::Slot;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AccountLoadingError {
+    AccountNotFound,
+    ConfigDoesnotContainRequiredFilters,
+    OperationTimeOut,
+}
+
 #[async_trait]
 pub trait AccountStorageInterface: Send + Sync {
     // Update account and return true if the account was sucessfylly updated
@@ -12,7 +19,11 @@ pub trait AccountStorageInterface: Send + Sync {
 
     async fn initilize_or_update_account(&self, account_data: AccountData);
 
-    async fn get_account(&self, account_pk: Pubkey, commitment: Commitment) -> Option<AccountData>;
+    async fn get_account(
+        &self,
+        account_pk: Pubkey,
+        commitment: Commitment,
+    ) -> Result<Option<AccountData>, AccountLoadingError>;
 
     async fn get_program_accounts(
         &self,

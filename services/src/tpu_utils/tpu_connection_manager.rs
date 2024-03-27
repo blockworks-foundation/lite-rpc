@@ -33,8 +33,6 @@ use crate::{
 };
 
 lazy_static::lazy_static! {
-    static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
-        register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
     static ref NB_QUIC_ACTIVE_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_nb_active_connections", "Number quic tasks that are running")).unwrap();
     static ref NB_CONNECTIONS_TO_KEEP: GenericGauge<prometheus::core::AtomicI64> =
@@ -46,6 +44,9 @@ lazy_static::lazy_static! {
             "Time to send transaction batch",
         ))
         .unwrap();
+
+    static ref TRANSACTIONS_IN_HEAP: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_transactions_in_priority_heap", "Number of transactions in priority heap")).unwrap();
 }
 
 #[derive(Clone)]
@@ -84,19 +85,41 @@ impl ActiveConnection {
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
     ) {
-        let priorization_heap = PrioritizationFeesHeap::new(2048);
         let fill_notify = Arc::new(Notify::new());
 
         let identity = self.identity;
+
+        NB_QUIC_ACTIVE_CONNECTIONS.inc();
+
+        let max_number_of_connections = self.connection_parameters.max_number_of_connections;
+
+        let max_uni_stream_connections = compute_max_allowed_uni_streams(
+            identity_stakes.peer_type,
+            identity_stakes.stakes,
+            identity_stakes.total_stakes,
+        );
+        let exit_signal = self.exit_signal.clone();
+        let connection_pool = QuicConnectionPool::new(
+            identity,
+            self.endpoints.clone(),
+            addr,
+            self.connection_parameters,
+            exit_signal.clone(),
+            max_number_of_connections,
+            max_uni_stream_connections,
+        );
+
+        let priorization_heap = PrioritizationFeesHeap::new(2 * max_uni_stream_connections);
 
         let heap_filler_task = {
             let priorization_heap = priorization_heap.clone();
             let data_cache = self.data_cache.clone();
             let fill_notify = fill_notify.clone();
+            let exit_signal = exit_signal.clone();
             tokio::spawn(async move {
                 let mut current_blockheight =
                     data_cache.block_information_store.get_last_blockheight();
-                loop {
+                while !exit_signal.load(Ordering::Relaxed) {
                     let tx = transaction_reciever.recv().await;
                     match tx {
                         Ok(transaction_sent_info) => {
@@ -108,6 +131,8 @@ impl ActiveConnection {
                             }
 
                             priorization_heap.insert(transaction_sent_info).await;
+                            TRANSACTIONS_IN_HEAP.inc();
+
                             fill_notify.notify_one();
                             // give little more priority to read the transaction sender with this wait
                             let last_blockheight =
@@ -134,25 +159,15 @@ impl ActiveConnection {
             })
         };
 
-        NB_QUIC_ACTIVE_CONNECTIONS.inc();
-
-        let max_number_of_connections = self.connection_parameters.max_number_of_connections;
-
-        let max_uni_stream_connections = compute_max_allowed_uni_streams(
-            identity_stakes.peer_type,
-            identity_stakes.stakes,
-            identity_stakes.total_stakes,
-        );
-        let exit_signal = self.exit_signal.clone();
-        let connection_pool = QuicConnectionPool::new(
-            identity,
-            self.endpoints.clone(),
-            addr,
-            self.connection_parameters,
-            exit_signal.clone(),
-            max_number_of_connections,
-            max_uni_stream_connections,
-        );
+        // create atleast one connection before waiting from transactions
+        if let Ok(PooledConnection { connection, permit }) =
+            connection_pool.get_pooled_connection().await
+        {
+            tokio::task::spawn(async move {
+                let _permit = permit;
+                connection.get_connection().await;
+            });
+        }
 
         'main_loop: loop {
             // exit signal set
@@ -173,6 +188,7 @@ impl ActiveConnection {
                             // wait to get notification from fill event
                             break;
                         };
+                        TRANSACTIONS_IN_HEAP.dec();
 
                         // check if transaction is already confirmed
                         if self.data_cache.txs.is_transaction_confirmed(&tx.signature) {
@@ -193,28 +209,32 @@ impl ActiveConnection {
                         tokio::spawn(async move {
                             // permit will be used to send all the transaction and then destroyed
                             let _permit = permit;
+                            let timer = TT_SENT_TIMER.start_timer();
+
                             NB_QUIC_TASKS.inc();
+
                             connection.send_transaction(tx.transaction).await;
+                            timer.observe_duration();
                             NB_QUIC_TASKS.dec();
                         });
                     }
                 },
                 _ = exit_notifier.notified() => {
-                    // notified to exit
-                    break;
+                    break 'main_loop;
                 }
             }
         }
 
         heap_filler_task.abort();
-        NB_QUIC_CONNECTIONS.dec();
+        let elements_removed = priorization_heap.clear().await;
+        TRANSACTIONS_IN_HEAP.sub(elements_removed as i64);
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
     }
 
     pub fn start_listening(
         &self,
         transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_notifier: Arc<tokio::sync::Notify>,
+        exit_notifier: Arc<Notify>,
         identity_stakes: IdentityStakesData,
     ) {
         let addr = self.tpu_address;
@@ -226,14 +246,14 @@ impl ActiveConnection {
     }
 }
 
-struct ActiveConnectionWithExitChannel {
+struct ActiveConnectionWithExitNotifier {
     pub active_connection: ActiveConnection,
-    pub exit_notifier: Arc<tokio::sync::Notify>,
+    pub exit_notifier: Arc<Notify>,
 }
 
 pub struct TpuConnectionManager {
     endpoints: RotatingQueue<Endpoint>,
-    identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitChannel>>>,
+    identity_to_active_connection: Arc<DashMap<Pubkey, Arc<ActiveConnectionWithExitNotifier>>>,
 }
 
 impl TpuConnectionManager {
@@ -271,7 +291,7 @@ impl TpuConnectionManager {
                     connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
-                let exit_notifier = Arc::new(tokio::sync::Notify::new());
+                let exit_notifier = Arc::new(Notify::new());
 
                 let broadcast_receiver = broadcast_sender.subscribe();
                 active_connection.start_listening(
@@ -281,7 +301,7 @@ impl TpuConnectionManager {
                 );
                 self.identity_to_active_connection.insert(
                     *identity,
-                    Arc::new(ActiveConnectionWithExitChannel {
+                    Arc::new(ActiveConnectionWithExitNotifier {
                         active_connection,
                         exit_notifier,
                     }),
@@ -290,22 +310,19 @@ impl TpuConnectionManager {
         }
 
         // remove connections which are no longer needed
-        let collect_current_active_connections = self
-            .identity_to_active_connection
-            .iter()
-            .map(|x| (*x.key(), x.value().clone()))
-            .collect::<Vec<_>>();
-        for (identity, value) in collect_current_active_connections.iter() {
-            if !connections_to_keep.contains_key(identity) {
-                trace!("removing a connection for {}", identity);
+        self.identity_to_active_connection.retain(|key, value| {
+            if !connections_to_keep.contains_key(key) {
+                trace!("removing a connection for {}", key.to_string());
                 // ignore error for exit channel
                 value
                     .active_connection
                     .exit_signal
                     .store(true, Ordering::Relaxed);
                 value.exit_notifier.notify_one();
-                self.identity_to_active_connection.remove(identity);
+                false
+            } else {
+                true
             }
-        }
+        });
     }
 }

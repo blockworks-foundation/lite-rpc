@@ -2,6 +2,7 @@
 
 pub mod account_data;
 pub mod account_filter;
+pub mod block_info;
 pub mod epoch;
 pub mod identity_stakes;
 pub mod leader_data;

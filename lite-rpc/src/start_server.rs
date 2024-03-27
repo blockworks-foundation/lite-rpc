@@ -9,14 +9,35 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use std::time::Duration;
 use tower_http::cors::{Any, CorsLayer};
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ServerConfiguration {
+    pub max_request_body_size: u32,
+
+    pub max_response_body_size: u32,
+
+    pub max_connection: u32,
+}
+
+impl Default for ServerConfiguration {
+    fn default() -> Self {
+        Self {
+            max_request_body_size: 50 * (1 << 10),       // 50kb
+            max_response_body_size: 500_000 * (1 << 10), // 500MB response size
+            max_connection: 1000000,
+        }
+    }
+}
+
 pub async fn start_servers(
     rpc: LiteBridge,
     pubsub: LitePubSubBridge,
     ws_addr: String,
     http_addr: String,
+    server_configuration: Option<ServerConfiguration>,
 ) -> anyhow::Result<()> {
     let rpc = rpc.into_rpc();
     let pubsub = pubsub.into_rpc();
+    let server_configuration = server_configuration.unwrap_or_default();
 
     let ws_server_handle = ServerBuilder::default()
         .ws_only()
@@ -36,6 +57,9 @@ pub async fn start_servers(
 
     let http_server_handle = ServerBuilder::default()
         .set_middleware(middleware)
+        .max_connections(server_configuration.max_connection)
+        .max_request_body_size(server_configuration.max_response_body_size)
+        .max_response_body_size(server_configuration.max_response_body_size)
         .http_only()
         .build(http_addr.clone())
         .await?

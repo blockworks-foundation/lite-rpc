@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use crate::account_store_interface::AccountStorageInterface;
+use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
 use async_trait::async_trait;
 use dashmap::{DashMap, DashSet};
 use itertools::Itertools;
@@ -313,11 +313,15 @@ impl AccountStorageInterface for InmemoryAccountStore {
         }
     }
 
-    async fn get_account(&self, account_pk: Pubkey, commitment: Commitment) -> Option<AccountData> {
+    async fn get_account(
+        &self,
+        account_pk: Pubkey,
+        commitment: Commitment,
+    ) -> Result<Option<AccountData>, AccountLoadingError> {
         if let Some(account_by_commitment) = self.account_store.get(&account_pk) {
-            account_by_commitment.get_account_data(commitment).clone()
+            Ok(account_by_commitment.get_account_data(commitment).clone())
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -331,7 +335,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
             let mut return_vec = vec![];
             for program_account in program_accounts.iter() {
                 let account_data = self.get_account(*program_account, commitment).await;
-                if let Some(account_data) = account_data {
+                if let Ok(Some(account_data)) = account_data {
                     // recheck program owner and filters
                     if account_data.account.owner.eq(&program_pubkey) {
                         match &account_filters {
@@ -483,28 +487,28 @@ mod tests {
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
-            Some(account_data_0.clone())
+            Ok(Some(account_data_0.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed).await,
-            Some(account_data_0.clone())
+            Ok(Some(account_data_0.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
-            Some(account_data_0.clone())
+            Ok(Some(account_data_0.clone()))
         );
 
         assert_eq!(
             store.get_account(pk2, Commitment::Processed).await,
-            Some(account_data_1.clone())
+            Ok(Some(account_data_1.clone()))
         );
         assert_eq!(
             store.get_account(pk2, Commitment::Confirmed).await,
-            Some(account_data_1.clone())
+            Ok(Some(account_data_1.clone()))
         );
         assert_eq!(
             store.get_account(pk2, Commitment::Finalized).await,
-            Some(account_data_1.clone())
+            Ok(Some(account_data_1.clone()))
         );
 
         let account_data_2 = create_random_account(&mut rng, 1, pk1, program);
@@ -527,60 +531,60 @@ mod tests {
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
-            Some(account_data_5.clone())
+            Ok(Some(account_data_5.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed).await,
-            Some(account_data_0.clone())
+            Ok(Some(account_data_0.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
-            Some(account_data_0.clone())
+            Ok(Some(account_data_0.clone()))
         );
 
         store.process_slot_data(1, Commitment::Confirmed).await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
-            Some(account_data_5.clone())
+            Ok(Some(account_data_5.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed).await,
-            Some(account_data_2.clone())
+            Ok(Some(account_data_2.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
-            Some(account_data_0.clone())
+            Ok(Some(account_data_0.clone()))
         );
 
         store.process_slot_data(2, Commitment::Confirmed).await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
-            Some(account_data_5.clone())
+            Ok(Some(account_data_5.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed).await,
-            Some(account_data_3.clone())
+            Ok(Some(account_data_3.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
-            Some(account_data_0.clone())
+            Ok(Some(account_data_0.clone()))
         );
 
         store.process_slot_data(1, Commitment::Finalized).await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
-            Some(account_data_5.clone())
+            Ok(Some(account_data_5.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Confirmed).await,
-            Some(account_data_3.clone())
+            Ok(Some(account_data_3.clone()))
         );
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
-            Some(account_data_2.clone())
+            Ok(Some(account_data_2.clone()))
         );
     }
 
@@ -690,7 +694,7 @@ mod tests {
 
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
-            Some(last_account.clone()),
+            Ok(Some(last_account.clone())),
         );
 
         // check finalizing previous commitment does not affect
@@ -698,7 +702,7 @@ mod tests {
 
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
-            Some(last_account),
+            Ok(Some(last_account)),
         );
     }
 

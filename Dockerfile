@@ -14,6 +14,7 @@ FROM base as build
 COPY --from=plan /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
+ENV RUSTFLAGS="--cfg tokio_unstable"
 RUN cargo build --release --bin lite-rpc --bin solana-lite-rpc-quic-forward-proxy
 
 FROM debian:bookworm-slim as run

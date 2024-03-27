@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
+use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
 use solana_lite_rpc_core::{
     structures::{
@@ -54,6 +55,7 @@ pub async fn process_block(
 pub fn poll_block(
     rpc_client: Arc<RpcClient>,
     block_notification_sender: Sender<ProducedBlock>,
+    blockinfo_notification_sender: Sender<BlockInfo>,
     slot_notification: Receiver<SlotNotification>,
     num_parallel_tasks: usize,
 ) -> Vec<AnyhowJoinHandle> {
@@ -66,6 +68,7 @@ pub fn poll_block(
 
     for _i in 0..num_parallel_tasks {
         let block_notification_sender = block_notification_sender.clone();
+        let blockinfo_notification_sender = blockinfo_notification_sender.clone();
         let rpc_client = rpc_client.clone();
         let block_schedule_queue_rx = block_schedule_queue_rx.clone();
         let slot_retry_queue_sx = slot_retry_queue_sx.clone();
@@ -79,9 +82,13 @@ pub fn poll_block(
                     process_block(rpc_client.as_ref(), slot, commitment_config).await;
                 match processed_block {
                     Some(processed_block) => {
+                        let block_info = map_block_info(&processed_block);
                         block_notification_sender
                             .send(processed_block)
                             .context("Processed block should be sent")?;
+                        blockinfo_notification_sender
+                            .send(block_info)
+                            .context("Processed block info should be sent")?;
                         // schedule to get finalized commitment
                         if commitment_config.commitment != CommitmentLevel::Finalized {
                             let retry_at = tokio::time::Instant::now()
@@ -330,6 +337,16 @@ pub fn from_ui_block(
         rewards,
     };
     ProducedBlock::new(inner, commitment_config)
+}
+
+fn map_block_info(produced_block: &ProducedBlock) -> BlockInfo {
+    BlockInfo {
+        slot: produced_block.slot,
+        block_height: produced_block.block_height,
+        blockhash: produced_block.blockhash,
+        commitment_config: produced_block.commitment_config,
+        block_time: produced_block.block_time,
+    }
 }
 
 #[inline]

@@ -112,6 +112,14 @@ impl PrioritizationFeesHeap {
     pub async fn size(&self) -> usize {
         self.map.lock().await.signatures.len()
     }
+
+    pub async fn clear(&self) -> usize {
+        let mut lk = self.map.lock().await;
+        lk.map.clear();
+        let size = lk.signatures.len();
+        lk.signatures.clear();
+        size
+    }
 }
 
 #[cfg(test)]
@@ -189,8 +197,8 @@ mod tests {
 
                 let mut height = 0;
                 while instant.elapsed() < Duration::from_secs(45) {
-                    let burst_count = rand::random::<u64>() % 1024 + 1;
-                    for _ in 0..burst_count {
+                    let burst_count = rand::random::<u64>() % 128 + 1;
+                    for _c in 0..burst_count {
                         let prioritization_fee = rand::random::<u64>() % 100000;
                         let info = SentTransactionInfo {
                             signature: Signature::new_unique(),

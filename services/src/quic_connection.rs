@@ -110,8 +110,14 @@ impl QuicConnection {
             }
             None => {
                 NB_QUIC_CONNECTION_REQUESTED.inc();
+                // so that only one instance is connecting
+                let mut lk = self.connection.write().await;
+                if lk.is_some() {
+                    // connection has recently been established/ just use it
+                    return (*lk).clone();
+                }
                 let connection = self.connect(false).await;
-                *self.connection.write().await = connection.clone();
+                *lk = connection.clone();
                 self.has_connected_once.store(true, Ordering::Relaxed);
                 connection
             }
@@ -211,7 +217,7 @@ pub struct QuicConnectionPool {
     // counting semaphore is ideal way to manage backpressure on the connection
     // because a connection can create only N unistream connections
     transactions_in_sending_semaphore: Vec<Arc<Semaphore>>,
-    permit_threshold: usize,
+    threshold_to_create_new_connection: usize,
 }
 
 pub struct PooledConnection {
@@ -250,9 +256,9 @@ impl QuicConnectionPool {
                 });
                 v
             },
-            permit_threshold: max_number_of_unistream_connection
-                .saturating_mul(std::cmp::max(
-                    connection_parameters.percentage_of_connection_limit_to_create_new,
+            threshold_to_create_new_connection: max_number_of_unistream_connection
+                .saturating_mul(std::cmp::min(
+                    connection_parameters.unistreams_to_create_new_connection_in_percentage,
                     100,
                 ) as usize)
                 .saturating_div(100),
@@ -266,7 +272,7 @@ impl QuicConnectionPool {
 
             if !connection.has_connected_atleast_once()
                 || (connection.is_connected().await
-                    && sem.available_permits() > self.permit_threshold)
+                    && sem.available_permits() > self.threshold_to_create_new_connection)
             {
                 // if it is connection is not yet connected even once or connection is still open
                 if let Ok(permit) = sem.clone().try_acquire_owned() {
@@ -289,9 +295,6 @@ impl QuicConnectionPool {
         let (permit, index) = self.get_permit_and_index().await?;
         // establish a connection if the connection has not yet been used
         let connection = self.connections[index].clone();
-        if !connection.has_connected_atleast_once() {
-            connection.get_connection().await;
-        }
         Ok(PooledConnection { connection, permit })
     }
 

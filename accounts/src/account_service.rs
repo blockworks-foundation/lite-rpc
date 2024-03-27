@@ -4,13 +4,13 @@ use anyhow::bail;
 use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_account_decoder::{UiAccount, UiDataSliceConfig};
+use solana_lite_rpc_core::types::BlockInfoStream;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
         account_data::{AccountData, AccountNotificationMessage, AccountStream},
         account_filter::AccountFilters,
     },
-    types::BlockStream,
     AnyhowJoinHandle,
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -21,7 +21,7 @@ use solana_rpc_client_api::{
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use tokio::sync::broadcast::Sender;
 
-use crate::account_store_interface::AccountStorageInterface;
+use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
 
 lazy_static::lazy_static! {
     static ref ACCOUNT_UPDATES: IntGauge =
@@ -151,7 +151,7 @@ impl AccountService {
     pub fn process_account_stream(
         &self,
         mut account_stream: AccountStream,
-        mut block_stream: BlockStream,
+        mut blockinfo_stream: BlockInfoStream,
     ) -> Vec<AnyhowJoinHandle> {
         let this = self.clone();
         let processed_task = tokio::spawn(async move {
@@ -187,19 +187,19 @@ impl AccountService {
         let this = self.clone();
         let block_processing_task = tokio::spawn(async move {
             loop {
-                match block_stream.recv().await {
-                    Ok(block_notification) => {
-                        if block_notification.commitment_config.is_processed() {
+                match blockinfo_stream.recv().await {
+                    Ok(block_info) => {
+                        if block_info.commitment_config.is_processed() {
                             // processed commitment is not processed in this loop
                             continue;
                         }
-                        let commitment = Commitment::from(block_notification.commitment_config);
+                        let commitment = Commitment::from(block_info.commitment_config);
                         let updated_accounts = this
                             .account_store
-                            .process_slot_data(block_notification.slot, commitment)
+                            .process_slot_data(block_info.slot, commitment)
                             .await;
 
-                        if block_notification.commitment_config.is_finalized() {
+                        if block_info.commitment_config.is_finalized() {
                             ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
                         } else {
                             ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);
@@ -250,7 +250,7 @@ impl AccountService {
         &self,
         account: Pubkey,
         config: Option<RpcAccountInfoConfig>,
-    ) -> anyhow::Result<(Slot, Option<UiAccount>)> {
+    ) -> Result<(Slot, Option<UiAccount>), AccountLoadingError> {
         GET_ACCOUNT_CALLED.inc();
         let commitment = config
             .as_ref()
@@ -259,7 +259,7 @@ impl AccountService {
 
         let commitment = Commitment::from(commitment);
 
-        if let Some(account_data) = self.account_store.get_account(account, commitment).await {
+        if let Some(account_data) = self.account_store.get_account(account, commitment).await? {
             // if minimum context slot is not satisfied return Null
             let minimum_context_slot = config
                 .as_ref()
@@ -273,10 +273,7 @@ impl AccountService {
                 Ok((account_data.updated_slot, None))
             }
         } else {
-            bail!(
-                "Account {} does not satisfy any configured filters",
-                account.to_string()
-            )
+            Err(AccountLoadingError::ConfigDoesnotContainRequiredFilters)
         }
     }
 

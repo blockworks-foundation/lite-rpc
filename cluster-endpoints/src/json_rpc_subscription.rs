@@ -16,6 +16,7 @@ pub fn create_json_rpc_polling_subscription(
 ) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
     let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(16);
     let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(16);
+    let (blockinfo_sx, blockinfo_notifier) = tokio::sync::broadcast::channel(16);
     let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(16);
     let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(16);
     // does not support accounts support with rpc polling
@@ -26,6 +27,7 @@ pub fn create_json_rpc_polling_subscription(
     let mut block_polling_tasks = poll_block(
         rpc_client.clone(),
         block_sx,
+        blockinfo_sx,
         slot_notifier.resubscribe(),
         num_parallel_tasks,
     );
@@ -39,6 +41,7 @@ pub fn create_json_rpc_polling_subscription(
 
     let streamers = EndpointStreaming {
         blocks_notifier,
+        blockinfo_notifier,
         slot_notifier,
         cluster_info_notifier,
         vote_account_notifier,
