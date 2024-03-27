@@ -1,7 +1,7 @@
 use bench::metrics::Metric;
 
 use crate::args::TenantConfig;
-use bench::service_adapter::BenchConfig;
+use bench::service_adapter1::BenchConfig;
 use prometheus::{opts, register_gauge_vec, register_int_gauge_vec, GaugeVec, IntGaugeVec};
 
 // https://github.com/blockworks-foundation/lite-rpc/blob/production/bench/src/metrics.rs

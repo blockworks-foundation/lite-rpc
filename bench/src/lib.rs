@@ -26,7 +26,8 @@ pub mod bench1;
 pub mod benches;
 pub mod helpers;
 pub mod metrics;
-pub mod service_adapter;
+pub mod service_adapter1;
+pub mod service_adapter_new;
 pub mod tx_size;
 
 #[derive(Parser, Debug)]

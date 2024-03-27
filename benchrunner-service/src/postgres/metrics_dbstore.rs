@@ -1,10 +1,12 @@
 use crate::args::TenantConfig;
 use crate::postgres::postgres_session_cache::PostgresSessionCache;
 use bench::metrics::Metric;
-use bench::service_adapter::BenchConfig;
+use bench::service_adapter1::BenchConfig;
 use log::warn;
 use postgres_types::ToSql;
 use std::time::SystemTime;
+use async_trait::async_trait;
+use crate::{BenchMetricsPostgresSaver, BenchRunner, BenchRunnerOldBenchImpl};
 
 #[allow(clippy::upper_case_acronyms)]
 pub enum BenchRunStatus {
@@ -57,29 +59,27 @@ pub async fn upsert_benchrun_status(
     Ok(())
 }
 
-pub async fn save_metrics_to_postgres(
-    postgres_session: &PostgresSessionCache,
-    tenant_config: &TenantConfig,
-    bench_config: &BenchConfig,
-    metric: &Metric,
-    benchrun_at: SystemTime,
-) -> anyhow::Result<()> {
-    let metricjson = serde_json::to_value(metric).unwrap();
-    let values: &[&(dyn ToSql + Sync)] = &[
-        &tenant_config.tenant_id,
-        &benchrun_at,
-        &(bench_config.cu_price_micro_lamports as i64),
-        &(metric.txs_sent as i64),
-        &(metric.txs_confirmed as i64),
-        &(metric.txs_un_confirmed as i64),
-        &(metric.average_confirmation_time_ms as f32),
-        &metricjson,
-    ];
-    let write_result = postgres_session
-        .get_session()
-        .await?
-        .execute(
-            r#"
+
+
+#[async_trait]
+impl BenchMetricsPostgresSaver<Metric> for BenchRunnerOldBenchImpl {
+    async fn try_save_results_postgres(&self, metric: &Metric, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
+        let metricjson = serde_json::to_value(metric).unwrap();
+        let values: &[&(dyn ToSql + Sync)] = &[
+            &self.tenant_config.tenant_id,
+            &self.benchrun_at,
+            &(self.bench_config.cu_price_micro_lamports as i64),
+            &(metric.txs_sent as i64),
+            &(metric.txs_confirmed as i64),
+            &(metric.txs_un_confirmed as i64),
+            &(metric.average_confirmation_time_ms as f32),
+            &metricjson,
+        ];
+        postgres_session
+            .get_session()
+            .await?
+            .execute(
+                r#"
             INSERT INTO
             benchrunner.bench_metrics (
                 tenant,
@@ -92,13 +92,13 @@ pub async fn save_metrics_to_postgres(
              )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         "#,
-            values,
-        )
-        .await;
+                values,
+            )
+            .await?;
 
-    if let Err(err) = write_result {
-        warn!("Failed to insert metrics (err {:?}) - continue", err);
+
+        Ok(())
     }
-
-    Ok(())
 }
+
+

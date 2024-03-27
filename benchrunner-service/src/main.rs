@@ -3,23 +3,29 @@ mod cli;
 mod postgres;
 mod prometheus;
 
-use crate::args::{get_funded_payer_from_env, read_tenant_configs};
+use crate::args::{get_funded_payer_from_env, read_tenant_configs, TenantConfig};
 use crate::cli::Args;
 use crate::postgres::metrics_dbstore::{
-    save_metrics_to_postgres, upsert_benchrun_status, BenchRunStatus,
+    upsert_benchrun_status, BenchRunStatus,
 };
 use crate::postgres::postgres_session::PostgresSessionConfig;
 use crate::postgres::postgres_session_cache::PostgresSessionCache;
 use crate::prometheus::metrics_prometheus::publish_metrics_on_prometheus;
 use crate::prometheus::prometheus_sync::PrometheusSync;
-use bench::service_adapter::BenchConfig;
+use bench::service_adapter1::BenchConfig;
 use clap::Parser;
 use futures_util::future::join_all;
 use itertools::Itertools;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use async_trait::async_trait;
+use postgres_types::ToSql;
+use solana_sdk::signature::Keypair;
+use bench::metrics::Metric;
+use bench::tx_size::TxSize;
 
 #[tokio::main]
 async fn main() {
@@ -36,7 +42,7 @@ async fn main() {
 
     let bench_interval = Duration::from_millis(bench_interval);
 
-    let funded_payer = get_funded_payer_from_env();
+    let funded_payer = Arc::new(get_funded_payer_from_env());
 
     let tenant_configs = read_tenant_configs(std::env::vars().collect::<Vec<(String, String)>>());
 
@@ -76,8 +82,10 @@ async fn main() {
         })
         .collect_vec();
 
+    // 1 task per tenant - each task will perform bench runs in sequence
+    // (the slot comparison bench is done somewhere else)
     for tenant_config in &tenant_configs {
-        let funded_payer = funded_payer.insecure_clone();
+        let funded_payer = funded_payer.clone();
         let tenant_id = tenant_config.tenant_id.clone();
         let postgres_session = postgres_session.clone();
         let tenant_config = tenant_config.clone();
@@ -92,6 +100,14 @@ async fn main() {
                 );
                 let benchrun_at = SystemTime::now();
 
+                let bench_impl = BenchRunnerOldBenchImpl {
+                    benchrun_at,
+                    tenant_config: tenant_config.clone(),
+                    bench_config: bench_config.clone(),
+                    funded_payer: funded_payer.clone(),
+                    size_tx,
+                };
+
                 if let Some(postgres_session) = postgres_session.as_ref() {
                     let _dbstatus = upsert_benchrun_status(
                         postgres_session,
@@ -103,23 +119,29 @@ async fn main() {
                     .await;
                 }
 
-                let metric = bench::service_adapter::bench_servicerunner(
-                    &bench_config,
-                    tenant_config.rpc_addr.clone(),
-                    funded_payer.insecure_clone(),
-                    size_tx,
-                )
-                .await;
+                let metric = bench_impl.run_bench().await;
+                // let metric = bench::service_adapter1::bench_servicerunner(
+                //     &bench_config,
+                //     tenant_config.rpc_addr.clone(),
+                //     funded_payer.insecure_clone(),
+                //     size_tx,
+                // )
+                // .await;
 
                 if let Some(postgres_session) = postgres_session.as_ref() {
-                    let _dbstatus = save_metrics_to_postgres(
-                        postgres_session,
-                        &tenant_config,
-                        &bench_config,
-                        &metric,
-                        benchrun_at,
-                    )
-                    .await;
+                    // let _dbstatus = save_metrics_to_postgres(
+                    //     postgres_session,
+                    //     &tenant_config,
+                    //     &bench_config,
+                    //     &metric,
+                    //     benchrun_at,
+                    // )
+                    // .await;
+                    let save_result = bench_impl.try_save_results_postgres(&metric, postgres_session).await;
+                    if let Err(err) = save_result {
+                        warn!("Failed to save metrics to postgres (err {:?}) - continue", err);
+                    }
+
                 }
 
                 publish_metrics_on_prometheus(&tenant_config, &bench_config, &metric).await;
@@ -146,4 +168,37 @@ async fn main() {
     } // -- END tenant loop
 
     join_all(jh_tenant_task).await;
+}
+
+// R: result
+#[async_trait]
+trait BenchRunner<M> {
+    async fn run_bench(&self) -> M;
+}
+
+// R: result
+#[async_trait]
+trait BenchMetricsPostgresSaver<M> {
+    async fn try_save_results_postgres(&self, metric: &M, postgres_session: &PostgresSessionCache) -> anyhow::Result<()>;
+}
+
+struct BenchRunnerOldBenchImpl {
+    pub benchrun_at: SystemTime,
+    pub tenant_config: TenantConfig,
+    pub bench_config: BenchConfig,
+    pub funded_payer: Arc<Keypair>,
+    pub size_tx: TxSize,
+}
+
+#[async_trait]
+impl BenchRunner<Metric> for BenchRunnerOldBenchImpl {
+    async fn run_bench(&self) -> Metric {
+        bench::service_adapter1::bench_servicerunner(
+            &self.bench_config,
+            self.tenant_config.rpc_addr.clone(),
+            self.funded_payer.insecure_clone(),
+            self.size_tx,
+        )
+        .await
+    }
 }
