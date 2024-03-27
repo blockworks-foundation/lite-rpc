@@ -1,0 +1,19 @@
+# Extend the default debian openssl config
+# see https://gist.github.com/tothi/392dbb008ae0b60d25cfa4447bc21121
+# fixes "Global default library context, Algorithm (RC2-40-CBC : 0)"
+.include = /etc/ssl/openssl.cnf
+
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+default = default_sect
+legacy = legacy_sect
+
+[default_sect]
+activate = 1
+
+[legacy_sect]
+activate = 1
