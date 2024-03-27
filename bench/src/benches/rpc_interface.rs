@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Error};
 use futures::future::join_all;
 use futures::TryFutureExt;
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{debug, trace, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_rpc_client_api::client_error::ErrorKind;
@@ -54,7 +54,10 @@ pub async fn send_and_confirm_bulk_transactions(
     };
 
     let started_at = Instant::now();
-    trace!("Sending {} transactions via RPC (retries=off) ..", txs.len());
+    trace!(
+        "Sending {} transactions via RPC (retries=off) ..",
+        txs.len()
+    );
     let batch_sigs_or_fails = join_all(txs.iter().map(|tx| {
         rpc_client
             .send_transaction_with_config(tx, send_config)
@@ -75,8 +78,7 @@ pub async fn send_and_confirm_bulk_transactions(
     } else {
         debug!(
             "Slot did not advance during sending transactions: {} -> {}",
-            send_slot,
-        after_send_slot
+            send_slot, after_send_slot
         );
     }
 
@@ -201,7 +203,11 @@ pub async fn send_and_confirm_bulk_transactions(
         }
 
         if pending_status_set.is_empty() {
-            debug!("All transactions confirmed after {} iterations / {:?}", iteration, started_at.elapsed());
+            debug!(
+                "All transactions confirmed after {} iterations / {:?}",
+                iteration,
+                started_at.elapsed()
+            );
             break 'polling_loop;
         }
 

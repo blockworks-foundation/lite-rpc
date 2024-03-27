@@ -4,19 +4,16 @@ use std::time::Duration;
 use crate::benches::rpc_interface::{
     create_rpc_client, send_and_confirm_bulk_transactions, ConfirmationResponseFromRpc,
 };
-use crate::metrics::{PingThing, PingThingTxType};
+use crate::metrics::PingThing;
 use crate::{create_memo_tx, create_rng, BenchmarkTransactionParams, Rng8};
 use anyhow::anyhow;
-use itertools::Itertools;
 use log::{debug, info};
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::clock::Slot;
 use solana_sdk::signature::{read_keypair_file, Signature, Signer};
 use solana_sdk::transaction::Transaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
 use tokio::time::{sleep, Instant};
-use tracing::error;
 use url::Url;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -40,7 +37,6 @@ pub struct ConfirmationSlotSuccess {
     pub confirmation_time: Duration,
 }
 
-
 #[allow(clippy::too_many_arguments)]
 /// TC1 -- Send 2 txs to separate RPCs and compare confirmation slot.
 /// The benchmark attempts to minimize the effect of real-world distance and synchronize the time that each transaction reaches the RPC.
@@ -53,7 +49,7 @@ pub async fn confirmation_slot(
     tx_params: BenchmarkTransactionParams,
     max_timeout: Duration,
     num_of_runs: usize,
-    maybe_ping_thing: Option<PingThing>,
+    _maybe_ping_thing: Option<PingThing>,
 ) -> anyhow::Result<()> {
     info!(
         "START BENCHMARK: confirmation_slot (prio_fees={})",
@@ -98,15 +94,13 @@ pub async fn confirmation_slot(
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
             debug!("(A) sending tx {}", rpc_a_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_a, rpc_a_tx, max_timeout)
-                .await
+            send_and_confirm_transaction(&rpc_a, rpc_a_tx, max_timeout).await
         });
 
         let b_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(b_delay)).await;
             debug!("(B) sending tx {}", rpc_b_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_b, rpc_b_tx, max_timeout)
-                .await
+            send_and_confirm_transaction(&rpc_b, rpc_b_tx, max_timeout).await
         });
 
         let (a, b) = tokio::join!(a_task, b_task);
@@ -115,15 +109,19 @@ pub async fn confirmation_slot(
         let b_result: ConfirmationResponseFromRpc = b??;
 
         if let (
-            ConfirmationResponseFromRpc::Success(
-                a_slot_sent, a_slot_confirmed, _, a_confirmation_time),
-            ConfirmationResponseFromRpc::Success(
-                b_slot_sent, b_slot_confirmed, _, b_confirmation_time)
-        ) = (a_result, b_result) {
-            info!("txn A landed after {} slots", a_slot_confirmed - a_slot_sent);
-            info!("txn B landed after {} slots", b_slot_confirmed - b_slot_sent);
+            ConfirmationResponseFromRpc::Success(a_slot_sent, a_slot_confirmed, _, _),
+            ConfirmationResponseFromRpc::Success(b_slot_sent, b_slot_confirmed, _, _),
+        ) = (a_result, b_result)
+        {
+            info!(
+                "txn A landed after {} slots",
+                a_slot_confirmed - a_slot_sent
+            );
+            info!(
+                "txn B landed after {} slots",
+                b_slot_confirmed - b_slot_sent
+            );
         }
-
 
         // if let Some(ping_thing) = maybe_ping_thing.clone() {
         //     ping_thing_tasks.push(tokio::spawn(async move {

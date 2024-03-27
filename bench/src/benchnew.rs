@@ -45,7 +45,7 @@ enum SubCommand {
         #[clap(short, long, default_value_t = 15_000)]
         max_timeout_ms: u64,
         #[clap(short, long)]
-        txns_per_round: usize,
+        txs_per_run: usize,
         #[clap(short, long)]
         num_of_runs: usize,
         /// The CU price in micro lamports
@@ -53,7 +53,7 @@ enum SubCommand {
         #[arg(short = 'f')]
         cu_price: u64,
     },
-    /// Compares the confirmation slot of txns sent to 2 different RPCs
+    /// Compares the confirmation slot of txs sent to 2 different RPCs
     ConfirmationSlot {
         #[clap(short, long)]
         payer_path: PathBuf,
@@ -110,7 +110,7 @@ async fn main() {
             rpc_url,
             size_tx,
             max_timeout_ms,
-            txns_per_round,
+            txs_per_run: txs_per_run,
             num_of_runs,
             cu_price,
         } => confirmation_rate(
@@ -121,7 +121,7 @@ async fn main() {
                 cu_price_micro_lamports: cu_price,
             },
             Duration::from_millis(max_timeout_ms),
-            txns_per_round,
+            txs_per_run,
             num_of_runs,
         )
         .await

@@ -24,13 +24,13 @@ pub struct RpcStat {
     tx_unconfirmed: u64,
 }
 
-/// TC2 send multiple runs of num_txns, measure the confirmation rate
+/// TC2 send multiple runs of num_txs, measure the confirmation rate
 pub async fn confirmation_rate(
     payer_path: &Path,
     rpc_url: String,
     tx_params: BenchmarkTransactionParams,
     max_timeout: Duration,
-    txs_per_round: usize,
+    txs_per_run: usize,
     num_of_runs: usize,
 ) -> anyhow::Result<()> {
     warn!("THIS IS WORK IN PROGRESS");
@@ -46,7 +46,7 @@ pub async fn confirmation_rate(
     let mut rpc_results = Vec::with_capacity(num_of_runs);
 
     for _ in 0..num_of_runs {
-        match send_bulk_txs_and_wait(&rpc, &payer, txs_per_round, &tx_params, max_timeout)
+        match send_bulk_txs_and_wait(&rpc, &payer, txs_per_run, &tx_params, max_timeout)
             .await
             .context("send bulk tx and wait")
         {
@@ -73,7 +73,7 @@ pub async fn confirmation_rate(
 pub async fn send_bulk_txs_and_wait(
     rpc: &RpcClient,
     payer: &Keypair,
-    num_txns: usize,
+    num_txs: usize,
     tx_params: &BenchmarkTransactionParams,
     max_timeout: Duration,
 ) -> anyhow::Result<RpcStat> {
@@ -83,7 +83,7 @@ pub async fn send_bulk_txs_and_wait(
         err
     })?;
     let mut rng = create_rng(None);
-    let txs = generate_txs(num_txns, payer, hash, &mut rng, tx_params);
+    let txs = generate_txs(num_txs, payer, hash, &mut rng, tx_params);
 
     trace!("Sending {} transactions in bulk ..", txs.len());
     let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
