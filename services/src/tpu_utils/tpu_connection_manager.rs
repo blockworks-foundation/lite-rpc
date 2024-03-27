@@ -74,13 +74,13 @@ impl ActiveConnection {
     async fn listen(
         &self,
         mut transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_notifier: Arc<Notify>,
         addr: SocketAddr,
         identity_stakes: IdentityStakesData,
     ) {
         let fill_notify = Arc::new(Notify::new());
 
         let identity = self.identity;
+        let exit_notifier = self.exit_notifier.clone();
 
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
 
@@ -224,13 +224,12 @@ impl ActiveConnection {
     pub fn start_listening(
         &self,
         transaction_reciever: Receiver<SentTransactionInfo>,
-        exit_notifier: Arc<Notify>,
         identity_stakes: IdentityStakesData,
     ) {
         let addr = self.tpu_address;
         let this = self.clone();
         tokio::spawn(async move {
-            this.listen(transaction_reciever, exit_notifier, addr, identity_stakes)
+            this.listen(transaction_reciever, addr, identity_stakes)
                 .await;
         });
     }
@@ -276,14 +275,8 @@ impl TpuConnectionManager {
                     connection_parameters,
                 );
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
-                let exit_notifier = Arc::new(Notify::new());
-
                 let broadcast_receiver = broadcast_sender.subscribe();
-                active_connection.start_listening(
-                    broadcast_receiver,
-                    exit_notifier.clone(),
-                    identity_stakes,
-                );
+                active_connection.start_listening(broadcast_receiver, identity_stakes);
                 self.identity_to_active_connection
                     .insert(*identity, active_connection);
             }
