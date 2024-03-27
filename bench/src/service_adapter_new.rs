@@ -2,9 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use log::error;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
-use tokio::time::Instant;
 use crate::benches::confirmation_rate;
 use crate::benches::confirmation_rate::{send_bulk_txs_and_wait};
 use crate::BenchmarkTransactionParams;
@@ -18,7 +16,7 @@ pub async fn benchnew_confirmation_rate_servicerunner(
 ) -> confirmation_rate::Metric {
     let rpc = Arc::new(RpcClient::new(rpc_addr));
     let tx_params = BenchmarkTransactionParams {
-        tx_size: TxSize::Small,
+        tx_size: bench_config.tx_size,
         cu_price_micro_lamports: bench_config.cu_price_micro_lamports,
     };
     let max_timeout = Duration::from_secs(60);

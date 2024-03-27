@@ -80,6 +80,7 @@ async fn main() {
         .iter()
         .map(|prio_fees| BenchConfig {
             tx_count,
+            tx_size: size_tx,
             cu_price_micro_lamports: *prio_fees,
         })
         .collect_vec();
@@ -235,7 +236,6 @@ impl BenchRunner for BenchRunnerBench1Impl {
             &self.bench_config,
             self.tenant_config.rpc_addr.clone(),
             self.funded_payer.insecure_clone(),
-            self.size_tx,
         )
         .await;
         self.metric.set(metric).unwrap();
