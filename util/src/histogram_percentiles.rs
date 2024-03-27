@@ -19,9 +19,7 @@ impl From<(f64, f64)> for Point {
 
 // #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct HistValue {
-    // percentile
     pub percentile: f32,
-    // value of fees in lamports
     pub value: f64,
 }
 
@@ -145,19 +143,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_calculate_supp_info() {
+    fn test_calculate_percentiles() {
         let mut values = vec![2.0, 4.0, 5.0, 3.0, 1.0];
         values.sort_by_key(|&x| (x * 100.0) as i64);
-        let supp_info = calculate_percentiles(&values).v;
-        assert_eq!(supp_info[0], 1.0);
-        assert_eq!(supp_info[10], 3.0);
-        assert_eq!(supp_info[15], 4.0);
-        assert_eq!(supp_info[18], 5.0);
-        assert_eq!(supp_info[20], 5.0);
+        let percentiles = calculate_percentiles(&values).v;
+        assert_eq!(percentiles[0], 1.0);
+        assert_eq!(percentiles[10], 3.0);
+        assert_eq!(percentiles[15], 4.0);
+        assert_eq!(percentiles[18], 5.0);
+        assert_eq!(percentiles[20], 5.0);
     }
 
     #[test]
-    fn test_calculate_supp_info_by_cu() {
+    fn test_calculate_percentiles_by_cu() {
         // total of 20000 CU where consumed
         let values = vec![Point::from((100.0, 10000.0)), Point::from((200.0, 10000.0))];
         let PercentilesCummulative {
@@ -174,24 +172,24 @@ mod tests {
     #[test]
     fn test_empty_array() {
         let values = vec![];
-        let supp_info = calculate_percentiles(&values).v;
+        let percentiles = calculate_percentiles(&values).v;
         // note: this is controversal
-        assert!(supp_info.is_empty());
+        assert!(percentiles.is_empty());
     }
     #[test]
     fn test_zeros() {
         let values = vec![Point::from((0.0, 0.0)), Point::from((0.0, 0.0))];
-        let supp_info = calculate_cummulative(&values).bucket_values;
-        assert_eq!(supp_info[0], 0.0);
+        let percentiles = calculate_cummulative(&values).bucket_values;
+        assert_eq!(percentiles[0], 0.0);
     }
 
     #[test]
     fn test_statisticshowto() {
         let values = vec![30.0, 33.0, 43.0, 53.0, 56.0, 67.0, 68.0, 72.0];
-        let supp_info = calculate_percentiles(&values);
-        assert_eq!(supp_info.v[5], 43.0);
-        assert_eq!(supp_info.p[5], 0.25);
-        assert_eq!(supp_info.get_bucket_value(0.25), Some(43.0));
+        let percentiles = calculate_percentiles(&values);
+        assert_eq!(percentiles.v[5], 43.0);
+        assert_eq!(percentiles.p[5], 0.25);
+        assert_eq!(percentiles.get_bucket_value(0.25), Some(43.0));
 
         let values = vec![
             Point::from((30.0, 1.0)),
@@ -203,9 +201,9 @@ mod tests {
             Point::from((68.0, 7.0)),
             Point::from((72.0, 8.0)),
         ];
-        let supp_info = calculate_cummulative(&values);
-        assert_eq!(supp_info.percentiles[20], 1.0);
-        assert_eq!(supp_info.bucket_values[20], 72.0);
+        let percentiles = calculate_cummulative(&values);
+        assert_eq!(percentiles.percentiles[20], 1.0);
+        assert_eq!(percentiles.bucket_values[20], 72.0);
     }
 
     #[test]
@@ -214,9 +212,9 @@ mod tests {
         // In diesem Fall lautet es also 5.
         let values = vec![3.0, 5.0, 5.0, 6.0, 7.0, 7.0, 8.0, 10.0, 10.0];
 
-        let supp_info = calculate_percentiles(&values);
-        assert_eq!(supp_info.p[4], 0.20);
-        assert_eq!(supp_info.v[5], 5.0);
+        let percentiles = calculate_percentiles(&values);
+        assert_eq!(percentiles.p[4], 0.20);
+        assert_eq!(percentiles.v[5], 5.0);
 
         let values = vec![
             Point::from((3.0, 1.0)),
@@ -229,18 +227,18 @@ mod tests {
             Point::from((10.0, 8.0)),
             Point::from((10.0, 9.0)),
         ];
-        let supp_info = calculate_cummulative(&values);
-        assert_eq!(supp_info.percentiles[19], 0.95);
-        assert_eq!(supp_info.percentiles[20], 1.0);
-        assert_eq!(supp_info.bucket_values[19], 10.0);
-        assert_eq!(supp_info.bucket_values[20], 10.0);
+        let percentiles = calculate_cummulative(&values);
+        assert_eq!(percentiles.percentiles[19], 0.95);
+        assert_eq!(percentiles.percentiles[20], 1.0);
+        assert_eq!(percentiles.bucket_values[19], 10.0);
+        assert_eq!(percentiles.bucket_values[20], 10.0);
     }
 
     #[test]
     fn test_large_list() {
         let values = (0..1000).map(|i| i as f64).collect_vec();
-        let supp_info = calculate_percentiles(&values);
-        assert_eq!(supp_info.v[19], 950.0);
-        assert_eq!(supp_info.p[19], 0.95);
+        let percentiles = calculate_percentiles(&values);
+        assert_eq!(percentiles.v[19], 950.0);
+        assert_eq!(percentiles.p[19], 0.95);
     }
 }
