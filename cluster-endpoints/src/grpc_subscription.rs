@@ -270,12 +270,12 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
     (cu_requested, prioritization_fees)
 }
 
-// not called
 pub fn create_block_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
     block_sx: async_channel::Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
+    exit_notfier: Arc<Notify>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
         loop {
@@ -307,33 +307,44 @@ pub fn create_block_processing_task(
                 )
                 .await?;
 
-            while let Some(message) = stream.next().await {
-                let message = message?;
+            loop {
+                tokio::select! {
+                    message = stream.next() => {
+                        let Some(Ok(message)) = message else {
+                            break;
+                        };
 
-                let Some(update) = message.update_oneof else {
-                    continue;
-                };
+                        let Some(update) = message.update_oneof else {
+                            continue;
+                        };
 
-                match update {
-                    UpdateOneof::Block(block) => {
-                        log::trace!(
-                            "received block, hash: {} slot: {}",
-                            block.blockhash,
-                            block.slot
-                        );
-                        block_sx
-                            .send(block)
-                            .await
-                            .context("Problem sending on block channel")?;
+                        match update {
+                            UpdateOneof::Block(block) => {
+                                log::trace!(
+                                    "received block, hash: {} slot: {}",
+                                    block.blockhash,
+                                    block.slot
+                                );
+                                block_sx
+                                    .send(block)
+                                    .await
+                                    .context("Problem sending on block channel")?;
+                            }
+                            UpdateOneof::Ping(_) => {
+                                log::trace!("GRPC Ping");
+                            }
+                            _ => {
+                                log::trace!("unknown GRPC notification");
+                            }
+                        };
+                    },
+                    _ = exit_notfier.notified() => {
+                        break;
                     }
-                    UpdateOneof::Ping(_) => {
-                        log::trace!("GRPC Ping");
-                    }
-                    _ => {
-                        log::trace!("unknown GRPC notification");
-                    }
-                };
+                }
             }
+            drop(stream);
+            drop(client);
             log::error!("Grpc block subscription broken (resubscribing)");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }

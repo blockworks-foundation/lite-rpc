@@ -11,13 +11,10 @@ use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_sdk::pubkey::Pubkey;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::Arc,
     time::Duration,
 };
-use tokio::time::timeout;
+use tokio::{sync::Notify, time::timeout};
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_0RTT_ATTEMPTED: GenericGauge<prometheus::core::AtomicI64> =
@@ -222,15 +219,29 @@ impl QuicConnectionUtils {
         addr: SocketAddr,
         connection_timeout: Duration,
         connection_retry_count: usize,
-        exit_signal: Arc<AtomicBool>,
+        exit_notified: Arc<Notify>,
     ) -> Option<Connection> {
         for _ in 0..connection_retry_count {
             let conn = if already_connected {
                 NB_QUIC_0RTT_ATTEMPTED.inc();
-                Self::make_connection_0rtt(endpoint.clone(), addr, connection_timeout).await
+                tokio::select! {
+                    res = Self::make_connection_0rtt(endpoint.clone(), addr, connection_timeout) => {
+                        res
+                    },
+                    _ = exit_notified.notified() => {
+                        break;
+                    }
+                }
             } else {
                 NB_QUIC_CONN_ATTEMPTED.inc();
-                Self::make_connection(endpoint.clone(), addr, connection_timeout).await
+                tokio::select! {
+                    res = Self::make_connection(endpoint.clone(), addr, connection_timeout) => {
+                        res
+                    },
+                    _ = exit_notified.notified() => {
+                        break;
+                    }
+                }
             };
             match conn {
                 Ok(conn) => {
@@ -239,9 +250,6 @@ impl QuicConnectionUtils {
                 }
                 Err(e) => {
                     trace!("Could not connect to {} because of error {}", identity, e);
-                    if exit_signal.load(Ordering::Relaxed) {
-                        break;
-                    }
                 }
             }
         }

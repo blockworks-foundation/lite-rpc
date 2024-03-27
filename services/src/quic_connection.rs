@@ -14,7 +14,7 @@ use std::{
         Arc,
     },
 };
-use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
+use tokio::sync::{Notify, OwnedSemaphorePermit, RwLock, Semaphore};
 
 pub type EndpointPool = RotatingQueue<Endpoint>;
 
@@ -40,7 +40,7 @@ pub struct QuicConnection {
     identity: Pubkey,
     socket_address: SocketAddr,
     connection_params: QuicConnectionParameters,
-    exit_signal: Arc<AtomicBool>,
+    exit_notify: Arc<Notify>,
     timeout_counters: Arc<AtomicU64>,
     has_connected_once: Arc<AtomicBool>,
 }
@@ -51,7 +51,7 @@ impl QuicConnection {
         endpoint: Endpoint,
         socket_address: SocketAddr,
         connection_params: QuicConnectionParameters,
-        exit_signal: Arc<AtomicBool>,
+        exit_notify: Arc<Notify>,
     ) -> Self {
         Self {
             connection: Arc::new(RwLock::new(None)),
@@ -60,7 +60,7 @@ impl QuicConnection {
             identity,
             socket_address,
             connection_params,
-            exit_signal,
+            exit_notify,
             timeout_counters: Arc::new(AtomicU64::new(0)),
             has_connected_once: Arc::new(AtomicBool::new(false)),
         }
@@ -74,7 +74,7 @@ impl QuicConnection {
             self.socket_address,
             self.connection_params.connection_timeout,
             self.connection_params.connection_retry_count,
-            self.exit_signal.clone(),
+            self.exit_notify.clone(),
         )
         .await
     }
@@ -127,32 +127,48 @@ impl QuicConnection {
     pub async fn send_transaction(&self, tx: Vec<u8>) {
         let connection_retry_count = self.connection_params.connection_retry_count;
         for _ in 0..connection_retry_count {
-            if self.exit_signal.load(Ordering::Relaxed) {
-                // return
-                return;
-            }
-
             let mut do_retry = false;
-            let connection = self.get_connection().await;
+            let exit_notify = self.exit_notify.clone();
+
+            let connection = tokio::select! {
+                conn = self.get_connection() => {
+                    conn
+                },
+                _ = exit_notify.notified() => {
+                    break;
+                }
+            };
 
             if let Some(connection) = connection {
                 TRIED_SEND_TRANSCTION_TRIED.inc();
                 let current_stable_id = connection.stable_id() as u64;
-                match QuicConnectionUtils::open_unistream(
-                    connection,
-                    self.connection_params.unistream_timeout,
-                )
-                .await
-                {
+                let open_uni_result = tokio::select! {
+                    res = QuicConnectionUtils::open_unistream(
+                        connection,
+                        self.connection_params.unistream_timeout,
+                    ) => {
+                        res
+                    },
+                    _ = exit_notify.notified() => {
+                        break;
+                    }
+                };
+                match open_uni_result {
                     Ok(send_stream) => {
-                        match QuicConnectionUtils::write_all(
-                            send_stream,
-                            &tx,
-                            self.identity,
-                            self.connection_params,
-                        )
-                        .await
-                        {
+                        let write_add_result = tokio::select! {
+                            res = QuicConnectionUtils::write_all(
+                                send_stream,
+                                &tx,
+                                self.identity,
+                                self.connection_params,
+                            ) => {
+                                res
+                            },
+                            _ = exit_notify.notified() => {
+                                break;
+                            }
+                        };
+                        match write_add_result {
                             Ok(()) => {
                                 SEND_TRANSCTION_SUCESSFUL.inc();
                             }
@@ -231,7 +247,7 @@ impl QuicConnectionPool {
         endpoints: EndpointPool,
         socket_address: SocketAddr,
         connection_parameters: QuicConnectionParameters,
-        exit_signal: Arc<AtomicBool>,
+        exit_notify: Arc<Notify>,
         nb_connection: usize,
         max_number_of_unistream_connection: usize,
     ) -> Self {
@@ -243,7 +259,7 @@ impl QuicConnectionPool {
                 endpoints.get().expect("Should get and endpoint"),
                 socket_address,
                 connection_parameters,
-                exit_signal.clone(),
+                exit_notify.clone(),
             ));
         }
         Self {
