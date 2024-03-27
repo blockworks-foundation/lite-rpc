@@ -215,7 +215,7 @@ impl ActiveConnection {
             }
         }
 
-        heap_filler_task.abort();
+        let _ = heap_filler_task.await;
         let elements_removed = priorization_heap.clear().await;
         TRANSACTIONS_IN_HEAP.sub(elements_removed as i64);
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
