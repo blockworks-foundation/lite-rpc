@@ -6,7 +6,7 @@ use log::warn;
 use postgres_types::ToSql;
 use std::time::SystemTime;
 use async_trait::async_trait;
-use crate::{BenchMetricsPostgresSaver, BenchRunner, BenchRunnerOldBenchImpl};
+use crate::{BenchMetricsPostgresSaver, BenchRunner, BenchRunnerBench1Impl, BenchRunnerConfirmationRateImpl};
 
 #[allow(clippy::upper_case_acronyms)]
 pub enum BenchRunStatus {
@@ -62,7 +62,7 @@ pub async fn upsert_benchrun_status(
 
 
 #[async_trait]
-impl BenchMetricsPostgresSaver<Metric> for BenchRunnerOldBenchImpl {
+impl BenchMetricsPostgresSaver<Metric> for BenchRunnerBench1Impl {
     async fn try_save_results_postgres(&self, metric: &Metric, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
         let metricjson = serde_json::to_value(metric).unwrap();
         let values: &[&(dyn ToSql + Sync)] = &[
@@ -101,4 +101,11 @@ impl BenchMetricsPostgresSaver<Metric> for BenchRunnerOldBenchImpl {
     }
 }
 
+
+#[async_trait]
+impl BenchMetricsPostgresSaver<Metric> for BenchRunnerConfirmationRateImpl {
+    async fn try_save_results_postgres(&self, metric: &Metric, postgres_session: &PostgresSessionCache) -> anyhow::Result<()> {
+        todo!();
+    }
+}
 
