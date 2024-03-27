@@ -1,4 +1,5 @@
-use crate::{helpers::BenchHelper, metrics::Metric, metrics::TxMetricData};
+use crate::{create_memo_tx_large, create_memo_tx_small, generate_random_strings};
+use crate::{metrics::Metric, metrics::TxMetricData};
 use dashmap::DashMap;
 use log::warn;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -53,20 +54,20 @@ pub async fn bench(
                 TransactionSize::Small => 10,
                 TransactionSize::Large => 232, // 565 is max but we need to lower that to not burn the CUs
             };
-            let rand_strings = BenchHelper::generate_random_strings(tx_count, Some(seed), n_chars);
+            let rand_strings = generate_random_strings(tx_count, Some(seed), n_chars);
 
             let bench_start_time = Instant::now();
 
             for rand_string in &rand_strings {
                 let blockhash = { *block_hash.read().await };
                 let tx = match transaction_size {
-                    TransactionSize::Small => BenchHelper::create_memo_tx_small(
+                    TransactionSize::Small => create_memo_tx_small(
                         rand_string,
                         &funded_payer,
                         blockhash,
                         cu_price_micro_lamports,
                     ),
-                    TransactionSize::Large => BenchHelper::create_memo_tx_large(
+                    TransactionSize::Large => create_memo_tx_large(
                         rand_string,
                         &funded_payer,
                         blockhash,
