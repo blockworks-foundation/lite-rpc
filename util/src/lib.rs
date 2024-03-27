@@ -1,4 +1,6 @@
 pub mod encoding;
+pub mod histogram_nbuckets;
+pub mod histogram_percentiles;
 pub mod secrets;
 pub mod statistics;
 
