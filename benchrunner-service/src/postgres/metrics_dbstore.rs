@@ -117,7 +117,7 @@ impl BenchMetricsPostgresSaver for BenchRunnerConfirmationRateImpl {
             &(metric.txs_confirmed as i64),
             &(metric.txs_un_confirmed as i64),
             &(metric.average_confirmation_time),
-            &(metric.histogram_confirmation_time),
+            &empty_vec_to_null(&metric.histogram_confirmation_time),
             &(metric.average_slot_confirmation_time),
             &metricjson,
         ];
@@ -146,5 +146,14 @@ impl BenchMetricsPostgresSaver for BenchRunnerConfirmationRateImpl {
             .await?;
 
         Ok(())
+    }
+}
+
+#[allow(dead_code)]
+fn empty_vec_to_null<T>(vec: &Vec<T>) -> Option<&Vec<T>> {
+    if vec.is_empty() {
+        None
+    } else {
+        Some(vec)
     }
 }
