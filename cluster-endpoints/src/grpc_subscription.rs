@@ -33,11 +33,11 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solana_transaction_status::{Reward, RewardType};
+use tokio_util::sync::CancellationToken;
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Notify;
-use tokio_util::sync::CancellationToken;
 use tracing::trace_span;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
