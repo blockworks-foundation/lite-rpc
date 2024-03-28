@@ -16,11 +16,8 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast::Receiver;
-use tokio::sync::Notify;
+use tokio::sync::broadcast::{self, Receiver};
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
@@ -56,8 +53,7 @@ impl FromYellowstoneExtractor for BlockMetaHashExtractor {
 fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     processed_block_sender: async_channel::Sender<ProducedBlock>,
-    exit_notfier: Arc<Notify>,
-    do_exit: Arc<AtomicBool>,
+    mut exit_notify: broadcast::Receiver<()>,
 ) -> Vec<AnyhowJoinHandle> {
     let commitment_config = CommitmentConfig::processed();
 
@@ -70,20 +66,20 @@ fn create_grpc_multiplex_processed_block_stream(
             grpc_source.grpc_x_token.clone(),
             block_sender,
             yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
-            exit_notfier.clone(),
+            exit_notify.resubscribe(),
         ));
         streams.push(block_reciever)
     }
     let merging_streams: AnyhowJoinHandle = tokio::task::spawn(async move {
         const MAX_SIZE: usize = 1024;
         let mut slots_processed = BTreeSet::<u64>::new();
-        while !do_exit.load(std::sync::atomic::Ordering::Relaxed) {
+        loop {
             let mut select_all = futures::stream::select_all(streams.clone());
             let block_message = tokio::select! {
                 message = select_all.next() => {
                     message
                 },
-                _ = exit_notfier.notified() => {
+                _ = exit_notify.recv() => {
                     break;
                 }
             };
@@ -104,6 +100,9 @@ fn create_grpc_multiplex_processed_block_stream(
                         slots_processed.pop_first();
                     }
                 }
+            } else {
+                // so that the process does not use all the CPU.
+                tokio::time::sleep(Duration::from_millis(1)).await;
             }
         }
         Ok(())
@@ -150,13 +149,11 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 let (processed_block_sender, processed_block_reciever) =
                     async_channel::unbounded::<ProducedBlock>();
 
-                let exit_notify = Arc::new(Notify::new());
-                let do_exit = Arc::new(AtomicBool::new(false));
+                let (exit_notifier, exit_notify) = broadcast::channel::<()>(1);
                 let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
                     &grpc_sources,
                     processed_block_sender,
-                    exit_notify.clone(),
-                    do_exit.clone(),
+                    exit_notify,
                 );
 
                 let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
@@ -258,10 +255,10 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         }
                     }
                 }
-                exit_notify.notify_waiters();
-                exit_notify.notify_one();
-                do_exit.store(true, std::sync::atomic::Ordering::Relaxed);
-                futures::future::join_all(processed_blocks_tasks).await;
+                let _ = exit_notifier.send(());
+                if tokio::time::timeout(Duration::from_millis(500), futures::future::join_all(processed_blocks_tasks)).await.is_err() {
+                    log::error!("Cannot join the block processing threads in time");
+                }
             }
         })
     };
