@@ -32,6 +32,7 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solana_transaction_status::{Reward, RewardType};
+use std::sync::atomic::AtomicBool;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Notify;
 use yellowstone_grpc_client::GeyserGrpcClient;
@@ -299,9 +300,10 @@ pub fn create_block_processing_task(
     block_sx: async_channel::Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
     exit_notfier: Arc<Notify>,
+    do_exit: Arc<AtomicBool>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
-        loop {
+        'main_loop: while !do_exit.load(std::sync::atomic::Ordering::Relaxed) {
             let mut blocks_subs = HashMap::new();
             blocks_subs.insert(
                 "block_client".to_string(),
@@ -330,7 +332,7 @@ pub fn create_block_processing_task(
                 )
                 .await?;
 
-            loop {
+            while !do_exit.load(std::sync::atomic::Ordering::Relaxed) {
                 tokio::select! {
                     message = stream.next() => {
                         let Some(Ok(message)) = message else {
@@ -362,7 +364,7 @@ pub fn create_block_processing_task(
                         };
                     },
                     _ = exit_notfier.notified() => {
-                        break;
+                        break 'main_loop;
                     }
                 }
             }
@@ -371,6 +373,7 @@ pub fn create_block_processing_task(
             log::error!("Grpc block subscription broken (resubscribing)");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
+        Ok(())
     })
 }
 

@@ -16,6 +16,7 @@ use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::Receiver;
@@ -56,6 +57,7 @@ fn create_grpc_multiplex_processed_block_stream(
     grpc_sources: &Vec<GrpcSourceConfig>,
     processed_block_sender: async_channel::Sender<ProducedBlock>,
     exit_notfier: Arc<Notify>,
+    do_exit: Arc<AtomicBool>,
 ) -> Vec<AnyhowJoinHandle> {
     let commitment_config = CommitmentConfig::processed();
 
@@ -69,13 +71,14 @@ fn create_grpc_multiplex_processed_block_stream(
             block_sender,
             yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
             exit_notfier.clone(),
+            do_exit.clone(),
         ));
         streams.push(block_reciever)
     }
     let merging_streams: AnyhowJoinHandle = tokio::task::spawn(async move {
         const MAX_SIZE: usize = 1024;
         let mut slots_processed = BTreeSet::<u64>::new();
-        loop {
+        while !do_exit.load(std::sync::atomic::Ordering::Relaxed) {
             let block_message = futures::stream::select_all(streams.clone()).next().await;
             if let Some(block) = block_message {
                 let slot = block.slot;
@@ -96,6 +99,7 @@ fn create_grpc_multiplex_processed_block_stream(
                 }
             }
         }
+        Ok(())
     });
     tasks.push(merging_streams);
     tasks
@@ -140,10 +144,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     async_channel::unbounded::<ProducedBlock>();
 
                 let exit_notify = Arc::new(Notify::new());
+                let do_exit = Arc::new(AtomicBool::new(false));
                 let processed_blocks_tasks = create_grpc_multiplex_processed_block_stream(
                     &grpc_sources,
                     processed_block_sender,
                     exit_notify.clone(),
+                    do_exit.clone(),
                 );
 
                 let confirmed_blockmeta_stream = create_grpc_multiplex_block_meta_stream(
@@ -245,6 +251,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         }
                     }
                 }
+                do_exit.store(true, std::sync::atomic::Ordering::Relaxed);
                 exit_notify.notify_waiters();
                 futures::future::join_all(processed_blocks_tasks).await;
             }

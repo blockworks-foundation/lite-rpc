@@ -13,7 +13,12 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+};
 use tokio::sync::{
     broadcast::{Receiver, Sender},
     Notify,
@@ -81,6 +86,8 @@ impl ActiveConnection {
 
         let identity = self.identity;
         let exit_notifier = self.exit_notifier.clone();
+        let exit_notifier_children = Arc::new(Notify::new());
+        let do_exit = Arc::new(AtomicBool::new(false));
 
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
 
@@ -96,7 +103,7 @@ impl ActiveConnection {
             self.endpoints.clone(),
             addr,
             self.connection_parameters,
-            exit_notifier.clone(),
+            exit_notifier_children.clone(),
             max_number_of_connections,
             max_uni_stream_connections,
         );
@@ -107,16 +114,17 @@ impl ActiveConnection {
             let priorization_heap = priorization_heap.clone();
             let data_cache = self.data_cache.clone();
             let fill_notify = fill_notify.clone();
-            let exit_notifier = exit_notifier.clone();
+            let exit_notifier_children = exit_notifier_children.clone();
+            let do_exit = do_exit.clone();
             tokio::spawn(async move {
                 let mut current_blockheight =
                     data_cache.block_information_store.get_last_blockheight();
-                loop {
+                while !do_exit.load(std::sync::atomic::Ordering::Relaxed) {
                     let tx = tokio::select! {
                         tx = transaction_reciever.recv() => {
                             tx
                         },
-                        _ = exit_notifier.notified() => {
+                        _ = exit_notifier_children.notified() => {
                             break;
                         }
                     };
@@ -214,7 +222,8 @@ impl ActiveConnection {
                 }
             }
         }
-
+        do_exit.store(true, std::sync::atomic::Ordering::Relaxed);
+        exit_notifier_children.notify_waiters();
         let _ = heap_filler_task.await;
         let elements_removed = priorization_heap.clear().await;
         TRANSACTIONS_IN_HEAP.sub(elements_removed as i64);
@@ -288,6 +297,7 @@ impl TpuConnectionManager {
                 trace!("removing a connection for {}", key.to_string());
                 // ignore error for exit channel
                 value.exit_notifier.notify_waiters();
+                value.exit_notifier.notify_one();
                 false
             } else {
                 true
