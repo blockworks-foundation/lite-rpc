@@ -212,8 +212,8 @@ pub async fn send_and_confirm_bulk_transactions(
 
         if Instant::now() > timeout_at {
             warn!(
-                "Timeout waiting for transactions to confirm after {} iterations",
-                iteration
+                "Timeout reached ({:?}) waiting for transactions to confirm after {} iterations",
+                max_timeout, iteration
             );
             break 'polling_loop;
         }
