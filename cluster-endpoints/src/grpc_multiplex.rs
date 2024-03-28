@@ -71,7 +71,6 @@ fn create_grpc_multiplex_processed_block_stream(
             block_sender,
             yellowstone_grpc_proto::geyser::CommitmentLevel::Processed,
             exit_notfier.clone(),
-            do_exit.clone(),
         ));
         streams.push(block_reciever)
     }
@@ -79,7 +78,15 @@ fn create_grpc_multiplex_processed_block_stream(
         const MAX_SIZE: usize = 1024;
         let mut slots_processed = BTreeSet::<u64>::new();
         while !do_exit.load(std::sync::atomic::Ordering::Relaxed) {
-            let block_message = futures::stream::select_all(streams.clone()).next().await;
+            let mut select_all = futures::stream::select_all(streams.clone());
+            let block_message = tokio::select! {
+                message = select_all.next() => {
+                    message
+                },
+                _ = exit_notfier.notified() => {
+                    break;
+                }
+            };
             if let Some(block) = block_message {
                 let slot = block.slot;
                 // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
@@ -251,8 +258,9 @@ pub fn create_grpc_multiplex_blocks_subscription(
                         }
                     }
                 }
-                do_exit.store(true, std::sync::atomic::Ordering::Relaxed);
                 exit_notify.notify_waiters();
+                exit_notify.notify_one();
+                do_exit.store(true, std::sync::atomic::Ordering::Relaxed);
                 futures::future::join_all(processed_blocks_tasks).await;
             }
         })
