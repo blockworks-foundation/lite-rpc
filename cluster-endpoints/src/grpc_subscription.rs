@@ -275,7 +275,7 @@ pub fn create_block_processing_task(
     grpc_x_token: Option<String>,
     block_sx: async_channel::Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
-    exit_notfier: Arc<Notify>,
+    mut exit_notify: broadcast::Receiver<()>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
         loop {
@@ -293,7 +293,8 @@ pub fn create_block_processing_task(
             // connect to grpc
             let mut client =
                 connect_with_timeout_hacked(grpc_addr.clone(), grpc_x_token.clone()).await?;
-            let mut stream = client
+            let mut stream = tokio::select! { 
+                res = client
                 .subscribe_once(
                     HashMap::new(),
                     Default::default(),
@@ -304,8 +305,13 @@ pub fn create_block_processing_task(
                     Some(commitment_level),
                     Default::default(),
                     None,
-                )
-                .await?;
+                ) => {
+                    res?
+                },
+                _ = exit_notify.recv() => {
+                    break;
+                }
+            };
 
             loop {
                 tokio::select! {
@@ -338,8 +344,8 @@ pub fn create_block_processing_task(
                             }
                         };
                     },
-                    _ = exit_notfier.notified() => {
-                        break;
+                    _ = exit_notify.recv() => {
+                        break 'main_loop;
                     }
                 }
             }
