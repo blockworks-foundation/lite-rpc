@@ -88,7 +88,7 @@ pub fn initialize_logger() {
         .with_env_filter(
             EnvFilter::builder()
                 .with_default_directive(LevelFilter::INFO.into())
-                .from_env_lossy()
+                .from_env_lossy(),
         )
         .with_thread_ids(true)
         .with_line_number(true)

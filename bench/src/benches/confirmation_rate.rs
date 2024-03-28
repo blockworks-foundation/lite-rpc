@@ -1,19 +1,17 @@
 use crate::{create_rng, generate_txs, BenchmarkTransactionParams};
 use anyhow::Context;
+use itertools::Itertools;
 use log::{debug, info, trace, warn};
-use std::ops::Add;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use itertools::Itertools;
 
 use crate::benches::rpc_interface::{
     send_and_confirm_bulk_transactions, ConfirmationResponseFromRpc,
 };
+use solana_lite_rpc_util::histogram_percentiles::calculate_percentiles;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
-use solana_lite_rpc_util::histogram_nbuckets::histogram;
-use solana_lite_rpc_util::histogram_percentiles::calculate_percentiles;
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct Metric {
@@ -142,22 +140,37 @@ pub async fn send_bulk_txs_and_wait(
     }
 
     let histogram_confirmation_time_ms = {
-        let confirmation_times = vec_confirmation_time.iter().map(|d| d.as_secs_f64() * 1000.0)
+        let confirmation_times = vec_confirmation_time
+            .iter()
+            .map(|d| d.as_secs_f64() * 1000.0)
             .sorted_by(|a, b| a.partial_cmp(b).unwrap())
             .collect_vec();
         let histogram_confirmation_time = calculate_percentiles(&confirmation_times);
-        debug!("Confirmation time percentiles: {}", histogram_confirmation_time);
-        histogram_confirmation_time.v.iter().map(|d| *d as f32).collect()
+        debug!(
+            "Confirmation time percentiles: {}",
+            histogram_confirmation_time
+        );
+        histogram_confirmation_time
+            .v
+            .iter()
+            .map(|d| *d as f32)
+            .collect()
     };
     let average_confirmation_time_ms = if tx_confirmed > 0 {
-        vec_confirmation_time.iter().map(|d| d.as_secs_f32() * 1000.0).sum::<f32>()
+        vec_confirmation_time
+            .iter()
+            .map(|d| d.as_secs_f32() * 1000.0)
+            .sum::<f32>()
             / tx_confirmed as f32
     } else {
         0.0
     };
     let average_slot_confirmation_time = if tx_confirmed > 0 {
-        vec_slot_confirmation_time.iter().map(|d| *d as f32)
-            .sum::<f32>() / tx_confirmed as f32
+        vec_slot_confirmation_time
+            .iter()
+            .map(|d| *d as f32)
+            .sum::<f32>()
+            / tx_confirmed as f32
     } else {
         0.0
     };
@@ -176,12 +189,17 @@ pub async fn send_bulk_txs_and_wait(
 fn calc_stats_avg(stats: &[Metric]) -> Metric {
     let len = stats.len();
 
+    if len == 1 {
+        return stats[0].clone();
+    }
+
     let mut avg = Metric {
         txs_sent: 0,
         txs_send_errors: 0,
         txs_confirmed: 0,
         txs_un_confirmed: 0,
         average_confirmation_time: 0.0,
+        // TODO add support for histogram average (requires to keep all values for all runs)
         histogram_confirmation_time: vec![],
         average_slot_confirmation_time: 0.0,
     };
