@@ -35,7 +35,7 @@ pub enum ConfirmationResponseFromRpc {
 }
 
 #[derive(Clone)]
-struct RpcSendResponse {
+struct RpcSendData {
     pub signature: Signature,
     pub sent_duration: Duration,
     pub sent_instant: Instant,
@@ -70,10 +70,11 @@ pub async fn send_and_confirm_bulk_transactions(
     let batch_rpcsend_or_fails = join_all(txs.iter().map(|tx| {
         rpc_client
             .send_transaction_with_config(tx, send_config)
-            .map_ok(|tx_sig| RpcSendResponse {
+            .map_ok(|tx_sig| RpcSendData {
                 signature: tx_sig,
                 sent_duration: started_at.elapsed(),
                 sent_instant: Instant::now(),
+                // note that send_slot is taken from the start of the batch and not updated in between
                 sent_slot: send_slot,
             })
             .map_err(|e| e.kind)
@@ -134,7 +135,7 @@ pub async fn send_and_confirm_bulk_transactions(
         bail!("Failed to send all transactions");
     }
 
-    let mut pending_status_map: HashMap<Signature, RpcSendResponse> = HashMap::new();
+    let mut pending_status_map: HashMap<Signature, RpcSendData> = HashMap::new();
     batch_rpcsend_or_fails
         .iter()
         .filter(|rpcsend_or_fail| rpcsend_or_fail.is_ok())
@@ -194,14 +195,14 @@ pub async fn send_and_confirm_bulk_transactions(
                         continue 'polling_loop;
                     }
                     // status is confirmed or finalized
-                    pending_status_map.remove(&tx_sig);
+                    let rpcsend_data = pending_status_map.remove(&tx_sig).unwrap();
                     let prev_value = result_status_map.insert(
                         tx_sig,
                         ConfirmationResponseFromRpc::Success(
                             send_slot,
                             tx_status.slot,
                             tx_status.confirmation_status(),
-                            elapsed,
+                            rpcsend_data.sent_instant.elapsed(),
                         ),
                     );
                     assert!(prev_value.is_none(), "Must not override existing value");
