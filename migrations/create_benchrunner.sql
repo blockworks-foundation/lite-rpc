@@ -47,3 +47,4 @@ GRANT SELECT ON ALL TABLES IN SCHEMA benchrunner TO ro_benchrunner;
 ALTER DEFAULT PRIVILEGES IN SCHEMA benchrunner GRANT SELECT ON TABLES TO ro_benchrunner;
 
 ALTER TABLE benchrunner.bench_metrics RENAME TO bench_metrics_bench1;
+ALTER TABLE benchrunner.bench_metrics_confirmation_rate ADD COLUMN histogram_confirmation_time_ms real[];

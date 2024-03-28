@@ -99,6 +99,7 @@ pub fn calculate_cummulative(values: &[Point]) -> PercentilesCummulative {
     }
 }
 
+#[derive(Debug)]
 pub struct Percentiles {
     // value
     pub v: Vec<f64>,

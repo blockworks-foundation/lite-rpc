@@ -124,6 +124,7 @@ async fn main() {
 
                 if let Some(postgres_session) = postgres_session.as_ref() {
                     let _dbstatus = upsert_benchrun_status(
+                        // TODO store the bench impl
                         postgres_session,
                         &tenant_config,
                         &bench_config,
