@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Error};
 use futures::future::join_all;
-use futures::TryFutureExt;
+use futures::{FutureExt, TryFutureExt};
 use itertools::Itertools;
 use log::{debug, trace, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -34,6 +34,14 @@ pub enum ConfirmationResponseFromRpc {
     Timeout(Duration),
 }
 
+#[derive(Clone)]
+struct RpcSendResponse {
+    pub signature: Signature,
+    pub sent_duration: Duration,
+    pub sent_instant: Instant,
+    pub sent_slot: Slot,
+}
+
 pub async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
     txs: &[Transaction],
@@ -58,9 +66,16 @@ pub async fn send_and_confirm_bulk_transactions(
         "Sending {} transactions via RPC (retries=off) ..",
         txs.len()
     );
-    let batch_sigs_or_fails = join_all(txs.iter().map(|tx| {
+
+    let batch_rpcsend_or_fails = join_all(txs.iter().map(|tx| {
         rpc_client
             .send_transaction_with_config(tx, send_config)
+            .map_ok(|tx_sig| RpcSendResponse {
+                signature: tx_sig,
+                sent_duration: started_at.elapsed(),
+                sent_instant: Instant::now(),
+                sent_slot: send_slot,
+            })
             .map_err(|e| e.kind)
     }))
     .await;
@@ -82,17 +97,17 @@ pub async fn send_and_confirm_bulk_transactions(
         );
     }
 
-    let num_sent_ok = batch_sigs_or_fails
+    let num_sent_ok = batch_rpcsend_or_fails
         .iter()
-        .filter(|sig_or_fail| sig_or_fail.is_ok())
+        .filter(|rpcsend_or_fail| rpcsend_or_fail.is_ok())
         .count();
-    let num_sent_failed = batch_sigs_or_fails
+    let num_sent_failed = batch_rpcsend_or_fails
         .iter()
-        .filter(|sig_or_fail| sig_or_fail.is_err())
+        .filter(|rpcsend_or_fail| rpcsend_or_fail.is_err())
         .count();
 
     for (i, tx_sig) in txs.iter().enumerate() {
-        let tx_sent = batch_sigs_or_fails[i].is_ok();
+        let tx_sent = batch_rpcsend_or_fails[i].is_ok();
         if tx_sent {
             trace!("- tx_sent {}", tx_sig.get_signature());
         } else {
@@ -119,12 +134,13 @@ pub async fn send_and_confirm_bulk_transactions(
         bail!("Failed to send all transactions");
     }
 
-    let mut pending_status_set: HashSet<Signature> = HashSet::new();
-    batch_sigs_or_fails
+    let mut pending_status_map: HashMap<Signature, RpcSendResponse> = HashMap::new();
+    batch_rpcsend_or_fails
         .iter()
-        .filter(|sig_or_fail| sig_or_fail.is_ok())
-        .for_each(|sig_or_fail| {
-            pending_status_set.insert(sig_or_fail.as_ref().unwrap().to_owned());
+        .filter(|rpcsend_or_fail| rpcsend_or_fail.is_ok())
+        .for_each(|rpcsend_or_fail| {
+            let rpcsend_data = rpcsend_or_fail.as_ref().unwrap();
+            pending_status_map.insert(rpcsend_data.signature, rpcsend_data.clone());
         });
     let mut result_status_map: HashMap<Signature, ConfirmationResponseFromRpc> = HashMap::new();
 
@@ -134,11 +150,11 @@ pub async fn send_and_confirm_bulk_transactions(
     'polling_loop: for iteration in 1.. {
         let iteration_ends_at = started_at + Duration::from_millis(iteration * 400);
         assert_eq!(
-            pending_status_set.len() + result_status_map.len(),
+            pending_status_map.len() + result_status_map.len(),
             num_sent_ok,
             "Items must move between pending+result"
         );
-        let tx_batch = pending_status_set.iter().cloned().collect_vec();
+        let tx_batch = pending_status_map.iter().map(|(tx_sig, _)| tx_sig).cloned().collect_vec();
         debug!(
             "Request status for batch of remaining {} transactions in iteration {}",
             tx_batch.len(),
@@ -151,7 +167,7 @@ pub async fn send_and_confirm_bulk_transactions(
         for chunk in tx_batch.chunks(256) {
             // fail hard if not possible to poll status
             let chunk_responses = rpc_client
-                .get_signature_statuses(chunk)
+                .get_signature_statuses(&chunk)
                 .await
                 .expect("get signature statuses");
             batch_status.extend(chunk_responses.value);
@@ -178,7 +194,7 @@ pub async fn send_and_confirm_bulk_transactions(
                         continue 'polling_loop;
                     }
                     // status is confirmed or finalized
-                    pending_status_set.remove(&tx_sig);
+                    pending_status_map.remove(&tx_sig);
                     let prev_value = result_status_map.insert(
                         tx_sig,
                         ConfirmationResponseFromRpc::Success(
@@ -201,7 +217,7 @@ pub async fn send_and_confirm_bulk_transactions(
             }
         }
 
-        if pending_status_set.is_empty() {
+        if pending_status_map.is_empty() {
             debug!(
                 "All transactions confirmed after {} iterations / {:?}",
                 iteration,
@@ -225,30 +241,33 @@ pub async fn send_and_confirm_bulk_transactions(
     let total_time_elapsed_polling = started_at.elapsed();
 
     // all transactions which remain in pending list are considered timed out
-    for tx_sig in pending_status_set.clone() {
-        pending_status_set.remove(&tx_sig);
+    for (tx_sig, rpcsend_data) in pending_status_map.clone() {
+        pending_status_map.remove(&tx_sig);
         result_status_map.insert(
             tx_sig,
             ConfirmationResponseFromRpc::Timeout(total_time_elapsed_polling),
         );
     }
 
-    let result_as_vec = batch_sigs_or_fails
+    let result_as_vec = batch_rpcsend_or_fails
         .into_iter()
         .enumerate()
-        .map(|(i, sig_or_fail)| match sig_or_fail {
-            Ok(tx_sig) => {
-                let confirmation = result_status_map
-                    .get(&tx_sig)
-                    .expect("consistent map with all tx")
-                    .clone()
-                    .to_owned();
-                (tx_sig, confirmation)
-            }
-            Err(send_error) => {
-                let tx_sig = txs[i].get_signature();
-                let confirmation = ConfirmationResponseFromRpc::SendError(Arc::new(send_error));
-                (*tx_sig, confirmation)
+        .map(|(i, sig_or_fail)| {
+            match sig_or_fail {
+                Ok(rpcsend_data) => {
+                    let tx_sig = rpcsend_data.signature;
+                    let confirmation = result_status_map
+                        .get(&tx_sig)
+                        .expect("consistent map with all tx")
+                        .clone()
+                        .to_owned();
+                    (tx_sig, confirmation)
+                }
+                Err(send_error) => {
+                    let tx_sig = txs[i].get_signature();
+                    let confirmation = ConfirmationResponseFromRpc::SendError(Arc::new(send_error));
+                    (*tx_sig, confirmation)
+                }
             }
         })
         .collect_vec();
