@@ -1,6 +1,6 @@
 use crate::tpu_utils::tpu_service::TpuService;
 use anyhow::{bail, Context};
-use log::error;
+use log::{error, info};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_lite_rpc_core::{
     stores::data_cache::DataCache, structures::transaction_sent_info::SentTransactionInfo,
@@ -50,14 +50,17 @@ impl TransactionReplayer {
     pub fn start_service(
         &self,
         sender: UnboundedSender<TransactionReplay>,
-        mut reciever: UnboundedReceiver<TransactionReplay>,
+        mut receiver: UnboundedReceiver<TransactionReplay>,
     ) -> AnyhowJoinHandle {
         let tpu_service = self.tpu_service.clone();
         let data_cache = self.data_cache.clone();
         let retry_offset = self.retry_offset;
 
+        info!("replay inner spawn");
         tokio::spawn(async move {
-            while let Some(mut tx_replay) = reciever.recv().await {
+
+            info!("async moved");
+            while let Some(mut tx_replay) = receiver.recv().await {
                 MESSAGES_IN_REPLAY_QUEUE.dec();
                 let now = Instant::now();
                 if now < tx_replay.replay_at {

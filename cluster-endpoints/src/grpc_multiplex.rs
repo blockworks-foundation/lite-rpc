@@ -54,10 +54,10 @@ fn create_grpc_multiplex_processed_block_task(
         loop {
             // recv loop
             if last_tick.elapsed() > Duration::from_millis(800) {
-                warn!(
-                    "(soft_realtime) slow multiplex loop interation: {:?}",
-                    last_tick.elapsed()
-                );
+                // warn!(
+                //     "(soft_realtime) slow multiplex loop interation: {:?}",
+                //     last_tick.elapsed()
+                // );
             }
             last_tick = Instant::now();
 
@@ -344,16 +344,16 @@ pub fn create_grpc_multiplex_blocks_subscription(
                             }
 
                             if let Err(e) = producedblock_sender.send(processed_block.clone()) {
-                                warn!("produced block channel has no receivers {e:?}");
+                                // warn!("produced block channel has no receivers {e:?}");
                             }
                             if confirmed_block_not_yet_processed.remove(&processed_block.blockhash) {
                                 if let Err(e) = producedblock_sender.send(processed_block.to_confirmed_block()) {
-                                    warn!("produced block channel has no receivers while trying to send confirmed block {e:?}");
+                                    // warn!("produced block channel has no receivers while trying to send confirmed block {e:?}");
                                 }
                             }
                             if finalized_block_not_yet_processed.remove(&processed_block.blockhash) {
                                 if let Err(e) = producedblock_sender.send(processed_block.to_finalized_block()) {
-                                    warn!("produced block channel has no receivers while trying to send confirmed block {e:?}");
+                                    // warn!("produced block channel has no receivers while trying to send confirmed block {e:?}");
                                 }
                             }
                             recent_processed_blocks.insert(processed_block.blockhash, processed_block);
@@ -365,7 +365,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                              trace!("got processed blockinfo {} with blockhash {}",
                                 blockinfo_processed.slot, blockhash);
                             if let Err(e) = blockinfo_sender.send(blockinfo_processed) {
-                                warn!("Processed blockinfo channel has no receivers {e:?}");
+                                // warn!("Processed blockinfo channel has no receivers {e:?}");
                             }
                         },
                         blockinfo_confirmed = block_info_reciever_confirmed.recv() => {
@@ -375,7 +375,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                              trace!("got confirmed blockinfo {} with blockhash {}",
                                 blockinfo_confirmed.slot, blockhash);
                             if let Err(e) = blockinfo_sender.send(blockinfo_confirmed) {
-                                warn!("Confirmed blockinfo channel has no receivers {e:?}");
+                                // warn!("Confirmed blockinfo channel has no receivers {e:?}");
                             }
 
                             if let Some(cached_processed_block) = recent_processed_blocks.get(&blockhash) {
@@ -383,7 +383,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 debug!("got confirmed blockinfo {} with blockhash {}",
                                     confirmed_block.slot, confirmed_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(confirmed_block) {
-                                    warn!("confirmed block channel has no receivers {e:?}");
+                                    // warn!("confirmed block channel has no receivers {e:?}");
                                 }
                             } else {
                                 confirmed_block_not_yet_processed.insert(blockhash);
@@ -400,7 +400,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                              trace!("got finalized blockinfo {} with blockhash {}",
                                 blockinfo_finalized.slot, blockhash);
                             if let Err(e) = blockinfo_sender.send(blockinfo_finalized) {
-                                warn!("Finalized blockinfo channel has no receivers {e:?}");
+                                // warn!("Finalized blockinfo channel has no receivers {e:?}");
                             }
 
                             if let Some(cached_processed_block) = recent_processed_blocks.remove(&blockhash) {
@@ -409,7 +409,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                                 debug!("got finalized blockinfo {} with blockhash {}",
                                     finalized_block.slot, finalized_block.blockhash.clone());
                                 if let Err(e) = producedblock_sender.send(finalized_block) {
-                                    warn!("Finalized block channel has no receivers {e:?}");
+                                    // warn!("Finalized block channel has no receivers {e:?}");
                                 }
                             } else if startup_completed {
                                 // this warning is ok for first few blocks when we start lrpc
@@ -505,7 +505,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                                 })
                                 .context("Send slot to channel");
                             if send_result.is_err() {
-                                warn!("Slot channel receiver is closed - aborting");
+                                info!("Slot channel receiver is closed - aborting");
                                 bail!("Slot channel receiver is closed - aborting");
                             }
 
@@ -519,18 +519,18 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                     }
                     Ok(Some(Message::Connecting(attempt))) => {
                         if attempt > 1 {
-                            warn!(
+                            info!(
                                 "Multiplexed geyser slot stream performs reconnect attempt {}",
                                 attempt
                             );
                         }
                     }
                     Ok(None) => {
-                        warn!("Multiplexed geyser source stream slot terminated - reconnect");
+                        info!("Multiplexed geyser source stream slot terminated - reconnect");
                         break 'recv_loop;
                     }
                     Err(_elapsed) => {
-                        warn!("Multiplexed geyser slot stream timeout - reconnect");
+                        info!("Multiplexed geyser slot stream timeout - reconnect");
                         // throttle
                         sleep(Duration::from_millis(1500)).await;
                         break 'recv_loop;

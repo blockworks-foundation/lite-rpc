@@ -1,5 +1,7 @@
 use anyhow::Context;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use tokio::sync::broadcast::Receiver;
+use tokio::time::Instant;
 
 use super::tpu_connection_manager::TpuConnectionManager;
 use crate::quic_connection_utils::QuicConnectionParameters;
@@ -7,6 +9,7 @@ use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
 
+use log::{debug, trace, warn, info};
 use solana_lite_rpc_core::network_utils::log_gso_workaround;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
@@ -107,6 +110,7 @@ impl TpuService {
     }
 
     pub fn send_transaction(&self, transaction: &SentTransactionInfo) -> anyhow::Result<()> {
+        debug!("send txn tpu");
         self.broadcast_sender.send(transaction.clone())?;
         Ok(())
     }
@@ -178,18 +182,25 @@ impl TpuService {
 
     pub fn start(&self, slot_notifications: SlotStream) -> AnyhowJoinHandle {
         let this = self.clone();
+        info!("ahhhhhh");
         tokio::spawn(async move {
             let mut slot_notifications = slot_notifications;
             loop {
+
+                // info!("loop");
                 let notification = slot_notifications
                     .recv()
                     .await
                     .context("Tpu service cannot get slot notification")?;
+                // info!("update quic conn");
+                let now = Instant::now();
                 this.update_quic_connections(
                     notification.processed_slot,
                     notification.estimated_processed_slot,
                 )
                 .await?;
+
+                // info!("quic conn updated in: {:?}", now.elapsed());
             }
         })
     }

@@ -1,0 +1,37 @@
+[package]
+name = "solana-lite-rpc-services-integration-test"
+version = "0.1.0"
+edition = "2021"
+description = "Integration test for lite rpc services"
+rust-version = "1.73.0"
+repository = "https://github.com/blockworks-foundation/lite-rpc"
+license = "AGPL"
+publish = false
+
+[dependencies]
+bincode = { workspace = true }
+bench = { path = "../bench" }
+lite-rpc = { path = "../lite-rpc" }
+solana-lite-rpc-address-lookup-tables = { workspace = true }
+solana-lite-rpc-core = { workspace = true }
+solana-lite-rpc-util = { workspace = true }
+solana-lite-rpc-services = { workspace = true }
+solana-lite-rpc-prioritization-fees = { workspace = true }
+solana-lite-rpc-cluster-endpoints = { workspace = true }
+solana-sdk = { workspace = true }
+solana-streamer = { workspace = true }
+solana-transaction-status = { workspace = true }
+solana-net-utils = { workspace = true }
+solana-rpc-client = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+dashmap = { workspace = true }
+itertools = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
+tokio = { version = "1.28.2", features = ["full", "fs"]}
+
+[dev-dependencies]
+crossbeam-channel = "0.5.6"
+countmap = "0.2.0"

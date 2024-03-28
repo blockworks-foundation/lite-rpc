@@ -1,6 +1,7 @@
 // This class will manage the lifecycle for a transaction
 // It will send, replay if necessary and confirm by listening to blocks
 
+use log::debug;
 use std::time::Duration;
 
 use crate::{
@@ -126,13 +127,16 @@ impl TransactionService {
         raw_tx: Vec<u8>,
         max_retries: Option<u16>,
     ) -> anyhow::Result<String> {
+        debug!("send txn service");
         let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
             Ok(tx) => tx,
             Err(err) => {
-                bail!(err.to_string());
+                bail!(format!("Failed to deserialize raw_tx: {}", err.to_string()));
             }
         };
         let signature = tx.signatures[0];
+
+        debug!("sig: {:?}", signature);
 
         let Some(BlockInformation {
             slot,
@@ -148,7 +152,7 @@ impl TransactionService {
         if self.block_information_store.get_last_blockheight() > last_valid_blockheight {
             bail!("Blockhash is expired");
         }
-
+        debug!("a");
         let prioritization_fee = {
             let mut prioritization_fee = 0;
             for ix in tx.message.instructions() {
@@ -167,6 +171,7 @@ impl TransactionService {
         };
 
         PRIORITY_FEES_HISTOGRAM.observe(prioritization_fee as f64);
+        debug!("b");
 
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         let transaction_info = SentTransactionInfo {
@@ -187,6 +192,8 @@ impl TransactionService {
             );
         }
         let replay_at = Instant::now() + self.replay_offset;
+
+        debug!("c");
         // ignore error for replay service
         if self
             .replay_channel
