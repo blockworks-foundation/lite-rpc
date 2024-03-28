@@ -14,8 +14,7 @@ use std::{
         Arc,
     },
 };
-use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
-use tokio_util::sync::CancellationToken;
+use tokio::sync::{Notify, OwnedSemaphorePermit, RwLock, Semaphore};
 
 pub type EndpointPool = RotatingQueue<Endpoint>;
 
@@ -41,7 +40,7 @@ pub struct QuicConnection {
     identity: Pubkey,
     socket_address: SocketAddr,
     connection_params: QuicConnectionParameters,
-    exit_notify: CancellationToken,
+    exit_notify: Arc<Notify>,
     timeout_counters: Arc<AtomicU64>,
     has_connected_once: Arc<AtomicBool>,
 }
@@ -52,7 +51,7 @@ impl QuicConnection {
         endpoint: Endpoint,
         socket_address: SocketAddr,
         connection_params: QuicConnectionParameters,
-        exit_notify: CancellationToken,
+        exit_notify: Arc<Notify>,
     ) -> Self {
         Self {
             connection: Arc::new(RwLock::new(None)),
@@ -135,7 +134,7 @@ impl QuicConnection {
                 conn = self.get_connection() => {
                     conn
                 },
-                _ = exit_notify.cancelled() => {
+                _ = exit_notify.notified() => {
                     break;
                 }
             };
@@ -150,7 +149,7 @@ impl QuicConnection {
                     ) => {
                         res
                     },
-                    _ = exit_notify.cancelled() => {
+                    _ = exit_notify.notified() => {
                         break;
                     }
                 };
@@ -165,7 +164,7 @@ impl QuicConnection {
                             ) => {
                                 res
                             },
-                            _ = exit_notify.cancelled() => {
+                            _ = exit_notify.notified() => {
                                 break;
                             }
                         };
@@ -248,7 +247,7 @@ impl QuicConnectionPool {
         endpoints: EndpointPool,
         socket_address: SocketAddr,
         connection_parameters: QuicConnectionParameters,
-        exit_notify: CancellationToken,
+        exit_notify: Arc<Notify>,
         nb_connection: usize,
         max_number_of_unistream_connection: usize,
     ) -> Self {

@@ -18,7 +18,6 @@ use tokio::sync::{
     broadcast::{Receiver, Sender},
     Notify,
 };
-use tokio_util::sync::CancellationToken;
 
 use crate::{
     quic_connection::{PooledConnection, QuicConnectionPool},
@@ -49,7 +48,7 @@ struct ActiveConnection {
     tpu_address: SocketAddr,
     data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
-    exit_notifier: CancellationToken,
+    exit_notifier: Arc<Notify>,
 }
 
 impl ActiveConnection {
@@ -66,7 +65,7 @@ impl ActiveConnection {
             identity,
             data_cache,
             connection_parameters,
-            exit_notifier: CancellationToken::new(),
+            exit_notifier: Arc::new(Notify::new()),
         }
     }
 
@@ -116,7 +115,7 @@ impl ActiveConnection {
                         tx = transaction_reciever.recv() => {
                             tx
                         },
-                        _ = exit_notifier.cancelled() => {
+                        _ = exit_notifier.notified() => {
                             break;
                         }
                     };
@@ -209,7 +208,7 @@ impl ActiveConnection {
                         });
                     }
                 },
-                _ = exit_notifier.cancelled() => {
+                _ = exit_notifier.notified() => {
                     break 'main_loop;
                 }
             }
@@ -287,7 +286,7 @@ impl TpuConnectionManager {
             if !connections_to_keep.contains_key(key) {
                 trace!("removing a connection for {}", key.to_string());
                 // ignore error for exit channel
-                value.exit_notifier.cancel();
+                value.exit_notifier.notify_waiters();
                 false
             } else {
                 true

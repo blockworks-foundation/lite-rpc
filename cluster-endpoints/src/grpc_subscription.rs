@@ -33,7 +33,6 @@ use solana_sdk::{
     transaction::TransactionError,
 };
 use solana_transaction_status::{Reward, RewardType};
-use tokio_util::sync::CancellationToken;
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -276,7 +275,7 @@ pub fn create_block_processing_task(
     grpc_x_token: Option<String>,
     block_sx: async_channel::Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
-    exit_notfier: CancellationToken,
+    exit_notfier: Arc<Notify>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
         loop {
@@ -339,7 +338,7 @@ pub fn create_block_processing_task(
                             }
                         };
                     },
-                    _ = exit_notfier.cancelled() => {
+                    _ = exit_notfier.notified() => {
                         break;
                     }
                 }

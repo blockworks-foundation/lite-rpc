@@ -40,7 +40,6 @@ chrono = { workspace = true }
 rustls = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-util = { workspace = true }
-tokio-util = { workspace = true }
 
 [dev-dependencies]
 tracing = { workspace = true }
