@@ -130,7 +130,6 @@ pub async fn send_and_confirm_bulk_transactions(
 
     // items get moved from pending_status_set to result_status_map
 
-    let started_at = Instant::now();
     let timeout_at = started_at + max_timeout;
     'polling_loop: for iteration in 1.. {
         let iteration_ends_at = started_at + Duration::from_millis(iteration * 400);
