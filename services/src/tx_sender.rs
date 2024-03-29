@@ -65,7 +65,9 @@ impl TxSender {
             }
             Err(err) => {
                 TXS_SENT_ERRORS.inc_by(1);
-                warn!("{err}");
+                let s = transaction_info.signature;
+                warn!("{s} - {err}");
+                warn!("TXS_IN_CHANNEL: {:?}", TXS_IN_CHANNEL.get());
                 0
             }
         };

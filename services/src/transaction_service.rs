@@ -1,7 +1,8 @@
 // This class will manage the lifecycle for a transaction
 // It will send, replay if necessary and confirm by listening to blocks
 
-use std::time::Duration;
+use log::trace;
+use std::{num::IntErrorKind, time::Duration};
 
 use crate::{
     tpu_utils::tpu_service::TpuService,
@@ -126,12 +127,15 @@ impl TransactionService {
         raw_tx: Vec<u8>,
         max_retries: Option<u16>,
     ) -> anyhow::Result<String> {
+        let s = Instant::now();
         let tx = match bincode::deserialize::<VersionedTransaction>(&raw_tx) {
             Ok(tx) => tx,
             Err(err) => {
-                bail!(err.to_string());
+                bail!(format!("Failed to deserialize raw_tx: {}", err.to_string()));
             }
         };
+        let a = s.elapsed();
+        trace!("deser: {:?}", a);
         let signature = tx.signatures[0];
 
         let Some(BlockInformation {
@@ -144,11 +148,14 @@ impl TransactionService {
         else {
             bail!("Blockhash not found in block store".to_string());
         };
+        let b = s.elapsed();
+        trace!("block info: {:?}", b-a);
 
         if self.block_information_store.get_last_blockheight() > last_valid_blockheight {
             bail!("Blockhash is expired");
         }
-
+        let c = s.elapsed();
+        trace!("block height: {:?}", c-b);
         let prioritization_fee = {
             let mut prioritization_fee = 0;
             for ix in tx.message.instructions() {
@@ -165,6 +172,8 @@ impl TransactionService {
             }
             prioritization_fee
         };
+        let d = s.elapsed();
+        trace!("prio fee: {:?}", d-c);
 
         PRIORITY_FEES_HISTOGRAM.observe(prioritization_fee as f64);
 
@@ -186,6 +195,8 @@ impl TransactionService {
                 e
             );
         }
+        let e = s.elapsed();
+        trace!("txn channel: {:?}", e-d);
         let replay_at = Instant::now() + self.replay_offset;
         // ignore error for replay service
         if self
@@ -200,6 +211,9 @@ impl TransactionService {
         {
             MESSAGES_IN_REPLAY_QUEUE.inc();
         }
+        let f = s.elapsed();
+        trace!("replay: {:?}", f-e);
+        trace!("toal: {:?}", f);
         Ok(signature.to_string())
     }
 }

@@ -50,14 +50,14 @@ impl TransactionReplayer {
     pub fn start_service(
         &self,
         sender: UnboundedSender<TransactionReplay>,
-        mut reciever: UnboundedReceiver<TransactionReplay>,
+        mut receiver: UnboundedReceiver<TransactionReplay>,
     ) -> AnyhowJoinHandle {
         let tpu_service = self.tpu_service.clone();
         let data_cache = self.data_cache.clone();
         let retry_offset = self.retry_offset;
 
         tokio::spawn(async move {
-            while let Some(mut tx_replay) = reciever.recv().await {
+            while let Some(mut tx_replay) = receiver.recv().await {
                 MESSAGES_IN_REPLAY_QUEUE.dec();
                 let now = Instant::now();
                 if now < tx_replay.replay_at {
