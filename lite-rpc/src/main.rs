@@ -11,7 +11,7 @@ use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
-use log::{debug, info};
+use log::info;
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
@@ -44,7 +44,8 @@ use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
 };
 use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
-use solana_lite_rpc_core::types::{BlockInfoStream, BlockStream};
+use solana_lite_rpc_core::types::BlockStream;
+use solana_lite_rpc_core::utils::get_latest_block_info;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
@@ -54,7 +55,6 @@ use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
 
 use lite_rpc::postgres_logger;
-use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -67,7 +67,6 @@ use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
-use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
 
@@ -75,32 +74,6 @@ use tracing_subscriber::EnvFilter;
 // longer periods of time
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
-
-async fn get_latest_block_info(
-    mut blockinfo_stream: BlockInfoStream,
-    commitment_config: CommitmentConfig,
-) -> BlockInfo {
-    let started = Instant::now();
-    loop {
-        match timeout(Duration::from_millis(500), blockinfo_stream.recv()).await {
-            Ok(Ok(block_info)) => {
-                if block_info.commitment_config == commitment_config {
-                    return block_info;
-                }
-            }
-            Err(_elapsed) => {
-                debug!(
-                    "waiting for latest block info ({}) ... {:.02}ms",
-                    commitment_config.commitment,
-                    started.elapsed().as_secs_f32() * 1000.0
-                );
-            }
-            Ok(Err(_error)) => {
-                panic!("Did not recv block info");
-            }
-        }
-    }
-}
 
 pub async fn start_postgres(
     config: Option<postgres_logger::PostgresSessionConfig>,

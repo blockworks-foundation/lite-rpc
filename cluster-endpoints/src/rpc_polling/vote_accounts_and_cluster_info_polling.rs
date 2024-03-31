@@ -11,19 +11,19 @@ pub fn poll_cluster_info(
 ) -> AnyhowJoinHandle {
     // task MUST not terminate but might be aborted from outside
     tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
         loop {
             match rpc_client.get_cluster_nodes().await {
                 Ok(cluster_nodes) => {
-                    debug!("get cluster_nodes from rpc: {:?}", cluster_nodes.len());
                     if let Err(e) = contact_info_sender.send(cluster_nodes) {
                         warn!("rpc_cluster_info channel has no receivers {e:?}");
                     }
-                    tokio::time::sleep(Duration::from_secs(600)).await;
+                    tokio::time::sleep(Duration::from_secs(60)).await;
                 }
                 Err(error) => {
                     warn!("rpc_cluster_info failed <{:?}> - retrying", error);
                     // throttle
-                    tokio::time::sleep(Duration::from_secs(2500)).await;
+                    tokio::time::sleep(Duration::from_secs(10)).await;
                 }
             }
         }
@@ -46,12 +46,12 @@ pub fn poll_vote_accounts(
                     if let Err(e) = vote_account_sender.send(vote_accounts) {
                         warn!("rpc_vote_accounts channel has no receivers {e:?}");
                     }
-                    tokio::time::sleep(Duration::from_secs(600)).await;
+                    tokio::time::sleep(Duration::from_secs(60)).await;
                 }
                 Err(error) => {
                     warn!("rpc_vote_accounts failed <{:?}> - retrying", error);
                     // throttle
-                    tokio::time::sleep(Duration::from_secs(2500)).await;
+                    tokio::time::sleep(Duration::from_secs(10)).await;
                 }
             }
         }

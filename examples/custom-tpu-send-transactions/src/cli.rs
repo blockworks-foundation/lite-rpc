@@ -16,6 +16,9 @@ pub struct Args {
     #[arg(short, long)]
     pub transaction_count: Option<usize>,
 
+    #[arg(short, long, default_value_t = 1)]
+    pub number_of_seconds: usize,
+
     #[arg(short, long)]
     pub fee_payer: String,
 
