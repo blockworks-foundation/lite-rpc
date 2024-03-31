@@ -12,16 +12,16 @@ use crate::benches::rpc_interface::{
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
 
-#[derive(Debug, serde::Serialize)]
-pub struct RpcStat {
-    tx_sent: u64,
-    tx_confirmed: u64,
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct Metric {
+    pub txs_sent: u64,
+    pub txs_confirmed: u64,
     // in ms
-    average_confirmation_time: f32,
+    pub average_confirmation_time: f32,
     // in slots
-    average_slot_confirmation_time: f32,
-    tx_send_errors: u64,
-    tx_unconfirmed: u64,
+    pub average_slot_confirmation_time: f32,
+    pub txs_send_errors: u64,
+    pub txs_un_confirmed: u64,
 }
 
 /// TC2 send multiple runs of num_txs, measure the confirmation rate
@@ -76,7 +76,7 @@ pub async fn send_bulk_txs_and_wait(
     num_txs: usize,
     tx_params: &BenchmarkTransactionParams,
     max_timeout: Duration,
-) -> anyhow::Result<RpcStat> {
+) -> anyhow::Result<Metric> {
     trace!("Get latest blockhash and generate transactions");
     let hash = rpc.get_latest_blockhash().await.map_err(|err| {
         log::error!("Error get latest blockhash : {err:?}");
@@ -148,41 +148,41 @@ pub async fn send_bulk_txs_and_wait(
         0.0
     };
 
-    Ok(RpcStat {
-        tx_sent,
-        tx_send_errors,
-        tx_confirmed,
-        tx_unconfirmed,
+    Ok(Metric {
+        txs_sent: tx_sent,
+        txs_send_errors: tx_send_errors,
+        txs_confirmed: tx_confirmed,
+        txs_un_confirmed: tx_unconfirmed,
         average_confirmation_time: average_confirmation_time_ms,
         average_slot_confirmation_time,
     })
 }
 
-fn calc_stats_avg(stats: &[RpcStat]) -> RpcStat {
+fn calc_stats_avg(stats: &[Metric]) -> Metric {
     let len = stats.len();
 
-    let mut avg = RpcStat {
-        tx_sent: 0,
-        tx_send_errors: 0,
-        tx_confirmed: 0,
-        tx_unconfirmed: 0,
+    let mut avg = Metric {
+        txs_sent: 0,
+        txs_send_errors: 0,
+        txs_confirmed: 0,
+        txs_un_confirmed: 0,
         average_confirmation_time: 0.0,
         average_slot_confirmation_time: 0.0,
     };
 
     for stat in stats {
-        avg.tx_sent += stat.tx_sent;
-        avg.tx_send_errors += stat.tx_send_errors;
-        avg.tx_confirmed += stat.tx_confirmed;
-        avg.tx_unconfirmed += stat.tx_unconfirmed;
+        avg.txs_sent += stat.txs_sent;
+        avg.txs_send_errors += stat.txs_send_errors;
+        avg.txs_confirmed += stat.txs_confirmed;
+        avg.txs_un_confirmed += stat.txs_un_confirmed;
         avg.average_confirmation_time += stat.average_confirmation_time;
         avg.average_slot_confirmation_time += stat.average_slot_confirmation_time;
     }
 
-    avg.tx_sent /= len as u64;
-    avg.tx_send_errors /= len as u64;
-    avg.tx_confirmed /= len as u64;
-    avg.tx_unconfirmed /= len as u64;
+    avg.txs_sent /= len as u64;
+    avg.txs_send_errors /= len as u64;
+    avg.txs_confirmed /= len as u64;
+    avg.txs_un_confirmed /= len as u64;
     avg.average_confirmation_time /= len as f32;
     avg.average_slot_confirmation_time /= len as f32;
 

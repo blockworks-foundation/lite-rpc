@@ -20,6 +20,7 @@ use tokio::time::Instant;
 #[derive(Debug, Clone)]
 pub struct BenchConfig {
     pub tx_count: usize,
+    pub tx_size: TxSize,
     pub cu_price_micro_lamports: u64,
 }
 
@@ -33,11 +34,10 @@ pub async fn bench_servicerunner(
     bench_config: &BenchConfig,
     rpc_addr: String,
     funded_payer: Keypair,
-    size_tx: TxSize,
 ) -> Metric {
     let started_at = Instant::now();
 
-    let transaction_size = match size_tx {
+    let transaction_size = match bench_config.tx_size {
         TxSize::Small => TransactionSize::Small,
         TxSize::Large => TransactionSize::Large,
     };
