@@ -31,6 +31,8 @@ dashmap = { workspace = true }
 itertools = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
+jemallocator = "0.5.4"
+jemalloc-ctl = "0.5.4"
 
 [dev-dependencies]
 crossbeam-channel = "0.5.6"
