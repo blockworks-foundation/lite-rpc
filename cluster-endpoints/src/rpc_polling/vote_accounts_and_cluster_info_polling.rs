@@ -18,7 +18,7 @@ pub fn poll_cluster_info(
                     if let Err(e) = contact_info_sender.send(cluster_nodes) {
                         warn!("rpc_cluster_info channel has no receivers {e:?}");
                     }
-                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    tokio::time::sleep(Duration::from_secs(600)).await;
                 }
                 Err(error) => {
                     warn!("rpc_cluster_info failed <{:?}> - retrying", error);
@@ -46,7 +46,7 @@ pub fn poll_vote_accounts(
                     if let Err(e) = vote_account_sender.send(vote_accounts) {
                         warn!("rpc_vote_accounts channel has no receivers {e:?}");
                     }
-                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    tokio::time::sleep(Duration::from_secs(600)).await;
                 }
                 Err(error) => {
                     warn!("rpc_vote_accounts failed <{:?}> - retrying", error);

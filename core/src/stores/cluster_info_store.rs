@@ -19,7 +19,6 @@ impl ClusterInfo {
             .recv()
             .await
             .expect("Failed to recieve on broadcast channel");
-
         cluster_nodes.iter().for_each(|x| {
             if let Ok(pubkey) = Pubkey::from_str(x.pubkey.as_str()) {
                 self.cluster_nodes.insert(pubkey, Arc::new(x.clone()));
