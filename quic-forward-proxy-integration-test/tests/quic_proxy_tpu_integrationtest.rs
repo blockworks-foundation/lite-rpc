@@ -61,6 +61,7 @@ const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameter
     write_timeout: Duration::from_secs(2),
     number_of_transactions_per_unistream: 10,
     unistreams_to_create_new_connection_in_percentage: 10,
+    prioritization_heap_size: None,
 };
 
 #[test]
@@ -743,7 +744,7 @@ pub fn build_raw_sample_tx(i: u32) -> SentTransactionInfo {
     let tx = build_sample_tx(&payer_keypair, i);
 
     let transaction =
-        bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx");
+        Arc::new(bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx"));
 
     SentTransactionInfo {
         signature: *tx.get_signature(),
