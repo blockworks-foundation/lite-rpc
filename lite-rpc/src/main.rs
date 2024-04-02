@@ -147,8 +147,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     } = args;
 
     let validator_identity = Arc::new(
-        load_identity_keypair(identity_keypair)
-            .await?
+        load_identity_keypair(&identity_keypair)
+            .await
             .unwrap_or_else(Keypair::new),
     );
 
