@@ -2585,6 +2585,7 @@ dependencies = [
  "futures-util",
  "hyper",
  "itertools 0.10.5",
+ "jemalloc-ctl",
  "jemallocator",
  "jsonrpsee",
  "lazy_static",

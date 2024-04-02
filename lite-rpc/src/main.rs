@@ -76,6 +76,12 @@ use tracing_subscriber::EnvFilter;
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+// export _RJEM_MALLOC_CONF=prof:true,lg_prof_interval:30,lg_prof_sample:21,prof_prefix:/tmp/jeprof
+
+use jemalloc_ctl::{epoch, stats};
+use std::{thread, time::{self}};
+
+
 async fn get_latest_block_info(
     mut blockinfo_stream: BlockInfoStream,
     commitment_config: CommitmentConfig,
@@ -394,6 +400,30 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         None,
     ));
     drop(slot_notifier);
+
+    // tokio::spawn(async move {
+
+    //     let last_allocated = stats::allocated::read().unwrap();
+    //     let last_resident = stats::resident::read().unwrap();
+    //     let last_mapped = stats::mapped::read().unwrap();
+    //     let last_active = stats::active::read().unwrap();
+
+    //     loop {
+    //         thread::sleep(time::Duration::from_secs(10));
+    //         // Retrieve memory statistics
+    //         // let stats = stats::active::mib().unwrap().read().unwrap();
+
+    //         let allocated = stats::allocated::read().unwrap();
+    //         let resident = stats::resident::read().unwrap();
+    //         let mapped = stats::mapped::read().unwrap();
+    //         let active = stats::active::read().unwrap();
+
+    //         info!("Current allocated memory: {} bytes -- diff {}", allocated, last_allocated as i64 - allocated as i64);
+    //         info!("Current resident memory: {} bytes -- diff {}", resident, last_resident as i64 - resident as i64);
+    //         info!("Current mapped memory: {} bytes -- diff {}", mapped, last_mapped as i64 - mapped as i64);
+    //         info!("Current active memory: {} bytes -- diff {}\n", active, last_active as i64 - active as i64);
+    //     }
+    // });
 
     tokio::select! {
         res = tx_service_jh => {

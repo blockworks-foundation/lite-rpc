@@ -50,7 +50,8 @@ cap = { version = "0.1.2", features = ["stats"] }
 tower = "0.4.13"
 hyper = { version = "0.14", features = ["server", "http1", "http2"] }
 tower-http = { version = "0.4.0", features = ["full"] }
-jemallocator = { workspace = true }
+jemallocator = { workspace = true, features = ["profiling"] }
+jemalloc-ctl = "0.5.4"
 
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-util = { workspace = true }
