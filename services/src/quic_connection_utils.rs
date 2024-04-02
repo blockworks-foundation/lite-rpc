@@ -89,7 +89,7 @@ pub struct QuicConnectionParameters {
 impl Default for QuicConnectionParameters {
     fn default() -> Self {
         Self {
-            connection_timeout: Duration::from_millis(10000),
+            connection_timeout: Duration::from_millis(60000),
             unistream_timeout: Duration::from_millis(10000),
             write_timeout: Duration::from_millis(10000),
             finalize_timeout: Duration::from_millis(10000),
