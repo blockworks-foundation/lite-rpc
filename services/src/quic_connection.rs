@@ -4,7 +4,7 @@ use crate::quic_connection_utils::{
 use futures::FutureExt;
 use log::warn;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use quinn::{Connection, Endpoint};
+use quinn::{Connection, Endpoint, VarInt};
 use solana_lite_rpc_core::structures::rotating_queue::RotatingQueue;
 use solana_sdk::pubkey::Pubkey;
 use std::{
@@ -42,6 +42,15 @@ pub struct QuicConnection {
     connection_params: QuicConnectionParameters,
     timeout_counters: Arc<AtomicU64>,
     has_connected_once: Arc<AtomicBool>,
+}
+
+impl Drop for QuicConnection {
+    fn drop(&mut self) {
+        let lk = self.connection.blocking_read();
+        if let Some(connection) = lk.as_ref() {
+            connection.close(VarInt::from_u32(0), b"Not needed")
+        }
+    }
 }
 
 impl QuicConnection {
