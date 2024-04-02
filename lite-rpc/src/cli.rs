@@ -49,7 +49,7 @@ pub struct Config {
     #[serde(default)]
     pub use_grpc: bool,
     #[serde(default)]
-    pub calculate_leader_schedule_form_geyser: bool,
+    pub calculate_leader_schedule_from_geyser: bool,
     #[serde(default = "Config::default_grpc_addr")]
     pub grpc_addr: String,
     #[serde(default)]
@@ -161,7 +161,7 @@ impl Config {
         config.quic_proxy_addr = env::var("QUIC_PROXY_ADDR").ok();
 
         config.use_grpc = env::var("USE_GRPC")
-            .map(|_| true)
+            .map(|value| value.parse::<bool>().unwrap())
             .unwrap_or(config.use_grpc);
 
         // source 1
