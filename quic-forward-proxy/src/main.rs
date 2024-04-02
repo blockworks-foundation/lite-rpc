@@ -35,8 +35,10 @@ pub async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
     let proxy_listener_addr = proxy_listen_addr.parse().unwrap();
-    let validator_identity =
-        ValidatorIdentity::new(load_identity_keypair(Some(identity_keypair)).await?);
+
+    let validator_identity = ValidatorIdentity::new(
+        load_identity_keypair(Some(identity_keypair).filter(|s| !s.is_empty())).await?,
+    );
 
     let tls_config = Arc::new(SelfSignedTlsConfigProvider::new_singleton_self_signed_localhost());
     let main_services = QuicForwardProxy::new(proxy_listener_addr, tls_config, validator_identity)
