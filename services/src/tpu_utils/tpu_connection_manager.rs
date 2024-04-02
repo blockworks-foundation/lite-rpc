@@ -99,8 +99,11 @@ impl ActiveConnection {
             max_number_of_connections,
             max_uni_stream_connections,
         );
-
-        let priorization_heap = PrioritizationFeesHeap::new(2 * max_uni_stream_connections);
+        let prioritization_heap_size = self
+            .connection_parameters
+            .prioritization_heap_size
+            .unwrap_or(2 * max_uni_stream_connections);
+        let priorization_heap = PrioritizationFeesHeap::new(prioritization_heap_size);
 
         let heap_filler_task = {
             let priorization_heap = priorization_heap.clone();
@@ -202,7 +205,7 @@ impl ActiveConnection {
 
                             NB_QUIC_TASKS.inc();
 
-                            connection.send_transaction(tx.transaction).await;
+                            connection.send_transaction(tx.transaction.as_ref()).await;
                             timer.observe_duration();
                             NB_QUIC_TASKS.dec();
                         });

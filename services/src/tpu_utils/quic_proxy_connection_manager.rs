@@ -179,6 +179,7 @@ impl QuicProxyConnectionManager {
                             transaction,
                             ..
                         }) => {
+                            let transaction = transaction.as_ref().clone();
                             TxData::new(signature, transaction)
                         },
                         Err(e) => {
@@ -195,6 +196,7 @@ impl QuicProxyConnectionManager {
                                 transaction,
                                 ..
                             }) => {
+                                let transaction = transaction.as_ref().clone();
                                 txs.push(TxData::new(signature, transaction));
                             },
                             Err(TryRecvError::Empty) => {

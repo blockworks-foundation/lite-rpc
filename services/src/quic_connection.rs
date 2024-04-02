@@ -124,7 +124,7 @@ impl QuicConnection {
         }
     }
 
-    pub async fn send_transaction(&self, tx: Vec<u8>) {
+    pub async fn send_transaction(&self, tx: &Vec<u8>) {
         let connection_retry_count = self.connection_params.connection_retry_count;
         for _ in 0..connection_retry_count {
             let mut do_retry = false;
@@ -158,7 +158,7 @@ impl QuicConnection {
                         let write_add_result = tokio::select! {
                             res = QuicConnectionUtils::write_all(
                                 send_stream,
-                                &tx,
+                                tx,
                                 self.identity,
                                 self.connection_params,
                             ) => {

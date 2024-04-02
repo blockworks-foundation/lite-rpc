@@ -1221,8 +1221,10 @@ name = "custom-tpu-send-transactions"
 version = "0.2.4"
 dependencies = [
  "anyhow",
+ "bincode",
  "clap 4.5.4",
  "dashmap 5.5.3",
+ "futures",
  "itertools 0.10.5",
  "log",
  "rand 0.8.5",
@@ -1233,6 +1235,7 @@ dependencies = [
  "solana-rpc-client",
  "solana-sdk",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

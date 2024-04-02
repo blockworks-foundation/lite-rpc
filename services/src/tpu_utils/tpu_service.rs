@@ -146,7 +146,7 @@ impl TpuService {
                 (x.0, addr)
             })
             .collect();
-        
+
         match &self.connection_manager {
             DirectTpu {
                 tpu_connection_manager,

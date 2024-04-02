@@ -1,7 +1,7 @@
 // This class will manage the lifecycle for a transaction
 // It will send, replay if necessary and confirm by listening to blocks
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     tpu_utils::tpu_service::TpuService,
@@ -182,7 +182,7 @@ impl TransactionService {
             signature,
             last_valid_block_height: last_valid_blockheight,
             slot,
-            transaction: raw_tx,
+            transaction: Arc::new(raw_tx),
             prioritization_fee,
         };
         if let Err(e) = self

@@ -27,4 +27,13 @@ pub struct Args {
 
     #[arg(short, long)]
     pub priority_fees: Option<u64>,
+
+    #[arg(short = 'a', long, default_value_t = 256)]
+    pub additional_signers: usize,
+
+    #[arg(short = 'b', long, default_value_t = 0.1)]
+    pub signers_transfer_balance: f64,
+
+    #[arg(long)]
+    pub fanout_slots: Option<u64>,
 }

@@ -24,3 +24,6 @@ rand = "0.8.5"
 rand_chacha = "0.3.1"
 log = { workspace = true }
 itertools = { workspace = true }
+bincode = { workspace = true }
+futures = { workspace = true }
+tracing-subscriber = { workspace = true }
