@@ -14,7 +14,7 @@ use std::{
         Arc,
     },
 };
-use tokio::sync::{Notify, OwnedSemaphorePermit, RwLock, Semaphore};
+use tokio::sync::{broadcast, OwnedSemaphorePermit, RwLock, Semaphore};
 
 pub type EndpointPool = RotatingQueue<Endpoint>;
 
@@ -40,7 +40,6 @@ pub struct QuicConnection {
     identity: Pubkey,
     socket_address: SocketAddr,
     connection_params: QuicConnectionParameters,
-    exit_notify: Arc<Notify>,
     timeout_counters: Arc<AtomicU64>,
     has_connected_once: Arc<AtomicBool>,
 }
@@ -51,7 +50,6 @@ impl QuicConnection {
         endpoint: Endpoint,
         socket_address: SocketAddr,
         connection_params: QuicConnectionParameters,
-        exit_notify: Arc<Notify>,
     ) -> Self {
         Self {
             connection: Arc::new(RwLock::new(None)),
@@ -60,13 +58,16 @@ impl QuicConnection {
             identity,
             socket_address,
             connection_params,
-            exit_notify,
             timeout_counters: Arc::new(AtomicU64::new(0)),
             has_connected_once: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    async fn connect(&self, is_already_connected: bool) -> Option<Connection> {
+    async fn connect(
+        &self,
+        is_already_connected: bool,
+        exit_notify: broadcast::Receiver<()>,
+    ) -> Option<Connection> {
         QuicConnectionUtils::connect(
             self.identity,
             is_already_connected,
@@ -74,12 +75,12 @@ impl QuicConnection {
             self.socket_address,
             self.connection_params.connection_timeout,
             self.connection_params.connection_retry_count,
-            self.exit_notify.clone(),
+            exit_notify,
         )
         .await
     }
 
-    pub async fn get_connection(&self) -> Option<Connection> {
+    pub async fn get_connection(&self, exit_notify: broadcast::Receiver<()>) -> Option<Connection> {
         // get new connection reset if necessary
         let last_stable_id = self.last_stable_id.load(Ordering::Relaxed) as usize;
         let conn = self.connection.read().await.clone();
@@ -95,7 +96,7 @@ impl QuicConnection {
                         Some(connection)
                     } else {
                         NB_QUIC_CONNECTION_RESET.inc();
-                        let new_conn = self.connect(true).await;
+                        let new_conn = self.connect(true, exit_notify).await;
                         if let Some(new_conn) = new_conn {
                             *conn = Some(new_conn);
                             conn.clone()
@@ -116,7 +117,7 @@ impl QuicConnection {
                     // connection has recently been established/ just use it
                     return (*lk).clone();
                 }
-                let connection = self.connect(false).await;
+                let connection = self.connect(false, exit_notify).await;
                 *lk = connection.clone();
                 self.has_connected_once.store(true, Ordering::Relaxed);
                 connection
@@ -124,17 +125,16 @@ impl QuicConnection {
         }
     }
 
-    pub async fn send_transaction(&self, tx: &Vec<u8>) {
+    pub async fn send_transaction(&self, tx: &Vec<u8>, mut exit_notify: broadcast::Receiver<()>) {
         let connection_retry_count = self.connection_params.connection_retry_count;
         for _ in 0..connection_retry_count {
             let mut do_retry = false;
-            let exit_notify = self.exit_notify.clone();
 
             let connection = tokio::select! {
-                conn = self.get_connection() => {
+                conn = self.get_connection(exit_notify.resubscribe()) => {
                     conn
                 },
-                _ = exit_notify.notified() => {
+                _ = exit_notify.recv() => {
                     break;
                 }
             };
@@ -149,7 +149,7 @@ impl QuicConnection {
                     ) => {
                         res
                     },
-                    _ = exit_notify.notified() => {
+                    _ = exit_notify.recv() => {
                         break;
                     }
                 };
@@ -164,7 +164,7 @@ impl QuicConnection {
                             ) => {
                                 res
                             },
-                            _ = exit_notify.notified() => {
+                            _ = exit_notify.recv() => {
                                 break;
                             }
                         };
@@ -247,7 +247,6 @@ impl QuicConnectionPool {
         endpoints: EndpointPool,
         socket_address: SocketAddr,
         connection_parameters: QuicConnectionParameters,
-        exit_notify: Arc<Notify>,
         nb_connection: usize,
         max_number_of_unistream_connection: usize,
     ) -> Self {
@@ -259,7 +258,6 @@ impl QuicConnectionPool {
                 endpoints.get().expect("Should get and endpoint"),
                 socket_address,
                 connection_parameters,
-                exit_notify.clone(),
             ));
         }
         Self {

@@ -36,7 +36,7 @@ use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{broadcast, Notify};
 use tracing::trace_span;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -278,7 +278,7 @@ pub fn create_block_processing_task(
     mut exit_notify: broadcast::Receiver<()>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
-        loop {
+        'main_loop: loop {
             let mut blocks_subs = HashMap::new();
             blocks_subs.insert(
                 "block_client".to_string(),
@@ -293,7 +293,7 @@ pub fn create_block_processing_task(
             // connect to grpc
             let mut client =
                 connect_with_timeout_hacked(grpc_addr.clone(), grpc_x_token.clone()).await?;
-            let mut stream = tokio::select! { 
+            let mut stream = tokio::select! {
                 res = client
                 .subscribe_once(
                     HashMap::new(),
@@ -354,6 +354,7 @@ pub fn create_block_processing_task(
             log::error!("Grpc block subscription broken (resubscribing)");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
+        Ok(())
     })
 }
 

@@ -14,7 +14,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::{sync::Notify, time::timeout};
+use tokio::{sync::broadcast, time::timeout};
 
 lazy_static::lazy_static! {
     static ref NB_QUIC_0RTT_ATTEMPTED: GenericGauge<prometheus::core::AtomicI64> =
@@ -221,7 +221,7 @@ impl QuicConnectionUtils {
         addr: SocketAddr,
         connection_timeout: Duration,
         connection_retry_count: usize,
-        exit_notified: Arc<Notify>,
+        mut exit_notified: broadcast::Receiver<()>,
     ) -> Option<Connection> {
         for _ in 0..connection_retry_count {
             let conn = if already_connected {
@@ -230,7 +230,7 @@ impl QuicConnectionUtils {
                     res = Self::make_connection_0rtt(endpoint.clone(), addr, connection_timeout) => {
                         res
                     },
-                    _ = exit_notified.notified() => {
+                    _ = exit_notified.recv() => {
                         break;
                     }
                 }
@@ -240,7 +240,7 @@ impl QuicConnectionUtils {
                     res = Self::make_connection(endpoint.clone(), addr, connection_timeout) => {
                         res
                     },
-                    _ = exit_notified.notified() => {
+                    _ = exit_notified.recv() => {
                         break;
                     }
                 }
