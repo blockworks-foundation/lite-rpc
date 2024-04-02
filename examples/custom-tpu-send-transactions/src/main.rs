@@ -26,7 +26,7 @@ use solana_lite_rpc_core::{
         epoch::EpochCache, identity_stakes::IdentityStakes, leaderschedule::CalculatedSchedule,
         transaction_sent_info::SentTransactionInfo,
     },
-    utils::get_latest_block_info,
+    utils::wait_till_block_of_commitment_is_recieved,
 };
 use solana_lite_rpc_services::{
     data_caching_service::DataCachingService,
@@ -280,7 +280,7 @@ async fn main() -> anyhow::Result<()> {
         create_json_rpc_polling_subscription(rpc_client.clone(), 100)?
     };
 
-    let finalized_block_information = get_latest_block_info(
+    let finalized_block_information = wait_till_block_of_commitment_is_recieved(
         endpoints.blockinfo_notifier.resubscribe(),
         CommitmentConfig::finalized(),
     )

@@ -11,7 +11,6 @@ pub fn poll_cluster_info(
 ) -> AnyhowJoinHandle {
     // task MUST not terminate but might be aborted from outside
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(1)).await;
         loop {
             match rpc_client.get_cluster_nodes().await {
                 Ok(cluster_nodes) => {

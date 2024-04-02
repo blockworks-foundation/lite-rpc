@@ -45,7 +45,7 @@ use solana_lite_rpc_core::structures::{
 };
 use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
 use solana_lite_rpc_core::types::BlockStream;
-use solana_lite_rpc_core::utils::get_latest_block_info;
+use solana_lite_rpc_core::utils::wait_till_block_of_commitment_is_recieved;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
@@ -228,7 +228,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     };
 
     info!("Waiting for first finalized block info...");
-    let finalized_block_info = get_latest_block_info(
+    let finalized_block_info = wait_till_block_of_commitment_is_recieved(
         blockinfo_notifier.resubscribe(),
         CommitmentConfig::finalized(),
     )

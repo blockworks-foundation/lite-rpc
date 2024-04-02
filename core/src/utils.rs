@@ -6,13 +6,13 @@ use tokio::time::{timeout, Instant};
 
 use crate::{structures::block_info::BlockInfo, types::BlockInfoStream};
 
-pub async fn get_latest_block_info(
+pub async fn wait_till_block_of_commitment_is_recieved(
     mut blockinfo_stream: BlockInfoStream,
     commitment_config: CommitmentConfig,
 ) -> BlockInfo {
     let started = Instant::now();
     loop {
-        match timeout(Duration::from_millis(500), blockinfo_stream.recv()).await {
+        match timeout(Duration::from_millis(1000), blockinfo_stream.recv()).await {
             Ok(Ok(block_info)) => {
                 if block_info.commitment_config == commitment_config {
                     return block_info;
@@ -25,8 +25,8 @@ pub async fn get_latest_block_info(
                     started.elapsed().as_secs_f32() * 1000.0
                 );
             }
-            Ok(Err(_error)) => {
-                panic!("Did not recv block info");
+            Ok(Err(error)) => {
+                panic!("Did not recv block info : {error:?}");
             }
         }
     }
