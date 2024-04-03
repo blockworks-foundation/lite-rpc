@@ -273,7 +273,7 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
 pub fn create_block_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
-    block_sx: async_channel::Sender<SubscribeUpdateBlock>,
+    block_sx: tokio::sync::mpsc::Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
     mut exit_notify: broadcast::Receiver<()>,
 ) -> AnyhowJoinHandle {
@@ -362,7 +362,7 @@ pub fn create_block_processing_task(
 pub fn create_slot_stream_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
-    slot_sx: async_channel::Sender<SubscribeUpdateSlot>,
+    slot_sx: tokio::sync::mpsc::Sender<SubscribeUpdateSlot>,
     commitment_level: CommitmentLevel,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
