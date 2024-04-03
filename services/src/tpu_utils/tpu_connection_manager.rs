@@ -249,9 +249,9 @@ impl TpuConnectionManager {
     pub async fn new(
         certificate: rustls::Certificate,
         key: rustls::PrivateKey,
-        fanout: usize,
+        _fanout: usize,
     ) -> Self {
-        let number_of_clients = fanout * 4;
+        let number_of_clients = 1; // fanout * 4;
         Self {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
