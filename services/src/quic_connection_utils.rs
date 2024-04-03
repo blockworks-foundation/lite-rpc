@@ -92,7 +92,7 @@ impl Default for QuicConnectionParameters {
             connection_timeout: Duration::from_millis(60000),
             unistream_timeout: Duration::from_millis(10000),
             write_timeout: Duration::from_millis(10000),
-            finalize_timeout: Duration::from_millis(10000),
+            finalize_timeout: Duration::from_millis(20000),
             connection_retry_count: 20,
             max_number_of_connections: 8,
             number_of_transactions_per_unistream: 1,

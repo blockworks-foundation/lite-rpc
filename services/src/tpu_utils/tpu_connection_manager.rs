@@ -223,6 +223,7 @@ impl ActiveConnection {
         let elements_removed = priorization_heap.clear().await;
         TRANSACTIONS_IN_HEAP.sub(elements_removed as i64);
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
+        connection_pool.close_all().await;
     }
 
     pub fn start_listening(

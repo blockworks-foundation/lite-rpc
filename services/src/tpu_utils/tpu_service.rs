@@ -120,6 +120,7 @@ impl TpuService {
     ) -> anyhow::Result<()> {
         let fanout = self.config.fanout_slots;
         let last_slot = estimated_slot + fanout;
+        let current_slot = current_slot.saturating_sub(4);
 
         let cluster_nodes = self.data_cache.cluster_info.cluster_nodes.clone();
 

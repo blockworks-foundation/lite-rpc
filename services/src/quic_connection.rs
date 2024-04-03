@@ -4,7 +4,7 @@ use crate::quic_connection_utils::{
 use futures::FutureExt;
 use log::warn;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use quinn::{Connection, Endpoint};
+use quinn::{Connection, Endpoint, VarInt};
 use solana_lite_rpc_core::structures::rotating_queue::RotatingQueue;
 use solana_sdk::pubkey::Pubkey;
 use std::{
@@ -225,6 +225,13 @@ impl QuicConnection {
             None => false,
         }
     }
+
+    pub async fn close(&self) {
+        let lk = self.connection.read().await;
+        if let Some(connection) = lk.as_ref() {
+            connection.close(VarInt::from_u32(0), b"Not needed");
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -318,5 +325,11 @@ impl QuicConnectionPool {
 
     pub fn is_empty(&self) -> bool {
         self.connections.is_empty()
+    }
+
+    pub async fn close_all(&self) {
+        for connection in &self.connections {
+            connection.close().await;
+        }
     }
 }
