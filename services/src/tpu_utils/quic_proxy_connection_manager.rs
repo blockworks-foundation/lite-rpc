@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
@@ -64,7 +64,7 @@ impl QuicProxyConnectionManager {
         &self,
         broadcast_receiver: Receiver<SentTransactionInfo>,
         // for duration of this slot these tpu nodes will receive the transactions
-        connections_to_keep: HashMap<Pubkey, SocketAddr>,
+        connections_to_keep: HashSet<(Pubkey, SocketAddr)>,
         connection_parameters: QuicConnectionParameters,
     ) {
         debug!(
