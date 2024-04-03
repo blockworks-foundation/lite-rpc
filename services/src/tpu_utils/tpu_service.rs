@@ -1,5 +1,6 @@
 use anyhow::Context;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
+use solana_streamer::nonblocking::quic::ConnectionPeerType;
 
 use super::tpu_connection_manager::TpuConnectionManager;
 use crate::quic_connection_utils::QuicConnectionParameters;
@@ -15,7 +16,7 @@ use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
@@ -128,8 +129,21 @@ impl TpuService {
             .leader_schedule
             .get_slot_leaders(current_slot, last_slot)
             .await?;
+
+        let identity_stakes = self.data_cache.identity_stakes.get_stakes().await;
+
+        let enable_tpu_forwards = {
+            match identity_stakes.peer_type {
+                ConnectionPeerType::Unstaked => false,
+                ConnectionPeerType::Staked => self
+                    .config
+                    .quic_connection_params
+                    .enable_tpu_forwarding
+                    .unwrap_or_default(),
+            }
+        };
         // get next leader with its tpu port
-        let connections_to_keep: HashMap<_, _> = next_leaders
+        let connections_to_keep: HashSet<_, _> = next_leaders
             .iter()
             .map(|x| {
                 let contact_info = cluster_nodes.get(&x.pubkey);
@@ -141,16 +155,22 @@ impl TpuService {
             })
             .filter(|x| x.1.is_some())
             .flat_map(|x| {
+                let mut addresses = vec![];
                 let mut tpu_addr = x.1.unwrap();
                 // add quic port offset
                 tpu_addr.set_port(tpu_addr.port() + QUIC_PORT_OFFSET);
 
-                // Technically the forwards port could be anywhere and unfortunately getClusterNodes
-                // does not report it. However it's nearly always directly after the tpu port.
-                let mut tpu_forwards_addr = tpu_addr.clone();
-                tpu_forwards_addr.set_port(tpu_addr.port() + 1);
+                addresses.push((x.0, tpu_addr));
 
-                [(x.0, tpu_addr), (x.0, tpu_forwards_addr)]
+                if enable_tpu_forwards {
+                    // Technically the forwards port could be anywhere and unfortunately getClusterNodes
+                    // does not report it. However it's nearly always directly after the tpu port.
+                    let mut tpu_forwards_addr = tpu_addr;
+                    tpu_forwards_addr.set_port(tpu_addr.port() + 1);
+                    addresses.push((x.0, tpu_forwards_addr));
+                }
+
+                addresses
             })
             .collect();
 
@@ -162,7 +182,7 @@ impl TpuService {
                     .update_connections(
                         self.broadcast_sender.clone(),
                         connections_to_keep,
-                        self.data_cache.identity_stakes.get_stakes().await,
+                        identity_stakes,
                         self.data_cache.clone(),
                         self.config.quic_connection_params,
                     )

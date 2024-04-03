@@ -360,6 +360,7 @@ async fn main() -> anyhow::Result<()> {
             number_of_transactions_per_unistream: 1,
             unistreams_to_create_new_connection_in_percentage: 5,
             prioritization_heap_size,
+            enable_tpu_forwarding: None,
         },
         tpu_connection_path: TpuConnectionPath::QuicDirectPath,
     };

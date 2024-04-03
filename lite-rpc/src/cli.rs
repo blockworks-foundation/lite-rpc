@@ -393,5 +393,9 @@ fn quic_params_from_environment() -> Option<QuicConnectionParameters> {
                 quic_connection_parameters.unistreams_to_create_new_connection_in_percentage,
             );
 
+    quic_connection_parameters.enable_tpu_forwarding = env::var("ENABLE_TPU_FORWARDING")
+        .map(|value| Some(value.parse::<bool>().unwrap()))
+        .unwrap_or(quic_connection_parameters.enable_tpu_forwarding);
+
     Some(quic_connection_parameters)
 }

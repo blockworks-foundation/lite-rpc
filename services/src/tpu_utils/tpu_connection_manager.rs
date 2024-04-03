@@ -13,7 +13,7 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::{
     broadcast::{self, Receiver, Sender},
     Notify,
@@ -283,8 +283,8 @@ impl TpuConnectionManager {
                 // using mpsc as a oneshot channel/ because with one shot channel we cannot reuse the reciever
                 let broadcast_receiver = broadcast_sender.subscribe();
                 active_connection.start_listening(broadcast_receiver, identity_stakes);
-                self.identity_to_active_connection
-                    .insert(*identity, active_connection);
+                self.active_connections
+                    .insert((*identity, *socket_addr), active_connection);
             }
         }
 
