@@ -71,8 +71,7 @@ fn create_grpc_multiplex_processed_block_task(
             match blocks_rx_result {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
                     // note: avoid mapping of full block as long as possible
-                    let (subscribe_update, extracted_slot) =
-                        extract_slot_from_yellowstone_update(*subscribe_update);
+                    let extracted_slot = extract_slot_from_yellowstone_update(&subscribe_update);
                     if let Some(slot) = extracted_slot {
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
@@ -86,7 +85,7 @@ fn create_grpc_multiplex_processed_block_task(
                         }
 
                         let mapfilter =
-                            map_block_from_yellowstone_update(subscribe_update, COMMITMENT_CONFIG);
+                            map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
                         if let Some((_slot, produced_block)) = mapfilter {
                             let send_started_at = Instant::now();
                             let send_result = block_sender
@@ -560,19 +559,13 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
     (multiplexed_messages_rx, jh_multiplex_task)
 }
 
-fn extract_slot_from_yellowstone_update(
-    update: SubscribeUpdate,
-) -> (SubscribeUpdate, Option<Slot>) {
-    if let Some(ref message) = update.update_oneof {
-        let slot = match message {
-            UpdateOneof::Slot(slot) => Some(slot.slot),
-            UpdateOneof::Block(block) => Some(block.slot),
-            UpdateOneof::BlockMeta(block_meta) => Some(block_meta.slot),
-            _ => None,
-        };
-        (update, slot)
-    } else {
-        (update, None)
+fn extract_slot_from_yellowstone_update(update: &SubscribeUpdate) -> Option<Slot> {
+    match &update.update_oneof {
+        // list is not exhaustive
+        Some(UpdateOneof::Slot(update_message)) => Some(update_message.slot),
+        Some(UpdateOneof::BlockMeta(update_message)) => Some(update_message.slot),
+        Some(UpdateOneof::Block(update_message)) => Some(update_message.slot),
+        _ => None,
     }
 }
 
