@@ -45,6 +45,31 @@ lazy_static::lazy_static! {
     static ref NB_QUIC_FINISH_ERRORED: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_quic_finish_errored", "Number of times finish errored")).unwrap();
 
+
+    static ref NB_QUIC_CONNECTION_ERROR_VERSION_MISMATCH: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_error_version_mismatch", "Number of times connection errored VersionMismatch")).unwrap();
+    static ref NB_QUIC_CONNECTION_ERROR_TRANSPORT_ERROR: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_error_transport_error", "Number of times connection errored TransportError")).unwrap();
+    static ref NB_QUIC_CONNECTION_ERROR_CONNECTION_CLOSED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_error_connection_closed", "Number of times connection errored ConnectionClosed")).unwrap();
+    static ref NB_QUIC_CONNECTION_ERROR_APPLICATION_CLOSED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_error_application_closed", "Number of times connection errored ApplicationClosed")).unwrap();
+    static ref NB_QUIC_CONNECTION_ERROR_RESET: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_error_reset", "Number of times connection errored Reset")).unwrap();
+    static ref NB_QUIC_CONNECTION_ERROR_TIMEDOUT: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_error_timed_out", "Number of times connection errored TimedOut")).unwrap();
+    static ref NB_QUIC_CONNECTION_ERROR_LOCALLY_CLOSED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_connection_error_locally_closed", "Number of times connection errored locally closed")).unwrap();
+
+    static ref NB_QUIC_WRITE_ERROR_STOPPED: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_write_error_stopped", "Number of times write_error Stopped")).unwrap();
+    static ref NB_QUIC_WRITE_ERROR_CONNECTION_LOST: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_write_error_connection_lost", "Number of times write_error ConnectionLost")).unwrap();
+    static ref NB_QUIC_WRITE_ERROR_UNKNOWN_STREAM: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_write_error_unknown_stream", "Number of times write_error UnknownStream")).unwrap();
+    static ref NB_QUIC_WRITE_ERROR_0RTT_REJECT: GenericGauge<prometheus::core::AtomicI64> =
+        register_int_gauge!(opts!("literpc_quic_write_error_0RTT_reject", "Number of times write_error ZeroRttRejected")).unwrap();
+
     static ref NB_QUIC_CONNECTIONS: GenericGauge<prometheus::core::AtomicI64> =
         register_int_gauge!(opts!("literpc_nb_active_quic_connections", "Number of quic connections open")).unwrap();
 
@@ -169,6 +194,25 @@ impl QuicConnectionUtils {
                 }
                 Err(e) => {
                     NB_QUIC_CONNECTION_ERRORED.inc();
+                    match &e {
+                        ConnectionError::VersionMismatch => {
+                            NB_QUIC_CONNECTION_ERROR_VERSION_MISMATCH.inc()
+                        }
+                        ConnectionError::TransportError(_) => {
+                            NB_QUIC_CONNECTION_ERROR_TRANSPORT_ERROR.inc()
+                        }
+                        ConnectionError::ConnectionClosed(_) => {
+                            NB_QUIC_CONNECTION_ERROR_CONNECTION_CLOSED.inc()
+                        }
+                        ConnectionError::ApplicationClosed(_) => {
+                            NB_QUIC_CONNECTION_ERROR_APPLICATION_CLOSED.inc()
+                        }
+                        ConnectionError::Reset => NB_QUIC_CONNECTION_ERROR_RESET.inc(),
+                        ConnectionError::TimedOut => NB_QUIC_CONNECTION_ERROR_TIMEDOUT.inc(),
+                        ConnectionError::LocallyClosed => {
+                            NB_QUIC_CONNECTION_ERROR_LOCALLY_CLOSED.inc()
+                        }
+                    }
                     Err(e.into())
                 }
             },
@@ -273,6 +317,17 @@ impl QuicConnectionUtils {
         match write_timeout_res {
             Ok(write_res) => {
                 if let Err(e) = write_res {
+                    match &e {
+                        quinn::WriteError::Stopped(_) => NB_QUIC_WRITE_ERROR_STOPPED.inc(),
+                        quinn::WriteError::ConnectionLost(_) => {
+                            NB_QUIC_WRITE_ERROR_CONNECTION_LOST.inc()
+                        }
+                        quinn::WriteError::UnknownStream => {
+                            NB_QUIC_WRITE_ERROR_UNKNOWN_STREAM.inc()
+                        }
+                        quinn::WriteError::ZeroRttRejected => NB_QUIC_WRITE_ERROR_0RTT_REJECT.inc(),
+                    };
+
                     trace!(
                         "Error while writing transaction for {}, error {}",
                         identity,
@@ -297,6 +352,16 @@ impl QuicConnectionUtils {
         match finish_timeout_res {
             Ok(finish_res) => {
                 if let Err(e) = finish_res {
+                    match &e {
+                        quinn::WriteError::Stopped(_) => NB_QUIC_WRITE_ERROR_STOPPED.inc(),
+                        quinn::WriteError::ConnectionLost(_) => {
+                            NB_QUIC_WRITE_ERROR_CONNECTION_LOST.inc()
+                        }
+                        quinn::WriteError::UnknownStream => {
+                            NB_QUIC_WRITE_ERROR_UNKNOWN_STREAM.inc()
+                        }
+                        quinn::WriteError::ZeroRttRejected => NB_QUIC_WRITE_ERROR_0RTT_REJECT.inc(),
+                    };
                     trace!(
                         "Error while finishing transaction for {}, error {}",
                         identity,
