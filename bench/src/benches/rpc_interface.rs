@@ -97,6 +97,7 @@ pub async fn send_and_confirm_bulk_transactions(
             trace!("- tx_sent {}", tx_sig.get_signature());
         } else {
             trace!("- tx_fail {}", tx_sig.get_signature());
+            trace!("{:?}", batch_sigs_or_fails[i].as_ref().err());
         }
     }
     debug!(

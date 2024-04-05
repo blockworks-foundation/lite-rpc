@@ -4,7 +4,7 @@ use std::time::Duration;
 use bench::{
     benches::{
         api_load::api_load, confirmation_rate::confirmation_rate,
-        confirmation_slot::confirmation_slot,
+        confirmation_slot::confirmation_slot, cu_requested::compute_units_requested,
     },
     metrics::{PingThing, PingThingCluster},
     tx_size::TxSize,
@@ -79,6 +79,29 @@ enum SubCommand {
         #[clap(long)]
         ping_thing_token: Option<String>,
     },
+    /// Measures how compute units requested affect txn confirmation.
+    /// Compute unit amounts will be in magnitudes of 10
+    ComputeUnitsRequested {
+        #[clap(short, long)]
+        payer_path: PathBuf,
+        /// RPC url
+        #[clap(short, long)]
+        rpc_url: String,
+        #[clap(short, long)]
+        num_of_runs: usize,
+        /// Number of compute unit samples (transactions) in the run.
+        /// cu_requested starts from 5_000 and increases by a factor of 2 for each sample.
+        /// E.g. a value of 4, will send 4 txns with cu of 5_000, 10_000, 20_000, 40_000
+        #[clap(short, long)]
+        cu_samples: usize,
+        /// The compute unit price in micro lamports
+        #[clap(short, long, default_value_t = 300)]
+        #[arg(short = 'f')]
+        cu_price: u64,
+        /// Maximum confirmation time in milliseconds. After this, the txn is considered unconfirmed
+        #[clap(short, long, default_value_t = 30_000)]
+        max_timeout_ms: u64,
+    },
 }
 
 pub fn initialize_logger() {
@@ -149,6 +172,23 @@ async fn main() {
                 cluster: PingThingCluster::Mainnet,
                 va_api_key: t,
             }),
+        )
+        .await
+        .unwrap(),
+        SubCommand::ComputeUnitsRequested {
+            payer_path,
+            rpc_url,
+            num_of_runs,
+            cu_samples,
+            cu_price,
+            max_timeout_ms,
+        } => compute_units_requested(
+            &payer_path,
+            rpc_url,
+            num_of_runs,
+            cu_samples,
+            cu_price,
+            Duration::from_millis(max_timeout_ms),
         )
         .await
         .unwrap(),
