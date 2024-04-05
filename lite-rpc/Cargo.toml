@@ -61,6 +61,7 @@ solana-lite-rpc-prioritization-fees = { workspace = true }
 solana-lite-rpc-address-lookup-tables = { workspace = true }
 solana-lite-rpc-accounts = { workspace = true }
 solana-lite-rpc-accounts-on-demand = { workspace = true }
+console-subscriber = "0.2.0"
 
 [dev-dependencies]
 bench = { path = "../bench" }

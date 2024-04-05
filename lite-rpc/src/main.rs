@@ -416,7 +416,8 @@ fn setup_grpc_stream_debugging(blocks_notifier: &BlockStream) {
 
 #[tokio::main()]
 pub async fn main() -> anyhow::Result<()> {
-    setup_tracing_subscriber();
+    // setup_tracing_subscriber();
+    console_subscriber::init();
 
     let config = Config::load().await?;
 
