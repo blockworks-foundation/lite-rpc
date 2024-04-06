@@ -14,7 +14,6 @@ pub fn poll_cluster_info(
         loop {
             match rpc_client.get_cluster_nodes().await {
                 Ok(cluster_nodes) => {
-                    debug!("get cluster_nodes from rpc: {:?}", cluster_nodes.len());
                     if let Err(e) = contact_info_sender.send(cluster_nodes) {
                         warn!("rpc_cluster_info channel has no receivers {e:?}");
                     }
@@ -23,7 +22,7 @@ pub fn poll_cluster_info(
                 Err(error) => {
                     warn!("rpc_cluster_info failed <{:?}> - retrying", error);
                     // throttle
-                    tokio::time::sleep(Duration::from_secs(2500)).await;
+                    tokio::time::sleep(Duration::from_secs(10)).await;
                 }
             }
         }
@@ -51,7 +50,7 @@ pub fn poll_vote_accounts(
                 Err(error) => {
                     warn!("rpc_vote_accounts failed <{:?}> - retrying", error);
                     // throttle
-                    tokio::time::sleep(Duration::from_secs(2500)).await;
+                    tokio::time::sleep(Duration::from_secs(10)).await;
                 }
             }
         }

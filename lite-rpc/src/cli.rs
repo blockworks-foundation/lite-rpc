@@ -49,7 +49,7 @@ pub struct Config {
     #[serde(default)]
     pub use_grpc: bool,
     #[serde(default)]
-    pub calculate_leader_schedule_form_geyser: bool,
+    pub calculate_leader_schedule_from_geyser: bool,
     #[serde(default = "Config::default_grpc_addr")]
     pub grpc_addr: String,
     #[serde(default)]
@@ -142,11 +142,8 @@ impl Config {
             .map(|size| size.parse().unwrap())
             .unwrap_or(config.fanout_size);
 
-        // IDENTITY env sets value of identity_keypair
-
-        // config.identity_keypair = env::var("IDENTITY")
-        //     .map(Some)
-        //     .unwrap_or(config.identity_keypair);
+        // note: identity config is handled in load_identity_keypair
+        // the behavior is different from the other config values as it does either take a file path or the keypair as json array
 
         config.prometheus_addr = env::var("PROMETHEUS_ADDR").unwrap_or(config.prometheus_addr);
 
@@ -161,7 +158,7 @@ impl Config {
         config.quic_proxy_addr = env::var("QUIC_PROXY_ADDR").ok();
 
         config.use_grpc = env::var("USE_GRPC")
-            .map(|_| true)
+            .map(|value| value.parse::<bool>().unwrap())
             .unwrap_or(config.use_grpc);
 
         // source 1

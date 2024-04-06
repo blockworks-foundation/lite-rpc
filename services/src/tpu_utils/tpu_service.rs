@@ -17,6 +17,7 @@ use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
 use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
+use std::collections::HashMap;
 use std::{
     net::{IpAddr, Ipv4Addr},
     sync::Arc,
@@ -122,6 +123,7 @@ impl TpuService {
     ) -> anyhow::Result<()> {
         let fanout = self.config.fanout_slots;
         let last_slot = estimated_slot + fanout;
+        let current_slot = current_slot.saturating_sub(4);
 
         let cluster_nodes = self.data_cache.cluster_info.cluster_nodes.clone();
 
@@ -130,7 +132,7 @@ impl TpuService {
             .get_slot_leaders(current_slot, last_slot)
             .await?;
         // get next leader with its tpu port
-        let connections_to_keep = next_leaders
+        let connections_to_keep: HashMap<_, _> = next_leaders
             .iter()
             .map(|x| {
                 let contact_info = cluster_nodes.get(&x.pubkey);

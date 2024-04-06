@@ -17,15 +17,14 @@ use solana_lite_rpc_services::{
 use std::time::Duration;
 
 pub struct ServiceSpawner {
-    pub prometheus_addr: String,
     pub data_cache: DataCache,
 }
 
 impl ServiceSpawner {
     /// spawn services that support the whole system
-    pub async fn spawn_support_services(&self) -> anyhow::Result<()> {
+    pub async fn spawn_support_services(&self, prometheus_addr: String) -> anyhow::Result<()> {
         // spawn prometheus
-        let prometheus = PrometheusSync::sync(self.prometheus_addr.clone());
+        let prometheus = PrometheusSync::sync(prometheus_addr.clone());
 
         // spawn metrics capture
         let metrics = MetricsCapture::new(self.data_cache.txs.clone()).capture();

@@ -1220,8 +1220,22 @@ dependencies = [
 name = "custom-tpu-send-transactions"
 version = "0.2.4"
 dependencies = [
+ "anyhow",
+ "bincode",
+ "clap 4.5.4",
+ "dashmap 5.5.3",
+ "futures",
+ "itertools 0.10.5",
+ "log",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "solana-lite-rpc-cluster-endpoints",
  "solana-lite-rpc-core",
  "solana-lite-rpc-services",
+ "solana-rpc-client",
+ "solana-sdk",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1779,7 +1793,7 @@ dependencies = [
 [[package]]
 name = "geyser-grpc-connector"
 version = "0.10.1+yellowstone.1.12"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.3+yellowstone.1.12+solana.1.17.15-hacked-windowsize4#ce6ca26028c4466e0236657a76b9db2cccf4d535"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.3+yellowstone.1.12+solana.1.17.15-hacked-windowsize-with-broadcast-exit#688e4d241dd18d18f57345d592e803aa673fcd96"
 dependencies = [
  "anyhow",
  "async-stream",

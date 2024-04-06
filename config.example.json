@@ -10,7 +10,7 @@
   "transaction_retry_after_secs": 3,
   "quic_proxy_addr": null,
   "use_grpc": false,
-  "calculate_leader_schedule_form_geyser": false,
+  "calculate_leader_schedule_from_geyser": false,
   "grpc_addr": "http://127.0.0.0:10000",
   "grpc_x_token": null,
   "postgres": {

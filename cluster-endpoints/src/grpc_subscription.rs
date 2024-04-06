@@ -36,7 +36,7 @@ use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{broadcast, Notify};
 use tracing::trace_span;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -273,12 +273,12 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
 pub fn create_block_processing_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
-    block_sx: async_channel::Sender<SubscribeUpdateBlock>,
+    block_sx: tokio::sync::mpsc::Sender<SubscribeUpdateBlock>,
     commitment_level: CommitmentLevel,
-    exit_notfier: Arc<Notify>,
+    mut exit_notify: broadcast::Receiver<()>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
-        loop {
+        'main_loop: loop {
             let mut blocks_subs = HashMap::new();
             blocks_subs.insert(
                 "block_client".to_string(),
@@ -293,7 +293,8 @@ pub fn create_block_processing_task(
             // connect to grpc
             let mut client =
                 connect_with_timeout_hacked(grpc_addr.clone(), grpc_x_token.clone()).await?;
-            let mut stream = client
+            let mut stream = tokio::select! {
+                res = client
                 .subscribe_once(
                     HashMap::new(),
                     Default::default(),
@@ -304,8 +305,13 @@ pub fn create_block_processing_task(
                     Some(commitment_level),
                     Default::default(),
                     None,
-                )
-                .await?;
+                ) => {
+                    res?
+                },
+                _ = exit_notify.recv() => {
+                    break;
+                }
+            };
 
             loop {
                 tokio::select! {
@@ -338,8 +344,8 @@ pub fn create_block_processing_task(
                             }
                         };
                     },
-                    _ = exit_notfier.notified() => {
-                        break;
+                    _ = exit_notify.recv() => {
+                        break 'main_loop;
                     }
                 }
             }
@@ -348,6 +354,7 @@ pub fn create_block_processing_task(
             log::error!("Grpc block subscription broken (resubscribing)");
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
+        Ok(())
     })
 }
 
@@ -355,7 +362,7 @@ pub fn create_block_processing_task(
 pub fn create_slot_stream_task(
     grpc_addr: String,
     grpc_x_token: Option<String>,
-    slot_sx: async_channel::Sender<SubscribeUpdateSlot>,
+    slot_sx: tokio::sync::mpsc::Sender<SubscribeUpdateSlot>,
     commitment_level: CommitmentLevel,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {

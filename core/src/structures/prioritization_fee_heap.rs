@@ -127,7 +127,7 @@ impl PrioritizationFeesHeap {
 #[cfg(test)]
 mod tests {
     use solana_sdk::signature::Signature;
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
     use crate::structures::{
         prioritization_fee_heap::PrioritizationFeesHeap, transaction_sent_info::SentTransactionInfo,
@@ -139,7 +139,7 @@ mod tests {
         let tx_creator = |signature, prioritization_fee| SentTransactionInfo {
             signature,
             slot: 0,
-            transaction: vec![],
+            transaction: Arc::new(vec![]),
             last_valid_block_height: 0,
             prioritization_fee,
         };
@@ -205,7 +205,7 @@ mod tests {
                         let info = SentTransactionInfo {
                             signature: Signature::new_unique(),
                             slot: height + 1,
-                            transaction: vec![],
+                            transaction: Arc::new(vec![]),
                             last_valid_block_height: height + 10,
                             prioritization_fee,
                         };

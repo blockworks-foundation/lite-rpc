@@ -1,8 +1,7 @@
 // This class will manage the lifecycle for a transaction
 // It will send, replay if necessary and confirm by listening to blocks
 
-use log::trace;
-use std::{num::IntErrorKind, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     tpu_utils::tpu_service::TpuService,
@@ -23,7 +22,7 @@ use solana_lite_rpc_core::{
 use solana_sdk::{
     borsh0_10::try_from_slice_unchecked,
     compute_budget::{self, ComputeBudgetInstruction},
-    transaction::VersionedTransaction,
+    transaction::{Transaction, VersionedTransaction},
 };
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
@@ -124,6 +123,15 @@ pub struct TransactionService {
 impl TransactionService {
     pub async fn send_transaction(
         &self,
+        tx: Transaction,
+        max_retries: Option<u16>,
+    ) -> anyhow::Result<String> {
+        let raw_tx = bincode::serialize(&tx)?;
+        self.send_wire_transaction(raw_tx, max_retries).await
+    }
+
+    pub async fn send_wire_transaction(
+        &self,
         raw_tx: Vec<u8>,
         max_retries: Option<u16>,
     ) -> anyhow::Result<String> {
@@ -182,7 +190,7 @@ impl TransactionService {
             signature,
             last_valid_block_height: last_valid_blockheight,
             slot,
-            transaction: raw_tx,
+            transaction: Arc::new(raw_tx),
             prioritization_fee,
         };
         if let Err(e) = self

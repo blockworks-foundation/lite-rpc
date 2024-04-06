@@ -15,7 +15,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::{
-    broadcast::{Receiver, Sender},
+    broadcast::{self, Receiver, Sender},
     Notify,
 };
 
@@ -48,7 +48,7 @@ struct ActiveConnection {
     tpu_address: SocketAddr,
     data_cache: DataCache,
     connection_parameters: QuicConnectionParameters,
-    exit_notifier: Arc<Notify>,
+    exit_notifier: broadcast::Sender<()>,
 }
 
 impl ActiveConnection {
@@ -59,13 +59,14 @@ impl ActiveConnection {
         data_cache: DataCache,
         connection_parameters: QuicConnectionParameters,
     ) -> Self {
+        let (exit_notifier, _) = broadcast::channel(1);
         Self {
             endpoints,
             tpu_address,
             identity,
             data_cache,
             connection_parameters,
-            exit_notifier: Arc::new(Notify::new()),
+            exit_notifier,
         }
     }
 
@@ -79,7 +80,6 @@ impl ActiveConnection {
         let fill_notify = Arc::new(Notify::new());
 
         let identity = self.identity;
-        let exit_notifier = self.exit_notifier.clone();
 
         NB_QUIC_ACTIVE_CONNECTIONS.inc();
 
@@ -95,18 +95,20 @@ impl ActiveConnection {
             self.endpoints.clone(),
             addr,
             self.connection_parameters,
-            exit_notifier.clone(),
             max_number_of_connections,
             max_uni_stream_connections,
         );
-
-        let priorization_heap = PrioritizationFeesHeap::new(2 * max_uni_stream_connections);
+        let prioritization_heap_size = self
+            .connection_parameters
+            .prioritization_heap_size
+            .unwrap_or(2 * max_uni_stream_connections);
+        let priorization_heap = PrioritizationFeesHeap::new(prioritization_heap_size);
 
         let heap_filler_task = {
             let priorization_heap = priorization_heap.clone();
             let data_cache = self.data_cache.clone();
             let fill_notify = fill_notify.clone();
-            let exit_notifier = exit_notifier.clone();
+            let mut exit_notifier = self.exit_notifier.subscribe();
             tokio::spawn(async move {
                 let mut current_blockheight =
                     data_cache.block_information_store.get_last_blockheight();
@@ -115,7 +117,7 @@ impl ActiveConnection {
                         tx = transaction_reciever.recv() => {
                             tx
                         },
-                        _ = exit_notifier.notified() => {
+                        _ = exit_notifier.recv() => {
                             break;
                         }
                     };
@@ -162,12 +164,14 @@ impl ActiveConnection {
         if let Ok(PooledConnection { connection, permit }) =
             connection_pool.get_pooled_connection().await
         {
+            let exit_notifier = self.exit_notifier.subscribe();
             tokio::task::spawn(async move {
                 let _permit = permit;
-                connection.get_connection().await;
+                connection.get_connection(exit_notifier).await;
             });
         };
 
+        let mut exit_notifier = self.exit_notifier.subscribe();
         'main_loop: loop {
             tokio::select! {
                 _ = fill_notify.notified() => {
@@ -194,6 +198,7 @@ impl ActiveConnection {
                                 break;
                             },
                         };
+                        let exit_notifier = self.exit_notifier.subscribe();
 
                         tokio::spawn(async move {
                             // permit will be used to send all the transaction and then destroyed
@@ -202,13 +207,13 @@ impl ActiveConnection {
 
                             NB_QUIC_TASKS.inc();
 
-                            connection.send_transaction(tx.transaction).await;
+                            connection.send_transaction(tx.transaction.as_ref(), exit_notifier).await;
                             timer.observe_duration();
                             NB_QUIC_TASKS.dec();
                         });
                     }
                 },
-                _ = exit_notifier.notified() => {
+                _ = exit_notifier.recv() => {
                     break 'main_loop;
                 }
             }
@@ -218,6 +223,7 @@ impl ActiveConnection {
         let elements_removed = priorization_heap.clear().await;
         TRANSACTIONS_IN_HEAP.sub(elements_removed as i64);
         NB_QUIC_ACTIVE_CONNECTIONS.dec();
+        connection_pool.close_all().await;
     }
 
     pub fn start_listening(
@@ -243,9 +249,9 @@ impl TpuConnectionManager {
     pub async fn new(
         certificate: rustls::Certificate,
         key: rustls::PrivateKey,
-        fanout: usize,
+        _fanout: usize,
     ) -> Self {
-        let number_of_clients = fanout * 4;
+        let number_of_clients = 1; // fanout * 4;
         Self {
             endpoints: RotatingQueue::new(number_of_clients, || {
                 QuicConnectionUtils::create_endpoint(certificate.clone(), key.clone())
@@ -286,7 +292,7 @@ impl TpuConnectionManager {
             if !connections_to_keep.contains_key(key) {
                 trace!("removing a connection for {}", key.to_string());
                 // ignore error for exit channel
-                value.exit_notifier.notify_waiters();
+                let _ = value.exit_notifier.send(());
                 false
             } else {
                 true

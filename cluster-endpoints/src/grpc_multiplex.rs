@@ -12,10 +12,8 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::block_info::BlockInfo;
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::broadcast::Receiver;
-use tokio::sync::Notify;
+use tokio::sync::broadcast::{self, Receiver};
 use tokio::task::JoinHandle;
 use tokio::time::{sleep, Instant};
 use tracing::debug_span;
@@ -31,7 +29,7 @@ use crate::grpc_subscription::from_grpc_block_update;
 fn create_grpc_multiplex_processed_block_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
     block_sender: tokio::sync::mpsc::Sender<ProducedBlock>,
-    exit_notify: Arc<Notify>,
+    mut exit_notify: broadcast::Receiver<()>,
 ) -> Vec<JoinHandle<()>> {
     const COMMITMENT_CONFIG: CommitmentConfig = CommitmentConfig::processed();
 
@@ -43,7 +41,7 @@ fn create_grpc_multiplex_processed_block_task(
             grpc_source.clone(),
             GeyserFilter(COMMITMENT_CONFIG).blocks_and_txs(),
             autoconnect_tx.clone(),
-            exit_notify.clone(),
+            exit_notify.resubscribe(),
         );
         tasks.push(task);
     }
@@ -51,7 +49,7 @@ fn create_grpc_multiplex_processed_block_task(
     let jh_merging_streams = tokio::task::spawn(async move {
         let mut slots_processed = BTreeSet::<u64>::new();
         let mut last_tick = Instant::now();
-        loop {
+        'recv_loop: loop {
             // recv loop
             if last_tick.elapsed() > Duration::from_millis(800) {
                 warn!(
@@ -66,22 +64,29 @@ fn create_grpc_multiplex_processed_block_task(
                 res = blocks_rx.recv() => {
                     res
                 },
-                _ = exit_notify.notified() => {
+                _ = exit_notify.recv() => {
                     break;
                 }
             };
             match blocks_rx_result {
                 Some(Message::GeyserSubscribeUpdate(subscribe_update)) => {
-                    let mapfilter =
-                        map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
-                    if let Some((slot, produced_block)) = mapfilter {
-                        assert_eq!(COMMITMENT_CONFIG, produced_block.commitment_config);
+                    // note: avoid mapping of full block as long as possible
+                    let extracted_slot = extract_slot_from_yellowstone_update(&subscribe_update);
+                    if let Some(slot) = extracted_slot {
                         // check if the slot is in the map, if not check if the container is half full and the slot in question is older than the lowest value
                         // it means that the slot is too old to process
-                        if !slots_processed.contains(&slot)
-                            && (slots_processed.len() < MAX_SIZE / 2
-                                || slot > slots_processed.first().cloned().unwrap_or_default())
+                        if slots_processed.contains(&slot) {
+                            continue 'recv_loop;
+                        }
+                        if slots_processed.len() >= MAX_SIZE / 2
+                            && slot <= slots_processed.first().cloned().unwrap_or_default()
                         {
+                            continue 'recv_loop;
+                        }
+
+                        let mapfilter =
+                            map_block_from_yellowstone_update(*subscribe_update, COMMITMENT_CONFIG);
+                        if let Some((_slot, produced_block)) = mapfilter {
                             let send_started_at = Instant::now();
                             let send_result = block_sender
                                 .send(produced_block)
@@ -130,7 +135,7 @@ fn create_grpc_multiplex_block_info_task(
     grpc_sources: &Vec<GrpcSourceConfig>,
     block_info_sender: tokio::sync::mpsc::Sender<BlockInfo>,
     commitment_config: CommitmentConfig,
-    exit_notify: Arc<Notify>,
+    mut exit_notify: broadcast::Receiver<()>,
 ) -> Vec<JoinHandle<()>> {
     let (autoconnect_tx, mut blocks_rx) = tokio::sync::mpsc::channel(10);
     let mut tasks = vec![];
@@ -139,7 +144,7 @@ fn create_grpc_multiplex_block_info_task(
             grpc_source.clone(),
             GeyserFilter(commitment_config).blocks_meta(),
             autoconnect_tx.clone(),
-            exit_notify.clone(),
+            exit_notify.resubscribe(),
         );
         tasks.push(task);
     }
@@ -151,7 +156,7 @@ fn create_grpc_multiplex_block_info_task(
                 res = blocks_rx.recv() => {
                     res
                 },
-                _ = exit_notify.notified() => {
+                _ = exit_notify.recv() => {
                     break;
                 }
             };
@@ -263,7 +268,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 tokio::sync::mpsc::channel::<BlockInfo>(500);
             let (block_info_sender_finalized, mut block_info_reciever_finalized) =
                 tokio::sync::mpsc::channel::<BlockInfo>(500);
-            let exit_notify = Arc::new(Notify::new());
+            let (exit_sender, exit_notify) = broadcast::channel(1);
 
             let processed_block_sender = processed_block_sender.clone();
             reconnect_attempts += 1;
@@ -280,7 +285,7 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let processed_blocks_tasks = create_grpc_multiplex_processed_block_task(
                 &grpc_sources,
                 processed_block_sender.clone(),
-                exit_notify.clone(),
+                exit_notify.resubscribe(),
             );
             task_list.extend(processed_blocks_tasks);
 
@@ -290,21 +295,21 @@ pub fn create_grpc_multiplex_blocks_subscription(
                 &grpc_sources,
                 block_info_sender_processed.clone(),
                 CommitmentConfig::processed(),
-                exit_notify.clone(),
+                exit_notify.resubscribe(),
             );
             task_list.extend(jh_meta_task_processed);
             let jh_meta_task_confirmed = create_grpc_multiplex_block_info_task(
                 &grpc_sources,
                 block_info_sender_confirmed.clone(),
                 CommitmentConfig::confirmed(),
-                exit_notify.clone(),
+                exit_notify.resubscribe(),
             );
             task_list.extend(jh_meta_task_confirmed);
             let jh_meta_task_finalized = create_grpc_multiplex_block_info_task(
                 &grpc_sources,
                 block_info_sender_finalized.clone(),
                 CommitmentConfig::finalized(),
-                exit_notify.clone(),
+                exit_notify,
             );
             task_list.extend(jh_meta_task_finalized);
 
@@ -442,8 +447,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
                     }
                 }
             } // -- END receiver loop
-            exit_notify.notify_waiters();
-            futures::future::join_all(task_list).await;
+            if exit_sender.send(()).is_ok() {
+                futures::future::join_all(task_list).await;
+            } else {
+                log::error!("Problem sending exit signal");
+                task_list.iter().for_each(|x| x.abort());
+            }
         } // -- END reconnect loop
     });
 
@@ -474,9 +483,9 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
     let jh_multiplex_task = tokio::spawn(async move {
         loop {
             let (autoconnect_tx, mut slots_rx) = tokio::sync::mpsc::channel(10);
-            let exit_notify = Arc::new(Notify::new());
+            let (exit_sender, exit_notify) = broadcast::channel(1);
 
-            let tasks = grpc_sources
+            let task_list = grpc_sources
                 .clone()
                 .iter()
                 .map(|grpc_source| {
@@ -484,7 +493,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                         grpc_source.clone(),
                         GeyserFilter(COMMITMENT_CONFIG).slots(),
                         autoconnect_tx.clone(),
-                        exit_notify.clone(),
+                        exit_notify.resubscribe(),
                     )
                 })
                 .collect_vec();
@@ -537,12 +546,27 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                     }
                 }
             } // -- END receiver loop
-            exit_notify.notify_waiters();
-            futures::future::join_all(tasks).await;
+
+            if exit_sender.send(()).is_ok() {
+                futures::future::join_all(task_list).await;
+            } else {
+                log::error!("Problem sending exit signal");
+                task_list.iter().for_each(|x| x.abort());
+            }
         } // -- END reconnect loop
     });
 
     (multiplexed_messages_rx, jh_multiplex_task)
+}
+
+fn extract_slot_from_yellowstone_update(update: &SubscribeUpdate) -> Option<Slot> {
+    match &update.update_oneof {
+        // list is not exhaustive
+        Some(UpdateOneof::Slot(update_message)) => Some(update_message.slot),
+        Some(UpdateOneof::BlockMeta(update_message)) => Some(update_message.slot),
+        Some(UpdateOneof::Block(update_message)) => Some(update_message.slot),
+        _ => None,
+    }
 }
 
 fn map_slot_from_yellowstone_update(update: SubscribeUpdate) -> Option<Slot> {
