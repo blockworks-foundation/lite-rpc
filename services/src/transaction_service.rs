@@ -9,6 +9,7 @@ use crate::{
     tx_sender::TxSender,
 };
 use anyhow::bail;
+use log::trace;
 use prometheus::{histogram_opts, register_histogram, Histogram};
 use solana_lite_rpc_core::{
     solana_utils::SerializableTransaction, structures::transaction_sent_info::SentTransactionInfo,
@@ -123,10 +124,10 @@ pub struct TransactionService {
 impl TransactionService {
     pub async fn send_transaction(
         &self,
-        tx: Transaction,
+        tx: VersionedTransaction,
         max_retries: Option<u16>,
     ) -> anyhow::Result<String> {
-        let raw_tx = bincode::serialize(&tx)?;
+        let raw_tx = bincode::serialize(&tx).expect("Could not serialize tx: {&tx.signatures[0]}");
         self.send_wire_transaction(raw_tx, max_retries).await
     }
 

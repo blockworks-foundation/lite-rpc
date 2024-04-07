@@ -18,6 +18,7 @@ solana-lite-rpc-util = { workspace = true }
 solana-lite-rpc-services = { workspace = true }
 solana-lite-rpc-prioritization-fees = { workspace = true }
 solana-lite-rpc-cluster-endpoints = { workspace = true }
+solana-lite-rpc-quic-forward-proxy-integration-test = { path = "../quic-forward-proxy-integration-test" }
 solana-sdk = { workspace = true }
 solana-streamer = { workspace = true }
 solana-transaction-status = { workspace = true }
@@ -31,8 +32,6 @@ dashmap = { workspace = true }
 itertools = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
-jemallocator = "0.5.4"
-jemalloc-ctl = "0.5.4"
 
 [dev-dependencies]
 crossbeam-channel = "0.5.6"

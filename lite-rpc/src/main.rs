@@ -8,7 +8,7 @@ use lite_rpc::bridge::LiteBridge;
 use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
-use lite_rpc::service_spawner::ServiceSpawner;
+use lite_rpc::service_spawner::{configure_tpu_connection_path, ServiceSpawner};
 use lite_rpc::start_server::start_servers;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::info;
@@ -368,30 +368,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     ));
     drop(slot_notifier);
 
-    // tokio::spawn(async move {
-
-    //     let last_allocated = stats::allocated::read().unwrap();
-    //     let last_resident = stats::resident::read().unwrap();
-    //     let last_mapped = stats::mapped::read().unwrap();
-    //     let last_active = stats::active::read().unwrap();
-
-    //     loop {
-    //         thread::sleep(time::Duration::from_secs(10));
-    //         // Retrieve memory statistics
-    //         // let stats = stats::active::mib().unwrap().read().unwrap();
-
-    //         let allocated = stats::allocated::read().unwrap();
-    //         let resident = stats::resident::read().unwrap();
-    //         let mapped = stats::mapped::read().unwrap();
-    //         let active = stats::active::read().unwrap();
-
-    //         info!("Current allocated memory: {} bytes -- diff {}", allocated, last_allocated as i64 - allocated as i64);
-    //         info!("Current resident memory: {} bytes -- diff {}", resident, last_resident as i64 - resident as i64);
-    //         info!("Current mapped memory: {} bytes -- diff {}", mapped, last_mapped as i64 - mapped as i64);
-    //         info!("Current active memory: {} bytes -- diff {}\n", active, last_active as i64 - active as i64);
-    //     }
-    // });
-
     tokio::select! {
         res = tx_service_jh => {
             anyhow::bail!("Tx Services {res:?}")
@@ -468,33 +444,6 @@ pub async fn main() -> anyhow::Result<()> {
             log::info!("Received ctrl+c signal");
             Ok(())
         }
-    }
-}
-
-fn configure_tpu_connection_path(quic_proxy_addr: Option<String>) -> TpuConnectionPath {
-    match quic_proxy_addr {
-        None => TpuConnectionPath::QuicDirectPath,
-        Some(prox_address) => {
-            let proxy_socket_addr = parse_host_port(prox_address.as_str()).unwrap();
-            TpuConnectionPath::QuicForwardProxyPath {
-                // e.g. "127.0.0.1:11111" or "localhost:11111"
-                forward_proxy_address: proxy_socket_addr,
-            }
-        }
-    }
-}
-
-fn parse_host_port(host_port: &str) -> Result<SocketAddr, String> {
-    let addrs: Vec<_> = host_port
-        .to_socket_addrs()
-        .map_err(|err| format!("Unable to resolve host {host_port}: {err}"))?
-        .collect();
-    if addrs.is_empty() {
-        Err(format!("Unable to resolve host: {host_port}"))
-    } else if addrs.len() > 1 {
-        Err(format!("Multiple addresses resolved for host: {host_port}"))
-    } else {
-        Ok(addrs[0])
     }
 }
 
