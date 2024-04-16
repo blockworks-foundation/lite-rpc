@@ -42,6 +42,7 @@ async-channel = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-util = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
+yellowstone-grpc-client = { workspace = true }
 itertools = {workspace = true}
 prometheus = { workspace = true }
 lazy_static = { workspace = true }

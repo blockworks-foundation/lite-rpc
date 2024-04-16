@@ -4648,6 +4648,7 @@ dependencies = [
  "tokio-stream",
  "tonic-health",
  "tracing",
+ "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
 

@@ -35,6 +35,8 @@ use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use geyser_grpc_connector::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 use tokio::sync::{broadcast, Notify};
 use tracing::trace_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
@@ -290,7 +292,17 @@ pub fn create_block_processing_task(
 
             // connect to grpc
             let mut client =
-                connect_with_timeout_hacked(grpc_addr.clone(), grpc_x_token.clone()).await?;
+                connect_with_timeout_with_buffers(
+                    grpc_addr.clone(), grpc_x_token.clone(),
+                    None,
+                    Some(Duration::from_secs(10)),
+                    Some(Duration::from_secs(10)),
+                    GeyserGrpcClientBufferConfig {
+                        buffer_size: Some(65536),
+                        conn_window: Some(5242880),
+                        stream_window: Some(4194304),
+                    },
+                ).await?;
             let mut stream = tokio::select! {
                 res = client
                 .subscribe_once(
