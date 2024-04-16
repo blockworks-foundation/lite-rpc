@@ -41,7 +41,7 @@ use tokio::sync::{broadcast, Notify};
 use tracing::trace_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
-    CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots, SubscribeUpdateSlot,
+    CommitmentLevel, SubscribeRequestFilterBlocks
 };
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
