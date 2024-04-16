@@ -1,10 +1,11 @@
-use std::{str::FromStr, sync::Arc};
+use std::collections::HashSet;
+use std::sync::Arc;
 
 use anyhow::bail;
 use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
-use solana_account_decoder::{UiAccount, UiDataSliceConfig};
-use solana_lite_rpc_core::types::BlockInfoStream;
+use solana_account_decoder::UiAccount;
+use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
@@ -13,15 +14,15 @@ use solana_lite_rpc_core::{
     },
     AnyhowJoinHandle,
 };
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
     config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
     response::RpcKeyedAccount,
 };
-use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
+use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use tokio::sync::broadcast::Sender;
 
 use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
+use crate::get_program_account::get_program_account;
 
 lazy_static::lazy_static! {
     static ref ACCOUNT_UPDATES: IntGauge =
@@ -57,101 +58,28 @@ impl AccountService {
 
     pub async fn populate_from_rpc(
         &self,
-        rpc_client: Arc<RpcClient>,
+        rpc_url: String,
         filters: &AccountFilters,
         max_request_in_parallel: usize,
     ) -> anyhow::Result<()> {
         const NB_ACCOUNTS_IN_GMA: usize = 100;
         const NB_RETRY: usize = 10;
-        let mut accounts = vec![];
-        for filter in filters.iter() {
-            if !filter.accounts.is_empty() {
-                let mut f_accounts = filter
-                    .accounts
-                    .iter()
-                    .map(|x| Pubkey::from_str(x).expect("Accounts in filters should be valid"))
-                    .collect();
-                accounts.append(&mut f_accounts);
-            }
 
-            if let Some(program_id) = &filter.program_id {
-                let program_id =
-                    Pubkey::from_str(program_id).expect("Program id in filters should be valid");
-                let mut rpc_acc = rpc_client
-                    .get_program_accounts_with_config(
-                        &program_id,
-                        RpcProgramAccountsConfig {
-                            filters: filter.get_rpc_filter(),
-                            account_config: RpcAccountInfoConfig {
-                                encoding: Some(solana_account_decoder::UiAccountEncoding::Base64),
-                                data_slice: Some(UiDataSliceConfig {
-                                    offset: 0,
-                                    length: 0,
-                                }),
-                                commitment: None,
-                                min_context_slot: None,
-                            },
-                            with_context: None,
-                        },
-                    )
-                    .await?
-                    .iter()
-                    .map(|(pk, _)| *pk)
-                    .collect_vec();
-                accounts.append(&mut rpc_acc);
-            }
-        }
-        log::info!("Fetching {} accounts", accounts.len());
-        for accounts in accounts.chunks(max_request_in_parallel * NB_ACCOUNTS_IN_GMA) {
-            for accounts in accounts.chunks(NB_ACCOUNTS_IN_GMA) {
-                let mut fetch_accounts = vec![];
-                let mut updated_slot = 0;
-                for _ in 0..NB_RETRY {
-                    let accounts = rpc_client
-                        .get_multiple_accounts_with_config(
-                            accounts,
-                            RpcAccountInfoConfig {
-                                encoding: Some(solana_account_decoder::UiAccountEncoding::Base64),
-                                data_slice: None,
-                                commitment: Some(CommitmentConfig::finalized()),
-                                min_context_slot: None,
-                            },
-                        )
-                        .await;
-                    match accounts {
-                        Ok(response) => {
-                            fetch_accounts = response.value;
-                            updated_slot = response.context.slot;
-                            break;
-                        }
-                        Err(e) => {
-                            // retry
-                            log::error!("Error fetching all the accounts {e:?}, retrying");
-                            continue;
-                        }
-                    }
-                }
-                for (index, account) in fetch_accounts.iter().enumerate() {
-                    if let Some(account) = account {
-                        self.account_store
-                            .initilize_or_update_account(AccountData {
-                                pubkey: accounts[index],
-                                account: Arc::new(account.clone()),
-                                updated_slot,
-                            })
-                            .await;
-                    }
-                }
-            }
-        }
-        log::info!("{} accounts successfully fetched", accounts.len());
-        Ok(())
+        get_program_account(
+            rpc_url,
+            filters,
+            max_request_in_parallel,
+            NB_RETRY,
+            NB_ACCOUNTS_IN_GMA,
+            self.account_store.clone(),
+        )
+        .await
     }
 
     pub fn process_account_stream(
         &self,
         mut account_stream: AccountStream,
-        mut blockinfo_stream: BlockInfoStream,
+        mut block_stream: BlockStream,
     ) -> Vec<AnyhowJoinHandle> {
         let this = self.clone();
         let processed_task = tokio::spawn(async move {
@@ -187,19 +115,26 @@ impl AccountService {
         let this = self.clone();
         let block_processing_task = tokio::spawn(async move {
             loop {
-                match blockinfo_stream.recv().await {
-                    Ok(block_info) => {
-                        if block_info.commitment_config.is_processed() {
+                match block_stream.recv().await {
+                    Ok(block) => {
+                        if block.commitment_config.is_processed() {
                             // processed commitment is not processed in this loop
                             continue;
                         }
-                        let commitment = Commitment::from(block_info.commitment_config);
+                        let commitment = Commitment::from(block.commitment_config);
+
+                        let accounts_write_updated: HashSet<Pubkey> = block
+                            .transactions
+                            .iter()
+                            .filter(|x| x.err.is_none())
+                            .flat_map(|x| x.writable_accounts.clone())
+                            .collect();
                         let updated_accounts = this
                             .account_store
-                            .process_slot_data(block_info.slot, commitment)
+                            .process_slot_data(block.slot, commitment, accounts_write_updated)
                             .await;
 
-                        if block_info.commitment_config.is_finalized() {
+                        if block.commitment_config.is_finalized() {
                             ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
                         } else {
                             ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);

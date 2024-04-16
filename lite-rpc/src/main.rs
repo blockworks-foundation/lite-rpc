@@ -210,14 +210,12 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
         let account_service = AccountService::new(account_storage, account_notification_sender);
 
-        account_service.process_account_stream(
-            account_stream.resubscribe(),
-            blockinfo_notifier.resubscribe(),
-        );
+        account_service
+            .process_account_stream(account_stream.resubscribe(), blocks_notifier.resubscribe());
 
         account_service
             .populate_from_rpc(
-                rpc_client.clone(),
+                rpc_client.url(),
                 &account_filters,
                 MAX_CONNECTIONS_IN_PARALLEL,
             )

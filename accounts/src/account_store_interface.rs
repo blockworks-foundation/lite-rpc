@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use async_trait::async_trait;
 use solana_lite_rpc_core::commitment_utils::Commitment;
 use solana_lite_rpc_core::structures::account_data::AccountData;
@@ -32,5 +34,10 @@ pub trait AccountStorageInterface: Send + Sync {
         commitment: Commitment,
     ) -> Option<Vec<AccountData>>;
 
-    async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData>;
+    async fn process_slot_data(
+        &self,
+        slot: Slot,
+        commitment: Commitment,
+        writable_accounts: HashSet<Pubkey>,
+    ) -> Vec<AccountData>;
 }

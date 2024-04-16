@@ -3,7 +3,6 @@ use std::{collections::HashSet, sync::Arc};
 use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
 use async_trait::async_trait;
 use dashmap::{DashMap, DashSet};
-use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_lite_rpc_core::{commitment_utils::Commitment, structures::account_data::AccountData};
 use solana_rpc_client_api::filter::RpcFilterType;
@@ -126,6 +125,7 @@ impl AccountDataByCommitment {
     // returns promoted account
     pub fn promote_slot_commitment(
         &mut self,
+        _pubkey: Pubkey,
         slot: Slot,
         commitment: Commitment,
     ) -> Option<(AccountData, Option<AccountData>)> {
@@ -193,6 +193,7 @@ impl AccountDataByCommitment {
 
             None
         } else {
+            //log::warn!("Expected to have processed account update for slot {} data and pk {}", slot, pubkey);
             None
         }
     }
@@ -357,7 +358,12 @@ impl AccountStorageInterface for InmemoryAccountStore {
         }
     }
 
-    async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData> {
+    async fn process_slot_data(
+        &self,
+        slot: Slot,
+        commitment: Commitment,
+        writable_accounts: HashSet<Pubkey>,
+    ) -> Vec<AccountData> {
         match commitment {
             Commitment::Confirmed => {
                 // insert slot and blockhash that were confirmed
@@ -382,22 +388,30 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 return vec![];
             }
         }
-        let updated_accounts = self
-            .account_store
-            .iter_mut()
-            .filter_map(|mut acc| acc.promote_slot_commitment(slot, commitment))
-            .collect_vec();
 
-        // update owners
-        updated_accounts
-            .iter()
-            .for_each(|(account_data, prev_account_data)| {
-                if let Some(prev_account_data) = prev_account_data {
-                    if prev_account_data.account.owner != account_data.account.owner {
-                        self.update_owner(prev_account_data, account_data, commitment);
+        let mut updated_accounts = vec![];
+        for writable_account in writable_accounts {
+            if let Some(mut account) = self.account_store.get_mut(&writable_account) {
+                if let Some((account_data, prev_account_data)) =
+                    account.promote_slot_commitment(writable_account, slot, commitment)
+                {
+                    if let Some(prev_account_data) = prev_account_data {
+                        // check if owner has changed
+                        if prev_account_data.account.owner != account_data.account.owner {
+                            self.update_owner(&prev_account_data, &account_data, commitment);
+                        }
+
+                        //check if account data has changed
+                        if prev_account_data != account_data {
+                            updated_accounts.push(account_data);
+                        }
+                    } else {
+                        // account has been confirmed first time
+                        updated_accounts.push(account_data);
                     }
                 }
-            });
+            }
+        }
 
         // update number of processed accounts in memory
         let number_of_processed_accounts_in_memory: i64 = self
@@ -408,20 +422,6 @@ impl AccountStorageInterface for InmemoryAccountStore {
         TOTAL_PROCESSED_ACCOUNTS.set(number_of_processed_accounts_in_memory);
 
         updated_accounts
-            .iter()
-            .filter_map(|(account_data, prev_account_data)| {
-                if let Some(prev_account_data) = prev_account_data {
-                    if prev_account_data != account_data {
-                        Some(account_data)
-                    } else {
-                        None
-                    }
-                } else {
-                    Some(account_data)
-                }
-            })
-            .cloned()
-            .collect_vec()
     }
 }
 
@@ -433,7 +433,7 @@ impl Default for InmemoryAccountStore {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{collections::HashSet, sync::Arc};
 
     use itertools::Itertools;
     use rand::{rngs::ThreadRng, Rng};
@@ -481,6 +481,11 @@ mod tests {
             .await;
 
         let account_data_1 = create_random_account(&mut rng, 0, pk2, program);
+
+        let mut pubkeys = HashSet::new();
+        pubkeys.insert(pk1);
+        pubkeys.insert(pk2);
+
         store
             .initilize_or_update_account(account_data_1.clone())
             .await;
@@ -542,7 +547,9 @@ mod tests {
             Ok(Some(account_data_0.clone()))
         );
 
-        store.process_slot_data(1, Commitment::Confirmed).await;
+        store
+            .process_slot_data(1, Commitment::Confirmed, pubkeys.clone())
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -557,7 +564,9 @@ mod tests {
             Ok(Some(account_data_0.clone()))
         );
 
-        store.process_slot_data(2, Commitment::Confirmed).await;
+        store
+            .process_slot_data(2, Commitment::Confirmed, pubkeys.clone())
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -572,7 +581,9 @@ mod tests {
             Ok(Some(account_data_0.clone()))
         );
 
-        store.process_slot_data(1, Commitment::Finalized).await;
+        store
+            .process_slot_data(1, Commitment::Finalized, pubkeys)
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Processed).await,
@@ -594,6 +605,9 @@ mod tests {
 
         let program = Pubkey::new_unique();
         let pk1 = Pubkey::new_unique();
+
+        let mut pubkeys = HashSet::new();
+        pubkeys.insert(pk1);
 
         let mut rng = rand::thread_rng();
 
@@ -681,7 +695,9 @@ mod tests {
                 .len(),
             12
         );
-        store.process_slot_data(11, Commitment::Finalized).await;
+        store
+            .process_slot_data(11, Commitment::Finalized, pubkeys.clone())
+            .await;
         assert_eq!(
             store
                 .account_store
@@ -698,7 +714,9 @@ mod tests {
         );
 
         // check finalizing previous commitment does not affect
-        store.process_slot_data(8, Commitment::Finalized).await;
+        store
+            .process_slot_data(8, Commitment::Finalized, pubkeys)
+            .await;
 
         assert_eq!(
             store.get_account(pk1, Commitment::Finalized).await,
@@ -715,34 +733,37 @@ mod tests {
 
         let mut rng = rand::thread_rng();
 
+        let pks = (0..5).map(|_| Pubkey::new_unique()).collect_vec();
+        let pubkeys: HashSet<Pubkey> = pks.iter().cloned().collect();
+
         store
             .update_account(
-                create_random_account(&mut rng, 1, Pubkey::new_unique(), prog_1),
+                create_random_account(&mut rng, 1, pks[0], prog_1),
                 Commitment::Confirmed,
             )
             .await;
         store
             .update_account(
-                create_random_account(&mut rng, 1, Pubkey::new_unique(), prog_1),
+                create_random_account(&mut rng, 1, pks[1], prog_1),
                 Commitment::Confirmed,
             )
             .await;
         store
             .update_account(
-                create_random_account(&mut rng, 1, Pubkey::new_unique(), prog_1),
+                create_random_account(&mut rng, 1, pks[2], prog_1),
                 Commitment::Confirmed,
             )
             .await;
         store
             .update_account(
-                create_random_account(&mut rng, 1, Pubkey::new_unique(), prog_1),
+                create_random_account(&mut rng, 1, pks[3], prog_1),
                 Commitment::Confirmed,
             )
             .await;
 
         store
             .update_account(
-                create_random_account(&mut rng, 1, Pubkey::new_unique(), prog_2),
+                create_random_account(&mut rng, 1, pks[4], prog_2),
                 Commitment::Confirmed,
             )
             .await;
@@ -792,7 +813,9 @@ mod tests {
             .await;
         assert!(acc_prgram_3.is_none());
 
-        store.process_slot_data(1, Commitment::Finalized).await;
+        store
+            .process_slot_data(1, Commitment::Finalized, pubkeys.clone())
+            .await;
 
         let acc_prgram_1 = store
             .get_program_accounts(prog_1, None, Commitment::Finalized)
@@ -812,7 +835,9 @@ mod tests {
         store
             .update_account(account_finalized.clone(), Commitment::Finalized)
             .await;
-        store.process_slot_data(2, Commitment::Finalized).await;
+        store
+            .process_slot_data(2, Commitment::Finalized, pubkeys.clone())
+            .await;
 
         let account_confirmed = create_random_account(&mut rng, 3, pk, prog_3);
         store
@@ -847,8 +872,12 @@ mod tests {
 
         assert_eq!(f, Some(vec![account_finalized.clone()]));
 
-        store.process_slot_data(3, Commitment::Finalized).await;
-        store.process_slot_data(4, Commitment::Confirmed).await;
+        store
+            .process_slot_data(3, Commitment::Finalized, pubkeys.clone())
+            .await;
+        store
+            .process_slot_data(4, Commitment::Confirmed, pubkeys.clone())
+            .await;
 
         let f = store
             .get_program_accounts(prog_3, None, Commitment::Finalized)
@@ -866,7 +895,9 @@ mod tests {
         assert_eq!(p_3, Some(vec![]));
         assert_eq!(p_4, Some(vec![account_processed.clone()]));
 
-        store.process_slot_data(4, Commitment::Finalized).await;
+        store
+            .process_slot_data(4, Commitment::Finalized, pubkeys)
+            .await;
         let p_3 = store
             .get_program_accounts(prog_3, None, Commitment::Finalized)
             .await;
