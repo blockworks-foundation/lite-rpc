@@ -6,8 +6,10 @@ use std::{
     time::Duration,
 };
 
+use geyser_grpc_connector::yellowstone_grpc_util::{
+    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
+};
 use geyser_grpc_connector::{GeyserGrpcClient, GeyserGrpcClientResult, GrpcSourceConfig};
-use geyser_grpc_connector::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 use itertools::Itertools;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
@@ -111,9 +113,8 @@ pub fn start_account_streaming_tasks(
                 ping: None,
             };
 
-
             let mut client = create_connection(&grpc_config).await?;
-            
+
             let account_stream = client.subscribe_once2(program_subscription).await.unwrap();
 
             // each account subscription batch will require individual stream
@@ -213,7 +214,9 @@ pub fn start_account_streaming_tasks(
     })
 }
 
-async fn create_connection(grpc_config: &GrpcSourceConfig) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor + Sized>> {
+async fn create_connection(
+    grpc_config: &GrpcSourceConfig,
+) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor + Sized>> {
     connect_with_timeout_with_buffers(
         grpc_config.grpc_addr.clone(),
         grpc_config.grpc_x_token.clone(),
@@ -226,7 +229,7 @@ async fn create_connection(grpc_config: &GrpcSourceConfig) -> GeyserGrpcClientRe
             stream_window: Some(4194304),
         },
     )
-        .await
+    .await
 }
 
 pub fn create_grpc_account_streaming(

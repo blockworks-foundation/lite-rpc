@@ -5,6 +5,9 @@ use crate::grpc_multiplex::{
 };
 use anyhow::Context;
 use futures::StreamExt;
+use geyser_grpc_connector::yellowstone_grpc_util::{
+    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
+};
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::trace;
@@ -36,13 +39,10 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use geyser_grpc_connector::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 use tokio::sync::{broadcast, Notify};
 use tracing::trace_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{
-    CommitmentLevel, SubscribeRequestFilterBlocks
-};
+use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks};
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
@@ -291,18 +291,19 @@ pub fn create_block_processing_task(
             );
 
             // connect to grpc
-            let mut client =
-                connect_with_timeout_with_buffers(
-                    grpc_addr.clone(), grpc_x_token.clone(),
-                    None,
-                    Some(Duration::from_secs(10)),
-                    Some(Duration::from_secs(10)),
-                    GeyserGrpcClientBufferConfig {
-                        buffer_size: Some(65536),
-                        conn_window: Some(5242880),
-                        stream_window: Some(4194304),
-                    },
-                ).await?;
+            let mut client = connect_with_timeout_with_buffers(
+                grpc_addr.clone(),
+                grpc_x_token.clone(),
+                None,
+                Some(Duration::from_secs(10)),
+                Some(Duration::from_secs(10)),
+                GeyserGrpcClientBufferConfig {
+                    buffer_size: Some(65536),
+                    conn_window: Some(5242880),
+                    stream_window: Some(4194304),
+                },
+            )
+            .await?;
             let mut stream = tokio::select! {
                 res = client
                 .subscribe_once(
