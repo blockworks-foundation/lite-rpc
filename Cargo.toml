@@ -88,9 +88,8 @@ solana-lite-rpc-accounts-on-demand = {path = "accounts-on-demand", version = "0.
 bench = { path = "bench", version="0.2.4" }
 
 yellowstone-grpc-proto = "1.13.0"
-yellowstone-grpc-client = "1.14.0"
 #geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.5+yellowstone.1.13+solana.1.17.28", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.13+solana.1.17.28", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
 
 async-trait = "0.1.68"

@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use geyser_grpc_connector::GrpcSourceConfig;
+use geyser_grpc_connector::{GeyserGrpcClient, GeyserGrpcClientResult, GrpcSourceConfig};
 use geyser_grpc_connector::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 use itertools::Itertools;
 use solana_lite_rpc_core::{
@@ -19,7 +19,6 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio::sync::Notify;
-use yellowstone_grpc_client::{GeyserGrpcClient, GeyserGrpcClientResult};
 use yellowstone_grpc_proto::geyser::{
     subscribe_request_filter_accounts_filter::Filter,
     subscribe_request_filter_accounts_filter_memcmp::Data, subscribe_update::UpdateOneof,

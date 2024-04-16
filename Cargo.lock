@@ -1792,8 +1792,8 @@ dependencies = [
 
 [[package]]
 name = "geyser-grpc-connector"
-version = "0.10.5+yellowstone.1.13"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.5+yellowstone.1.13+solana.1.17.28#e000a9674749e9408aedc4f002c9abc128b53871"
+version = "0.10.6+yellowstone.1.13"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.6+yellowstone.1.13+solana.1.17.28#20f29c1e21e1682f124c0a3386cd4a85b1854f01"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -4648,7 +4648,6 @@ dependencies = [
  "tokio-stream",
  "tonic-health",
  "tracing",
- "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
 
