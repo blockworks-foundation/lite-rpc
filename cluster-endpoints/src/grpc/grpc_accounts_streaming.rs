@@ -25,8 +25,6 @@ use yellowstone_grpc_proto::geyser::{
     SubscribeRequestFilterAccountsFilterMemcmp,
 };
 
-use crate::grpc::grpc_utils::connect_with_timeout_hacked;
-
 pub fn start_account_streaming_tasks(
     grpc_config: GrpcSourceConfig,
     accounts_filters: AccountFilters,
@@ -111,6 +109,7 @@ pub fn start_account_streaming_tasks(
                 ping: None,
             };
 
+            
             let mut client = connect_with_timeout_hacked(
                 grpc_config.grpc_addr.clone(),
                 grpc_config.grpc_x_token.clone(),

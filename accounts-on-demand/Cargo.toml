@@ -45,7 +45,6 @@ solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-accounts = { workspace = true }
 solana-lite-rpc-cluster-endpoints = { workspace = true }
 
-yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 
 [dev-dependencies]

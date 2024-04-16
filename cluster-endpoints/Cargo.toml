@@ -8,8 +8,7 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
-#geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.3+yellowstone.1.12+solana.1.17.15-hacked-windowsize-with-broadcast-exit", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+geyser-grpc-connector = { workspace = true }
 
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
@@ -42,7 +41,6 @@ derive_more = "0.99.17"
 async-channel = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-util = { workspace = true }
-yellowstone-grpc-client = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }
 itertools = {workspace = true}
 prometheus = { workspace = true }

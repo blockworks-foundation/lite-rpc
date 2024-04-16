@@ -1,6 +1,5 @@
 use crate::endpoint_stremers::EndpointStreaming;
 use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
-use crate::grpc::grpc_utils::connect_with_timeout_hacked;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
@@ -38,7 +37,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Notify};
 use tracing::trace_span;
-use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::{
     CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots, SubscribeUpdateSlot,
@@ -355,68 +353,6 @@ pub fn create_block_processing_task(
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
         Ok(())
-    })
-}
-
-// not used
-pub fn create_slot_stream_task(
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
-    slot_sx: tokio::sync::mpsc::Sender<SubscribeUpdateSlot>,
-    commitment_level: CommitmentLevel,
-) -> AnyhowJoinHandle {
-    tokio::spawn(async move {
-        loop {
-            let mut slots = HashMap::new();
-            slots.insert(
-                "client_slot".to_string(),
-                SubscribeRequestFilterSlots {
-                    filter_by_commitment: Some(true),
-                },
-            );
-
-            // connect to grpc
-            let mut client =
-                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
-            let mut stream = client
-                .subscribe_once(
-                    slots,
-                    Default::default(),
-                    HashMap::new(),
-                    Default::default(),
-                    HashMap::new(),
-                    Default::default(),
-                    Some(commitment_level),
-                    Default::default(),
-                    None,
-                )
-                .await?;
-
-            while let Some(message) = stream.next().await {
-                let message = message?;
-
-                let Some(update) = message.update_oneof else {
-                    continue;
-                };
-
-                match update {
-                    UpdateOneof::Slot(slot) => {
-                        slot_sx
-                            .send(slot)
-                            .await
-                            .context("Problem sending on block channel")?;
-                    }
-                    UpdateOneof::Ping(_) => {
-                        log::trace!("GRPC Ping");
-                    }
-                    _ => {
-                        log::trace!("unknown GRPC notification");
-                    }
-                };
-            }
-            log::error!("Grpc block subscription broken (resubscribing)");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
     })
 }
 
