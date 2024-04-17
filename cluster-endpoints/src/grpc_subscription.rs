@@ -1,11 +1,13 @@
 use crate::endpoint_stremers::EndpointStreaming;
 use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
-use crate::grpc::grpc_utils::connect_with_timeout_hacked;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
 use anyhow::Context;
 use futures::StreamExt;
+use geyser_grpc_connector::yellowstone_grpc_util::{
+    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
+};
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::trace;
@@ -36,13 +38,11 @@ use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{broadcast, Notify};
 use tracing::trace_span;
-use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{
-    CommitmentLevel, SubscribeRequestFilterBlocks, SubscribeRequestFilterSlots, SubscribeUpdateSlot,
-};
+use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks};
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
@@ -291,8 +291,19 @@ pub fn create_block_processing_task(
             );
 
             // connect to grpc
-            let mut client =
-                connect_with_timeout_hacked(grpc_addr.clone(), grpc_x_token.clone()).await?;
+            let mut client = connect_with_timeout_with_buffers(
+                grpc_addr.clone(),
+                grpc_x_token.clone(),
+                None,
+                Some(Duration::from_secs(10)),
+                Some(Duration::from_secs(10)),
+                GeyserGrpcClientBufferConfig {
+                    buffer_size: Some(65536),
+                    conn_window: Some(5242880),
+                    stream_window: Some(4194304),
+                },
+            )
+            .await?;
             let mut stream = tokio::select! {
                 res = client
                 .subscribe_once(
@@ -355,68 +366,6 @@ pub fn create_block_processing_task(
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
         Ok(())
-    })
-}
-
-// not used
-pub fn create_slot_stream_task(
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
-    slot_sx: tokio::sync::mpsc::Sender<SubscribeUpdateSlot>,
-    commitment_level: CommitmentLevel,
-) -> AnyhowJoinHandle {
-    tokio::spawn(async move {
-        loop {
-            let mut slots = HashMap::new();
-            slots.insert(
-                "client_slot".to_string(),
-                SubscribeRequestFilterSlots {
-                    filter_by_commitment: Some(true),
-                },
-            );
-
-            // connect to grpc
-            let mut client =
-                GeyserGrpcClient::connect(grpc_addr.clone(), grpc_x_token.clone(), None)?;
-            let mut stream = client
-                .subscribe_once(
-                    slots,
-                    Default::default(),
-                    HashMap::new(),
-                    Default::default(),
-                    HashMap::new(),
-                    Default::default(),
-                    Some(commitment_level),
-                    Default::default(),
-                    None,
-                )
-                .await?;
-
-            while let Some(message) = stream.next().await {
-                let message = message?;
-
-                let Some(update) = message.update_oneof else {
-                    continue;
-                };
-
-                match update {
-                    UpdateOneof::Slot(slot) => {
-                        slot_sx
-                            .send(slot)
-                            .await
-                            .context("Problem sending on block channel")?;
-                    }
-                    UpdateOneof::Ping(_) => {
-                        log::trace!("GRPC Ping");
-                    }
-                    _ => {
-                        log::trace!("unknown GRPC notification");
-                    }
-                };
-            }
-            log::error!("Grpc block subscription broken (resubscribing)");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
     })
 }
 

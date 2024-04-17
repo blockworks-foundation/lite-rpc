@@ -19,8 +19,8 @@ itertools = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-yellowstone-grpc-client = { workspace = true }
-yellowstone-grpc-proto = { workspace = true }
+#yellowstone-grpc-client = { workspace = true }
+#yellowstone-grpc-proto = { workspace = true }
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
 solana-ledger = { workspace = true }
