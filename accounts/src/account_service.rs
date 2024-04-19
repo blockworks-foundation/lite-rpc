@@ -1,11 +1,10 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::bail;
 use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_account_decoder::UiAccount;
-use solana_lite_rpc_core::types::BlockStream;
+use solana_lite_rpc_core::types::BlockInfoStream;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
@@ -79,7 +78,7 @@ impl AccountService {
     pub fn process_account_stream(
         &self,
         mut account_stream: AccountStream,
-        mut block_stream: BlockStream,
+        mut block_stream: BlockInfoStream,
     ) -> Vec<AnyhowJoinHandle> {
         let this = self.clone();
         let processed_task = tokio::spawn(async move {
@@ -122,16 +121,9 @@ impl AccountService {
                             continue;
                         }
                         let commitment = Commitment::from(block.commitment_config);
-
-                        let accounts_write_updated: HashSet<Pubkey> = block
-                            .transactions
-                            .iter()
-                            .filter(|x| x.err.is_none())
-                            .flat_map(|x| x.writable_accounts.clone())
-                            .collect();
                         let updated_accounts = this
                             .account_store
-                            .process_slot_data(block.slot, commitment, accounts_write_updated)
+                            .process_slot_data(block.slot, commitment)
                             .await;
 
                         if block.commitment_config.is_finalized() {
@@ -174,7 +166,7 @@ impl AccountService {
         let data_slice = config.as_ref().map(|c| c.data_slice).unwrap_or_default();
         UiAccount::encode(
             &account_data.pubkey,
-            account_data.account.as_ref(),
+            &account_data.account.to_solana_account(),
             encoding,
             None,
             data_slice,

@@ -11,10 +11,13 @@ use solana_client::{
 };
 use solana_lite_rpc_core::{
     encoding::BASE64,
-    structures::{account_data::AccountData, account_filter::AccountFilters},
+    structures::{
+        account_data::{Account, AccountData, CompressionMethod},
+        account_filter::AccountFilters,
+    },
 };
 use solana_sdk::{
-    account::{Account, AccountSharedData, ReadableAccount},
+    account::{Account as SolanaAccount, AccountSharedData, ReadableAccount},
     commitment_config::CommitmentConfig,
     pubkey::Pubkey,
 };
@@ -85,21 +88,27 @@ pub async fn get_program_account(
 
                         for key_account in response.value {
                             let base64_decoded = BASE64.decode(&key_account.a)?;
-                            // 64MB limit
+                            // decompress all the account information
                             let uncompressed = lz4::block::decompress(&base64_decoded, None)?;
                             let shared_data =
                                 bincode::deserialize::<AccountSharedData>(&uncompressed)?;
-                            let account = Account {
+                            let account = SolanaAccount {
                                 lamports: shared_data.lamports(),
                                 data: shared_data.data().to_vec(),
                                 owner: *shared_data.owner(),
                                 executable: shared_data.executable(),
                                 rent_epoch: shared_data.rent_epoch(),
                             };
+
+                            // compress just account_data
+
                             account_store
                                 .initilize_or_update_account(AccountData {
                                     pubkey: Pubkey::from_str(&key_account.p)?,
-                                    account: Arc::new(account),
+                                    account: Arc::new(Account::from_solana_account(
+                                        account,
+                                        CompressionMethod::Lz4(1),
+                                    )),
                                     updated_slot,
                                 })
                                 .await;
@@ -168,12 +177,15 @@ pub async fn get_program_account(
                     }
                 }
             }
-            for (index, account) in fetch_accounts.iter().enumerate() {
+            for (index, account) in fetch_accounts.drain(0..).enumerate() {
                 if let Some(account) = account {
                     account_store
                         .initilize_or_update_account(AccountData {
                             pubkey: accounts[index],
-                            account: Arc::new(account.clone()),
+                            account: Arc::new(Account::from_solana_account(
+                                account,
+                                CompressionMethod::Lz4(1),
+                            )),
                             updated_slot,
                         })
                         .await;

@@ -261,8 +261,9 @@ pub fn create_grpc_subscription(
     let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
     // accounts
     if !accounts_filter.is_empty() {
+        // maximum accounts = number of transaction per slot * number of account per transaction, worst case 1000 transaction/slot * 50 accounts per transaction
         let (account_sender, accounts_stream) =
-            tokio::sync::broadcast::channel::<AccountNotificationMessage>(1024);
+            tokio::sync::broadcast::channel::<AccountNotificationMessage>(5000);
         let account_jh = create_grpc_account_streaming(
             grpc_sources,
             accounts_filter,

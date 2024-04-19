@@ -4708,8 +4708,10 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tonic",
  "tonic-health",
  "tracing",
+ "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
 
@@ -4728,6 +4730,7 @@ dependencies = [
  "futures",
  "itertools 0.10.5",
  "log",
+ "lz4",
  "prometheus",
  "quinn",
  "rand 0.8.5",
@@ -4746,6 +4749,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "zstd 0.11.2+zstd.1.5.2",
 ]
 
 [[package]]
@@ -6154,6 +6158,7 @@ dependencies = [
  "axum",
  "base64 0.21.7",
  "bytes",
+ "flate2",
  "h2",
  "http",
  "http-body",

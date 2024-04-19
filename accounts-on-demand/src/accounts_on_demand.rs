@@ -1,19 +1,11 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use dashmap::DashSet;
 use futures::lock::Mutex;
 use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
-use solana_client::{
-    nonblocking::rpc_client::RpcClient,
-    rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
-    rpc_filter::RpcFilterType,
-};
+use solana_client::{nonblocking::rpc_client::RpcClient, rpc_filter::RpcFilterType};
 use solana_lite_rpc_accounts::account_store_interface::{
     AccountLoadingError, AccountStorageInterface,
 };
@@ -21,8 +13,8 @@ use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::GrpcSourceConfig;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
-        account_data::{AccountData, AccountNotificationMessage},
-        account_filter::{AccountFilter, AccountFilterType, AccountFilters},
+        account_data::{Account, AccountData, AccountNotificationMessage, CompressionMethod},
+        account_filter::{AccountFilter, AccountFilters},
     },
 };
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
@@ -173,7 +165,10 @@ impl AccountStorageInterface for AccountsOnDemand {
                                             // update account in storage and return the account data
                                             let account_data = AccountData {
                                                 pubkey: account_pk,
-                                                account: Arc::new(account),
+                                                account: Arc::new(Account::from_solana_account(
+                                                    account,
+                                                    CompressionMethod::Lz4(1),
+                                                )),
                                                 updated_slot: response.context.slot,
                                             };
                                             self.accounts_storage
@@ -217,88 +212,15 @@ impl AccountStorageInterface for AccountsOnDemand {
         filters: Option<Vec<RpcFilterType>>,
         commitment: Commitment,
     ) -> Option<Vec<AccountData>> {
-        match self
-            .accounts_storage
+        // accounts on demand will not fetch gPA if they do not exist
+        self.accounts_storage
             .get_program_accounts(program_pubkey, filters.clone(), commitment)
             .await
-        {
-            Some(accounts) => {
-                // filter is already present
-                Some(accounts)
-            }
-            None => {
-                // check if filter is already present
-                let current_filters = self.get_filters().await;
-                let account_filter = AccountFilter {
-                    accounts: vec![],
-                    program_id: Some(program_pubkey.to_string()),
-                    filters: filters
-                        .clone()
-                        .map(|v| v.iter().map(AccountFilterType::from).collect()),
-                };
-                if current_filters.contains(&account_filter) {
-                    // filter already exisits / there is no account data
-                    return None;
-                }
-
-                // add into filters
-                {
-                    let mut writelk = self.program_filters.write().await;
-                    writelk.push(account_filter.clone());
-                }
-                self.refresh_subscription().await;
-
-                let rpc_response = self
-                    .rpc_client
-                    .get_program_accounts_with_config(
-                        &program_pubkey,
-                        RpcProgramAccountsConfig {
-                            filters,
-                            account_config: RpcAccountInfoConfig {
-                                encoding: Some(solana_account_decoder::UiAccountEncoding::Base64),
-                                data_slice: None,
-                                commitment: Some(commitment.into_commiment_config()),
-                                min_context_slot: None,
-                            },
-                            with_context: None,
-                        },
-                    )
-                    .await;
-                match rpc_response {
-                    Ok(program_accounts) => {
-                        let program_accounts = program_accounts
-                            .iter()
-                            .map(|(pk, account)| AccountData {
-                                pubkey: *pk,
-                                account: Arc::new(account.clone()),
-                                updated_slot: 0,
-                            })
-                            .collect_vec();
-                        // add fetched accounts into cache
-                        for account_data in &program_accounts {
-                            self.accounts_storage
-                                .update_account(account_data.clone(), commitment)
-                                .await;
-                        }
-                        Some(program_accounts)
-                    }
-                    Err(e) => {
-                        log::warn!("Got error while getting program accounts with {e:?}");
-                        None
-                    }
-                }
-            }
-        }
     }
 
-    async fn process_slot_data(
-        &self,
-        slot: Slot,
-        commitment: Commitment,
-        pubkeys: HashSet<Pubkey>,
-    ) -> Vec<AccountData> {
+    async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData> {
         self.accounts_storage
-            .process_slot_data(slot, commitment, pubkeys)
+            .process_slot_data(slot, commitment)
             .await
     }
 }

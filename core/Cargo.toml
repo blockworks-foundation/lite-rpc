@@ -36,6 +36,8 @@ rustls = { workspace = true }
 async-trait = { workspace = true }
 itertools = { workspace = true }
 prometheus = { workspace = true }
+lz4 = { workspace = true }
+zstd = { workspace = true }
 
 [dev-dependencies]
 rand = "0.8.5"

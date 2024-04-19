@@ -46,3 +46,5 @@ itertools = {workspace = true}
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
 tonic-health = { workspace = true }
+tonic = {workspace = true}
+yellowstone-grpc-client = "1.13.0"
