@@ -1,6 +1,6 @@
 use crate::endpoint_stremers::EndpointStreaming;
 use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
-use crate::grpc_multiplex::{
+use crate::grpc::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
 use geyser_grpc_connector::GrpcSourceConfig;

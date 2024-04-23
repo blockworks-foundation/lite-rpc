@@ -5,7 +5,7 @@ use solana_lite_rpc_blockstore::block_stores::postgres::PostgresSessionConfig;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
-use solana_lite_rpc_cluster_endpoints::grpc_multiplex::{
+use solana_lite_rpc_cluster_endpoints::grpc::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
 use solana_lite_rpc_core::structures::epoch::{EpochCache, EpochRef};

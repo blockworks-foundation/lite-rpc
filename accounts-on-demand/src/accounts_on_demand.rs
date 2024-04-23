@@ -148,6 +148,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                             // create a notify for accounts under loading
                             lk.insert(account_pk, Arc::new(Notify::new()));
                             self.accounts_subscribed.insert(account_pk);
+                            log::info!("Accounts on demand loading: {}", account_pk.to_string());
                             drop(lk);
                             self.refresh_subscription().await;
                             let mut return_value = None;

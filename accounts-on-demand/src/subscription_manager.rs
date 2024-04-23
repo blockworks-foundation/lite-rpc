@@ -82,7 +82,7 @@ pub fn create_grpc_account_streaming_tasks(
     grpc_sources: Vec<GrpcSourceConfig>,
     mut account_filter_watch: watch::Receiver<AccountFilters>,
 ) -> (AnyhowJoinHandle, AccountStream) {
-    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(128);
+    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(5000);
 
     let jh: AnyhowJoinHandle = tokio::spawn(async move {
         match account_filter_watch.changed().await {

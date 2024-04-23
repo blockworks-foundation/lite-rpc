@@ -9,7 +9,7 @@ use rand::{
 };
 use solana_lite_rpc_cluster_endpoints::{
     geyser_grpc_connector::{GrpcConnectionTimeouts, GrpcSourceConfig},
-    grpc_subscription::create_grpc_subscription,
+    grpc::grpc_subscription::create_grpc_subscription,
     json_rpc_leaders_getter::JsonRpcLeaderGetter,
     json_rpc_subscription::create_json_rpc_polling_subscription,
 };

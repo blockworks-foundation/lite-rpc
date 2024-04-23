@@ -47,4 +47,4 @@ prometheus = { workspace = true }
 lazy_static = { workspace = true }
 tonic-health = { workspace = true }
 tonic = {workspace = true}
-yellowstone-grpc-client = "1.13.0"
+yellowstone-grpc-client = { git = "https://github.com/blockworks-foundation/yellowstone-grpc.git", branch = "v1.13.0+solana.1.17.31" }

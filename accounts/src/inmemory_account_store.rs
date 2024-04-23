@@ -16,6 +16,9 @@ lazy_static::lazy_static! {
 
     static ref TOTAL_PROCESSED_ACCOUNTS: IntGauge =
         register_int_gauge!(opts!("literpc_total_processed_accounts_in_memory", "Account processed accounts InMemory")).unwrap();
+
+    static ref SLOT_FOR_LATEST_ACCOUNT_UPDATE: IntGauge =
+        register_int_gauge!(opts!("literpc_slot_for_latest_account_update", "Slot of latest account update")).unwrap();
 }
 
 #[derive(Default)]
@@ -299,6 +302,7 @@ impl InmemoryAccountStore {
 #[async_trait]
 impl AccountStorageInterface for InmemoryAccountStore {
     async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
+        SLOT_FOR_LATEST_ACCOUNT_UPDATE.set(account_data.updated_slot as i64);
         // check if the blockhash and slot is already confirmed
         let commitment = self
             .maybe_update_slot_status(&account_data, commitment)
@@ -414,7 +418,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 }
                 None => {
                     if commitment == Commitment::Confirmed {
-                        log::warn!(
+                        log::debug!(
                             "slot status not found for {} and commitment {}, confirmed lagging",
                             slot,
                             commitment.into_commitment_level()

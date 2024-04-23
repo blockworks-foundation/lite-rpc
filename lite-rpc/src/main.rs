@@ -23,10 +23,10 @@ use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
-use solana_lite_rpc_cluster_endpoints::grpc_inspect::{
+use solana_lite_rpc_cluster_endpoints::grpc::grpc_inspect::{
     debugtask_blockstream_confirmation_sequence, debugtask_blockstream_slot_progression,
 };
-use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscription;
+use solana_lite_rpc_cluster_endpoints::grpc::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
@@ -195,7 +195,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
         // Accounts notifications will be spurious when slots change
         // 256 seems very reasonable so that there are no account notification is missed and memory usage
-        let (account_notification_sender, _) = tokio::sync::broadcast::channel(256);
+        let (account_notification_sender, _) = tokio::sync::broadcast::channel(5000);
 
         let account_storage = if enable_accounts_on_demand_accounts_service {
             Arc::new(AccountsOnDemand::new(

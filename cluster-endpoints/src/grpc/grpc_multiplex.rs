@@ -20,7 +20,7 @@ use tracing::debug_span;
 use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
 use yellowstone_grpc_proto::geyser::SubscribeUpdate;
 
-use crate::grpc_subscription::from_grpc_block_update;
+use crate::grpc::grpc_subscription::from_grpc_block_update;
 
 /// connect to all sources provided using transparent autoconnection task
 /// shutdown handling:
@@ -42,6 +42,7 @@ fn create_grpc_multiplex_processed_block_task(
             GeyserFilter(COMMITMENT_CONFIG).blocks_and_txs(),
             autoconnect_tx.clone(),
             exit_notify.resubscribe(),
+            true,
         );
         tasks.push(task);
     }
@@ -52,7 +53,7 @@ fn create_grpc_multiplex_processed_block_task(
         'recv_loop: loop {
             // recv loop
             if last_tick.elapsed() > Duration::from_millis(800) {
-                warn!(
+                trace!(
                     "(soft_realtime) slow multiplex loop interation: {:?}",
                     last_tick.elapsed()
                 );
@@ -145,6 +146,7 @@ fn create_grpc_multiplex_block_info_task(
             GeyserFilter(commitment_config).blocks_meta(),
             autoconnect_tx.clone(),
             exit_notify.resubscribe(),
+            false,
         );
         tasks.push(task);
     }
@@ -494,6 +496,7 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                         GeyserFilter(COMMITMENT_CONFIG).slots(),
                         autoconnect_tx.clone(),
                         exit_notify.resubscribe(),
+                        false,
                     )
                 })
                 .collect_vec();

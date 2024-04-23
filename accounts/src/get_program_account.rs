@@ -42,7 +42,7 @@ pub async fn get_program_account(
     // setting larget timeout because gPA can take a lot of time
     let rpc_client = Arc::new(RpcClient::new_with_timeout_and_commitment(
         rpc_url,
-        Duration::from_secs(60 * 10),
+        Duration::from_secs(60 * 20),
         CommitmentConfig::processed(),
     ));
 

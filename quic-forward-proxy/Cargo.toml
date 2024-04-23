@@ -31,7 +31,6 @@ dashmap = { workspace = true }
 itertools = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-native-tls = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
 dotenv = { workspace = true }
