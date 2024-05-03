@@ -29,7 +29,8 @@ impl PostgresSession {
     pub async fn new(
         PostgresSessionConfig { pg_config, ssl }: PostgresSessionConfig,
     ) -> anyhow::Result<Self> {
-        let pg_config = pg_config.parse::<tokio_postgres::Config>()?;
+        let pg_config = pg_config.parse::<tokio_postgres::Config>()
+            .context("Postgres config parser")?;
 
         let client = if let SslMode::Disable = pg_config.get_ssl_mode() {
             Self::spawn_connection(pg_config, NoTls).await?
@@ -38,14 +39,14 @@ impl PostgresSession {
                 ca_pem_b64,
                 client_pks_b64,
                 client_pks_pass,
-            } = ssl.as_ref().unwrap();
+            } = ssl.as_ref().context("Postgres ssl config").unwrap();
 
             let ca_pem = BinaryEncoding::Base64
                 .decode(ca_pem_b64)
-                .context("ca pem decode")?;
+                .context("Postgres ca pem decode")?;
             let client_pks = BinaryEncoding::Base64
                 .decode(client_pks_b64)
-                .context("client pks decode")?;
+                .context("Postgres client pks decode")?;
 
             let connector = TlsConnector::builder()
                 .add_root_certificate(Certificate::from_pem(&ca_pem)?)
