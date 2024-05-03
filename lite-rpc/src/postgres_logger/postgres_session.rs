@@ -18,7 +18,8 @@ impl PostgresSession {
     pub async fn new(
         PostgresSessionConfig { pg_config, ssl }: PostgresSessionConfig,
     ) -> anyhow::Result<Self> {
-        let pg_config = pg_config.parse::<tokio_postgres::Config>()
+        let pg_config = pg_config
+            .parse::<tokio_postgres::Config>()
             .context("Postgres config parser")?;
 
         let client = if let SslMode::Disable = pg_config.get_ssl_mode() {
