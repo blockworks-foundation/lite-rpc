@@ -498,12 +498,18 @@ pub fn create_grpc_multiplex_processed_slots_subscription(
                 })
                 .collect_vec();
 
+            let mut last_slot = 0;
             'recv_loop: loop {
                 let next = tokio::time::timeout(Duration::from_secs(30), slots_rx.recv()).await;
                 match next {
                     Ok(Some(Message::GeyserSubscribeUpdate(slot_update))) => {
                         let mapfilter = map_slot_from_yellowstone_update(*slot_update);
                         if let Some(slot) = mapfilter {
+                            if last_slot > slot {
+                                continue;
+                            }
+                            last_slot = slot;
+
                             let _span = debug_span!("grpc_multiplex_processed_slots_stream", ?slot)
                                 .entered();
                             let send_started_at = Instant::now();

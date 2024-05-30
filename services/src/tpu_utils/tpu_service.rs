@@ -28,9 +28,6 @@ lazy_static::lazy_static! {
     static ref NB_OF_LEADERS_IN_SCHEDULE: GenericGauge<prometheus::core::AtomicI64> =
     register_int_gauge!(opts!("literpc_cached_leader", "Number of leaders in schedule cache")).unwrap();
 
-    static ref CURRENT_SLOT: GenericGauge<prometheus::core::AtomicI64> =
-    register_int_gauge!(opts!("literpc_current_slot", "Current slot seen by last rpc")).unwrap();
-
     static ref ESTIMATED_SLOT: GenericGauge<prometheus::core::AtomicI64> =
     register_int_gauge!(opts!("literpc_estimated_slot", "Estimated slot seen by last rpc")).unwrap();
 }
