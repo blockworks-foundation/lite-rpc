@@ -32,6 +32,7 @@ use yellowstone_grpc_proto::tonic::service::Interceptor;
 
 use super::grpc_utils::connect_with_timeout_with_buffers_and_compression;
 
+#[deprecated]
 pub fn start_account_streaming_tasks(
     grpc_config: GrpcSourceConfig,
     accounts_filters: AccountFilters,
@@ -81,11 +82,6 @@ pub fn start_account_streaming_tasks(
                                                 }),
                                             },
                                         )),
-                                    }
-                                }
-                                AccountFilterType::TokenAccountState => {
-                                    SubscribeRequestFilterAccountsFilter {
-                                        filter: Some(Filter::TokenAccountState(false)),
                                     }
                                 }
                             })
@@ -229,6 +225,8 @@ async fn create_connection(
     .map_err(|e| anyhow!("Failed to connect to grpc source: {e:?}"))
 }
 
+#[deprecated]
+#[allow(deprecated)]
 pub fn create_grpc_account_streaming(
     grpc_sources: Vec<GrpcSourceConfig>,
     accounts_filters: AccountFilters,

@@ -1,5 +1,4 @@
 use crate::endpoint_stremers::EndpointStreaming;
-use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
@@ -7,7 +6,6 @@ use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::trace;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_lite_rpc_core::structures::account_data::AccountNotificationMessage;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
     structures::produced_block::{ProducedBlock, TransactionInfo},
@@ -261,32 +259,34 @@ pub fn create_grpc_subscription(
     let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
     // accounts
     if !accounts_filter.is_empty() {
+        log::error!("Please use quic plugin instead of grpc if you want to use accounts : https://github.com/blockworks-foundation/quic_geyser_plugin");
+        bail!("using grpc for accounts notification is deprecated");
         // maximum accounts = number of transaction per slot * number of account per transaction, worst case 1000 transaction/slot * 50 accounts per transaction
-        let (account_sender, accounts_stream) =
-            tokio::sync::broadcast::channel::<AccountNotificationMessage>(5000);
-        let account_jh = create_grpc_account_streaming(
-            grpc_sources,
-            accounts_filter,
-            account_sender,
-            Arc::new(Notify::new()),
-        );
-        let streamers = EndpointStreaming {
-            blocks_notifier: block_multiplex_channel,
-            blockinfo_notifier: blockmeta_channel,
-            slot_notifier: slot_multiplex_channel,
-            cluster_info_notifier,
-            vote_account_notifier,
-            processed_account_stream: Some(accounts_stream),
-        };
+        // let (account_sender, accounts_stream) =
+        //     tokio::sync::broadcast::channel::<AccountNotificationMessage>(5000);
+        // let account_jh = create_grpc_account_streaming(
+        //     grpc_sources,
+        //     accounts_filter,
+        //     account_sender,
+        //     Arc::new(Notify::new()),
+        // );
+        // let streamers = EndpointStreaming {
+        //     blocks_notifier: block_multiplex_channel,
+        //     blockinfo_notifier: blockmeta_channel,
+        //     slot_notifier: slot_multiplex_channel,
+        //     cluster_info_notifier,
+        //     vote_account_notifier,
+        //     processed_account_stream: Some(accounts_stream),
+        // };
 
-        let endpoint_tasks = vec![
-            jh_multiplex_slotstream,
-            jh_multiplex_blockstream,
-            cluster_info_polling,
-            vote_accounts_polling,
-            account_jh,
-        ];
-        Ok((streamers, endpoint_tasks))
+        // let endpoint_tasks = vec![
+        //     jh_multiplex_slotstream,
+        //     jh_multiplex_blockstream,
+        //     cluster_info_polling,
+        //     vote_accounts_polling,
+        //     account_jh,
+        // ];
+        // Ok((streamers, endpoint_tasks))
     } else {
         let streamers = EndpointStreaming {
             blocks_notifier: block_multiplex_channel,

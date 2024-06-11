@@ -9,16 +9,15 @@ use solana_client::{nonblocking::rpc_client::RpcClient, rpc_filter::RpcFilterTyp
 use solana_lite_rpc_accounts::account_store_interface::{
     AccountLoadingError, AccountStorageInterface,
 };
-use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::GrpcSourceConfig;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
-        account_data::{Account, AccountData, AccountNotificationMessage, CompressionMethod},
+        account_data::{Account, AccountData, CompressionMethod},
         account_filter::{AccountFilter, AccountFilters},
     },
 };
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
-use tokio::sync::{broadcast::Sender, Notify, RwLock};
+use tokio::sync::{Notify, RwLock};
 
 use crate::subscription_manager::SubscriptionManger;
 
@@ -37,27 +36,22 @@ pub struct AccountsOnDemand {
     accounts_storage: Arc<dyn AccountStorageInterface>,
     accounts_subscribed: Arc<DashSet<Pubkey>>,
     program_filters: Arc<RwLock<AccountFilters>>,
-    subscription_manager: SubscriptionManger,
+    subscription_manager: Arc<dyn SubscriptionManger>,
     accounts_in_loading: Arc<Mutex<HashMap<Pubkey, Arc<Notify>>>>,
 }
 
 impl AccountsOnDemand {
     pub fn new(
         rpc_client: Arc<RpcClient>,
-        grpc_sources: Vec<GrpcSourceConfig>,
         accounts_storage: Arc<dyn AccountStorageInterface>,
-        account_notification_sender: Sender<AccountNotificationMessage>,
+        subscription_manager: Arc<dyn SubscriptionManger>,
     ) -> Self {
         Self {
             rpc_client,
             accounts_storage: accounts_storage.clone(),
             accounts_subscribed: Arc::new(DashSet::new()),
             program_filters: Arc::new(RwLock::new(vec![])),
-            subscription_manager: SubscriptionManger::new(
-                grpc_sources,
-                accounts_storage,
-                account_notification_sender,
-            ),
+            subscription_manager,
             accounts_in_loading: Arc::new(Mutex::new(HashMap::new())),
         }
     }

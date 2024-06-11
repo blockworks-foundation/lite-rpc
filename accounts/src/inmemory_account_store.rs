@@ -1,10 +1,20 @@
 use std::{collections::HashSet, sync::Arc};
 
-use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
+use crate::{
+    account_data_by_commitment::AccountDataByCommitment,
+    account_store_interface::{AccountLoadingError, AccountStorageInterface},
+    filtered_accounts::FilteredAccounts,
+};
 use async_trait::async_trait;
 use dashmap::DashMap;
 use prometheus::{opts, register_int_gauge, IntGauge};
-use solana_lite_rpc_core::{commitment_utils::Commitment, structures::account_data::AccountData};
+use solana_lite_rpc_core::{
+    commitment_utils::Commitment,
+    structures::{
+        account_data::AccountData,
+        account_filter::{AccountFilter, AccountFilters},
+    },
+};
 use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use std::collections::BTreeMap;
@@ -21,192 +31,6 @@ lazy_static::lazy_static! {
         register_int_gauge!(opts!("literpc_slot_for_latest_account_update", "Slot of latest account update")).unwrap();
 }
 
-#[derive(Default)]
-pub struct AccountDataByCommitment {
-    pub pubkey: Pubkey,
-    // should have maximum 32 entries, all processed slots which are not yet finalized
-    pub processed_accounts: BTreeMap<Slot, AccountData>,
-    pub confirmed_account: Option<AccountData>,
-    pub finalized_account: Option<AccountData>,
-}
-
-impl AccountDataByCommitment {
-    #[allow(deprecated)]
-    pub fn get_account_data(&self, commitment: Commitment) -> Option<AccountData> {
-        match commitment {
-            Commitment::Processed => self
-                .processed_accounts
-                .last_key_value()
-                .map(|(_, v)| v.clone())
-                .or(self.confirmed_account.clone()),
-            Commitment::Confirmed => self.confirmed_account.clone(),
-            Commitment::Finalized => self.finalized_account.clone(),
-        }
-    }
-
-    // Should be used when accounts is created by geyser notification
-    pub fn new(data: AccountData, commitment: Commitment) -> Self {
-        let mut processed_accounts = BTreeMap::new();
-        processed_accounts.insert(data.updated_slot, data.clone());
-        AccountDataByCommitment {
-            pubkey: data.pubkey,
-            processed_accounts,
-            confirmed_account: if commitment == Commitment::Confirmed
-                || commitment == Commitment::Finalized
-            {
-                Some(data.clone())
-            } else {
-                None
-            },
-            finalized_account: if commitment == Commitment::Finalized {
-                Some(data)
-            } else {
-                None
-            },
-        }
-    }
-
-    // should be called with finalized accounts data
-    // when accounts storage is being warmed up
-    pub fn initialize(data: AccountData) -> Self {
-        let mut processed_accounts = BTreeMap::new();
-        processed_accounts.insert(data.updated_slot, data.clone());
-        AccountDataByCommitment {
-            pubkey: data.pubkey,
-            processed_accounts,
-            confirmed_account: Some(data.clone()),
-            finalized_account: Some(data),
-        }
-    }
-
-    pub fn update(&mut self, data: AccountData, commitment: Commitment) -> bool {
-        // if commitmentment is processed check and update processed
-        // if commitmentment is confirmed check and update processed and confirmed
-        // if commitmentment is finalized check and update all
-        let update_confirmed = self
-            .confirmed_account
-            .as_ref()
-            .map(|x| x.updated_slot < data.updated_slot)
-            .unwrap_or(true);
-        let update_finalized = self
-            .finalized_account
-            .as_ref()
-            .map(|x| x.updated_slot < data.updated_slot)
-            .unwrap_or(true);
-
-        let mut updated = false;
-        // processed not present for the slot
-        // grpc can send multiple inter transaction changed account states for same slot
-        // we have to update till we get the last
-        if commitment == Commitment::Processed
-            || !self.processed_accounts.contains_key(&data.updated_slot)
-        {
-            self.processed_accounts
-                .insert(data.updated_slot, data.clone());
-            updated = true;
-        }
-
-        match commitment {
-            Commitment::Confirmed => {
-                if update_confirmed {
-                    self.confirmed_account = Some(data);
-                    updated = true;
-                }
-            }
-            Commitment::Finalized => {
-                if update_confirmed {
-                    self.confirmed_account = Some(data.clone());
-                    updated = true;
-                }
-                if update_finalized {
-                    self.finalized_account = Some(data);
-                    updated = true;
-                }
-            }
-            Commitment::Processed => {
-                // processed already treated
-            }
-        }
-        updated
-    }
-    // this method will promote processed account to confirmed account to finalized account
-    // returns promoted account
-    pub fn promote_slot_commitment(
-        &mut self,
-        _pubkey: Pubkey,
-        slot: Slot,
-        commitment: Commitment,
-    ) -> Option<(AccountData, Option<AccountData>)> {
-        if let Some(account_data) = self.processed_accounts.get(&slot).cloned() {
-            match commitment {
-                Commitment::Processed => {
-                    // do nothing
-                    None
-                }
-                Commitment::Confirmed => {
-                    if self
-                        .confirmed_account
-                        .as_ref()
-                        .map(|acc| acc.updated_slot)
-                        .unwrap_or_default()
-                        < slot
-                    {
-                        let prev_data = self.confirmed_account.clone();
-                        self.confirmed_account = Some(account_data.clone());
-                        Some((account_data, prev_data))
-                    } else {
-                        None
-                    }
-                }
-                Commitment::Finalized => {
-                    // slot finalized remove data from processed
-                    while self.processed_accounts.len() > 1
-                        && self
-                            .processed_accounts
-                            .first_key_value()
-                            .map(|(s, _)| *s)
-                            .unwrap_or(u64::MAX)
-                            <= slot
-                    {
-                        self.processed_accounts.pop_first();
-                    }
-
-                    if self
-                        .finalized_account
-                        .as_ref()
-                        .map(|acc| acc.updated_slot)
-                        .unwrap_or_default()
-                        < slot
-                    {
-                        let prev_data = self.finalized_account.clone();
-                        self.finalized_account = Some(account_data.clone());
-                        Some((account_data, prev_data))
-                    } else {
-                        None
-                    }
-                }
-            }
-        } else if commitment == Commitment::Finalized {
-            // remove processed slot data
-            while self.processed_accounts.len() > 1
-                && self
-                    .processed_accounts
-                    .first_key_value()
-                    .map(|(s, _)| *s)
-                    .unwrap_or(u64::MAX)
-                    <= slot
-            {
-                self.processed_accounts.pop_first();
-            }
-
-            None
-        } else {
-            //log::warn!("Expected to have processed account update for slot {} data and pk {}", slot, pubkey);
-            None
-        }
-    }
-}
-
 struct SlotStatus {
     pub commitment: Commitment,
     pub accounts_updated: HashSet<Pubkey>,
@@ -216,14 +40,19 @@ pub struct InmemoryAccountStore {
     account_store: Arc<DashMap<Pubkey, AccountDataByCommitment>>,
     accounts_by_owner: Arc<DashMap<Pubkey, HashSet<Pubkey>>>,
     slots_status: Arc<Mutex<BTreeMap<Slot, SlotStatus>>>,
+    filtered_accounts: FilteredAccounts,
 }
 
 impl InmemoryAccountStore {
-    pub fn new() -> Self {
+    pub fn new(filters: AccountFilters) -> Self {
+        let mut filtered_accounts = FilteredAccounts::default();
+        filtered_accounts.add_account_filters(&filters);
+
         Self {
             account_store: Arc::new(DashMap::new()),
             accounts_by_owner: Arc::new(DashMap::new()),
             slots_status: Arc::new(Mutex::new(BTreeMap::new())),
+            filtered_accounts,
         }
     }
 
@@ -242,7 +71,7 @@ impl InmemoryAccountStore {
 
     // here if the commitment is processed and the account has changed owner from A->B we keep the key for both A and B
     // then we remove the key from A for finalized commitment
-    fn update_owner(
+    fn update_owner_delete_if_necessary(
         &self,
         prev_account_data: &AccountData,
         new_account_data: &AccountData,
@@ -262,8 +91,17 @@ impl InmemoryAccountStore {
                         // do nothing
                     }
                 }
+
+                // account is deleted
+                if Self::is_deleted(new_account_data) {
+                    self.account_store.remove(&new_account_data.pubkey);
+                    return;
+                }
             }
-            self.add_account_owner(new_account_data.pubkey, new_account_data.account.owner);
+            if !Self::is_deleted(new_account_data) && self.satisfies_filters(new_account_data) {
+                // update owner if account was not deleted but owner was change and the filter criterias are satisfied
+                self.add_account_owner(new_account_data.pubkey, new_account_data.account.owner);
+            }
         }
     }
 
@@ -288,14 +126,25 @@ impl InmemoryAccountStore {
             }
         };
         match commitment {
-            Commitment::Processed => {
+            Commitment::Processed | Commitment::Confirmed => {
                 // insert account into slot status
                 slot_status.accounts_updated.insert(account_data.pubkey);
                 slot_status.commitment
             }
-            Commitment::Confirmed => slot_status.commitment,
             Commitment::Finalized => commitment,
         }
+    }
+
+    pub fn satisfies_filters(&self, account: &AccountData) -> bool {
+        self.filtered_accounts.satisfies(account)
+    }
+
+    pub fn is_deleted(account: &AccountData) -> bool {
+        account.account.lamports == 0
+    }
+
+    pub fn add_filter(&mut self, account_filter: &AccountFilter) {
+        self.filtered_accounts.add_account_filter(account_filter);
     }
 }
 
@@ -303,6 +152,15 @@ impl InmemoryAccountStore {
 impl AccountStorageInterface for InmemoryAccountStore {
     async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
         SLOT_FOR_LATEST_ACCOUNT_UPDATE.set(account_data.updated_slot as i64);
+
+        // account is neither deleted, nor tracked, not satifying any filters
+        if !Self::is_deleted(&account_data)
+            && !self.account_store.contains_key(&account_data.pubkey)
+            && !self.satisfies_filters(&account_data)
+        {
+            return false;
+        }
+
         // check if the blockhash and slot is already confirmed
         let commitment = self
             .maybe_update_slot_status(&account_data, commitment)
@@ -315,7 +173,11 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 // if account has been updated
                 if occ.get_mut().update(account_data.clone(), commitment) {
                     if let Some(prev_account) = prev_account {
-                        self.update_owner(&prev_account, &account_data, commitment);
+                        self.update_owner_delete_if_necessary(
+                            &prev_account,
+                            &account_data,
+                            commitment,
+                        );
                     }
                     true
                 } else {
@@ -445,7 +307,11 @@ impl AccountStorageInterface for InmemoryAccountStore {
                     if let Some(prev_account_data) = prev_account_data {
                         // check if owner has changed
                         if prev_account_data.account.owner != account_data.account.owner {
-                            self.update_owner(&prev_account_data, &account_data, commitment);
+                            self.update_owner_delete_if_necessary(
+                                &prev_account_data,
+                                &account_data,
+                                commitment,
+                            );
                         }
 
                         //check if account data has changed
@@ -472,12 +338,6 @@ impl AccountStorageInterface for InmemoryAccountStore {
     }
 }
 
-impl Default for InmemoryAccountStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{collections::HashSet, sync::Arc};
@@ -486,7 +346,10 @@ mod tests {
     use rand::{rngs::ThreadRng, Rng};
     use solana_lite_rpc_core::{
         commitment_utils::Commitment,
-        structures::account_data::{Account, AccountData},
+        structures::{
+            account_data::{Account, AccountData},
+            account_filter::AccountFilter,
+        },
     };
     use solana_sdk::{account::Account as SolanaAccount, pubkey::Pubkey, slot_history::Slot};
 
@@ -521,9 +384,13 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_account_store() {
-        let store = InmemoryAccountStore::default();
-        let mut rng = rand::thread_rng();
         let program = Pubkey::new_unique();
+        let store = InmemoryAccountStore::new(vec![AccountFilter {
+            program_id: Some(program.to_string()),
+            accounts: vec![],
+            filters: None,
+        }]);
+        let mut rng = rand::thread_rng();
         let pk1 = Pubkey::new_unique();
         let pk2 = Pubkey::new_unique();
 
@@ -647,9 +514,13 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_account_store_if_finalized_clears_old_processed_slots() {
-        let store = InmemoryAccountStore::default();
-
         let program = Pubkey::new_unique();
+        let store = InmemoryAccountStore::new(vec![AccountFilter {
+            program_id: Some(program.to_string()),
+            accounts: vec![],
+            filters: None,
+        }]);
+
         let pk1 = Pubkey::new_unique();
 
         let mut pubkeys = HashSet::new();
@@ -768,10 +639,32 @@ mod tests {
 
     #[tokio::test]
     pub async fn test_get_program_account() {
-        let store = InmemoryAccountStore::default();
-
         let prog_1 = Pubkey::new_unique();
         let prog_2 = Pubkey::new_unique();
+        let prog_3 = Pubkey::new_unique();
+        let prog_4 = Pubkey::new_unique();
+        let store = InmemoryAccountStore::new(vec![
+            AccountFilter {
+                program_id: Some(prog_1.to_string()),
+                accounts: vec![],
+                filters: None,
+            },
+            AccountFilter {
+                program_id: Some(prog_2.to_string()),
+                accounts: vec![],
+                filters: None,
+            },
+            AccountFilter {
+                program_id: Some(prog_3.to_string()),
+                accounts: vec![],
+                filters: None,
+            },
+            AccountFilter {
+                program_id: Some(prog_4.to_string()),
+                accounts: vec![],
+                filters: None,
+            },
+        ]);
 
         let mut rng = rand::thread_rng();
 
@@ -868,7 +761,6 @@ mod tests {
         assert_eq!(acc_prgram_2.unwrap().len(), 1);
 
         let pk = Pubkey::new_unique();
-        let prog_3 = Pubkey::new_unique();
 
         let account_finalized = create_random_account(&mut rng, 2, pk, prog_3);
         store
@@ -881,7 +773,6 @@ mod tests {
             .update_account(account_confirmed.clone(), Commitment::Confirmed)
             .await;
 
-        let prog_4 = Pubkey::new_unique();
         let account_processed = create_random_account(&mut rng, 4, pk, prog_4);
         store
             .update_account(account_processed.clone(), Commitment::Processed)

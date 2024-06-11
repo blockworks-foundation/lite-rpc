@@ -1,3 +1,4 @@
+use crate::encoding::{BASE58, BASE64};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use solana_rpc_client_api::filter::{Memcmp as RpcMemcmp, MemcmpEncodedBytes, RpcFilterType};
@@ -17,12 +18,44 @@ pub struct MemcmpFilter {
     pub data: MemcmpFilterData,
 }
 
+impl MemcmpFilter {
+    pub fn bytes(&self) -> Vec<u8> {
+        match &self.data {
+            MemcmpFilterData::Bytes(bytes) => bytes.clone(),
+            MemcmpFilterData::Base58(b58) => {
+                BASE58.decode(b58).expect("Base58 decoding should work")
+            }
+            MemcmpFilterData::Base64(b64) => BASE64.decode(b64).expect("B64 decoding should work"),
+        }
+    }
+
+    pub fn bytes_match(&self, data: &[u8]) -> bool {
+        let bytes = self.bytes();
+        let offset = self.offset as usize;
+        if offset > data.len() {
+            return false;
+        }
+        if data[offset..].len() < bytes.len() {
+            return false;
+        }
+        data[offset..offset + bytes.len()] == bytes[..]
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub enum AccountFilterType {
     Datasize(u64),
     Memcmp(MemcmpFilter),
-    TokenAccountState,
+}
+
+impl AccountFilterType {
+    pub fn allows(&self, account_data: &[u8]) -> bool {
+        match self {
+            AccountFilterType::Datasize(size) => account_data.len() as u64 == *size,
+            AccountFilterType::Memcmp(compare) => compare.bytes_match(account_data),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -54,7 +87,6 @@ impl AccountFilter {
                         };
                         RpcFilterType::Memcmp(RpcMemcmp::new(memcpy.offset as usize, encoded_bytes))
                     }
-                    AccountFilterType::TokenAccountState => RpcFilterType::TokenAccountState,
                 })
                 .collect_vec()
         })
@@ -74,7 +106,9 @@ impl From<&RpcFilterType> for AccountFilterType {
                     data: MemcmpFilterData::Bytes(bytes),
                 })
             }
-            RpcFilterType::TokenAccountState => AccountFilterType::TokenAccountState,
+            RpcFilterType::TokenAccountState => {
+                unimplemented!()
+            }
         }
     }
 }
