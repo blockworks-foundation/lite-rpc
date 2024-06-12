@@ -21,7 +21,6 @@ use solana_lite_rpc_core::{
 use solana_sdk::program_utils::limited_deserialize;
 use solana_sdk::vote::instruction::VoteInstruction;
 use solana_sdk::{
-    borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
     hash::Hash,
@@ -216,10 +215,7 @@ pub fn from_grpc_block_update(
 
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
     let cu_requested_cell: OnceCell<u32> = OnceCell::new();
-    let legacy_cu_requested_cell: OnceCell<u32> = OnceCell::new();
-
     let prioritization_fees_cell: OnceCell<u64> = OnceCell::new();
-    let legacy_prio_fees_cell: OnceCell<u64> = OnceCell::new();
 
     for compute_budget_ins in message.instructions().iter().filter(|instruction| {
         instruction
@@ -227,7 +223,7 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
             .eq(&compute_budget::id())
     }) {
         if let Ok(budget_ins) =
-            try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice())
+            solana_sdk::borsh1::try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice())
         {
             match budget_ins {
                 // aka cu requested
@@ -242,16 +238,6 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
                         .set(price)
                         .expect("prioritization_fees must be set only once");
                 }
-                // legacy
-                ComputeBudgetInstruction::RequestUnitsDeprecated {
-                    units,
-                    additional_fee,
-                } => {
-                    let _ = legacy_cu_requested_cell.set(units);
-                    if additional_fee > 0 {
-                        let _ = legacy_prio_fees_cell.set(((units * 1000) / additional_fee) as u64);
-                    };
-                }
                 _ => {
                     trace!("skip compute budget instruction");
                 }
@@ -261,11 +247,9 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
 
     let cu_requested = cu_requested_cell
         .get()
-        .or(legacy_cu_requested_cell.get())
         .cloned();
     let prioritization_fees = prioritization_fees_cell
         .get()
-        .or(legacy_prio_fees_cell.get())
         .cloned();
     (cu_requested, prioritization_fees)
 }

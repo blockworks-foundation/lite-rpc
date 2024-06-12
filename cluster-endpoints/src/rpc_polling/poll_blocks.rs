@@ -11,7 +11,7 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_sdk::borsh0_10::try_from_slice_unchecked;
+use solana_sdk::borsh1::try_from_slice_unchecked;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::program_utils::limited_deserialize;
 use solana_sdk::reward_type::RewardType;
@@ -222,21 +222,6 @@ pub fn from_ui_block(
                 _ => None,
             };
 
-            let legacy_compute_budget = tx.message.instructions().iter().find_map(|i| {
-                if i.program_id(tx.message.static_account_keys())
-                    .eq(&compute_budget::id())
-                {
-                    if let Ok(ComputeBudgetInstruction::RequestUnitsDeprecated {
-                        units,
-                        additional_fee,
-                    }) = try_from_slice_unchecked(i.data.as_slice())
-                    {
-                        return Some((units, additional_fee));
-                    }
-                }
-                None
-            });
-
             let mut cu_requested = tx.message.instructions().iter().find_map(|i| {
                 if i.program_id(tx.message.static_account_keys())
                     .eq(&compute_budget::id())
@@ -263,13 +248,6 @@ pub fn from_ui_block(
 
                 None
             });
-
-            if let Some((units, additional_fee)) = legacy_compute_budget {
-                cu_requested = Some(units);
-                if additional_fee > 0 {
-                    prioritization_fees = Some(calc_prioritization_fees(units, additional_fee))
-                }
-            };
 
             let blockhash = tx.message.recent_blockhash();
 

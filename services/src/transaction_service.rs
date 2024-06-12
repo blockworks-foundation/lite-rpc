@@ -20,7 +20,6 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_sdk::{
-    borsh0_10::try_from_slice_unchecked,
     compute_budget::{self, ComputeBudgetInstruction},
     transaction::{Transaction, VersionedTransaction},
 };
@@ -165,8 +164,7 @@ impl TransactionService {
                     .program_id(tx.message.static_account_keys())
                     .eq(&compute_budget::id())
                 {
-                    let ix_which =
-                        try_from_slice_unchecked::<ComputeBudgetInstruction>(ix.data.as_slice());
+                    let ix_which = solana_sdk::borsh1::try_from_slice_unchecked::<ComputeBudgetInstruction>(ix.data.as_slice());
                     if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(fees)) = ix_which {
                         prioritization_fee = fees;
                     }
