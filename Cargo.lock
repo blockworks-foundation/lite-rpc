@@ -1813,6 +1813,7 @@ dependencies = [
 [[package]]
 name = "geyser-grpc-connector"
 version = "0.10.6+yellowstone.1.13"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?tag=v0.10.6+yellowstone.1.15+solana.1.18#aa7a8daf6c05dfece2b33e020b53a112415e88cc"
 dependencies = [
  "anyhow",
  "async-stream",

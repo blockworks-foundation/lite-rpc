@@ -22,7 +22,7 @@ members = [
 
 [workspace.package]
 version = "0.2.4"
-authors = ["gmgalactus <gmgalactus@mango.markets>", "Aniket Prajapati <contact@aniketprajapati.me>"]
+authors = ["gmgalactus <gmgalactus@mango.markets>", "GroovieGermanikus <groovie@mango.markets>"]
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 edition = "2021"
@@ -88,8 +88,8 @@ solana-lite-rpc-accounts-on-demand = {path = "accounts-on-demand", version = "0.
 bench = { path = "bench", version="0.2.4" }
 
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.15.0+solana.1.18" }
-geyser-grpc-connector = { path = "../geyser-grpc-connector" }
-#geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.13+solana.1.18.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+#geyser-grpc-connector = { path = "../geyser-grpc-connector" }
+geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.15+solana.1.18", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
 
 async-trait = "0.1.68"
