@@ -134,10 +134,11 @@ impl PartialEq for AccountData {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AccountNotificationMessage {
     pub data: AccountData,
     pub commitment: Commitment,
+    pub write_version: u64,
 }
 
 pub type AccountStream = Receiver<AccountNotificationMessage>;

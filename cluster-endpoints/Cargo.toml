@@ -48,3 +48,5 @@ lazy_static = { workspace = true }
 tonic-health = { workspace = true }
 tonic = {workspace = true}
 yellowstone-grpc-client = { git = "https://github.com/blockworks-foundation/yellowstone-grpc.git", branch = "v1.13.0+solana.1.17.31" }
+quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "v0.1.5_solana17" }
+quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "v0.1.5_solana17" }

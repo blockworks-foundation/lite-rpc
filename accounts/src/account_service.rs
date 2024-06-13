@@ -133,9 +133,13 @@ impl AccountService {
                         }
 
                         for data in updated_accounts {
-                            let _ = this
-                                .account_notification_sender
-                                .send(AccountNotificationMessage { data, commitment });
+                            let _ =
+                                this.account_notification_sender
+                                    .send(AccountNotificationMessage {
+                                        data,
+                                        commitment,
+                                        write_version: 0,
+                                    });
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {

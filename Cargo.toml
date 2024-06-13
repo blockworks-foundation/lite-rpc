@@ -91,7 +91,6 @@ yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.gi
 #geyser-grpc-connector = { path = "../geyser-grpc-connector" }
 geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.15+solana.1.18", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
-
 async-trait = "0.1.68"
 tonic-health = "0.10.2"
 tonic = { version = "0.10.2", features = ["gzip"] }

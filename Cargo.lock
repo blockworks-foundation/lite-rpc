@@ -3539,6 +3539,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "quic-geyser-client"
+version = "0.1.5"
+source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=v0.1.5_solana17#46b68457bdb912008174151f37eb809497c1d23b"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "log",
+ "pkcs8",
+ "quic-geyser-common",
+ "quinn",
+ "rcgen 0.10.0",
+ "rustls",
+ "solana-sdk",
+ "tokio",
+]
+
+[[package]]
+name = "quic-geyser-common"
+version = "0.1.5"
+source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=v0.1.5_solana17#46b68457bdb912008174151f37eb809497c1d23b"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "itertools 0.10.5",
+ "log",
+ "lz4",
+ "serde",
+ "solana-program",
+ "solana-sdk",
+ "solana-transaction-status",
+ "thiserror",
+]
+
+[[package]]
 name = "quinn"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4676,6 +4710,8 @@ dependencies = [
  "log",
  "merge-streams",
  "prometheus",
+ "quic-geyser-client",
+ "quic-geyser-common",
  "quinn",
  "rustls",
  "serde",

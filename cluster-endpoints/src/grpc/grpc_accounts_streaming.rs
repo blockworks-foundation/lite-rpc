@@ -183,6 +183,7 @@ pub fn start_account_streaming_tasks(
                                 },
                                 // TODO update with processed commitment / check above
                                 commitment: Commitment::Processed,
+                                write_version: account_data.write_version,
                             };
                             if account_stream_sx.send(notification).is_err() {
                                 // non recoverable, i.e the whole stream is being restarted

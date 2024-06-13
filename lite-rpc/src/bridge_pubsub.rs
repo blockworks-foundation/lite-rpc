@@ -318,7 +318,9 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
 
             loop {
                 match tokio::time::timeout(Duration::from_secs(1), accounts_stream.recv()).await {
-                    Ok(Ok(AccountNotificationMessage { data, commitment })) => {
+                    Ok(Ok(AccountNotificationMessage {
+                        data, commitment, ..
+                    })) => {
                         if sink.is_closed() {
                             // sink is already closed
                             return;
@@ -418,7 +420,9 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
 
             loop {
                 match tokio::time::timeout(Duration::from_secs(1), accounts_stream.recv()).await {
-                    Ok(Ok(AccountNotificationMessage { data, commitment })) => {
+                    Ok(Ok(AccountNotificationMessage {
+                        data, commitment, ..
+                    })) => {
                         if sink.is_closed() {
                             // sink is already closed
                             return;
