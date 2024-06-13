@@ -326,20 +326,3 @@ fn map_block_info(produced_block: &ProducedBlock) -> BlockInfo {
         block_time: produced_block.block_time,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[inline]
-    fn calc_prioritization_fees(units: u32, additional_fee: u32) -> u64 {
-        (units as u64 * 1000) / additional_fee as u64
-    }
-
-    #[test]
-    fn test_calc_prioritization_fees() {
-        let units: u32 = 100;
-        let additional_fee: u32 = 10;
-        let prioritization_fees: u64 = calc_prioritization_fees(units, additional_fee);
-
-        assert_eq!(1000, prioritization_fees);
-    }
-}
