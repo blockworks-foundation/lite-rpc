@@ -87,7 +87,6 @@ impl ActiveConnection {
 
         let max_uni_stream_connections = compute_max_allowed_uni_streams(
             identity_stakes.peer_type,
-            identity_stakes.stakes,
             identity_stakes.total_stakes,
         );
         let connection_pool = QuicConnectionPool::new(

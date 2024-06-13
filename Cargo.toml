@@ -22,25 +22,25 @@ members = [
 
 [workspace.package]
 version = "0.2.4"
-authors = ["gmgalactus <gmgalactus@mango.markets>", "Aniket Prajapati <contact@aniketprajapati.me>"]
+authors = ["gmgalactus <gmgalactus@mango.markets>", "GroovieGermanikus <groovie@mango.markets>"]
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 edition = "2021"
 
 [workspace.dependencies]
-solana-sdk = "~1.17.28"
-solana-rpc-client = "~1.17.28"
-solana-rpc-client-api = "~1.17.28"
-solana-transaction-status = "~1.17.28"
-solana-version = "~1.17.28"
-solana-client = "~1.17.28"
-solana-net-utils = "~1.17.28"
-solana-pubsub-client = "~1.17.28"
-solana-streamer = "~1.17.28"
-solana-account-decoder = "~1.17.28"
-solana-ledger = "~1.17.28"
-solana-program = "~1.17.28"
-solana-address-lookup-table-program = "~1.17.28"
+solana-sdk = "~1.18.15"
+solana-rpc-client = "~1.18.15"
+solana-rpc-client-api = "~1.18.15"
+solana-transaction-status = "~1.18.15"
+solana-version = "~1.18.15"
+solana-client = "~1.18.15"
+solana-net-utils = "~1.18.15"
+solana-pubsub-client = "~1.18.15"
+solana-streamer = "~1.18.15"
+solana-account-decoder = "~1.18.15"
+solana-ledger = "~1.18.15"
+solana-program = "~1.18.15"
+solana-address-lookup-table-program = "~1.18.15"
 itertools = "0.10.5"
 rangetools = "0.1.4"
 serde = { version = "1.0.160", features = ["derive"] }
@@ -87,9 +87,9 @@ solana-lite-rpc-accounts = {path = "accounts", version = "0.2.4"}
 solana-lite-rpc-accounts-on-demand = {path = "accounts-on-demand", version = "0.2.4"}
 bench = { path = "bench", version="0.2.4" }
 
-yellowstone-grpc-proto = "1.13.0"
-#geyser-grpc-connector = { path = "../../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.13+solana.1.17.28", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.15.0+solana.1.18" }
+#geyser-grpc-connector = { path = "../geyser-grpc-connector" }
+geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.15+solana.1.18", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
 
 async-trait = "0.1.68"

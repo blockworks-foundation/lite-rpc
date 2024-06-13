@@ -3,11 +3,6 @@ use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
-use anyhow::Context;
-use futures::StreamExt;
-use geyser_grpc_connector::yellowstone_grpc_util::{
-    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
-};
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::trace;
@@ -21,7 +16,6 @@ use solana_lite_rpc_core::{
 use solana_sdk::program_utils::limited_deserialize;
 use solana_sdk::vote::instruction::VoteInstruction;
 use solana_sdk::{
-    borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
     hash::Hash,
@@ -36,13 +30,9 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::Notify;
 use tracing::trace_span;
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks};
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
@@ -216,18 +206,16 @@ pub fn from_grpc_block_update(
 
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
     let cu_requested_cell: OnceCell<u32> = OnceCell::new();
-    let legacy_cu_requested_cell: OnceCell<u32> = OnceCell::new();
-
     let prioritization_fees_cell: OnceCell<u64> = OnceCell::new();
-    let legacy_prio_fees_cell: OnceCell<u64> = OnceCell::new();
 
     for compute_budget_ins in message.instructions().iter().filter(|instruction| {
         instruction
             .program_id(message.static_account_keys())
             .eq(&compute_budget::id())
     }) {
-        if let Ok(budget_ins) =
-            try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice())
+        if let Ok(budget_ins) = solana_sdk::borsh1::try_from_slice_unchecked::<
+            ComputeBudgetInstruction,
+        >(compute_budget_ins.data.as_slice())
         {
             match budget_ins {
                 // aka cu requested
@@ -242,16 +230,6 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
                         .set(price)
                         .expect("prioritization_fees must be set only once");
                 }
-                // legacy
-                ComputeBudgetInstruction::RequestUnitsDeprecated {
-                    units,
-                    additional_fee,
-                } => {
-                    let _ = legacy_cu_requested_cell.set(units);
-                    if additional_fee > 0 {
-                        let _ = legacy_prio_fees_cell.set(((units * 1000) / additional_fee) as u64);
-                    };
-                }
                 _ => {
                     trace!("skip compute budget instruction");
                 }
@@ -259,114 +237,9 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
         }
     }
 
-    let cu_requested = cu_requested_cell
-        .get()
-        .or(legacy_cu_requested_cell.get())
-        .cloned();
-    let prioritization_fees = prioritization_fees_cell
-        .get()
-        .or(legacy_prio_fees_cell.get())
-        .cloned();
+    let cu_requested = cu_requested_cell.get().cloned();
+    let prioritization_fees = prioritization_fees_cell.get().cloned();
     (cu_requested, prioritization_fees)
-}
-
-pub fn create_block_processing_task(
-    grpc_addr: String,
-    grpc_x_token: Option<String>,
-    block_sx: tokio::sync::mpsc::Sender<SubscribeUpdateBlock>,
-    commitment_level: CommitmentLevel,
-    mut exit_notify: broadcast::Receiver<()>,
-) -> AnyhowJoinHandle {
-    tokio::spawn(async move {
-        'main_loop: loop {
-            let mut blocks_subs = HashMap::new();
-            blocks_subs.insert(
-                "block_client".to_string(),
-                SubscribeRequestFilterBlocks {
-                    account_include: Default::default(),
-                    include_transactions: Some(true),
-                    include_accounts: Some(false),
-                    include_entries: Some(false),
-                },
-            );
-
-            // connect to grpc
-            let mut client = connect_with_timeout_with_buffers(
-                grpc_addr.clone(),
-                grpc_x_token.clone(),
-                None,
-                Some(Duration::from_secs(10)),
-                Some(Duration::from_secs(10)),
-                GeyserGrpcClientBufferConfig {
-                    buffer_size: Some(65536),
-                    conn_window: Some(5242880),
-                    stream_window: Some(4194304),
-                },
-            )
-            .await?;
-            let mut stream = tokio::select! {
-                res = client
-                .subscribe_once(
-                    HashMap::new(),
-                    Default::default(),
-                    HashMap::new(),
-                    Default::default(),
-                    blocks_subs,
-                    Default::default(),
-                    Some(commitment_level),
-                    Default::default(),
-                    None,
-                ) => {
-                    res?
-                },
-                _ = exit_notify.recv() => {
-                    break;
-                }
-            };
-
-            loop {
-                tokio::select! {
-                    message = stream.next() => {
-                        let Some(Ok(message)) = message else {
-                            break;
-                        };
-
-                        let Some(update) = message.update_oneof else {
-                            continue;
-                        };
-
-                        match update {
-                            UpdateOneof::Block(block) => {
-                                log::trace!(
-                                    "received block, hash: {} slot: {}",
-                                    block.blockhash,
-                                    block.slot
-                                );
-                                block_sx
-                                    .send(block)
-                                    .await
-                                    .context("Problem sending on block channel")?;
-                            }
-                            UpdateOneof::Ping(_) => {
-                                log::trace!("GRPC Ping");
-                            }
-                            _ => {
-                                log::trace!("unknown GRPC notification");
-                            }
-                        };
-                    },
-                    _ = exit_notify.recv() => {
-                        break 'main_loop;
-                    }
-                }
-            }
-            drop(stream);
-            drop(client);
-            log::error!("Grpc block subscription broken (resubscribing)");
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-        Ok(())
-    })
 }
 
 pub fn create_grpc_subscription(
