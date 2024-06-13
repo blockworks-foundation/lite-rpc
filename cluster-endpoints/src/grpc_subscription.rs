@@ -3,11 +3,6 @@ use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
-use anyhow::Context;
-use futures::StreamExt;
-use geyser_grpc_connector::yellowstone_grpc_util::{
-    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
-};
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::trace;
@@ -35,13 +30,9 @@ use solana_sdk::{
 };
 use solana_transaction_status::{Reward, RewardType};
 use std::cell::OnceCell;
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::Notify;
 use tracing::trace_span;
-use yellowstone_grpc_proto::geyser::subscribe_update::UpdateOneof;
-use yellowstone_grpc_proto::geyser::{CommitmentLevel, SubscribeRequestFilterBlocks};
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
     poll_cluster_info, poll_vote_accounts,
@@ -222,8 +213,9 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
             .program_id(message.static_account_keys())
             .eq(&compute_budget::id())
     }) {
-        if let Ok(budget_ins) =
-            solana_sdk::borsh1::try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice())
+        if let Ok(budget_ins) = solana_sdk::borsh1::try_from_slice_unchecked::<
+            ComputeBudgetInstruction,
+        >(compute_budget_ins.data.as_slice())
         {
             match budget_ins {
                 // aka cu requested
@@ -245,12 +237,8 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
         }
     }
 
-    let cu_requested = cu_requested_cell
-        .get()
-        .cloned();
-    let prioritization_fees = prioritization_fees_cell
-        .get()
-        .cloned();
+    let cu_requested = cu_requested_cell.get().cloned();
+    let prioritization_fees = prioritization_fees_cell.get().cloned();
     (cu_requested, prioritization_fees)
 }
 

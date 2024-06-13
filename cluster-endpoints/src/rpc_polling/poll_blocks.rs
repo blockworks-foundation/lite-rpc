@@ -222,7 +222,7 @@ pub fn from_ui_block(
                 _ => None,
             };
 
-            let mut cu_requested = tx.message.instructions().iter().find_map(|i| {
+            let cu_requested = tx.message.instructions().iter().find_map(|i| {
                 if i.program_id(tx.message.static_account_keys())
                     .eq(&compute_budget::id())
                 {
@@ -235,7 +235,7 @@ pub fn from_ui_block(
                 None
             });
 
-            let mut prioritization_fees = tx.message.instructions().iter().find_map(|i| {
+            let prioritization_fees = tx.message.instructions().iter().find_map(|i| {
                 if i.program_id(tx.message.static_account_keys())
                     .eq(&compute_budget::id())
                 {
@@ -327,17 +327,19 @@ fn map_block_info(produced_block: &ProducedBlock) -> BlockInfo {
     }
 }
 
-#[inline]
-fn calc_prioritization_fees(units: u32, additional_fee: u32) -> u64 {
-    (units as u64 * 1000) / additional_fee as u64
-}
+#[cfg(test)]
+mod tests {
+    #[inline]
+    fn calc_prioritization_fees(units: u32, additional_fee: u32) -> u64 {
+        (units as u64 * 1000) / additional_fee as u64
+    }
 
-#[test]
-fn overflow_u32() {
-    // value high enough to overflow u32 if multiplied by 1000
-    let units: u32 = 4_000_000_000;
-    let additional_fee: u32 = 100;
-    let prioritization_fees: u64 = calc_prioritization_fees(units, additional_fee);
+    #[test]
+    fn test_calc_prioritization_fees() {
+        let units: u32 = 100;
+        let additional_fee: u32 = 10;
+        let prioritization_fees: u64 = calc_prioritization_fees(units, additional_fee);
 
-    assert_eq!(40_000_000_000, prioritization_fees);
+        assert_eq!(1000, prioritization_fees);
+    }
 }

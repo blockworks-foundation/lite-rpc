@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use futures::StreamExt;
 use merge_streams::MergeStreams;
 use std::{
@@ -5,10 +6,11 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use anyhow::anyhow;
 
-use geyser_grpc_connector::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig, GeyserGrpcWrappedResult};
-use geyser_grpc_connector::{GeyserGrpcClient, GeyserGrpcClientResult, GrpcSourceConfig};
+use geyser_grpc_connector::yellowstone_grpc_util::{
+    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
+};
+use geyser_grpc_connector::{GeyserGrpcClient, GrpcSourceConfig};
 use itertools::Itertools;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
@@ -219,9 +221,7 @@ async fn create_connection(
         },
     )
     .await
-        .map_err(|e| {
-            anyhow!("Failed to connect to grpc source: {e:?}")
-        })
+    .map_err(|e| anyhow!("Failed to connect to grpc source: {e:?}"))
 }
 
 pub fn create_grpc_account_streaming(
