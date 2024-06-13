@@ -5,10 +5,9 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use anyhow::anyhow;
 
-use geyser_grpc_connector::yellowstone_grpc_util::{
-    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
-};
+use geyser_grpc_connector::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig, GeyserGrpcWrappedResult};
 use geyser_grpc_connector::{GeyserGrpcClient, GeyserGrpcClientResult, GrpcSourceConfig};
 use itertools::Itertools;
 use solana_lite_rpc_core::{
@@ -103,19 +102,14 @@ pub fn start_account_streaming_tasks(
 
             let program_subscription = SubscribeRequest {
                 accounts: subscribe_programs,
-                slots: Default::default(),
-                transactions: Default::default(),
-                blocks: Default::default(),
-                blocks_meta: Default::default(),
-                entry: Default::default(),
-                commitment: Some(processed_commitment.into()),
                 accounts_data_slice: Default::default(),
-                ping: None,
+                commitment: Some(processed_commitment.into()),
+                ..Default::default()
             };
 
             let mut client = create_connection(&grpc_config).await?;
 
-            let account_stream = client.subscribe_once2(program_subscription).await.unwrap();
+            let account_stream = client.subscribe_once(program_subscription).await.unwrap();
 
             // each account subscription batch will require individual stream
             let mut subscriptions = vec![account_stream];
@@ -139,17 +133,12 @@ pub fn start_account_streaming_tasks(
 
                 let account_request = SubscribeRequest {
                     accounts: accounts_subscription,
-                    slots: Default::default(),
-                    transactions: Default::default(),
-                    blocks: Default::default(),
-                    blocks_meta: Default::default(),
-                    entry: Default::default(),
-                    commitment: Some(processed_commitment.into()),
                     accounts_data_slice: Default::default(),
-                    ping: None,
+                    commitment: Some(processed_commitment.into()),
+                    ..Default::default()
                 };
 
-                let account_stream = client.subscribe_once2(account_request).await.unwrap();
+                let account_stream = client.subscribe_once(account_request).await.unwrap();
                 subscriptions.push(account_stream);
             }
             let mut merged_stream = subscriptions.merge();
@@ -216,7 +205,7 @@ pub fn start_account_streaming_tasks(
 
 async fn create_connection(
     grpc_config: &GrpcSourceConfig,
-) -> GeyserGrpcClientResult<GeyserGrpcClient<impl Interceptor + Sized>> {
+) -> anyhow::Result<GeyserGrpcClient<impl Interceptor + Sized>> {
     connect_with_timeout_with_buffers(
         grpc_config.grpc_addr.clone(),
         grpc_config.grpc_x_token.clone(),
@@ -230,6 +219,9 @@ async fn create_connection(
         },
     )
     .await
+        .map_err(|e| {
+            anyhow!("Failed to connect to grpc source: {e:?}")
+        })
 }
 
 pub fn create_grpc_account_streaming(
