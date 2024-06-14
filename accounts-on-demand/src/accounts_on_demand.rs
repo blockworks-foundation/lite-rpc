@@ -165,6 +165,7 @@ impl AccountStorageInterface for AccountsOnDemand {
                                                     CompressionMethod::Lz4(1),
                                                 )),
                                                 updated_slot: response.context.slot,
+                                                write_version: 0,
                                             };
                                             self.accounts_storage
                                                 .update_account(account_data.clone(), commitment)

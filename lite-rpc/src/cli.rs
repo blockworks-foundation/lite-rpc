@@ -12,6 +12,7 @@ use crate::{
 use anyhow::Context;
 use clap::Parser;
 use dotenv::dotenv;
+use serde::{Deserialize, Serialize};
 use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 use solana_rpc_client_api::client_error::reqwest::Url;
 
@@ -94,6 +95,9 @@ pub struct Config {
 
     #[serde(default)]
     pub quic_connection_parameters: Option<QuicConnectionParameters>,
+
+    #[serde(default)]
+    pub quic_geyser_plugin_config: Option<QuicGeyserPluginConfig>,
 }
 
 impl Config {
@@ -228,6 +232,10 @@ impl Config {
         config.quic_connection_parameters = config
             .quic_connection_parameters
             .or(quic_params_from_environment());
+
+        config.quic_geyser_plugin_config = config
+            .quic_geyser_plugin_config
+            .or(quic_geyser_plugin_from_environment());
         Ok(config)
     }
 
@@ -394,4 +402,33 @@ fn quic_params_from_environment() -> Option<QuicConnectionParameters> {
             );
 
     Some(quic_connection_parameters)
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct QuicGeyserPluginConfig {
+    pub url: String,
+}
+
+impl Display for QuicGeyserPluginConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "QuicGeyserPluginSource {}",
+            url_obfuscate_api_token(&self.url),
+        )
+    }
+}
+
+impl Debug for QuicGeyserPluginConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+fn quic_geyser_plugin_from_environment() -> Option<QuicGeyserPluginConfig> {
+    let geyser_plugin_url = env::var("QUIC_GEYSER_PLUGIN_URL");
+    match geyser_plugin_url {
+        Ok(url) => Some(QuicGeyserPluginConfig { url }),
+        Err(_) => None,
+    }
 }

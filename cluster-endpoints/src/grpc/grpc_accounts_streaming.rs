@@ -180,10 +180,10 @@ pub fn start_account_streaming_tasks(
                                     pubkey: Pubkey::new_from_array(account_pk_bytes),
                                     account: Arc::new(Account::from_solana_account(solana_account, solana_lite_rpc_core::structures::account_data::CompressionMethod::Lz4(1))),
                                     updated_slot: account.slot,
+                                    write_version: account_data.write_version,
                                 },
                                 // TODO update with processed commitment / check above
                                 commitment: Commitment::Processed,
-                                write_version: account_data.write_version,
                             };
                             if account_stream_sx.send(notification).is_err() {
                                 // non recoverable, i.e the whole stream is being restarted

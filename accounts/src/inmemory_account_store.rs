@@ -379,7 +379,20 @@ mod tests {
                 solana_lite_rpc_core::structures::account_data::CompressionMethod::None,
             )),
             updated_slot,
+            write_version: 0,
         }
+    }
+
+    fn create_random_account_with_write_version(
+        rng: &mut ThreadRng,
+        updated_slot: Slot,
+        pubkey: Pubkey,
+        program: Pubkey,
+        write_version: u64,
+    ) -> AccountData {
+        let mut acc = create_random_account(rng, updated_slot, pubkey, program);
+        acc.write_version = write_version;
+        acc
     }
 
     #[tokio::test]
@@ -830,5 +843,250 @@ mod tests {
 
         assert_eq!(p_3, Some(vec![]));
         assert_eq!(p_4, Some(vec![account_processed.clone()]));
+    }
+
+    #[tokio::test]
+    pub async fn writing_old_account_state() {
+        let program = Pubkey::new_unique();
+        let store = InmemoryAccountStore::new(vec![AccountFilter {
+            program_id: Some(program.to_string()),
+            accounts: vec![],
+            filters: None,
+        }]);
+        let mut rng = rand::thread_rng();
+        let pk1 = Pubkey::new_unique();
+
+        // setting random account as finalized at slot 0
+        let account_data_0 = create_random_account(&mut rng, 0, pk1, program);
+        store
+            .initilize_or_update_account(account_data_0.clone())
+            .await;
+
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_0.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_0.clone()))
+        );
+
+        // updating state for processed at slot 3
+        let account_data_slot_3 = create_random_account(&mut rng, 3, pk1, program);
+        store
+            .update_account(account_data_slot_3.clone(), Commitment::Processed)
+            .await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_0.clone()))
+        );
+
+        // updating state for processed at slot 2
+        let account_data_slot_2 = create_random_account(&mut rng, 2, pk1, program);
+        store
+            .update_account(account_data_slot_2.clone(), Commitment::Processed)
+            .await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_0.clone()))
+        );
+
+        // confirming slot 2
+        let updates = store.process_slot_data(2, Commitment::Confirmed).await;
+        assert_eq!(updates, vec![account_data_slot_2.clone()]);
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_slot_2.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(Some(account_data_0.clone()))
+        );
+
+        // confirming random state at slot 1 / does not do anything as slot 2 has already been confrimed
+        let account_data_slot_1 = create_random_account(&mut rng, 1, pk1, program);
+        store
+            .update_account(account_data_slot_1.clone(), Commitment::Confirmed)
+            .await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_slot_2.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(Some(account_data_0.clone()))
+        );
+
+        // making slot 3 finalized
+        let updates = store.process_slot_data(3, Commitment::Finalized).await;
+        assert_eq!(updates, vec![account_data_slot_3.clone()]);
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+
+        // making slot 2 finalized
+        let updates = store.process_slot_data(2, Commitment::Finalized).await;
+        assert!(updates.is_empty());
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+
+        // useless old updates
+        let account_data_slot_1_2 = create_random_account(&mut rng, 1, pk1, program);
+        let account_data_slot_2_2 = create_random_account(&mut rng, 2, pk1, program);
+        store
+            .update_account(account_data_slot_1_2.clone(), Commitment::Processed)
+            .await;
+        store
+            .update_account(account_data_slot_2_2.clone(), Commitment::Confirmed)
+            .await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(Some(account_data_slot_3.clone()))
+        );
+    }
+
+    #[tokio::test]
+    pub async fn account_states_with_different_write_version() {
+        let program = Pubkey::new_unique();
+        let store = InmemoryAccountStore::new(vec![AccountFilter {
+            program_id: Some(program.to_string()),
+            accounts: vec![],
+            filters: None,
+        }]);
+        let mut rng = rand::thread_rng();
+        let pk1 = Pubkey::new_unique();
+
+        // setting random account as finalized at slot 0
+        let account_data_10 =
+            create_random_account_with_write_version(&mut rng, 1, pk1, program, 10);
+        store
+            .update_account(account_data_10.clone(), Commitment::Processed)
+            .await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_10.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(None)
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(None)
+        );
+
+        // with higher write version process account is updated
+        let account_data_11 =
+            create_random_account_with_write_version(&mut rng, 1, pk1, program, 11);
+        store
+            .update_account(account_data_11.clone(), Commitment::Processed)
+            .await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_11.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(None)
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(None)
+        );
+
+        // with lower write version process account is not updated
+        let account_data_9 = create_random_account_with_write_version(&mut rng, 1, pk1, program, 9);
+        store
+            .update_account(account_data_9.clone(), Commitment::Processed)
+            .await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_11.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(None)
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(None)
+        );
+
+        // with finalized commitment all the last account version is taken into account
+        store.process_slot_data(1, Commitment::Finalized).await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_11.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_11.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(Some(account_data_11.clone()))
+        );
+
+        // if the account for slot is updated after with higher account write version both processed and finalized slots are updated
+        let account_data_12 =
+            create_random_account_with_write_version(&mut rng, 1, pk1, program, 12);
+        store
+            .update_account(account_data_12.clone(), Commitment::Processed)
+            .await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await,
+            Ok(Some(account_data_12.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await,
+            Ok(Some(account_data_12.clone()))
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await,
+            Ok(Some(account_data_12.clone()))
+        );
     }
 }

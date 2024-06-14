@@ -111,6 +111,7 @@ pub struct AccountData {
     pub pubkey: Pubkey,
     pub account: Arc<Account>,
     pub updated_slot: Slot,
+    pub write_version: u64,
 }
 
 impl AccountData {
@@ -138,7 +139,6 @@ impl PartialEq for AccountData {
 pub struct AccountNotificationMessage {
     pub data: AccountData,
     pub commitment: Commitment,
-    pub write_version: u64,
 }
 
 pub type AccountStream = Receiver<AccountNotificationMessage>;

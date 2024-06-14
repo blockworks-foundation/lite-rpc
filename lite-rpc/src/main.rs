@@ -27,6 +27,7 @@ use solana_lite_rpc_cluster_endpoints::grpc::grpc_inspect::{
 use solana_lite_rpc_cluster_endpoints::grpc::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
+use solana_lite_rpc_cluster_endpoints::quic::quic_subsciption::create_quic_endpoint;
 use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::stores::{
@@ -114,6 +115,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         account_filters,
         enable_accounts_on_demand_accounts_service,
         quic_connection_parameters,
+        quic_geyser_plugin_config,
         ..
     } = args;
 
@@ -161,6 +163,15 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                 .collect(),
             account_filters.clone(),
         )?
+    } else if let Some(quic_geyser_plugin_config) = quic_geyser_plugin_config {
+        info!("Using quic geyser subscription");
+        let (_client, endpoint, tasks) = create_quic_endpoint(
+            rpc_client.clone(),
+            quic_geyser_plugin_config.url,
+            account_filters.clone(),
+        )
+        .await?;
+        (endpoint, tasks)
     } else {
         info!("Creating RPC poll subscription...");
         create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?

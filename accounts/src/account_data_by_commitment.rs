@@ -68,24 +68,37 @@ impl AccountDataByCommitment {
         let update_confirmed = self
             .confirmed_account
             .as_ref()
-            .map(|x| x.updated_slot < data.updated_slot)
+            .map(|x| {
+                x.updated_slot < data.updated_slot
+                    || (x.updated_slot == data.updated_slot && x.write_version < data.write_version)
+            })
             .unwrap_or(true);
         let update_finalized = self
             .finalized_account
             .as_ref()
-            .map(|x| x.updated_slot < data.updated_slot)
+            .map(|x| {
+                x.updated_slot < data.updated_slot
+                    || (x.updated_slot == data.updated_slot && x.write_version < data.write_version)
+            })
             .unwrap_or(true);
 
         let mut updated = false;
         // processed not present for the slot
         // grpc can send multiple inter transaction changed account states for same slot
         // we have to update till we get the last
-        if commitment == Commitment::Processed
-            || !self.processed_accounts.contains_key(&data.updated_slot)
-        {
-            self.processed_accounts
-                .insert(data.updated_slot, data.clone());
-            updated = true;
+        match self.processed_accounts.get_mut(&data.updated_slot) {
+            Some(processed_account) => {
+                // check if the data is newer
+                if processed_account.write_version < data.write_version {
+                    *processed_account = data.clone();
+                    updated = true;
+                }
+            }
+            None => {
+                self.processed_accounts
+                    .insert(data.updated_slot, data.clone());
+                updated = true;
+            }
         }
 
         match commitment {
@@ -141,7 +154,7 @@ impl AccountDataByCommitment {
                     }
                 }
                 Commitment::Finalized => {
-                    // slot finalized remove data from processed
+                    // slot finalized remove old processed slot data
                     while self.processed_accounts.len() > 1
                         && self
                             .processed_accounts
@@ -162,6 +175,17 @@ impl AccountDataByCommitment {
                     {
                         let prev_data = self.finalized_account.clone();
                         self.finalized_account = Some(account_data.clone());
+
+                        // check confirmed slot too and update if too old
+                        if self
+                            .confirmed_account
+                            .as_ref()
+                            .map(|acc| acc.updated_slot)
+                            .unwrap_or_default()
+                            < slot
+                        {
+                            self.confirmed_account = Some(account_data.clone());
+                        }
                         Some((account_data, prev_data))
                     } else {
                         None
@@ -169,7 +193,7 @@ impl AccountDataByCommitment {
                 }
             }
         } else if commitment == Commitment::Finalized {
-            // remove processed slot data
+            // slot finalized remove old processed slot data
             while self.processed_accounts.len() > 1
                 && self
                     .processed_accounts

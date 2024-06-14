@@ -110,6 +110,7 @@ pub async fn get_program_account(
                                         CompressionMethod::Lz4(1),
                                     )),
                                     updated_slot,
+                                    write_version: 0,
                                 })
                                 .await;
                         }
@@ -187,6 +188,7 @@ pub async fn get_program_account(
                                 CompressionMethod::Lz4(1),
                             )),
                             updated_slot,
+                            write_version: 0,
                         })
                         .await;
                 }

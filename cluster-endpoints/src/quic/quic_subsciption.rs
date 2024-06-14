@@ -222,9 +222,9 @@ pub async fn create_quic_endpoint(
                                     rent_epoch: account_mesage.rent_epoch,
                                 }),
                                 updated_slot: account_mesage.slot_identifier.slot,
+                                write_version: account_mesage.write_version,
                             },
                             commitment: solana_lite_rpc_core::commitment_utils::Commitment::Processed,
-                            write_version: account_mesage.write_version,
                         }).expect("account notification should be sent");
                     }
                 }
