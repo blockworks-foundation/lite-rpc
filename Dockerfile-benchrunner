@@ -27,5 +27,5 @@ ENV OPENSSL_CONF=/etc/ssl/openssl-legacy.cnf
 
 CMD solana-lite-rpc-benchrunner-service \
     --bench-interval 600000 \
-    --tx-count 100 \
+    --tx-count 3 \
     --prio-fees 100000 --prio-fees 1000 --prio-fees 0
