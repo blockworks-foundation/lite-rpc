@@ -6,6 +6,7 @@ pub struct TenantConfig {
     // technical identifier for the tenant, e.g. "solana-rpc"
     pub tenant_id: String,
     pub rpc_addr: String,
+    pub tx_status_ws_addr: String,
 }
 
 // recommend to use one payer keypair for all targets and fund that keypair with enough SOL

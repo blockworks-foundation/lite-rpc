@@ -578,11 +578,13 @@ dependencies = [
  "dirs",
  "futures",
  "itertools 0.10.5",
+ "jsonrpsee-types 0.22.5",
  "lazy_static",
  "log",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "reqwest",
+ "scopeguard",
  "serde",
  "serde_json",
  "solana-lite-rpc-util",
@@ -595,6 +597,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "websocket-tungstenite-retry",
 ]
 
 [[package]]
@@ -2341,7 +2344,7 @@ dependencies = [
  "jsonrpsee-http-client",
  "jsonrpsee-proc-macros",
  "jsonrpsee-server",
- "jsonrpsee-types",
+ "jsonrpsee-types 0.20.3",
  "jsonrpsee-wasm-client",
  "jsonrpsee-ws-client",
  "tokio",
@@ -2384,7 +2387,7 @@ dependencies = [
  "futures-timer",
  "futures-util",
  "hyper",
- "jsonrpsee-types",
+ "jsonrpsee-types 0.20.3",
  "parking_lot",
  "rand 0.8.5",
  "rustc-hash",
@@ -2407,7 +2410,7 @@ dependencies = [
  "hyper",
  "hyper-rustls",
  "jsonrpsee-core",
- "jsonrpsee-types",
+ "jsonrpsee-types 0.20.3",
  "serde",
  "serde_json",
  "thiserror",
@@ -2440,7 +2443,7 @@ dependencies = [
  "http",
  "hyper",
  "jsonrpsee-core",
- "jsonrpsee-types",
+ "jsonrpsee-types 0.20.3",
  "route-recognizer",
  "serde",
  "serde_json",
@@ -2468,6 +2471,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonrpsee-types"
+version = "0.22.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "150d6168405890a7a3231a3c74843f58b8959471f6df76078db2619ddee1d07d"
+dependencies = [
+ "anyhow",
+ "beef",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "jsonrpsee-wasm-client"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2475,7 +2491,7 @@ checksum = "7c7cbb3447cf14fd4d2f407c3cc96e6c9634d5440aa1fbed868a31f3c02b27f0"
 dependencies = [
  "jsonrpsee-client-transport",
  "jsonrpsee-core",
- "jsonrpsee-types",
+ "jsonrpsee-types 0.20.3",
 ]
 
 [[package]]
@@ -2487,7 +2503,7 @@ dependencies = [
  "http",
  "jsonrpsee-client-transport",
  "jsonrpsee-core",
- "jsonrpsee-types",
+ "jsonrpsee-types 0.20.3",
  "url",
 ]
 
@@ -4150,6 +4166,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha-1"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5058ada175748e33390e40e872bd0fe59a19f265d0158daa551c5a88a76009c"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest 0.10.7",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4290,7 +4317,7 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.8.5",
- "sha-1",
+ "sha-1 0.9.8",
 ]
 
 [[package]]
@@ -5085,8 +5112,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tokio-tungstenite",
- "tungstenite",
+ "tokio-tungstenite 0.20.1",
+ "tungstenite 0.20.1",
  "url",
 ]
 
@@ -6056,6 +6083,20 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f714dd15bead90401d77e04243611caec13726c2408afd5b31901dfcdcb3b181"
+dependencies = [
+ "futures-util",
+ "log",
+ "native-tls",
+ "tokio",
+ "tokio-native-tls",
+ "tungstenite 0.17.3",
+]
+
+[[package]]
+name = "tokio-tungstenite"
 version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "212d5dcb2a1ce06d81107c3d0ffa3121fe974b73f068c8282cb1c32328113b6c"
@@ -6065,7 +6106,7 @@ dependencies = [
  "rustls",
  "tokio",
  "tokio-rustls",
- "tungstenite",
+ "tungstenite 0.20.1",
  "webpki-roots 0.25.4",
 ]
 
@@ -6307,6 +6348,26 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tungstenite"
+version = "0.17.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e27992fd6a8c29ee7eef28fc78349aa244134e10ad447ce3b9f0ac0ed0fa4ce0"
+dependencies = [
+ "base64 0.13.1",
+ "byteorder",
+ "bytes",
+ "http",
+ "httparse",
+ "log",
+ "native-tls",
+ "rand 0.8.5",
+ "sha-1 0.10.1",
+ "thiserror",
+ "url",
+ "utf-8",
+]
 
 [[package]]
 name = "tungstenite"
@@ -6597,6 +6658,23 @@ name = "webpki-roots"
 version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
+
+[[package]]
+name = "websocket-tungstenite-retry"
+version = "0.6.0"
+source = "git+https://github.com/grooviegermanikus/websocket-tungstenite-retry.git?tag=v0.8.0#2f423ed40171b023aa0d5c67287ad778958a6722"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.17.2",
+ "tokio-util",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "which"

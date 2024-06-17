@@ -23,6 +23,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::OnceCell;
+use solana_lite_rpc_util::obfuscate_rpcurl;
 
 #[tokio::main]
 async fn main() {
@@ -42,10 +43,13 @@ async fn main() {
     let funded_payer = Arc::new(get_funded_payer_from_env());
 
     let tenant_configs = read_tenant_configs(std::env::vars().collect::<Vec<(String, String)>>());
+    // this should point to a reliable websocket RPC node
+    let tx_status_websocket_addr: String = std::env::var("TX_STATUS_WS_ADDR").expect("need TX_STATUS_WS_ADDR env var");
 
     info!("Use postgres config: {:?}", postgres_config.is_some());
     info!("Use prio fees: [{}]", prio_fees.iter().join(","));
     info!("Start running benchmarks every {:?}", bench_interval);
+    info!("Use websocket for tx status: {:?}", obfuscate_rpcurl(&tx_status_websocket_addr));
     info!(
         "Found tenants: {}",
         tenant_configs.iter().map(|tc| &tc.tenant_id).join(", ")
@@ -87,6 +91,7 @@ async fn main() {
         let tenant_id = tenant_config.tenant_id.clone();
         let postgres_session = postgres_session.clone();
         let tenant_config = tenant_config.clone();
+        let tx_status_websocket_addr = tx_status_websocket_addr.clone();
         let bench_configs = bench_configs.clone();
         let jh_runner = tokio::spawn(async move {
             let mut interval = tokio::time::interval(bench_interval);
@@ -103,6 +108,7 @@ async fn main() {
                     0 => Box::new(BenchRunnerConfirmationRateImpl {
                         benchrun_at,
                         tenant_config: tenant_config.clone(),
+                        tx_status_websocket_addr: tx_status_websocket_addr.clone(),
                         bench_config: bench_config.clone(),
                         funded_payer: funded_payer.clone(),
                         metric: OnceCell::new(),
@@ -237,6 +243,7 @@ impl BenchTrait for BenchRunnerConfirmationRateImpl {}
 struct BenchRunnerConfirmationRateImpl {
     pub benchrun_at: SystemTime,
     pub tenant_config: TenantConfig,
+    pub tx_status_websocket_addr: String,
     pub bench_config: BenchConfig,
     pub funded_payer: Arc<Keypair>,
     pub metric: OnceCell<confirmation_rate::Metric>,
@@ -248,6 +255,7 @@ impl BenchRunner for BenchRunnerConfirmationRateImpl {
         let metric = bench::service_adapter_new::benchnew_confirmation_rate_servicerunner(
             &self.bench_config,
             self.tenant_config.rpc_addr.clone(),
+            self.tx_status_websocket_addr.clone(),
             self.funded_payer.insecure_clone(),
         )
         .await;

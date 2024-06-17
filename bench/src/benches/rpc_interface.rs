@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Error};
 use futures::future::join_all;
 use futures::TryFutureExt;
 use itertools::Itertools;
-use log::{debug, trace, warn};
+use log::{debug, info, trace, warn};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_rpc_client_api::client_error::ErrorKind;
@@ -14,10 +14,19 @@ use solana_sdk::transaction::VersionedTransaction;
 use solana_transaction_status::TransactionConfirmationStatus;
 use std::collections::{HashMap, HashSet};
 use std::iter::zip;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::Instant;
+use dashmap::mapref::multiple::RefMulti;
+use scopeguard::defer;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use solana_rpc_client_api::response::{Response, RpcBlockUpdate, RpcResponseContext, SlotUpdate};
+use solana_sdk::pubkey::Pubkey;
+use tokio::time::{Instant, timeout};
 use url::Url;
+use websocket_tungstenite_retry::websocket_stable::WsMessage;
+use crate::benches::tx_status_websocket_collector::start_tx_status_collector;
 
 pub fn create_rpc_client(rpc_url: &Url) -> RpcClient {
     RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed())
@@ -28,7 +37,7 @@ pub enum ConfirmationResponseFromRpc {
     // RPC error on send_transaction
     SendError(Arc<ErrorKind>),
     // (sent slot at confirmed commitment, confirmed slot, ..., ...)
-    // transaction_confirmation_status is "confirmed" or "finalized"
+    // transaction_confirmation_status is "confirmed" (finalized is not reported by blockSubscribe websocket
     Success(Slot, Slot, TransactionConfirmationStatus, Duration),
     // timout waiting for confirmation status
     Timeout(Duration),
@@ -36,6 +45,8 @@ pub enum ConfirmationResponseFromRpc {
 
 pub async fn send_and_confirm_bulk_transactions(
     rpc_client: &RpcClient,
+    tx_status_websocket_addr: Url,
+    payer_pubkey: Pubkey,
     txs: &[VersionedTransaction],
     max_timeout: Duration,
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
@@ -52,6 +63,10 @@ pub async fn send_and_confirm_bulk_transactions(
         max_retries: None,
         min_context_slot: None,
     };
+
+    // note: we get confirmed but never finaliized
+    let (tx_status_map, jh_collector) = start_tx_status_collector(tx_status_websocket_addr.clone(), payer_pubkey, CommitmentConfig::confirmed()).await;
+    defer!(jh_collector.abort());
 
     let started_at = Instant::now();
     trace!(
@@ -99,15 +114,16 @@ pub async fn send_and_confirm_bulk_transactions(
             trace!("- tx_fail {}", tx_sig.get_signature());
         }
     }
+    let elapsed = started_at.elapsed();
     debug!(
         "{} transactions sent successfully in {:.02}ms",
         num_sent_ok,
-        started_at.elapsed().as_secs_f32() * 1000.0
+        elapsed.as_secs_f32() * 1000.0
     );
     debug!(
         "{} transactions failed to send in {:.02}ms",
         num_sent_failed,
-        started_at.elapsed().as_secs_f32() * 1000.0
+        elapsed.as_secs_f32() * 1000.0
     );
 
     if num_sent_failed > 0 {
@@ -132,75 +148,63 @@ pub async fn send_and_confirm_bulk_transactions(
 
     let started_at = Instant::now();
     let timeout_at = started_at + max_timeout;
+    // "poll" the status dashmap
     'polling_loop: for iteration in 1.. {
-        let iteration_ends_at = started_at + Duration::from_millis(iteration * 400);
+        let iteration_ends_at = started_at + Duration::from_millis(iteration * 100);
         assert_eq!(
             pending_status_set.len() + result_status_map.len(),
             num_sent_ok,
             "Items must move between pending+result"
         );
-        let tx_batch = pending_status_set.iter().cloned().collect_vec();
-        debug!(
-            "Request status for batch of remaining {} transactions in iteration {}",
-            tx_batch.len(),
-            iteration
-        );
+        // let tx_batch = pending_status_set.iter().cloned().collect_vec();
+        // debug!(
+        //     "Request status for batch of remaining {} transactions in iteration {}",
+        //     tx_batch.len(),
+        //     iteration
+        // );
 
-        let status_started_at = Instant::now();
-        let mut batch_status = Vec::new();
-        // "Too many inputs provided; max 256"
-        for chunk in tx_batch.chunks(256) {
-            // fail hard if not possible to poll status
-            let chunk_responses = rpc_client
-                .get_signature_statuses(chunk)
-                .await
-                .expect("get signature statuses");
-            batch_status.extend(chunk_responses.value);
-        }
-        if status_started_at.elapsed() > Duration::from_millis(500) {
-            warn!(
-                "SLOW get_signature_statuses for {} transactions took {:?}",
-                tx_batch.len(),
-                status_started_at.elapsed()
-            );
-        }
+        // let status_started_at = Instant::now();
+        // let mut batch_status = Vec::new();
+        // // "Too many inputs provided; max 256"
+        // for chunk in tx_batch.chunks(256) {
+        //     // fail hard if not possible to poll status
+        //     let chunk_responses = rpc_client
+        //         .get_signature_statuses(chunk)
+        //         .await
+        //         .expect("get signature statuses");
+        //     batch_status.extend(chunk_responses.value);
+        // }
+        // if status_started_at.elapsed() > Duration::from_millis(500) {
+        //     warn!(
+        //         "SLOW get_signature_statuses for {} transactions took {:?}",
+        //         tx_batch.len(),
+        //         status_started_at.elapsed()
+        //     );
+        // }
         let elapsed = started_at.elapsed();
 
-        for (tx_sig, status_response) in zip(tx_batch, batch_status) {
-            match status_response {
-                Some(tx_status) => {
-                    trace!(
-                        "Some signature status {:?} received for {} after {:.02}ms",
-                        tx_status.confirmation_status,
-                        tx_sig,
-                        elapsed.as_secs_f32() * 1000.0
-                    );
-                    if !tx_status.satisfies_commitment(CommitmentConfig::confirmed()) {
-                        continue 'polling_loop;
-                    }
-                    // status is confirmed or finalized
-                    pending_status_set.remove(&tx_sig);
-                    let prev_value = result_status_map.insert(
-                        tx_sig,
-                        ConfirmationResponseFromRpc::Success(
-                            send_slot,
-                            tx_status.slot,
-                            tx_status.confirmation_status(),
-                            elapsed,
-                        ),
-                    );
-                    assert!(prev_value.is_none(), "Must not override existing value");
-                }
-                None => {
-                    // None: not yet processed by the cluster
-                    trace!(
-                        "No signature status was received for {} after {:.02}ms - continue waiting",
-                        tx_sig,
-                        elapsed.as_secs_f32() * 1000.0
-                    );
-                }
+        for multi in tx_status_map.iter() {
+            // note that we will see tx_sigs we did not send
+            let (tx_sig, confirmed_slot) = multi.pair();
+
+            // status is confirmed or finalized
+            if pending_status_set.remove(&tx_sig) {
+                trace!("take status for sig {:?} and confirmed_slot: {:?} from websocket source", tx_sig, confirmed_slot);
+                let prev_value = result_status_map.insert(
+                    tx_sig.clone(),
+                    ConfirmationResponseFromRpc::Success(
+                        send_slot,
+                        *confirmed_slot,
+                        // note: this is not optimal
+                        TransactionConfirmationStatus::Confirmed,
+                        elapsed,
+                    ),
+                );
+                assert!(prev_value.is_none(), "Must not override existing value");
             }
-        }
+
+        } // -- END for tx_status_map loop
+
 
         if pending_status_set.is_empty() {
             debug!(
