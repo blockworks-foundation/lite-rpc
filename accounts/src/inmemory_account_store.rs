@@ -276,6 +276,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
             if commitment == Commitment::Finalized {
                 while let Some(entry) = lk.first_entry() {
                     if *entry.key() < slot {
+                        log::debug!("removing slot {}", entry.key());
                         entry.remove();
                     } else {
                         break;
@@ -295,7 +296,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                             commitment.into_commitment_level()
                         );
                     } else if commitment == Commitment::Finalized {
-                        log::error!("slot status not found for {} and commitment {}, should be normal during startup", slot, commitment.into_commitment_level());
+                        log::debug!("slot status not found for {} for commitment finalized, could be normal if the entry is already removed or during startup", slot,);
                     }
                     let status = SlotStatus {
                         commitment,

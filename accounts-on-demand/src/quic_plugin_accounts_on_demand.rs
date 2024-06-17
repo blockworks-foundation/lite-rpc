@@ -189,12 +189,15 @@ impl AccountStorageInterface for QuicPluginAccountsOnDemand {
 
     async fn get_program_accounts(
         &self,
-        _program_pubkey: Pubkey,
-        _filters: Option<Vec<RpcFilterType>>,
-        _commitment: Commitment,
+        program_pubkey: Pubkey,
+        filters: Option<Vec<RpcFilterType>>,
+        commitment: Commitment,
     ) -> Option<Vec<AccountData>> {
         // accounts on demand will not fetch gPA if they do not exist
-        todo!()
+        // for now just get account from underlying store
+        self.accounts_storage
+            .get_program_accounts(program_pubkey, filters, commitment)
+            .await
     }
 
     async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData> {
