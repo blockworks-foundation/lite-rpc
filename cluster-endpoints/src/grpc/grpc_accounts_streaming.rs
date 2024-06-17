@@ -30,8 +30,6 @@ use yellowstone_grpc_proto::geyser::{
 };
 use yellowstone_grpc_proto::tonic::service::Interceptor;
 
-use super::grpc_utils::connect_with_timeout_with_buffers_and_compression;
-
 #[deprecated]
 pub fn start_account_streaming_tasks(
     grpc_config: GrpcSourceConfig,

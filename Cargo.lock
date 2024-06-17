@@ -3541,7 +3541,7 @@ dependencies = [
 [[package]]
 name = "quic-geyser-client"
 version = "0.1.5"
-source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=v0.1.5_solana17#46b68457bdb912008174151f37eb809497c1d23b"
+source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=main#97073f103aa1a5d82b7f79e671a66aef081a3dc5"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3558,7 +3558,7 @@ dependencies = [
 [[package]]
 name = "quic-geyser-common"
 version = "0.1.5"
-source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=v0.1.5_solana17#46b68457bdb912008174151f37eb809497c1d23b"
+source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=main#97073f103aa1a5d82b7f79e671a66aef081a3dc5"
 dependencies = [
  "anyhow",
  "bincode",
@@ -4732,7 +4732,6 @@ dependencies = [
  "tonic",
  "tonic-health",
  "tracing",
- "yellowstone-grpc-client",
  "yellowstone-grpc-proto",
 ]
 

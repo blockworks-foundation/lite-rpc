@@ -1,5 +1,5 @@
 use solana_sdk::{
-    borsh0_10::try_from_slice_unchecked,
+    borsh1::try_from_slice_unchecked,
     compute_budget::{self, ComputeBudgetInstruction},
     message::v0::Message,
 };

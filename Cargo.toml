@@ -96,3 +96,7 @@ tonic-health = "0.10.2"
 tonic = { version = "0.10.2", features = ["gzip"] }
 lz4 = "1.24.0"
 zstd = "0.11.2"
+
+# QUIC GEYSER PLUGIN
+quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
+quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
