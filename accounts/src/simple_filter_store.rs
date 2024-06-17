@@ -3,13 +3,16 @@ use std::{
     str::FromStr,
 };
 
+use async_trait::async_trait;
 use solana_lite_rpc_core::structures::{
     account_data::AccountData,
     account_filter::{AccountFilter, AccountFilterType, AccountFilters},
 };
 use solana_sdk::pubkey::Pubkey;
 
-#[derive(Clone)]
+use crate::account_filters_interface::AccountFiltersStoreInterface;
+
+#[derive(Clone, PartialEq, Eq)]
 enum ProgramIdFilters {
     AllowAll,
     // here first vec will use OR operator and the second will use AND operator
@@ -19,12 +22,12 @@ enum ProgramIdFilters {
 }
 
 #[derive(Default)]
-pub struct FilteredAccounts {
+pub struct SimpleFilterStore {
     accounts: HashSet<Pubkey>,
     program_id_filters: HashMap<Pubkey, ProgramIdFilters>,
 }
 
-impl FilteredAccounts {
+impl SimpleFilterStore {
     pub fn add_account_filters(&mut self, account_filters: &AccountFilters) {
         for filter in account_filters {
             self.add_account_filter(filter);
@@ -71,7 +74,15 @@ impl FilteredAccounts {
         }
     }
 
-    pub fn satisfies(&self, account: &AccountData) -> bool {
+    pub fn contains_account(&self, account_pk: Pubkey) -> bool {
+        self.accounts.contains(&account_pk)
+    }
+
+    pub fn contains_filter(&self, _account_filter: &AccountFilter) -> bool {
+        todo!()
+    }
+
+    pub fn satisfies_filter(&self, account: &AccountData) -> bool {
         if self.accounts.contains(&account.pubkey) {
             return true;
         }
@@ -92,5 +103,12 @@ impl FilteredAccounts {
         }
 
         false
+    }
+}
+
+#[async_trait]
+impl AccountFiltersStoreInterface for SimpleFilterStore {
+    async fn satisfies(&self, account_data: &AccountData) -> bool {
+        self.satisfies_filter(account_data)
     }
 }

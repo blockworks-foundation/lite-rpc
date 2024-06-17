@@ -2,19 +2,13 @@ use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     account_data_by_commitment::AccountDataByCommitment,
+    account_filters_interface::AccountFiltersStoreInterface,
     account_store_interface::{AccountLoadingError, AccountStorageInterface},
-    filtered_accounts::FilteredAccounts,
 };
 use async_trait::async_trait;
 use dashmap::DashMap;
 use prometheus::{opts, register_int_gauge, IntGauge};
-use solana_lite_rpc_core::{
-    commitment_utils::Commitment,
-    structures::{
-        account_data::AccountData,
-        account_filter::{AccountFilter, AccountFilters},
-    },
-};
+use solana_lite_rpc_core::{commitment_utils::Commitment, structures::account_data::AccountData};
 use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::{pubkey::Pubkey, slot_history::Slot};
 use std::collections::BTreeMap;
@@ -40,14 +34,11 @@ pub struct InmemoryAccountStore {
     account_store: Arc<DashMap<Pubkey, AccountDataByCommitment>>,
     accounts_by_owner: Arc<DashMap<Pubkey, HashSet<Pubkey>>>,
     slots_status: Arc<Mutex<BTreeMap<Slot, SlotStatus>>>,
-    filtered_accounts: FilteredAccounts,
+    filtered_accounts: Arc<dyn AccountFiltersStoreInterface>,
 }
 
 impl InmemoryAccountStore {
-    pub fn new(filters: AccountFilters) -> Self {
-        let mut filtered_accounts = FilteredAccounts::default();
-        filtered_accounts.add_account_filters(&filters);
-
+    pub fn new(filtered_accounts: Arc<dyn AccountFiltersStoreInterface>) -> Self {
         Self {
             account_store: Arc::new(DashMap::new()),
             accounts_by_owner: Arc::new(DashMap::new()),
@@ -72,7 +63,7 @@ impl InmemoryAccountStore {
     // here if the commitment is processed and the account has changed owner from A->B we keep the key for both A and B
     // then we remove the key from A for finalized commitment
     // returns true if entry needs to be deleted
-    fn update_owner_delete_if_necessary(
+    async fn update_owner_delete_if_necessary(
         &self,
         prev_account_data: &AccountData,
         new_account_data: &AccountData,
@@ -94,11 +85,14 @@ impl InmemoryAccountStore {
                 }
 
                 // account is deleted or if new does not satisfies the filter criterias
-                if Self::is_deleted(new_account_data) || !self.satisfies_filters(new_account_data) {
+                if Self::is_deleted(new_account_data)
+                    || !self.satisfies_filters(new_account_data).await
+                {
                     return true;
                 }
             }
-            if !Self::is_deleted(new_account_data) && self.satisfies_filters(new_account_data) {
+            if !Self::is_deleted(new_account_data) && self.satisfies_filters(new_account_data).await
+            {
                 // update owner if account was not deleted but owner was change and the filter criterias are satisfied
                 self.add_account_owner(new_account_data.pubkey, new_account_data.account.owner);
             }
@@ -136,16 +130,12 @@ impl InmemoryAccountStore {
         }
     }
 
-    pub fn satisfies_filters(&self, account: &AccountData) -> bool {
-        self.filtered_accounts.satisfies(account)
+    pub async fn satisfies_filters(&self, account: &AccountData) -> bool {
+        self.filtered_accounts.satisfies(account).await
     }
 
     pub fn is_deleted(account: &AccountData) -> bool {
         account.account.lamports == 0
-    }
-
-    pub fn add_filter(&mut self, account_filter: &AccountFilter) {
-        self.filtered_accounts.add_account_filter(account_filter);
     }
 }
 
@@ -157,7 +147,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
         // account is neither deleted, nor tracked, not satifying any filters
         if !Self::is_deleted(&account_data)
             && !self.account_store.contains_key(&account_data.pubkey)
-            && !self.satisfies_filters(&account_data)
+            && !self.satisfies_filters(&account_data).await
         {
             return false;
         }
@@ -174,11 +164,14 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 // if account has been updated
                 if occ.get_mut().update(account_data.clone(), commitment) {
                     if let Some(prev_account) = prev_account {
-                        if self.update_owner_delete_if_necessary(
-                            &prev_account,
-                            &account_data,
-                            commitment,
-                        ) {
+                        if self
+                            .update_owner_delete_if_necessary(
+                                &prev_account,
+                                &account_data,
+                                commitment,
+                            )
+                            .await
+                        {
                             occ.remove_entry();
                         }
                     }
@@ -188,7 +181,7 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 }
             }
             dashmap::mapref::entry::Entry::Vacant(vac) => {
-                if self.satisfies_filters(&account_data) {
+                if self.satisfies_filters(&account_data).await {
                     ACCOUNT_STORED_IN_MEMORY.inc();
                     self.add_account_owner(account_data.pubkey, account_data.account.owner);
                     vac.insert(AccountDataByCommitment::new(
@@ -325,11 +318,13 @@ impl AccountStorageInterface for InmemoryAccountStore {
                         if let Some(prev_account_data) = prev_account_data {
                             // check if owner has changed
                             if prev_account_data.account.owner != account_data.account.owner
-                                && self.update_owner_delete_if_necessary(
-                                    &prev_account_data,
-                                    &account_data,
-                                    commitment,
-                                )
+                                && self
+                                    .update_owner_delete_if_necessary(
+                                        &prev_account_data,
+                                        &account_data,
+                                        commitment,
+                                    )
+                                    .await
                             {
                                 occ.remove_entry();
                             }
@@ -372,14 +367,15 @@ mod tests {
         commitment_utils::Commitment,
         structures::{
             account_data::{Account, AccountData},
-            account_filter::AccountFilter,
+            account_filter::{AccountFilter, AccountFilters},
         },
     };
     use solana_sdk::{account::Account as SolanaAccount, pubkey::Pubkey, slot_history::Slot};
 
     use crate::{
+        account_filters_interface::AccountFiltersStoreInterface,
         account_store_interface::AccountStorageInterface,
-        inmemory_account_store::InmemoryAccountStore,
+        inmemory_account_store::InmemoryAccountStore, simple_filter_store::SimpleFilterStore,
     };
 
     fn create_random_account(
@@ -419,14 +415,23 @@ mod tests {
         acc
     }
 
+    pub fn new_filter_store(
+        account_filters: AccountFilters,
+    ) -> Arc<dyn AccountFiltersStoreInterface> {
+        let mut simple_store = SimpleFilterStore::default();
+        simple_store.add_account_filters(&account_filters);
+        Arc::new(simple_store)
+    }
+
     #[tokio::test]
     pub async fn test_account_store() {
         let program = Pubkey::new_unique();
-        let store = InmemoryAccountStore::new(vec![AccountFilter {
+        let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program.to_string()),
             accounts: vec![],
             filters: None,
         }]);
+        let store = InmemoryAccountStore::new(filter_store);
         let mut rng = rand::thread_rng();
         let pk1 = Pubkey::new_unique();
         let pk2 = Pubkey::new_unique();
@@ -552,11 +557,12 @@ mod tests {
     #[tokio::test]
     pub async fn test_account_store_if_finalized_clears_old_processed_slots() {
         let program = Pubkey::new_unique();
-        let store = InmemoryAccountStore::new(vec![AccountFilter {
+        let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program.to_string()),
             accounts: vec![],
             filters: None,
         }]);
+        let store = InmemoryAccountStore::new(filter_store);
 
         let pk1 = Pubkey::new_unique();
 
@@ -680,7 +686,7 @@ mod tests {
         let prog_2 = Pubkey::new_unique();
         let prog_3 = Pubkey::new_unique();
         let prog_4 = Pubkey::new_unique();
-        let store = InmemoryAccountStore::new(vec![
+        let filter_store = new_filter_store(vec![
             AccountFilter {
                 program_id: Some(prog_1.to_string()),
                 accounts: vec![],
@@ -702,6 +708,8 @@ mod tests {
                 filters: None,
             },
         ]);
+
+        let store = InmemoryAccountStore::new(filter_store);
 
         let mut rng = rand::thread_rng();
 
@@ -872,11 +880,13 @@ mod tests {
     #[tokio::test]
     pub async fn writing_old_account_state() {
         let program = Pubkey::new_unique();
-        let store = InmemoryAccountStore::new(vec![AccountFilter {
+        let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program.to_string()),
             accounts: vec![],
             filters: None,
         }]);
+
+        let store = InmemoryAccountStore::new(filter_store);
         let mut rng = rand::thread_rng();
         let pk1 = Pubkey::new_unique();
 
@@ -1015,11 +1025,13 @@ mod tests {
     #[tokio::test]
     pub async fn account_states_with_different_write_version() {
         let program = Pubkey::new_unique();
-        let store = InmemoryAccountStore::new(vec![AccountFilter {
+        let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program.to_string()),
             accounts: vec![],
             filters: None,
         }]);
+
+        let store = InmemoryAccountStore::new(filter_store);
         let mut rng = rand::thread_rng();
         let pk1 = Pubkey::new_unique();
 
@@ -1119,7 +1131,7 @@ mod tests {
         let program_1 = Pubkey::new_unique();
         let program_2 = Pubkey::new_unique();
         let program_3 = Pubkey::new_unique();
-        let store = InmemoryAccountStore::new(vec![
+        let filter_store = new_filter_store(vec![
             AccountFilter {
                 program_id: Some(program_1.to_string()),
                 accounts: vec![],
@@ -1131,6 +1143,8 @@ mod tests {
                 filters: None,
             },
         ]);
+
+        let store = InmemoryAccountStore::new(filter_store);
         let mut rng = rand::thread_rng();
         let pk1 = Pubkey::new_unique();
         let pk2 = Pubkey::new_unique();
@@ -2085,11 +2099,13 @@ mod tests {
     #[tokio::test]
     pub async fn test_account_deletions() {
         let program_1 = Pubkey::new_unique();
-        let store = InmemoryAccountStore::new(vec![AccountFilter {
+        let filter_store = new_filter_store(vec![AccountFilter {
             program_id: Some(program_1.to_string()),
             accounts: vec![],
             filters: None,
         }]);
+
+        let store = InmemoryAccountStore::new(filter_store);
         let mut rng = rand::thread_rng();
         let pk1 = Pubkey::new_unique();
 

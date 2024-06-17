@@ -1,9 +1,11 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use async_trait::async_trait;
-use dashmap::DashSet;
 use futures::lock::Mutex;
-use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_filter::RpcFilterType};
 use solana_lite_rpc_accounts::account_store_interface::{
@@ -11,15 +13,12 @@ use solana_lite_rpc_accounts::account_store_interface::{
 };
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
-    structures::{
-        account_data::{Account, AccountData, CompressionMethod},
-        account_filter::{AccountFilter, AccountFilters},
-    },
+    structures::account_data::{Account, AccountData, CompressionMethod},
 };
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::Notify;
 
-use crate::subscription_manager::SubscriptionManger;
+use crate::mutable_filter_store::MutableFilterStore;
 
 lazy_static::lazy_static! {
     static ref NUMBER_OF_ACCOUNTS_ON_DEMAND: IntGauge =
@@ -31,62 +30,33 @@ lazy_static::lazy_static! {
 
 const RETRY_FETCHING_ACCOUNT: usize = 10;
 
-pub struct AccountsOnDemand {
+pub struct QuicPluginAccountsOnDemand {
     rpc_client: Arc<RpcClient>,
+    quic_plugin_client: quic_geyser_client::non_blocking::client::Client,
+    mutable_filters: Arc<MutableFilterStore>,
     accounts_storage: Arc<dyn AccountStorageInterface>,
-    accounts_subscribed: Arc<DashSet<Pubkey>>,
-    program_filters: Arc<RwLock<AccountFilters>>,
-    subscription_manager: Arc<dyn SubscriptionManger>,
     accounts_in_loading: Arc<Mutex<HashMap<Pubkey, Arc<Notify>>>>,
 }
 
-impl AccountsOnDemand {
+impl QuicPluginAccountsOnDemand {
     pub fn new(
+        quic_plugin_client: quic_geyser_client::non_blocking::client::Client,
         rpc_client: Arc<RpcClient>,
+        mutable_filters: Arc<MutableFilterStore>,
         accounts_storage: Arc<dyn AccountStorageInterface>,
-        subscription_manager: Arc<dyn SubscriptionManger>,
     ) -> Self {
         Self {
+            quic_plugin_client,
             rpc_client,
+            mutable_filters,
             accounts_storage: accounts_storage.clone(),
-            accounts_subscribed: Arc::new(DashSet::new()),
-            program_filters: Arc::new(RwLock::new(vec![])),
-            subscription_manager,
             accounts_in_loading: Arc::new(Mutex::new(HashMap::new())),
         }
-    }
-
-    pub async fn refresh_subscription(&self) {
-        let mut filters = self.get_filters().await;
-        NUMBER_OF_PROGRAM_FILTERS_ON_DEMAND.set(filters.len() as i64);
-        NUMBER_OF_ACCOUNTS_ON_DEMAND.set(self.accounts_subscribed.len() as i64);
-        // add additional filters related to accounts
-        for accounts in &self
-            .accounts_subscribed
-            .iter()
-            .map(|x| x.to_string())
-            .chunks(100)
-        {
-            let account_filter = AccountFilter {
-                accounts: accounts.collect(),
-                program_id: None,
-                filters: None,
-            };
-            filters.push(account_filter);
-        }
-
-        self.subscription_manager
-            .update_subscriptions(filters)
-            .await;
-    }
-
-    async fn get_filters(&self) -> AccountFilters {
-        self.program_filters.read().await.clone()
     }
 }
 
 #[async_trait]
-impl AccountStorageInterface for AccountsOnDemand {
+impl AccountStorageInterface for QuicPluginAccountsOnDemand {
     async fn update_account(&self, account_data: AccountData, commitment: Commitment) -> bool {
         self.accounts_storage
             .update_account(account_data, commitment)
@@ -134,17 +104,32 @@ impl AccountStorageInterface for AccountsOnDemand {
                     }
                     None => {
                         // account is not loading
-                        if self.accounts_subscribed.contains(&account_pk) {
+                        if self.mutable_filters.contains_account(account_pk).await {
                             // account was already tried to be loaded but does not exists
                             Ok(None)
                         } else {
                             // update account loading map
                             // create a notify for accounts under loading
                             lk.insert(account_pk, Arc::new(Notify::new()));
-                            self.accounts_subscribed.insert(account_pk);
+
+                            let mut accounts_to_subscribe = HashSet::new();
+                            accounts_to_subscribe.insert(account_pk);
+                            if let Err(e) = self
+                                .quic_plugin_client
+                                .subscribe(vec![quic_geyser_common::filters::Filter::Account(
+                                    quic_geyser_common::filters::AccountFilter {
+                                        accounts: Some(accounts_to_subscribe),
+                                        owner: None,
+                                        filter: None,
+                                    },
+                                )])
+                                .await
+                            {
+                                log::error!("error subscribing to account subscription : {e:?}")
+                            }
+
                             log::info!("Accounts on demand loading: {}", account_pk.to_string());
                             drop(lk);
-                            self.refresh_subscription().await;
                             let mut return_value = None;
                             for _ in 0..RETRY_FETCHING_ACCOUNT {
                                 let account_response = self
@@ -204,14 +189,12 @@ impl AccountStorageInterface for AccountsOnDemand {
 
     async fn get_program_accounts(
         &self,
-        program_pubkey: Pubkey,
-        filters: Option<Vec<RpcFilterType>>,
-        commitment: Commitment,
+        _program_pubkey: Pubkey,
+        _filters: Option<Vec<RpcFilterType>>,
+        _commitment: Commitment,
     ) -> Option<Vec<AccountData>> {
         // accounts on demand will not fetch gPA if they do not exist
-        self.accounts_storage
-            .get_program_accounts(program_pubkey, filters.clone(), commitment)
-            .await
+        todo!()
     }
 
     async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData> {

@@ -14,6 +14,9 @@ use log::info;
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
+use solana_lite_rpc_accounts::simple_filter_store::SimpleFilterStore;
+use solana_lite_rpc_accounts_on_demand::mutable_filter_store;
+use solana_lite_rpc_accounts_on_demand::quic_plugin_accounts_on_demand::QuicPluginAccountsOnDemand;
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
@@ -151,30 +154,88 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         receive_timeout: Duration::from_secs(15),
     };
 
-    let (subscriptions, cluster_endpoint_tasks) = if use_grpc {
+    let ((subscriptions, cluster_endpoint_tasks), accounts_service) = if use_grpc {
         info!("Creating geyser subscription...");
-        create_grpc_subscription(
-            rpc_client.clone(),
-            grpc_sources
-                .iter()
-                .map(|s| {
-                    GrpcSourceConfig::new(s.addr.clone(), s.x_token.clone(), None, timeouts.clone())
-                })
-                .collect(),
-            account_filters.clone(),
-        )?
+        (
+            create_grpc_subscription(
+                rpc_client.clone(),
+                grpc_sources
+                    .iter()
+                    .map(|s| {
+                        GrpcSourceConfig::new(
+                            s.addr.clone(),
+                            s.x_token.clone(),
+                            None,
+                            timeouts.clone(),
+                        )
+                    })
+                    .collect(),
+                account_filters.clone(),
+            )?,
+            None,
+        )
     } else if let Some(quic_geyser_plugin_config) = quic_geyser_plugin_config {
         info!("Using quic geyser subscription");
-        let (_client, endpoint, tasks) = create_quic_endpoint(
+        let (client, endpoint, tasks) = create_quic_endpoint(
             rpc_client.clone(),
             quic_geyser_plugin_config.url,
             account_filters.clone(),
         )
         .await?;
-        (endpoint, tasks)
+
+        let accounts_service = if let Some(account_stream) = &endpoint.processed_account_stream {
+            const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
+            // Accounts notifications will be spurious when slots change
+            // 256 seems very reasonable so that there are no account notification is missed and memory usage
+            let (account_notification_sender, _) = tokio::sync::broadcast::channel(5000);
+
+            let account_storage: Arc<dyn AccountStorageInterface> =
+                if enable_accounts_on_demand_accounts_service {
+                    // mutable filter store
+                    let mutable_filters_store =
+                        Arc::new(mutable_filter_store::MutableFilterStore::default());
+                    mutable_filters_store
+                        .add_account_filters(&account_filters)
+                        .await;
+                    Arc::new(QuicPluginAccountsOnDemand::new(
+                        client,
+                        rpc_client.clone(),
+                        mutable_filters_store.clone(),
+                        Arc::new(InmemoryAccountStore::new(mutable_filters_store)),
+                    ))
+                } else {
+                    // no accounts on demand use const filter store
+                    let mut simple_filter_store = SimpleFilterStore::default();
+                    simple_filter_store.add_account_filters(&account_filters);
+                    // lets use inmemory storage for now
+                    Arc::new(InmemoryAccountStore::new(Arc::new(simple_filter_store)))
+                };
+
+            let account_service = AccountService::new(account_storage, account_notification_sender);
+
+            account_service.process_account_stream(
+                account_stream.resubscribe(),
+                endpoint.blockinfo_notifier.resubscribe(),
+            );
+
+            account_service
+                .populate_from_rpc(
+                    rpc_client.url(),
+                    &account_filters,
+                    MAX_CONNECTIONS_IN_PARALLEL,
+                )
+                .await?;
+            Some(account_service)
+        } else {
+            None
+        };
+        ((endpoint, tasks), accounts_service)
     } else {
         info!("Creating RPC poll subscription...");
-        create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?
+        (
+            create_json_rpc_polling_subscription(rpc_client.clone(), NUM_PARALLEL_TASKS_DEFAULT)?,
+            None,
+        )
     };
     let EndpointStreaming {
         // note: blocks_notifier will be dropped at some point
@@ -183,7 +244,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         cluster_info_notifier,
         slot_notifier,
         vote_account_notifier,
-        processed_account_stream,
+        ..
     } = subscriptions;
 
     if enable_grpc_stream_inspection {
@@ -191,40 +252,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     } else {
         info!("Disabled grpc stream inspection");
     }
-
-    let accounts_service = if let Some(account_stream) = processed_account_stream {
-        // lets use inmemory storage for now
-        let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
-            Arc::new(InmemoryAccountStore::new(account_filters.clone()));
-        const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
-        // Accounts notifications will be spurious when slots change
-        // 256 seems very reasonable so that there are no account notification is missed and memory usage
-        let (account_notification_sender, _) = tokio::sync::broadcast::channel(5000);
-
-        let account_storage = if enable_accounts_on_demand_accounts_service {
-            todo!()
-        } else {
-            inmemory_account_storage
-        };
-
-        let account_service = AccountService::new(account_storage, account_notification_sender);
-
-        account_service.process_account_stream(
-            account_stream.resubscribe(),
-            blockinfo_notifier.resubscribe(),
-        );
-
-        account_service
-            .populate_from_rpc(
-                rpc_client.url(),
-                &account_filters,
-                MAX_CONNECTIONS_IN_PARALLEL,
-            )
-            .await?;
-        Some(account_service)
-    } else {
-        None
-    };
 
     info!("Waiting for first finalized block info...");
     let finalized_block_info = wait_till_block_of_commitment_is_recieved(
