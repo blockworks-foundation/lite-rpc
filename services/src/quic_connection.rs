@@ -194,7 +194,7 @@ impl QuicConnection {
                 }
             } else {
                 NB_QUIC_COULDNOT_ESTABLISH_CONNECTION.inc();
-                warn!(
+                log::debug!(
                     "Could not establish connection with {}",
                     self.identity.to_string()
                 );
