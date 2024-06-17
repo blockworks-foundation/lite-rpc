@@ -188,13 +188,17 @@ impl AccountStorageInterface for InmemoryAccountStore {
                 }
             }
             dashmap::mapref::entry::Entry::Vacant(vac) => {
-                ACCOUNT_STORED_IN_MEMORY.inc();
-                self.add_account_owner(account_data.pubkey, account_data.account.owner);
-                vac.insert(AccountDataByCommitment::new(
-                    account_data.clone(),
-                    commitment,
-                ));
-                true
+                if self.satisfies_filters(&account_data) {
+                    ACCOUNT_STORED_IN_MEMORY.inc();
+                    self.add_account_owner(account_data.pubkey, account_data.account.owner);
+                    vac.insert(AccountDataByCommitment::new(
+                        account_data.clone(),
+                        commitment,
+                    ));
+                    true
+                } else {
+                    false
+                }
             }
         }
     }
@@ -225,7 +229,16 @@ impl AccountStorageInterface for InmemoryAccountStore {
         commitment: Commitment,
     ) -> Result<Option<AccountData>, AccountLoadingError> {
         if let Some(account_by_commitment) = self.account_store.get(&account_pk) {
-            Ok(account_by_commitment.get_account_data(commitment).clone())
+            let account_data = account_by_commitment.get_account_data(commitment);
+            if let Some(account_data) = &account_data {
+                // check if deleted
+                if account_data.account.lamports == 0 {
+                    // account is deleted
+                    return Ok(None);
+                }
+            }
+            // check if account has been deleted
+            Ok(account_data)
         } else {
             Ok(None)
         }
@@ -1102,7 +1115,7 @@ mod tests {
     }
 
     #[tokio::test]
-    pub async fn adding_tests_with_owner_changes() {
+    pub async fn test_owner_changes() {
         let program_1 = Pubkey::new_unique();
         let program_2 = Pubkey::new_unique();
         let program_3 = Pubkey::new_unique();
@@ -2066,6 +2079,240 @@ mod tests {
                 .get_program_accounts(program_3, None, Commitment::Finalized)
                 .await,
             None
+        );
+    }
+
+    #[tokio::test]
+    pub async fn test_account_deletions() {
+        let program_1 = Pubkey::new_unique();
+        let store = InmemoryAccountStore::new(vec![AccountFilter {
+            program_id: Some(program_1.to_string()),
+            accounts: vec![],
+            filters: None,
+        }]);
+        let mut rng = rand::thread_rng();
+        let pk1 = Pubkey::new_unique();
+
+        // add and test account
+        let account_1 = create_random_account_with_write_version(&mut rng, 1, pk1, program_1, 1);
+        store.initilize_or_update_account(account_1.clone()).await;
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            Some(account_1.clone())
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            Some(account_1.clone())
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            Some(account_1.clone())
+        );
+
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Processed)
+                .await
+                .unwrap(),
+            vec![account_1.clone()]
+        );
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Confirmed)
+                .await
+                .unwrap(),
+            vec![account_1.clone()]
+        );
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Finalized)
+                .await
+                .unwrap(),
+            vec![account_1.clone()]
+        );
+
+        // delete account 1
+        let pk2 = Pubkey::new_unique();
+        let account_1_2 = create_random_account_with_write_version(&mut rng, 2, pk1, program_1, 2);
+        store
+            .update_account(account_1_2, Commitment::Processed)
+            .await;
+        let account_1_3 = AccountData {
+            pubkey: pk1,
+            account: Arc::new(Account {
+                lamports: 0,
+                data: solana_lite_rpc_core::structures::account_data::Data::Uncompressed(vec![]),
+                owner: Pubkey::default(),
+                executable: false,
+                rent_epoch: u64::MAX,
+            }),
+            updated_slot: 2,
+            write_version: 3,
+        };
+        let random_deletion = AccountData {
+            pubkey: pk2,
+            account: Arc::new(Account {
+                lamports: 0,
+                data: solana_lite_rpc_core::structures::account_data::Data::Uncompressed(vec![]),
+                owner: Pubkey::default(),
+                executable: false,
+                rent_epoch: u64::MAX,
+            }),
+            updated_slot: 2,
+            write_version: 4,
+        };
+        store
+            .update_account(account_1_3.clone(), Commitment::Processed)
+            .await;
+        store
+            .update_account(random_deletion.clone(), Commitment::Processed)
+            .await;
+
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            Some(account_1.clone())
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            Some(account_1.clone())
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
+            None
+        );
+
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Processed)
+                .await
+                .unwrap(),
+            vec![]
+        );
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Confirmed)
+                .await
+                .unwrap(),
+            vec![account_1.clone()]
+        );
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Finalized)
+                .await
+                .unwrap(),
+            vec![account_1.clone()]
+        );
+
+        let updated = store.process_slot_data(2, Commitment::Confirmed).await;
+        assert_eq!(updated, vec![account_1_3.clone()]);
+
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            Some(account_1.clone())
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
+            None
+        );
+
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Processed)
+                .await
+                .unwrap(),
+            vec![]
+        );
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Confirmed)
+                .await
+                .unwrap(),
+            vec![]
+        );
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Finalized)
+                .await
+                .unwrap(),
+            vec![account_1.clone()]
+        );
+
+        let updated = store.process_slot_data(2, Commitment::Finalized).await;
+        assert_eq!(updated, vec![account_1_3]);
+
+        assert_eq!(
+            store.get_account(pk1, Commitment::Processed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Confirmed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk1, Commitment::Finalized).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Processed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Confirmed).await.unwrap(),
+            None
+        );
+        assert_eq!(
+            store.get_account(pk2, Commitment::Finalized).await.unwrap(),
+            None
+        );
+
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Processed)
+                .await
+                .unwrap(),
+            vec![]
+        );
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Confirmed)
+                .await
+                .unwrap(),
+            vec![]
+        );
+        assert_eq!(
+            store
+                .get_program_accounts(program_1, None, Commitment::Finalized)
+                .await
+                .unwrap(),
+            vec![]
         );
     }
 }
