@@ -116,14 +116,14 @@ pub async fn send_and_confirm_bulk_transactions(
     }
     let elapsed = started_at.elapsed();
     debug!(
-        "{} transactions sent successfully in {:.02}ms",
+        "send_transaction successful for {} txs in {:.03}s",
         num_sent_ok,
-        elapsed.as_secs_f32() * 1000.0
+        elapsed.as_secs_f32()
     );
     debug!(
-        "{} transactions failed to send in {:.02}ms",
+        "send_transaction failed to send {} txs in {:.03}s",
         num_sent_failed,
-        elapsed.as_secs_f32() * 1000.0
+        elapsed.as_secs_f32()
     );
 
     if num_sent_failed > 0 {
@@ -146,6 +146,7 @@ pub async fn send_and_confirm_bulk_transactions(
 
     // items get moved from pending_status_set to result_status_map
 
+    debug!("Wating for transaction confirmations ..");
     let started_at = Instant::now();
     let timeout_at = started_at + max_timeout;
     // "poll" the status dashmap
@@ -208,8 +209,7 @@ pub async fn send_and_confirm_bulk_transactions(
 
         if pending_status_set.is_empty() {
             debug!(
-                "All transactions confirmed after {} iterations / {:?}",
-                iteration,
+                "All transactions confirmed after {:?}",
                 started_at.elapsed()
             );
             break 'polling_loop;
@@ -217,8 +217,8 @@ pub async fn send_and_confirm_bulk_transactions(
 
         if Instant::now() > timeout_at {
             warn!(
-                "Timeout waiting for transactions to confirm after {} iterations",
-                iteration
+                "Timeout waiting for transactions to confirm after {:?}",
+                started_at.elapsed()
             );
             break 'polling_loop;
         }

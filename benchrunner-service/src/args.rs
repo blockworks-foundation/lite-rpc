@@ -6,6 +6,7 @@ pub struct TenantConfig {
     // technical identifier for the tenant, e.g. "solana-rpc"
     pub tenant_id: String,
     pub rpc_addr: String,
+    // needs to point to a reliable websocket server that can be used to get tx status
     pub tx_status_ws_addr: String,
 }
 
@@ -49,6 +50,14 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .iter()
                 .exactly_one()
                 .expect("need RPC_ADDR")
+                .1
+                .to_string(),
+            tx_status_ws_addr: v
+                .iter()
+                .find(|(v, _)| *v == format!("TENANT{}_TX_STATUS_WS_ADDR", tc))
+                .iter()
+                .exactly_one()
+                .expect("need TX_STATUS_WS_ADDR")
                 .1
                 .to_string(),
         })

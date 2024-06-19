@@ -39,6 +39,8 @@ enum SubCommand {
         payer_path: PathBuf,
         #[clap(short, long)]
         rpc_url: String,
+        #[clap(short = 'w', long)]
+        tx_status_websocket_addr: Option<String>,
         #[clap(short, long)]
         size_tx: TxSize,
         /// Maximum confirmation time in milliseconds. After this, the txn is considered unconfirmed
@@ -65,6 +67,10 @@ enum SubCommand {
         #[clap(short, long)]
         #[arg(short = 'b')]
         rpc_b: String,
+        #[clap(long)]
+        tx_status_websocket_addr_a: Option<String>,
+        #[clap(long)]
+        tx_status_websocket_addr_b: Option<String>,
         #[clap(short, long)]
         size_tx: TxSize,
         /// Maximum confirmation time in milliseconds. After this, the txn is considered unconfirmed
@@ -108,6 +114,7 @@ async fn main() {
         SubCommand::ConfirmationRate {
             payer_path,
             rpc_url,
+            tx_status_websocket_addr,
             size_tx,
             max_timeout_ms,
             txs_per_run,
@@ -116,6 +123,7 @@ async fn main() {
         } => confirmation_rate(
             &payer_path,
             rpc_url,
+            tx_status_websocket_addr,
             BenchmarkTransactionParams {
                 tx_size: size_tx,
                 cu_price_micro_lamports: cu_price,
@@ -130,6 +138,8 @@ async fn main() {
             payer_path,
             rpc_a,
             rpc_b,
+            tx_status_websocket_addr_a,
+            tx_status_websocket_addr_b,
             size_tx,
             max_timeout_ms,
             num_of_runs,
@@ -139,6 +149,8 @@ async fn main() {
             &payer_path,
             rpc_a,
             rpc_b,
+            tx_status_websocket_addr_a,
+            tx_status_websocket_addr_b,
             BenchmarkTransactionParams {
                 tx_size: size_tx,
                 cu_price_micro_lamports: cu_price,

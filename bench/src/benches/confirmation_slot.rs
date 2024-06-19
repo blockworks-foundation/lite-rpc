@@ -49,7 +49,8 @@ pub async fn confirmation_slot(
     payer_path: &Path,
     rpc_a_url: String,
     rpc_b_url: String,
-    tx_status_websocket_addr: String,
+    tx_status_websocket_addr_a: Option<String>,
+    tx_status_websocket_addr_b: Option<String>,
     tx_params: BenchmarkTransactionParams,
     max_timeout: Duration,
     num_of_runs: usize,
@@ -63,6 +64,11 @@ pub async fn confirmation_slot(
     info!("RPC A: {}", obfuscate_rpcurl(&rpc_a_url));
     info!("RPC B: {}", obfuscate_rpcurl(&rpc_b_url));
 
+    let ws_addr_a = tx_status_websocket_addr_a.unwrap_or_else(|| rpc_a_url.replace("http:", "ws:").replace("https:", "wss:"));
+    let ws_addr_b = tx_status_websocket_addr_b.unwrap_or_else(|| rpc_b_url.replace("http:", "ws:").replace("https:", "wss:"));
+    let ws_addr_a = Url::parse(&ws_addr_a).expect("Invalid URL");
+    let ws_addr_b = Url::parse(&ws_addr_b).expect("Invalid URL");
+    
     let rpc_a_url =
         Url::parse(&rpc_a_url).map_err(|e| anyhow!("Failed to parse RPC A URL: {}", e))?;
     let rpc_b_url =
@@ -80,9 +86,9 @@ pub async fn confirmation_slot(
     for _ in 0..num_of_runs {
         let rpc_a = create_rpc_client(&rpc_a_url);
         let rpc_b = create_rpc_client(&rpc_b_url);
-
-        let tx_status_websocket_addr_a = Url::parse(&tx_status_websocket_addr).expect("Invalid URL");
-        let tx_status_websocket_addr_b = Url::parse(&tx_status_websocket_addr).expect("Invalid URL");
+        
+        let ws_addr_a = ws_addr_a.clone();
+        let ws_addr_b = ws_addr_b.clone();
 
         // measure network time to reach the respective RPC endpoints,
         // used to mitigate the difference in distance by delaying the txn sending
@@ -107,13 +113,13 @@ pub async fn confirmation_slot(
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
             debug!("(A) sending tx {}", rpc_a_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_a, tx_status_websocket_addr_a, payer_pubkey, rpc_a_tx, max_timeout).await
+            send_and_confirm_transaction(&rpc_a, ws_addr_a, payer_pubkey, rpc_a_tx, max_timeout).await
         });
 
         let b_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(b_delay)).await;
             debug!("(B) sending tx {}", rpc_b_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_b, tx_status_websocket_addr_b, payer_pubkey, rpc_b_tx, max_timeout).await
+            send_and_confirm_transaction(&rpc_b, ws_addr_b, payer_pubkey, rpc_b_tx, max_timeout).await
         });
 
         let (a, b) = tokio::join!(a_task, b_task);

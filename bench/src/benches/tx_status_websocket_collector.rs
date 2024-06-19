@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use dashmap::{DashMap, DashSet};
-use log::info;
+use log::{info, trace};
 use serde_json::json;
 use solana_rpc_client_api::response::{Response, RpcBlockUpdate};
 use solana_sdk::clock::Slot;
@@ -55,7 +55,6 @@ pub async fn start_tx_status_collector(ws_url: Url, payer_pubkey: Pubkey, commit
 
         while let Ok(msg) = channel.recv().await {
             // TOOD use this to know when we are subscribed
-            info!("SOME MESSGE FROM SUbsCRIPTN");
             if let WsMessage::Text(payload) = msg {
                 let ws_result: jsonrpsee_types::SubscriptionResponse<Response<RpcBlockUpdate>> =
                     serde_json::from_str(&payload).unwrap();
@@ -64,8 +63,7 @@ pub async fn start_tx_status_collector(ws_url: Url, payer_pubkey: Pubkey, commit
                 if let Some(tx_sigs_from_block) = block_update.value.block.and_then(|b| b.signatures) {
                     for tx_sig in tx_sigs_from_block {
                         let tx_sig = Signature::from_str(&tx_sig).unwrap();
-                        info!("Transaction signature: {} _> slot {}", tx_sig, slot);
-                        info!("status map size: {} - up {:?}", observed_transactions_write.len(), started_at.elapsed());
+                        trace!("Transaction signature: {} - slot {}", tx_sig, slot);
                         observed_transactions_write.entry(tx_sig).or_insert(slot);
                     }
                 }
@@ -73,8 +71,6 @@ pub async fn start_tx_status_collector(ws_url: Url, payer_pubkey: Pubkey, commit
         }
     });
 
-    // FIXME avoid race condition
-    sleep(Duration::from_secs(3)).await;
 
     (observed_transactions, jh.abort_handle())
 }
