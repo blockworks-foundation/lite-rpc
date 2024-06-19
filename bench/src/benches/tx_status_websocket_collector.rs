@@ -47,7 +47,7 @@ pub async fn start_tx_status_collector(ws_url: Url, payer_pubkey: Pubkey, commit
 
     let observed_transactions: Arc<DashMap<Signature, Slot>> = Arc::new(DashMap::with_capacity(64));
 
-    let observed_transactions_write = observed_transactions.clone();
+    let observed_transactions_write =  Arc::downgrade(&observed_transactions);
     let jh = tokio::spawn(async move {
         let started_at = Instant::now();
 
@@ -57,11 +57,15 @@ pub async fn start_tx_status_collector(ws_url: Url, payer_pubkey: Pubkey, commit
                     serde_json::from_str(&payload).unwrap();
                 let block_update = ws_result.params.result;
                 let slot = block_update.value.slot;
+                let Some(map) = observed_transactions_write.upgrade() else {
+                    debug!("observed_transactions map dropped - stopping task");
+                    return;
+                };
                 if let Some(tx_sigs_from_block) = block_update.value.block.and_then(|b| b.signatures) {
                     for tx_sig in tx_sigs_from_block {
                         let tx_sig = Signature::from_str(&tx_sig).unwrap();
                         debug!("Transaction signature found in block: {} - slot {}", tx_sig, slot);
-                        observed_transactions_write.entry(tx_sig).or_insert(slot);
+                        map.entry(tx_sig).or_insert(slot);
                     }
                 }
             }

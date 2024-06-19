@@ -18,7 +18,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use dashmap::mapref::multiple::RefMulti;
-use scopeguard::defer;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use solana_rpc_client_api::response::{Response, RpcBlockUpdate, RpcResponseContext, SlotUpdate};
@@ -66,8 +65,7 @@ pub async fn send_and_confirm_bulk_transactions(
     };
 
     // note: we get confirmed but never finaliized
-    let (tx_status_map, jh_collector) = start_tx_status_collector(tx_status_websocket_addr.clone(), payer_pubkey, CommitmentConfig::confirmed()).await;
-    defer!(jh_collector.abort());
+    let (tx_status_map, _jh_collector) = start_tx_status_collector(tx_status_websocket_addr.clone(), payer_pubkey, CommitmentConfig::confirmed()).await;
 
     let started_at = Instant::now();
     trace!(

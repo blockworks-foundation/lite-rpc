@@ -584,7 +584,6 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "reqwest",
- "scopeguard",
  "serde",
  "serde_json",
  "solana-lite-rpc-util",
