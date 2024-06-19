@@ -39,6 +39,10 @@ enum SubCommand {
         payer_path: PathBuf,
         #[clap(short, long)]
         rpc_url: String,
+        /// Set websocket source (blockSubscribe method) for transaction status updates.
+        /// You might want to send tx to one RPC and listen to another (reliable) RPC for status updates.
+        /// Not all RPC nodes support this method.
+        /// If not provided, the RPC URL is used to derive the websocket URL.
         #[clap(short = 'w', long)]
         tx_status_websocket_addr: Option<String>,
         #[clap(short, long)]

@@ -68,7 +68,7 @@ pub async fn confirmation_slot(
     let ws_addr_b = tx_status_websocket_addr_b.unwrap_or_else(|| rpc_b_url.replace("http:", "ws:").replace("https:", "wss:"));
     let ws_addr_a = Url::parse(&ws_addr_a).expect("Invalid URL");
     let ws_addr_b = Url::parse(&ws_addr_b).expect("Invalid URL");
-    
+
     let rpc_a_url =
         Url::parse(&rpc_a_url).map_err(|e| anyhow!("Failed to parse RPC A URL: {}", e))?;
     let rpc_b_url =
@@ -86,7 +86,7 @@ pub async fn confirmation_slot(
     for _ in 0..num_of_runs {
         let rpc_a = create_rpc_client(&rpc_a_url);
         let rpc_b = create_rpc_client(&rpc_b_url);
-        
+
         let ws_addr_a = ws_addr_a.clone();
         let ws_addr_b = ws_addr_b.clone();
 

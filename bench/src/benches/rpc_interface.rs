@@ -26,6 +26,7 @@ use solana_sdk::pubkey::Pubkey;
 use tokio::time::{Instant, timeout};
 use url::Url;
 use websocket_tungstenite_retry::websocket_stable::WsMessage;
+use solana_lite_rpc_util::obfuscate_rpcurl;
 use crate::benches::tx_status_websocket_collector::start_tx_status_collector;
 
 pub fn create_rpc_client(rpc_url: &Url) -> RpcClient {
@@ -146,7 +147,7 @@ pub async fn send_and_confirm_bulk_transactions(
 
     // items get moved from pending_status_set to result_status_map
 
-    debug!("Wating for transaction confirmations ..");
+    debug!("Waiting for transaction confirmations from websocket source <{}> ..", obfuscate_rpcurl(tx_status_websocket_addr.as_str()));
     let started_at = Instant::now();
     let timeout_at = started_at + max_timeout;
     // "poll" the status dashmap
@@ -157,31 +158,6 @@ pub async fn send_and_confirm_bulk_transactions(
             num_sent_ok,
             "Items must move between pending+result"
         );
-        // let tx_batch = pending_status_set.iter().cloned().collect_vec();
-        // debug!(
-        //     "Request status for batch of remaining {} transactions in iteration {}",
-        //     tx_batch.len(),
-        //     iteration
-        // );
-
-        // let status_started_at = Instant::now();
-        // let mut batch_status = Vec::new();
-        // // "Too many inputs provided; max 256"
-        // for chunk in tx_batch.chunks(256) {
-        //     // fail hard if not possible to poll status
-        //     let chunk_responses = rpc_client
-        //         .get_signature_statuses(chunk)
-        //         .await
-        //         .expect("get signature statuses");
-        //     batch_status.extend(chunk_responses.value);
-        // }
-        // if status_started_at.elapsed() > Duration::from_millis(500) {
-        //     warn!(
-        //         "SLOW get_signature_statuses for {} transactions took {:?}",
-        //         tx_batch.len(),
-        //         status_started_at.elapsed()
-        //     );
-        // }
         let elapsed = started_at.elapsed();
 
         for multi in tx_status_map.iter() {
@@ -223,7 +199,6 @@ pub async fn send_and_confirm_bulk_transactions(
             break 'polling_loop;
         }
 
-        // avg 2 samples per slot
         tokio::time::sleep_until(iteration_ends_at).await;
     } // -- END polling loop
 
