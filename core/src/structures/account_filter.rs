@@ -1,8 +1,9 @@
 use crate::encoding::{BASE58, BASE64};
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
+use serde::{ser::SerializeMap, Deserialize, Serialize};
 use solana_rpc_client_api::filter::{Memcmp as RpcMemcmp, MemcmpEncodedBytes, RpcFilterType};
 use solana_sdk::pubkey::Pubkey;
+use std::str::FromStr;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
@@ -59,12 +60,74 @@ impl AccountFilterType {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AccountFilter {
     pub accounts: Vec<Pubkey>,
     pub program_id: Option<Pubkey>,
     pub filters: Option<Vec<AccountFilterType>>,
+}
+
+impl Serialize for AccountFilter {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_map(Some(3))?;
+        if !self.accounts.is_empty() {
+            seq.serialize_entry(
+                "accounts",
+                &self.accounts.iter().map(|x| x.to_string()).collect_vec(),
+            )?;
+        }
+        if let Some(program_id) = self.program_id {
+            seq.serialize_entry("programId", &program_id.to_string())?;
+        }
+        if let Some(filters) = &self.filters {
+            seq.serialize_entry("filters", filters)?;
+        }
+        seq.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for AccountFilter {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let json: serde_json::value::Value = serde_json::value::Value::deserialize(deserializer)?;
+
+        let accounts = match json.get("accounts") {
+            Some(accounts) => match accounts.as_array() {
+                Some(accounts_array) => accounts_array
+                    .iter()
+                    .map(|v| {
+                        Pubkey::from_str(&v.as_str().expect("should be string"))
+                            .expect("Pubkey should be valid")
+                    })
+                    .collect_vec(),
+                None => vec![],
+            },
+            None => vec![],
+        };
+        let program_id = match json.get("programId") {
+            Some(program_id) => Some(
+                Pubkey::from_str(program_id.as_str().expect("should be string"))
+                    .expect("Pubkey should be valid"),
+            ),
+            None => None,
+        };
+        let filters = match json.get("filters") {
+            Some(filters) => {
+                serde_json::from_value(filters.clone()).expect("account filters not deserializable")
+            }
+            None => None,
+        };
+        Ok(Self {
+            accounts,
+            program_id,
+            filters,
+        })
+    }
 }
 
 impl AccountFilter {
@@ -129,9 +192,8 @@ mod test {
 
     #[test]
     fn test_accounts_filters_deserialization() {
-        let str = "[W
+        let str = "[
         {
-            \"accounts\": [],
             \"programId\": \"4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg\",
             \"filters\": [
                 {
@@ -140,7 +202,6 @@ mod test {
             ]
         },
         {
-            \"accounts\": [],
             \"programId\": \"4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg\",
             \"filters\": [
             {
@@ -168,11 +229,9 @@ mod test {
             ]
         },
         {
-            \"accounts\": [],
             \"programId\": \"4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg\"
         },
         {
-            \"accounts\": [],
             \"programId\": \"4MangoMjqJ2firMokCjjGgoK8d4MXcrgL7XJaL3w6fVg\",
             \"filters\": [
                 {
@@ -516,6 +575,8 @@ mod test {
         filters.push(open_orders);
 
         let filter_string = serde_json::to_string(&filters).unwrap();
+        let unserailized = serde_json::from_str::<AccountFilters>(&filter_string).unwrap();
+        assert_eq!(unserailized, filters);
         let filter_string = filter_string.replace('"', "\\\"");
         println!("Filter is : \n {} \n", filter_string);
     }
