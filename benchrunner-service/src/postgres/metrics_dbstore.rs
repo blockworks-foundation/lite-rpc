@@ -134,7 +134,7 @@ impl BenchMetricsPostgresSaver for BenchRunnerConfirmationRateImpl {
                 txs_confirmed,
                 txs_un_confirmed,
                 average_confirmation_time_ms,
-                average_slot_confirmation_time_ms,
+                average_slot_confirmation_time,
                 metric_json
              )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
