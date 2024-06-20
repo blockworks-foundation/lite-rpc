@@ -41,7 +41,7 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .find(|(v, _)| *v == format!("TENANT{}_ID", tc))
                 .iter()
                 .exactly_one()
-                .expect("need ID")
+                .expect("need TENANT_X_ID")
                 .1
                 .to_string(),
             rpc_addr: v
@@ -49,7 +49,7 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .find(|(v, _)| *v == format!("TENANT{}_RPC_ADDR", tc))
                 .iter()
                 .exactly_one()
-                .expect("need RPC_ADDR")
+                .expect("need TENANT_X_RPC_ADDR")
                 .1
                 .to_string(),
             tx_status_ws_addr: v
@@ -57,7 +57,7 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .find(|(v, _)| *v == format!("TENANT{}_TX_STATUS_WS_ADDR", tc))
                 .iter()
                 .exactly_one()
-                .expect("need TX_STATUS_WS_ADDR")
+                .expect("need TENANT_X_TX_STATUS_WS_ADDR")
                 .1
                 .to_string(),
         })
