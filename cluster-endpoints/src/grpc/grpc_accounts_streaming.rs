@@ -49,7 +49,7 @@ pub fn start_account_streaming_tasks(
             for (index, accounts_filter) in accounts_filters.iter().enumerate() {
                 if !accounts_filter.accounts.is_empty() {
                     accounts_filter.accounts.iter().for_each(|account| {
-                        accounts_to_subscribe.insert(account.clone());
+                        accounts_to_subscribe.insert(account);
                     });
                 }
                 if let Some(program_id) = &accounts_filter.program_id {
@@ -91,7 +91,7 @@ pub fn start_account_streaming_tasks(
                         format!("program_accounts_{}", index),
                         SubscribeRequestFilterAccounts {
                             account: vec![],
-                            owner: vec![program_id.clone()],
+                            owner: vec![program_id.to_string()],
                             filters,
                         },
                     );
@@ -121,7 +121,7 @@ pub fn start_account_streaming_tasks(
                     SubscribeRequestFilterAccounts {
                         account: accounts_chunk
                             .iter()
-                            .map(|acc| (*acc).clone())
+                            .map(|acc| acc.to_string())
                             .collect_vec(),
                         owner: vec![],
                         filters: vec![],

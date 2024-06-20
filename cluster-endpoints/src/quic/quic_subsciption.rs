@@ -19,7 +19,7 @@ use solana_lite_rpc_core::{
     },
     AnyhowJoinHandle,
 };
-use solana_sdk::{clock::Slot, commitment_config::CommitmentConfig, hash::Hash, pubkey::Pubkey};
+use solana_sdk::{clock::Slot, commitment_config::CommitmentConfig, hash::Hash};
 use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 
 use crate::{
@@ -125,11 +125,7 @@ pub async fn create_quic_endpoint(
 
     let (quic_client, mut quic_notification_reciever) =
         Client::new(endpoint_url, ConnectionParameters::default()).await?;
-    let mut subscriptions = vec![
-        QuicGeyserFilter::Slot,
-        QuicGeyserFilter::BlockMeta,
-        QuicGeyserFilter::BlockAll,
-    ];
+    let mut subscriptions = vec![QuicGeyserFilter::Slot, QuicGeyserFilter::BlockMeta];
 
     let (processed_account_stream, account_sender) = if !accounts_filter.is_empty() {
         let (sx, rx) = tokio::sync::broadcast::channel(1024);
@@ -139,21 +135,9 @@ pub async fn create_quic_endpoint(
     };
 
     for account_filter in accounts_filter {
-        let accounts = if !account_filter.accounts.is_empty() {
-            Some(
-                account_filter
-                    .accounts
-                    .iter()
-                    .map(|x| Pubkey::from_str(x).unwrap())
-                    .collect(),
-            )
-        } else {
-            None
-        };
+        let accounts = Some(account_filter.accounts.iter().copied().collect());
         let geyser_account_filter = GeyserAccountFilter {
-            owner: account_filter
-                .program_id
-                .map(|x| Pubkey::from_str(&x).unwrap()),
+            owner: account_filter.program_id,
             accounts,
             filter: None,
         };

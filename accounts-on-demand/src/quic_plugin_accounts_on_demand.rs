@@ -1,19 +1,26 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::Arc,
     time::Duration,
 };
 
 use async_trait::async_trait;
 use futures::lock::Mutex;
+use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
-use solana_client::{nonblocking::rpc_client::RpcClient, rpc_filter::RpcFilterType};
+use solana_account_decoder::UiAccountEncoding;
+use solana_client::{
+    nonblocking::rpc_client::RpcClient, rpc_config::RpcAccountInfoConfig, rpc_filter::RpcFilterType,
+};
 use solana_lite_rpc_accounts::account_store_interface::{
     AccountLoadingError, AccountStorageInterface,
 };
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
-    structures::account_data::{Account, AccountData, CompressionMethod},
+    structures::{
+        account_data::{Account, AccountData, CompressionMethod},
+        account_filter::{AccountFilter, AccountFilterType},
+    },
 };
 use solana_sdk::{clock::Slot, pubkey::Pubkey};
 use tokio::sync::Notify;
@@ -30,12 +37,15 @@ lazy_static::lazy_static! {
 
 const RETRY_FETCHING_ACCOUNT: usize = 10;
 
+type GpaAccountKey = (Pubkey, Vec<AccountFilterType>);
+
 pub struct QuicPluginAccountsOnDemand {
     rpc_client: Arc<RpcClient>,
     quic_plugin_client: quic_geyser_client::non_blocking::client::Client,
     mutable_filters: Arc<MutableFilterStore>,
     accounts_storage: Arc<dyn AccountStorageInterface>,
     accounts_in_loading: Arc<Mutex<HashMap<Pubkey, Arc<Notify>>>>,
+    gpa_in_loading: Arc<Mutex<BTreeMap<GpaAccountKey, Arc<Notify>>>>,
 }
 
 impl QuicPluginAccountsOnDemand {
@@ -51,6 +61,7 @@ impl QuicPluginAccountsOnDemand {
             mutable_filters,
             accounts_storage: accounts_storage.clone(),
             accounts_in_loading: Arc::new(Mutex::new(HashMap::new())),
+            gpa_in_loading: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 }
@@ -189,15 +200,129 @@ impl AccountStorageInterface for QuicPluginAccountsOnDemand {
 
     async fn get_program_accounts(
         &self,
-        program_pubkey: Pubkey,
+        program_id: Pubkey,
         filters: Option<Vec<RpcFilterType>>,
         commitment: Commitment,
     ) -> Option<Vec<AccountData>> {
-        // accounts on demand will not fetch gPA if they do not exist
-        // for now just get account from underlying store
-        self.accounts_storage
-            .get_program_accounts(program_pubkey, filters, commitment)
-            .await
+        let account_filters = filters
+            .as_ref()
+            .map(|filter| filter.iter().map(AccountFilterType::from).collect_vec());
+
+        let account_filter = AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: account_filters.clone(),
+        };
+        // accounts on demand will fetch gPA if they do not exist
+        // it will first compare with existing filters and do the necessary if needed
+        if self.mutable_filters.contains_filter(&account_filter).await {
+            self.accounts_storage
+                .get_program_accounts(program_id, filters.clone(), commitment)
+                .await
+        } else {
+            // subsribing to new gpa accounts
+            let mut lk = self.gpa_in_loading.lock().await;
+            match lk
+                .get(&(program_id, account_filters.clone().unwrap_or_default()))
+                .cloned()
+            {
+                Some(loading_account) => {
+                    drop(lk);
+                    match tokio::time::timeout(Duration::from_secs(10), loading_account.notified())
+                        .await
+                    {
+                        Ok(_) => {
+                            self.accounts_storage
+                                .get_program_accounts(program_id, filters.clone(), commitment)
+                                .await
+                        }
+                        Err(_timeout) => {
+                            // todo replace with error
+                            log::error!("gPA on program : {}", program_id.to_string());
+                            None
+                        }
+                    }
+                }
+                None => {
+                    // update account loading map
+                    // create a notify for accounts under loading
+                    lk.insert(
+                        (program_id, account_filters.clone().unwrap_or_default()),
+                        Arc::new(Notify::new()),
+                    );
+                    drop(lk);
+                    self.mutable_filters
+                        .add_account_filters(&vec![account_filter])
+                        .await;
+
+                    let mut return_value = None;
+                    for _ in 0..RETRY_FETCHING_ACCOUNT {
+                        let Ok(slot) = self
+                            .rpc_client
+                            .get_slot_with_commitment(commitment.into_commiment_config())
+                            .await
+                        else {
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                            continue;
+                        };
+
+                        let account_response = self
+                            .rpc_client
+                            .get_program_accounts_with_config(
+                                &program_id,
+                                solana_client::rpc_config::RpcProgramAccountsConfig {
+                                    filters: filters.clone(),
+                                    account_config: RpcAccountInfoConfig {
+                                        encoding: Some(UiAccountEncoding::Base64),
+                                        data_slice: None,
+                                        commitment: Some(commitment.into_commiment_config()),
+                                        min_context_slot: None,
+                                    },
+                                    with_context: None,
+                                },
+                            )
+                            .await;
+
+                        match account_response {
+                            Ok(response) => {
+                                let mut gpa_accounts = vec![];
+                                for (pubkey, account) in response {
+                                    let account_data = AccountData {
+                                        pubkey,
+                                        account: Arc::new(Account::from_solana_account(
+                                            account.clone(),
+                                            CompressionMethod::Lz4(1),
+                                        )),
+                                        updated_slot: slot,
+                                        write_version: 0,
+                                    };
+                                    self.accounts_storage
+                                        .update_account(account_data.clone(), commitment)
+                                        .await;
+                                    gpa_accounts.push(account_data);
+                                }
+                                return_value = Some(gpa_accounts);
+                                break;
+                            }
+                            Err(e) => {
+                                log::error!("Error fetching gPA {} {e:?}", program_id.to_string());
+                            }
+                        }
+                    }
+                    // update loading lock
+                    {
+                        let mut write_lock = self.gpa_in_loading.lock().await;
+                        let notify =
+                            write_lock.remove(&(program_id, account_filters.unwrap_or_default()));
+                        drop(write_lock);
+                        if let Some(notify) = notify {
+                            notify.notify_waiters();
+                        }
+                    }
+                    return_value
+                }
+            }
+        }
     }
 
     async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData> {

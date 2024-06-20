@@ -10,9 +10,10 @@ license = "AGPL"
 [dependencies]
 solana-sdk = { workspace = true }
 solana-client = { workspace = true }
- 
+solana-account-decoder = { workspace = true } 
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-accounts = { workspace = true }
+
 lazy_static = {workspace = true}
 async-trait = { workspace = true }
 itertools = { workspace = true }

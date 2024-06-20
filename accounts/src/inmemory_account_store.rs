@@ -428,7 +428,7 @@ mod tests {
     pub async fn test_account_store() {
         let program = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
-            program_id: Some(program.to_string()),
+            program_id: Some(program),
             accounts: vec![],
             filters: None,
         }]);
@@ -559,7 +559,7 @@ mod tests {
     pub async fn test_account_store_if_finalized_clears_old_processed_slots() {
         let program = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
-            program_id: Some(program.to_string()),
+            program_id: Some(program),
             accounts: vec![],
             filters: None,
         }]);
@@ -689,22 +689,22 @@ mod tests {
         let prog_4 = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![
             AccountFilter {
-                program_id: Some(prog_1.to_string()),
+                program_id: Some(prog_1),
                 accounts: vec![],
                 filters: None,
             },
             AccountFilter {
-                program_id: Some(prog_2.to_string()),
+                program_id: Some(prog_2),
                 accounts: vec![],
                 filters: None,
             },
             AccountFilter {
-                program_id: Some(prog_3.to_string()),
+                program_id: Some(prog_3),
                 accounts: vec![],
                 filters: None,
             },
             AccountFilter {
-                program_id: Some(prog_4.to_string()),
+                program_id: Some(prog_4),
                 accounts: vec![],
                 filters: None,
             },
@@ -882,7 +882,7 @@ mod tests {
     pub async fn writing_old_account_state() {
         let program = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
-            program_id: Some(program.to_string()),
+            program_id: Some(program),
             accounts: vec![],
             filters: None,
         }]);
@@ -1027,7 +1027,7 @@ mod tests {
     pub async fn account_states_with_different_write_version() {
         let program = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
-            program_id: Some(program.to_string()),
+            program_id: Some(program),
             accounts: vec![],
             filters: None,
         }]);
@@ -1134,12 +1134,12 @@ mod tests {
         let program_3 = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![
             AccountFilter {
-                program_id: Some(program_1.to_string()),
+                program_id: Some(program_1),
                 accounts: vec![],
                 filters: None,
             },
             AccountFilter {
-                program_id: Some(program_2.to_string()),
+                program_id: Some(program_2),
                 accounts: vec![],
                 filters: None,
             },
@@ -2101,7 +2101,7 @@ mod tests {
     pub async fn test_account_deletions() {
         let program_1 = Pubkey::new_unique();
         let filter_store = new_filter_store(vec![AccountFilter {
-            program_id: Some(program_1.to_string()),
+            program_id: Some(program_1),
             accounts: vec![],
             filters: None,
         }]);

@@ -51,18 +51,11 @@ pub async fn get_program_account(
     {
         for filter in filters.iter() {
             if !filter.accounts.is_empty() {
-                let mut f_accounts = filter
-                    .accounts
-                    .iter()
-                    .map(|x| Pubkey::from_str(x).expect("Accounts in filters should be valid"))
-                    .collect();
-                accounts.append(&mut f_accounts);
+                accounts.extend(filter.accounts.clone());
             }
 
             if let Some(program_id) = &filter.program_id {
-                log::info!("gPA for {}", program_id);
-                let program_id =
-                    Pubkey::from_str(program_id).expect("Program id in filters should be valid");
+                log::info!("gPA for {}", program_id.to_string());
 
                 let result = rpc_client
                     .send::<OptionalContext<Vec<RpcKeyedCompressedAccount>>>(
@@ -120,7 +113,7 @@ pub async fn get_program_account(
                         log::info!("fallback to gPA for {}", program_id);
                         let mut rpc_acc = rpc_client
                             .get_program_accounts_with_config(
-                                &program_id,
+                                program_id,
                                 RpcProgramAccountsConfig {
                                     filters: filter.get_rpc_filter(),
                                     account_config: RpcAccountInfoConfig {
