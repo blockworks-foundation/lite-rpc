@@ -12,18 +12,21 @@ use url::Url;
 pub async fn benchnew_confirmation_rate_servicerunner(
     bench_config: &BenchConfig,
     rpc_addr: String,
-    tx_status_websocket_addr: String,
+    tx_status_websocket_addr: Option<String>,
     funded_payer: Keypair,
 ) -> confirmation_rate::Metric {
-    let rpc = Arc::new(RpcClient::new(rpc_addr));
+    let rpc = Arc::new(RpcClient::new(rpc_addr.clone()));
     let tx_params = BenchmarkTransactionParams {
         tx_size: bench_config.tx_size,
         cu_price_micro_lamports: bench_config.cu_price_micro_lamports,
     };
     let max_timeout = Duration::from_secs(60);
+
+    let ws_addr = tx_status_websocket_addr.unwrap_or_else(|| rpc_addr.replace("http:", "ws:").replace("https:", "wss:"));
+
     let result = send_bulk_txs_and_wait(
         &rpc,
-        Url::parse(&tx_status_websocket_addr).expect("Invalid URL"),
+        Url::parse(&ws_addr).expect("Invalid WS URL"),
         &funded_payer,
         bench_config.tx_count,
         &tx_params,

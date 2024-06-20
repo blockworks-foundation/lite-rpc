@@ -7,7 +7,7 @@ pub struct TenantConfig {
     pub tenant_id: String,
     pub rpc_addr: String,
     // needs to point to a reliable websocket server that can be used to get tx status
-    pub tx_status_ws_addr: String,
+    pub tx_status_ws_addr: Option<String>,
 }
 
 // recommend to use one payer keypair for all targets and fund that keypair with enough SOL
@@ -56,10 +56,9 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .iter()
                 .find(|(v, _)| *v == format!("TENANT{}_TX_STATUS_WS_ADDR", tc))
                 .iter()
-                .exactly_one()
+                .at_most_one()
                 .expect("need TENANT_X_TX_STATUS_WS_ADDR")
-                .1
-                .to_string(),
+                .map(|(_, v)| v.to_string())
         })
         .collect::<Vec<TenantConfig>>();
 
