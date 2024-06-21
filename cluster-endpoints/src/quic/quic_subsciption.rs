@@ -125,7 +125,11 @@ pub async fn create_quic_endpoint(
 
     let (quic_client, mut quic_notification_reciever) =
         Client::new(endpoint_url, ConnectionParameters::default()).await?;
-    let mut subscriptions = vec![QuicGeyserFilter::Slot, QuicGeyserFilter::BlockMeta];
+    let mut subscriptions = vec![
+        QuicGeyserFilter::Slot,
+        QuicGeyserFilter::BlockMeta,
+        QuicGeyserFilter::BlockAll,
+    ];
 
     let (processed_account_stream, account_sender) = if !accounts_filter.is_empty() {
         let (sx, rx) = tokio::sync::broadcast::channel(1024);

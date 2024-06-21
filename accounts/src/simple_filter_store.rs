@@ -152,3 +152,260 @@ impl AccountFiltersStoreInterface for SimpleFilterStore {
         self.satisfies_filter(account_data)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use solana_lite_rpc_core::structures::account_filter::{
+        AccountFilter, AccountFilterType, MemcmpFilter,
+    };
+    use solana_sdk::pubkey::Pubkey;
+
+    use super::SimpleFilterStore;
+
+    #[test]
+    fn test_program_that_allows_all() {
+        let mut simple_store = SimpleFilterStore::default();
+        let program_id = Pubkey::new_unique();
+        simple_store.add_account_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: None,
+        });
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: None,
+        }));
+
+        assert!(!simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(Pubkey::new_unique()),
+            filters: None,
+        }));
+
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![AccountFilterType::Datasize(100)]),
+        }));
+
+        // contains a subfilter
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Datasize(100),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![123]
+                    )
+                })
+            ]),
+        }));
+    }
+
+    #[test]
+    fn test_program_that_partial_filtering() {
+        let mut simple_store = SimpleFilterStore::default();
+        let program_id = Pubkey::new_unique();
+        simple_store.add_account_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Datasize(100),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![123],
+                    ),
+                }),
+            ]),
+        });
+        assert!(!simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: None,
+        }));
+
+        assert!(!simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(Pubkey::new_unique()),
+            filters: None,
+        }));
+
+        // for now it cannot detect subsets
+        assert!(!simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![AccountFilterType::Datasize(100)]),
+        }));
+
+        // contains a subfilter
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Datasize(100),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![123]
+                    )
+                })
+            ]),
+        }));
+
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![123]
+                    )
+                }),
+                AccountFilterType::Datasize(100)
+            ]),
+        }));
+    }
+
+    #[test]
+    fn test_program_that_partial_filtering_2() {
+        let mut simple_store = SimpleFilterStore::default();
+        let program_id = Pubkey::new_unique();
+        simple_store.add_account_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Datasize(100),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![1, 2, 3],
+                    ),
+                }),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 10,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![5, 6, 7],
+                    ),
+                }),
+            ]),
+        });
+        assert!(!simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: None,
+        }));
+
+        assert!(!simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(Pubkey::new_unique()),
+            filters: None,
+        }));
+
+        // for now it cannot detect subsets
+        assert!(!simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![AccountFilterType::Datasize(100)]),
+        }));
+
+        // contains a subfilter
+        assert!(!simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Datasize(100),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![123]
+                    )
+                })
+            ]),
+        }));
+
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Datasize(100),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![1, 2, 3]
+                    )
+                }),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 10,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![5, 6, 7]
+                    )
+                })
+            ]),
+        }));
+
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![1, 2, 3]
+                    )
+                }),
+                AccountFilterType::Datasize(100),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 10,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![5, 6, 7]
+                    )
+                })
+            ]),
+        }));
+
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![1, 2, 3]
+                    )
+                }),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 10,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![5, 6, 7]
+                    )
+                }),
+                AccountFilterType::Datasize(100),
+            ]),
+        }));
+
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 10,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![5, 6, 7]
+                    )
+                }),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![1, 2, 3]
+                    )
+                }),
+                AccountFilterType::Datasize(100),
+            ]),
+        }));
+    }
+}
