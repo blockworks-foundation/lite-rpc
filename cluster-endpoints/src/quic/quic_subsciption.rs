@@ -132,7 +132,7 @@ pub async fn create_quic_endpoint(
     ];
 
     let (processed_account_stream, account_sender) = if !accounts_filter.is_empty() {
-        let (sx, rx) = tokio::sync::broadcast::channel(1024);
+        let (sx, rx) = tokio::sync::broadcast::channel(64 * 1024);
         (Some(rx), Some(sx))
     } else {
         (None, None)
