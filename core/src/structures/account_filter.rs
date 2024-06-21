@@ -101,7 +101,7 @@ impl<'de> Deserialize<'de> for AccountFilter {
                 Some(accounts_array) => accounts_array
                     .iter()
                     .map(|v| {
-                        Pubkey::from_str(&v.as_str().expect("should be string"))
+                        Pubkey::from_str(v.as_str().expect("should be string"))
                             .expect("Pubkey should be valid")
                     })
                     .collect_vec(),
@@ -109,13 +109,11 @@ impl<'de> Deserialize<'de> for AccountFilter {
             },
             None => vec![],
         };
-        let program_id = match json.get("programId") {
-            Some(program_id) => Some(
-                Pubkey::from_str(program_id.as_str().expect("should be string"))
-                    .expect("Pubkey should be valid"),
-            ),
-            None => None,
-        };
+        let program_id = json.get("programId").map(|program_id| {
+            Pubkey::from_str(program_id.as_str().expect("should be string"))
+                .expect("Pubkey should be valid")
+        });
+
         let filters = match json.get("filters") {
             Some(filters) => {
                 serde_json::from_value(filters.clone()).expect("account filters not deserializable")
@@ -539,7 +537,7 @@ mod test {
         let oracle_filters = AccountFilter {
             accounts: oracles
                 .iter()
-                .map(|x| Pubkey::from_str(*x).unwrap())
+                .map(|x| Pubkey::from_str(x).unwrap())
                 .collect_vec(),
             program_id: None,
             filters: None,
