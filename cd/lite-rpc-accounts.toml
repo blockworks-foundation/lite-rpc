@@ -6,8 +6,7 @@ kill_timeout = 5
   dockerfile = "../Dockerfile"
 
 [env]
-  RPC_ADDR = "http://fsn2._peer.internal:18899"
-  GRPC_ADDR = "http://fsn2._peer.internal:10001"
+  RPC_ADDR = "http://46.4.253.20:8899"
   PORT_HTTP = "8890"
   PORT_WS = "8891"
   RUST_LOG = "info"

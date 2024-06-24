@@ -1,11 +1,10 @@
 use async_trait::async_trait;
-use itertools::Itertools;
 use solana_lite_rpc_core::structures::{
     account_data::AccountData,
     account_filter::{AccountFilter, AccountFilterType, AccountFilters, MemcmpFilter},
 };
 use solana_sdk::pubkey::Pubkey;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::account_filters_interface::AccountFiltersStoreInterface;
 
@@ -15,8 +14,8 @@ enum ProgramIdFilters {
     // here first vec will use OR operator and the second will use AND operator
     // i.e vec![vec![A,B]] will be A and B
     // vec![vec![A], vec![B]] will be A or B
-    // filters are sorted before storing so that comparing is easier
-    ByFilterType(Vec<Vec<AccountFilterType>>),
+    // using btree set because the filters will be stored sorted and comparing them is easier
+    ByFilterType(Vec<BTreeSet<AccountFilterType>>),
 }
 
 #[derive(Default)]
@@ -46,7 +45,7 @@ impl SimpleFilterStore {
                         }
                         ProgramIdFilters::ByFilterType(current_filters) => {
                             if let Some(new_filters) = &account_filter.filters {
-                                current_filters.push(new_filters.clone());
+                                current_filters.push(new_filters.iter().cloned().collect());
                             } else {
                                 // the new filters will subscribe to all the filters
                                 *program_filters = ProgramIdFilters::AllowAll;
@@ -62,7 +61,7 @@ impl SimpleFilterStore {
                             .clone()
                             .map_or(ProgramIdFilters::AllowAll, |filters| {
                                 // always save filters in bytes
-                                let mut filters = filters.iter().map(|x| match &x {
+                                let filters = filters.iter().map(|x| match &x {
                                     AccountFilterType::Datasize(_) => x.clone(),
                                     AccountFilterType::Memcmp(memcmp) => {
                                         match memcmp.data {
@@ -76,8 +75,7 @@ impl SimpleFilterStore {
                                             },
                                         }
                                     },
-                                }).collect_vec();
-                                filters.sort();
+                                }).collect();
                                 ProgramIdFilters::ByFilterType(vec![filters])
                             }),
                     );
@@ -103,10 +101,21 @@ impl SimpleFilterStore {
                         ProgramIdFilters::AllowAll => true,
                         ProgramIdFilters::ByFilterType(filter_list) => {
                             if let Some(filter_to_match) = &account_filter.filters {
-                                let mut filter_to_match = filter_to_match.clone();
-                                filter_to_match.sort();
                                 // matches sorted filter list
-                                filter_list.contains(&filter_to_match)
+                                let filter_to_match: BTreeSet<AccountFilterType> =
+                                    filter_to_match.iter().cloned().collect();
+                                filter_list.iter().any(|stored_filters| {
+                                    if filter_to_match.len() >= stored_filters.len() {
+                                        let subset = filter_to_match
+                                            .iter()
+                                            .take(stored_filters.len())
+                                            .cloned()
+                                            .collect::<BTreeSet<_>>();
+                                        subset == *stored_filters
+                                    } else {
+                                        false
+                                    }
+                                })
                             } else {
                                 false
                             }
@@ -234,7 +243,7 @@ mod tests {
             filters: None,
         }));
 
-        // for now it cannot detect subsets
+        // it cannot detect supersets
         assert!(!simple_store.contains_filter(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
@@ -256,10 +265,32 @@ mod tests {
             ]),
         }));
 
+        // contains in different order
         assert!(simple_store.contains_filter(&AccountFilter {
             accounts: vec![],
             program_id: Some(program_id),
             filters: Some(vec![
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![123]
+                    )
+                }),
+                AccountFilterType::Datasize(100)
+            ]),
+        }));
+
+        // can detect subsets
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 5,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![8, 9, 10]
+                    )
+                }),
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset: 2,
                     data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
@@ -402,6 +433,33 @@ mod tests {
                     offset: 2,
                     data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
                         vec![1, 2, 3]
+                    )
+                }),
+                AccountFilterType::Datasize(100),
+            ]),
+        }));
+
+        // can detect subsets
+        assert!(simple_store.contains_filter(&AccountFilter {
+            accounts: vec![],
+            program_id: Some(program_id),
+            filters: Some(vec![
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 10,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![5, 6, 7]
+                    )
+                }),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 2,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![1, 2, 3]
+                    )
+                }),
+                AccountFilterType::Memcmp(MemcmpFilter {
+                    offset: 20,
+                    data: solana_lite_rpc_core::structures::account_filter::MemcmpFilterData::Bytes(
+                        vec![4, 5, 6]
                     )
                 }),
                 AccountFilterType::Datasize(100),
