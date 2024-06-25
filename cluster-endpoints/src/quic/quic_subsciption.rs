@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use prometheus::{opts, register_int_gauge, IntGauge};
 use quic_geyser_client::non_blocking::client::Client;
 use quic_geyser_common::{
     filters::AccountFilter as GeyserAccountFilter,
@@ -20,13 +21,26 @@ use solana_lite_rpc_core::{
     AnyhowJoinHandle,
 };
 use solana_sdk::{clock::Slot, commitment_config::CommitmentConfig, hash::Hash};
-use std::{collections::BTreeMap, str::FromStr, sync::Arc};
+use std::{collections::BTreeMap, str::FromStr, sync::Arc, time::Duration};
 
 use crate::{
     endpoint_stremers::EndpointStreaming,
     message_utils::{get_cu_requested_from_message, get_prioritization_fees_from_message},
     rpc_polling::vote_accounts_and_cluster_info_polling::{poll_cluster_info, poll_vote_accounts},
 };
+
+lazy_static::lazy_static! {
+    static ref QUIC_GEYSER_NOTIFICATIONS: IntGauge =
+       register_int_gauge!(opts!("literpc_quic_geyser_notifications", "Quic geyser notifications")).unwrap();
+    static ref QUIC_GEYSER_ACCOUNT_NOTIFICATIONS: IntGauge =
+       register_int_gauge!(opts!("literpc_quic_geyser_accounts_notifications", "Quic geyser accounts notification")).unwrap();
+    static ref QUIC_GEYSER_SLOT_NOTIFICATIONS: IntGauge =
+       register_int_gauge!(opts!("literpc_quic_geyser_slot_notifications", "Quic geyser slot notification")).unwrap();
+    static ref QUIC_GEYSER_BLOCKMETA_NOTIFICATIONS: IntGauge =
+       register_int_gauge!(opts!("literpc_quic_geyser_blockmeta_notifications", "Quic geyser blockmeta notification")).unwrap();
+    static ref QUIC_GEYSER_BLOCK_NOTIFICATIONS: IntGauge =
+       register_int_gauge!(opts!("literpc_quic_geyser_block_notifications", "Quic geyser block notification")).unwrap();
+}
 
 struct SlotData {
     block_meta: Option<QuicGeyserBlockMeta>,
@@ -179,9 +193,24 @@ pub async fn create_quic_endpoint(
         let mut current_slot = 0;
         let mut map_of_slot_data = BTreeMap::<Slot, SlotData>::new();
 
-        while let Some(notification_message) = quic_notification_reciever.recv().await {
+        loop {
+            let message_or_timeout =
+                tokio::time::timeout(Duration::from_secs(10), quic_notification_reciever.recv())
+                    .await;
+            let Ok(maybe_message) = message_or_timeout else {
+                log::error!("quic geyser plugin timedout");
+                break;
+            };
+
+            let Some(notification_message) = maybe_message else {
+                log::error!("quic geyser plugin client broken");
+                break;
+            };
+            QUIC_GEYSER_NOTIFICATIONS.inc();
+
             match notification_message {
                 quic_geyser_common::message::Message::AccountMsg(account_mesage) => {
+                    QUIC_GEYSER_ACCOUNT_NOTIFICATIONS.inc();
                     if account_mesage.slot_identifier.slot > current_slot {
                         current_slot = account_mesage.slot_identifier.slot;
                         slot_sx
@@ -217,6 +246,7 @@ pub async fn create_quic_endpoint(
                     }
                 }
                 quic_geyser_common::message::Message::SlotMsg(slot_message) => {
+                    QUIC_GEYSER_SLOT_NOTIFICATIONS.inc();
                     if slot_message.slot > current_slot {
                         current_slot = slot_message.slot;
                         slot_sx
@@ -275,6 +305,7 @@ pub async fn create_quic_endpoint(
                     }
                 }
                 quic_geyser_common::message::Message::BlockMetaMsg(block_meta) => {
+                    QUIC_GEYSER_BLOCKMETA_NOTIFICATIONS.inc();
                     if block_meta.slot > current_slot {
                         current_slot = block_meta.slot;
                         slot_sx
@@ -303,6 +334,7 @@ pub async fn create_quic_endpoint(
                     slot_data.block_meta = Some(block_meta);
                 }
                 quic_geyser_common::message::Message::BlockMsg(block) => {
+                    QUIC_GEYSER_BLOCK_NOTIFICATIONS.inc();
                     if block.meta.slot > current_slot {
                         current_slot = block.meta.slot;
                         slot_sx
@@ -331,8 +363,8 @@ pub async fn create_quic_endpoint(
             }
         }
 
-        log::error!("quic geyser plugin exited because the client connection failed");
-        Ok(())
+        log::error!("quic geyser plugin exited because the client connection failed or connection timed out");
+        panic!("quic geyser plugin exit");
     });
     endpoint_tasks.push(quic_geyser_client_task);
 
