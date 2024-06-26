@@ -45,7 +45,7 @@ pub trait LiteRpcPubSub {
     ) -> SubscriptionResult;
 
     // WARN: enable_received_notification: bool is ignored
-    #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<serde_json::Value>)]
+    #[subscription(name = "signatureSubscribe" => "signatureNotification", unsubscribe="signatureUnsubscribe", item=RpcResponse<RpcSignatureResult>)]
     async fn signature_subscribe(
         &self,
         signature: Signature,

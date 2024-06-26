@@ -3,10 +3,11 @@ use jsonrpsee::core::RpcResult;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
 use solana_lite_rpc_accounts::account_service::AccountService;
+use solana_lite_rpc_core::encoding::{BASE58, BASE64};
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::config::RpcAccountInfoConfig;
+use solana_rpc_client_api::config::{RpcAccountInfoConfig, RpcSendTransactionConfig};
 use solana_rpc_client_api::response::{OptionalContext, RpcKeyedAccount};
 use solana_rpc_client_api::{
     config::{
@@ -21,28 +22,27 @@ use solana_rpc_client_api::{
     },
 };
 use solana_sdk::epoch_info::EpochInfo;
+use solana_sdk::packet::PACKET_DATA_SIZE;
 use solana_sdk::signature::Signature;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
-use solana_transaction_status::{TransactionStatus, UiConfirmedBlock};
+use solana_transaction_status::{
+    TransactionBinaryEncoding, TransactionStatus, UiConfirmedBlock, UiTransactionEncoding,
+};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
-use solana_lite_rpc_core::{
-    encoding,
-    stores::{block_information_store::BlockInformation, data_cache::DataCache},
+use solana_lite_rpc_core::stores::{
+    block_information_store::BlockInformation, data_cache::DataCache,
 };
 use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
 
 use crate::rpc_errors::RpcErrors;
-use crate::{
-    configs::{IsBlockHashValidConfig, SendTransactionConfig},
-    rpc::LiteRpcServer,
-};
+use crate::{configs::IsBlockHashValidConfig, rpc::LiteRpcServer};
 use solana_lite_rpc_prioritization_fees::rpc_data::{AccountPrioFeesStats, PrioFeesStats};
 use solana_lite_rpc_prioritization_fees::PrioFeesService;
 
@@ -347,7 +347,7 @@ impl LiteRpcServer for LiteBridge {
     async fn send_transaction(
         &self,
         tx: String,
-        send_transaction_config: Option<SendTransactionConfig>,
+        send_transaction_config: Option<RpcSendTransactionConfig>,
     ) -> RpcResult<String> {
         RPC_SEND_TX.inc();
 
@@ -355,29 +355,51 @@ impl LiteRpcServer for LiteBridge {
         const MAX_BASE58_SIZE: usize = 1683;
         const MAX_BASE64_SIZE: usize = 1644;
 
-        let SendTransactionConfig {
+        let RpcSendTransactionConfig {
             encoding,
             max_retries,
+            ..
         } = send_transaction_config.unwrap_or_default();
 
+        let encoding = encoding.unwrap_or(UiTransactionEncoding::Base58);
         let expected_size = match encoding {
-            encoding::BinaryEncoding::Base58 => MAX_BASE58_SIZE,
-            encoding::BinaryEncoding::Base64 => MAX_BASE64_SIZE,
+            UiTransactionEncoding::Base58 => MAX_BASE58_SIZE,
+            UiTransactionEncoding::Base64 => MAX_BASE64_SIZE,
+            _ => usize::MAX,
         };
         if tx.len() > expected_size {
             return Err(jsonrpsee::types::error::ErrorCode::OversizedRequest.into());
         }
 
-        let raw_tx = match encoding.decode(tx) {
-            Ok(raw_tx) => raw_tx,
-            Err(_) => {
-                return Err(jsonrpsee::types::error::ErrorCode::InvalidParams.into());
+        let binary_encoding = encoding
+            .into_binary_encoding()
+            .ok_or(jsonrpsee::types::error::ErrorCode::InvalidParams)?;
+
+        let wire_output = match binary_encoding {
+            TransactionBinaryEncoding::Base58 => {
+                if tx.len() > MAX_BASE58_SIZE {
+                    return Err(jsonrpsee::types::error::ErrorCode::OversizedRequest.into());
+                }
+                BASE58
+                    .decode(tx)
+                    .map_err(|_| jsonrpsee::types::error::ErrorCode::InvalidParams)?
+            }
+            TransactionBinaryEncoding::Base64 => {
+                if tx.len() > MAX_BASE64_SIZE {
+                    return Err(jsonrpsee::types::error::ErrorCode::OversizedRequest.into());
+                }
+                BASE64
+                    .decode(tx)
+                    .map_err(|_| jsonrpsee::types::error::ErrorCode::InvalidParams)?
             }
         };
-
+        if wire_output.len() > PACKET_DATA_SIZE {
+            return Err(jsonrpsee::types::error::ErrorCode::OversizedRequest.into());
+        }
+        let max_retries = max_retries.map(|x| x as u16);
         match self
             .transaction_service
-            .send_wire_transaction(raw_tx, max_retries)
+            .send_wire_transaction(wire_output, max_retries)
             .await
         {
             Ok(sig) => {

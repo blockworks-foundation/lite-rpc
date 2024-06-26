@@ -141,6 +141,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
         config: RpcSignatureSubscribeConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
+        log::info!("subscribing to signature : {}", signature.to_string());
         let sink = pending.accept().await?;
 
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);

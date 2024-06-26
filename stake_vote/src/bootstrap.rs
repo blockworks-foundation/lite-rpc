@@ -17,7 +17,6 @@ use solana_client::rpc_response::RpcVoteAccountStatus;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::leaderschedule::LeaderScheduleData;
-use solana_program::slot_history::Slot;
 use solana_sdk::account::Account;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::epoch_info::EpochInfo;
