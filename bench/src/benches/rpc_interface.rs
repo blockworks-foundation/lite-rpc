@@ -162,7 +162,7 @@ pub async fn send_and_confirm_bulk_transactions(
             // note that we will see tx_sigs we did not send
             let (tx_sig, confirmed_slot) = multi.pair();
 
-            // status is confirmed or finalized
+            // status is confirmed
             if pending_status_set.remove(&tx_sig) {
                 trace!("take status for sig {:?} and confirmed_slot: {:?} from websocket source", tx_sig, confirmed_slot);
                 let prev_value = result_status_map.insert(
@@ -170,7 +170,7 @@ pub async fn send_and_confirm_bulk_transactions(
                     ConfirmationResponseFromRpc::Success(
                         send_slot,
                         *confirmed_slot,
-                        // note: this is not optimal
+                        // note: this is not optimal as we do not cover finalized here
                         TransactionConfirmationStatus::Confirmed,
                         elapsed,
                     ),
