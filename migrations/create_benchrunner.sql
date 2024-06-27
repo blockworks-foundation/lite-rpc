@@ -48,6 +48,6 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA benchrunner GRANT SELECT ON TABLES TO ro_benc
 
 ALTER TABLE benchrunner.bench_metrics RENAME TO bench_metrics_bench1;
 
-ALTER TABLE benchrunner.bench_metrics_confirmation_rate ADD COLUMN bench_metrics_confirmation_rate real;
+ALTER TABLE benchrunner.bench_metrics_confirmation_rate ADD COLUMN average_slot_confirmation_time real;
 
 ALTER TABLE benchrunner.bench_metrics_confirmation_rate DROP COLUMN average_slot_confirmation_time_ms;
