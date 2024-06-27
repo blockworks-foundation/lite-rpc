@@ -1,0 +1,29 @@
+app = "solana-lite-rpc-blockstore-staging"
+kill_signal = "SIGINT"
+kill_timeout = 5
+# needs to be close to Postgres DB on Hetzner Box
+primary_region = "fra"
+
+[build]
+  dockerfile = "../Dockerfile"
+
+[env]
+  PORT_HTTP = "8890"
+  PORT_WS = "8891"
+  RUST_LOG = "info,lite_rpc=debug,solana_lite_rpc_cluster_endpoints=info,solana_lite_rpc_cluster_endpoints::grpc_multiplex=info,geyser_grpc_connector=info,solana_lite_rpc_blockstore=trace"
+  # rpc: set secrets for RPC_ADDR and WS_ADDR
+  USE_GRPC = "true" # requires secrets GRPC_ADDR and optionally GRPC_X_TOKEN
+  DISABLE_GSO = "true"
+  USE_POSTGRES_BLOCKSTORE=true # requires secret BLOCKSTOREDB_PG_CONFIG
+  ENABLE_POSTGRES_BLOCK_STORE_IMPORTER=true
+
+[http_service]
+  internal_port = 8890
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 150
+    hard_limit = 300
+
+ [metrics]
+   path = "/metrics"
+   port = 9091
