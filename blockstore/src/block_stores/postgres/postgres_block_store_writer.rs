@@ -13,6 +13,7 @@ use solana_sdk::slot_history::Slot;
 use tokio::{join, try_join};
 use tokio_postgres::error::SqlState;
 use tracing_subscriber::fmt::init;
+use crate::block_stores::postgres::measure_database_roundtrip::measure_select1_roundtrip;
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -46,6 +47,9 @@ impl PostgresBlockStore {
         epoch_schedule: EpochCache,
         pg_session_config: BlockstorePostgresSessionConfig,
     ) -> Self {
+        let (num_queries, avg_time) = measure_select1_roundtrip(&pg_session_config).await;
+        info!("Measured roundtrip to database, num queries: {}, avg roundtrip: {:.2?}", num_queries, avg_time);
+
         let session = PostgresSession::new(pg_session_config.clone())
             .await
             .unwrap();
@@ -68,6 +72,7 @@ impl PostgresBlockStore {
         Self::check_write_role(&session).await;
 
         info!("Initialized PostgreSQL Blockstore Writer with {} write sessions", PARALLEL_WRITE_SESSIONS);
+
         Self {
             session,
             write_sessions,

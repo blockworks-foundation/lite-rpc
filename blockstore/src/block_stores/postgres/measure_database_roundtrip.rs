@@ -3,16 +3,17 @@ use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 use log::{debug};
 use tokio_postgres::Row;
-use crate::block_stores::postgres::PostgresSession;
+use crate::block_stores::postgres::{BlockstorePostgresSessionConfig, PostgresSession};
 
-pub async fn measure_select1_roundtrip() -> (u32, Duration) {
+pub async fn measure_select1_roundtrip(pg_session_config: &BlockstorePostgresSessionConfig) -> (u32, Duration) {
     let counter = Arc::new(AtomicU32::new(0));
 
     let mut jh_tasks = vec![];
     for _session in 0..5 {
         let counter = counter.clone();
+        let postgres_session_config = pg_session_config.clone();
         let jh = tokio::spawn(async move {
-            let postgres_session = PostgresSession::new_from_env().await.unwrap();
+            let postgres_session = PostgresSession::new(postgres_session_config).await.unwrap();
 
             let started_at = tokio::time::Instant::now();
             // 100 sequenctial roundtrips
