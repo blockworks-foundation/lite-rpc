@@ -23,6 +23,9 @@ primary_region = "fra"
     type = "connections"
     soft_limit = 150
     hard_limit = 300
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
 
  [metrics]
    path = "/metrics"
