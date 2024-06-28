@@ -1,6 +1,6 @@
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(C)]
 pub enum Commitment {
     Processed = 0,

@@ -356,6 +356,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         block_priofees_service,
         account_priofees_service,
         blocks_notifier,
+        blockinfo_notifier,
         accounts_service.clone(),
     );
 

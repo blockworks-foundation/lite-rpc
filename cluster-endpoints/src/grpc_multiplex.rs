@@ -182,6 +182,7 @@ fn create_grpc_multiplex_block_info_task(
                                             .expect("block_time from geyser block meta")
                                             .timestamp
                                             as u64,
+                                        parent: block_meta.parent_slot,
                                     };
 
                                     let send_started_at = Instant::now();

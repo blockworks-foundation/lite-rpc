@@ -16,6 +16,8 @@ pub struct ServerConfiguration {
     pub max_response_body_size: u32,
 
     pub max_connection: u32,
+
+    pub max_subscriptions_per_connection: u32,
 }
 
 impl Default for ServerConfiguration {
@@ -24,6 +26,7 @@ impl Default for ServerConfiguration {
             max_request_body_size: 50 * (1 << 10),       // 50kb
             max_response_body_size: 500_000 * (1 << 10), // 500MB response size
             max_connection: 1000000,
+            max_subscriptions_per_connection: 1000,
         }
     }
 }
@@ -41,6 +44,8 @@ pub async fn start_servers(
 
     let ws_server_handle = ServerBuilder::default()
         .ws_only()
+        .max_connections(server_configuration.max_connection)
+        .max_subscriptions_per_connection(server_configuration.max_subscriptions_per_connection)
         .build(ws_addr.clone())
         .await?
         .start(pubsub);

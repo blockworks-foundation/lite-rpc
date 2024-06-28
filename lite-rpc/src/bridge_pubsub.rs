@@ -1,8 +1,10 @@
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_core::{
-    commitment_utils::Commitment, stores::data_cache::DataCache,
-    structures::account_data::AccountNotificationMessage, types::BlockStream,
+    commitment_utils::Commitment,
+    stores::data_cache::DataCache,
+    structures::account_data::AccountNotificationMessage,
+    types::{BlockInfoStream, BlockStream},
 };
 use std::{str::FromStr, sync::Arc, time::Duration};
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
@@ -48,7 +50,8 @@ pub struct LitePubSubBridge {
     data_cache: DataCache,
     prio_fees_service: PrioFeesService,
     account_priofees_service: AccountPrioService,
-    block_stream: BlockStream,
+    _block_stream: BlockStream,
+    block_info_stream: BlockInfoStream,
     accounts_service: Option<AccountService>,
 }
 
@@ -58,13 +61,15 @@ impl LitePubSubBridge {
         prio_fees_service: PrioFeesService,
         account_priofees_service: AccountPrioService,
         block_stream: BlockStream,
+        block_info_stream: BlockInfoStream,
         accounts_service: Option<AccountService>,
     ) -> Self {
         Self {
             data_cache,
             prio_fees_service,
             account_priofees_service,
-            block_stream,
+            _block_stream: block_stream,
+            block_info_stream,
             accounts_service,
         }
     }
@@ -74,17 +79,14 @@ impl LitePubSubBridge {
 impl LiteRpcPubSubServer for LitePubSubBridge {
     async fn slot_subscribe(&self, pending: PendingSubscriptionSink) -> SubscriptionResult {
         let sink = pending.accept().await?;
-        let mut block_stream = self.block_stream.resubscribe();
+        let mut block_info_stream = self.block_info_stream.resubscribe();
         tokio::spawn(async move {
             loop {
-                match block_stream.recv().await {
-                    Ok(produced_block) => {
-                        if !produced_block.commitment_config.is_processed() {
-                            continue;
-                        }
+                match block_info_stream.recv().await {
+                    Ok(block_info) => {
                         let slot_info = SlotInfo {
-                            slot: produced_block.slot,
-                            parent: produced_block.parent_slot,
+                            slot: block_info.slot,
+                            parent: block_info.parent,
                             root: 0,
                         };
                         let result_message = jsonrpsee::SubscriptionMessage::from_json(&slot_info);
@@ -137,10 +139,11 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
     async fn signature_subscribe(
         &self,
         pending: PendingSubscriptionSink,
-        signature: Signature,
+        signature: String,
         config: RpcSignatureSubscribeConfig,
     ) -> SubscriptionResult {
         RPC_SIGNATURE_SUBSCRIBE.inc();
+        let signature = Signature::from_str(&signature)?;
         let sink = pending.accept().await?;
 
         let jsonrpsee_sink = JsonRpseeSubscriptionHandlerSink::new(sink);

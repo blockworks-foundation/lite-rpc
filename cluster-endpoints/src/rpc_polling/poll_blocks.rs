@@ -324,5 +324,6 @@ fn map_block_info(produced_block: &ProducedBlock) -> BlockInfo {
         blockhash: produced_block.blockhash,
         commitment_config: produced_block.commitment_config,
         block_time: produced_block.block_time,
+        parent: produced_block.parent_slot,
     }
 }

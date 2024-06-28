@@ -1,4 +1,4 @@
-use crate::configs::{IsBlockHashValidConfig, SendTransactionConfig};
+use crate::configs::IsBlockHashValidConfig;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::proc_macros::rpc;
 use solana_account_decoder::UiAccount;
@@ -7,7 +7,7 @@ use solana_lite_rpc_prioritization_fees::rpc_data::{AccountPrioFeesStats, PrioFe
 use solana_rpc_client_api::config::{
     RpcAccountInfoConfig, RpcBlocksConfigWrapper, RpcContextConfig, RpcGetVoteAccountsConfig,
     RpcLeaderScheduleConfig, RpcProgramAccountsConfig, RpcRequestAirdropConfig,
-    RpcSignatureStatusConfig, RpcSignaturesForAddressConfig,
+    RpcSendTransactionConfig, RpcSignatureStatusConfig, RpcSignaturesForAddressConfig,
 };
 use solana_rpc_client_api::response::{
     OptionalContext, Response as RpcResponse, RpcBlockhash,
@@ -133,7 +133,7 @@ pub trait LiteRpc {
     async fn send_transaction(
         &self,
         tx: String,
-        send_transaction_config: Option<SendTransactionConfig>,
+        send_transaction_config: Option<RpcSendTransactionConfig>,
     ) -> RpcResult<String>;
 
     // ***********************
