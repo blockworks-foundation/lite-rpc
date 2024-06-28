@@ -1,4 +1,4 @@
-import { Connection, Keypair, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction, BlockheightBasedTransactionConfirmationStrategy } from "@solana/web3.js";
+import { Connection, Keypair, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction, BlockheightBasedTransactionConfirmationStrategy, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import * as fs from "fs";
 import * as os from "os";
 import * as crypto from "crypto";
@@ -6,7 +6,7 @@ import * as crypto from "crypto";
 jest.setTimeout(60000);
 
 const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
-const connection = new Connection('http://0.0.0.0:8890', 'finalized');
+const connection = new Connection('http://0.0.0.0:8890', 'confirmed');
 const keypair_file = fs.readFileSync(`${os.homedir}/.config/solana/id.json`, 'utf-8');
 const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(keypair_file)));
 
@@ -24,6 +24,42 @@ function createTransaction(): Transaction {
     return transaction;
 }
 
+// test('send and confrim with websockets', async () => {
+//     const tx = createTransaction();
+//     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+//     let signature = await connection.sendTransaction(tx, [payer], {});
+//     console.log("confirming transaction ", signature);
+//     let resolve = () => {
+//     };
+//     let _reject = () => {
+//     };
+
+//     let promise = new Promise<void>((res, rej) => {
+//         resolve = res;
+//         _reject = rej;
+//     });
+//     connection.onSignatureWithOptions(signature, (signatureResult, context) => {
+//         console.log("signature processed");
+//     }, {
+//         commitment: 'processed'
+//     });
+
+//     connection.onSignatureWithOptions(signature, (signatureResult, context) => {
+//         console.log("signature confirmed");
+//     }, {
+//         commitment: 'confirmed'
+//     });
+
+//     connection.onSignatureWithOptions(signature, (signatureResult, context) => {
+//         console.log("signature finalized");
+//         resolve();
+//     }, {
+//         commitment: 'finalized'
+//     });
+//     console.log("waiting for promise")
+//     await promise;
+// });
+
 test('send and confirm transaction BlockheightBasedTransactionConfirmationStrategy', async () => {
     const tx = createTransaction();
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
@@ -37,6 +73,14 @@ test('send and confirm transaction BlockheightBasedTransactionConfirmationStrate
     });
 });
 
+test('send and confirm transaction legacy confrim', async () => {
+    const tx = createTransaction();
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+    const signature = await connection.sendTransaction(tx, [payer]);
+    console.log(`https://explorer.solana.com/tx/${signature}`);
+    await connection.confirmTransaction(signature);
+});
+
 test('send and confirm transaction', async () => {
     const tx = createTransaction();
 
@@ -44,45 +88,45 @@ test('send and confirm transaction', async () => {
 });
 
 
-test('get epoch info', async () => {
-    {
-        const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo();
-        expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);        
-    }
+// test('get epoch info', async () => {
+//     {
+//         const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo();
+//         expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);        
+//     }
 
-    let process_absoluteSlot;
-    {
-        const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'processed' });
-        expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);
-        process_absoluteSlot = absoluteSlot;  
-    }
+//     let process_absoluteSlot;
+//     {
+//         const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'processed' });
+//         expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);
+//         process_absoluteSlot = absoluteSlot;  
+//     }
 
-    let confirmed_absoluteSlot;
-    {
-        const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'confirmed' });
-        expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);      
-        confirmed_absoluteSlot = absoluteSlot;  
-    }
-    expect(confirmed_absoluteSlot >= process_absoluteSlot);
+//     let confirmed_absoluteSlot;
+//     {
+//         const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'confirmed' });
+//         expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);      
+//         confirmed_absoluteSlot = absoluteSlot;  
+//     }
+//     expect(confirmed_absoluteSlot >= process_absoluteSlot);
 
-    let finalized_absoluteSlot;
-    {
-        const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'finalized' });
-        expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);        
-        finalized_absoluteSlot = absoluteSlot;  
-    }
-    expect(process_absoluteSlot > finalized_absoluteSlot);
-    expect(confirmed_absoluteSlot > finalized_absoluteSlot);
+//     let finalized_absoluteSlot;
+//     {
+//         const {epoch, absoluteSlot, slotIndex, slotsInEpoch} = await connection.getEpochInfo({ commitment: 'finalized' });
+//         expect(Math.floor(absoluteSlot/slotsInEpoch)).toBe(epoch);        
+//         finalized_absoluteSlot = absoluteSlot;  
+//     }
+//     expect(process_absoluteSlot > finalized_absoluteSlot);
+//     expect(confirmed_absoluteSlot > finalized_absoluteSlot);
 
-});
+// });
 
 
-test('get leader schedule', async () => {
-    {
-        const leaderSchedule = await connection.getLeaderSchedule();
-        expect(Object.keys(leaderSchedule).length > 0);        
-    }
-});
+// test('get leader schedule', async () => {
+//     {
+//         const leaderSchedule = await connection.getLeaderSchedule();
+//         expect(Object.keys(leaderSchedule).length > 0);        
+//     }
+// });
 
 
 

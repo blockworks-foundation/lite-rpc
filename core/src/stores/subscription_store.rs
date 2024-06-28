@@ -1,45 +1,29 @@
+use crate::commitment_utils::Commitment;
 use crate::{structures::produced_block::TransactionInfo, types::SubscptionHanderSink};
 use dashmap::DashMap;
+use solana_client::rpc_response::{ProcessedSignatureResult, RpcSignatureResult};
 use solana_sdk::signature::Signature;
-use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel},
-    slot_history::Slot,
-};
+use solana_sdk::{commitment_config::CommitmentConfig, slot_history::Slot};
 use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
 
 #[derive(Clone, Default)]
 pub struct SubscriptionStore {
     pub signature_subscribers:
-        Arc<DashMap<(Signature, CommitmentConfig), (SubscptionHanderSink, Instant)>>,
+        Arc<DashMap<(Signature, Commitment), (SubscptionHanderSink, Instant)>>,
 }
 
 impl SubscriptionStore {
-    #[allow(deprecated)]
-    pub fn get_supported_commitment_config(
-        commitment_config: CommitmentConfig,
-    ) -> CommitmentConfig {
-        match commitment_config.commitment {
-            CommitmentLevel::Finalized | CommitmentLevel::Root | CommitmentLevel::Max => {
-                CommitmentConfig {
-                    commitment: CommitmentLevel::Finalized,
-                }
-            }
-            _ => CommitmentConfig {
-                commitment: CommitmentLevel::Confirmed,
-            },
-        }
-    }
-
     pub fn signature_subscribe(
         &self,
         signature: Signature,
         commitment_config: CommitmentConfig,
         sink: SubscptionHanderSink,
     ) {
-        let commitment_config = Self::get_supported_commitment_config(commitment_config);
-        self.signature_subscribers
-            .insert((signature, commitment_config), (sink, Instant::now()));
+        self.signature_subscribers.insert(
+            (signature, Commitment::from(commitment_config)),
+            (sink, Instant::now()),
+        );
     }
 
     pub fn signature_un_subscribe(
@@ -47,9 +31,8 @@ impl SubscriptionStore {
         signature: Signature,
         commitment_config: CommitmentConfig,
     ) {
-        let commitment_config = Self::get_supported_commitment_config(commitment_config);
         self.signature_subscribers
-            .remove(&(signature, commitment_config));
+            .remove(&(signature, Commitment::from(commitment_config)));
     }
 
     pub async fn notify(
@@ -58,13 +41,20 @@ impl SubscriptionStore {
         transaction_info: &TransactionInfo,
         commitment_config: CommitmentConfig,
     ) {
-        if let Some((_sig, (sink, _))) = self
-            .signature_subscribers
-            .remove(&(transaction_info.signature, commitment_config))
-        {
+        if let Some((_sig, (sink, _))) = self.signature_subscribers.remove(&(
+            transaction_info.signature,
+            Commitment::from(commitment_config),
+        )) {
+            let signature_result =
+                RpcSignatureResult::ProcessedSignature(ProcessedSignatureResult {
+                    err: transaction_info.err.clone(),
+                });
             // none if transaction succeeded
-            sink.send(slot, serde_json::json!({ "err": transaction_info.err }))
-                .await;
+            sink.send(
+                slot,
+                serde_json::to_value(signature_result).expect("Should be serializable in json"),
+            )
+            .await;
         }
     }
 
