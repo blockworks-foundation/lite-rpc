@@ -237,9 +237,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     warn!("WORKAROUND Waiting for first finalized block info...");
     let finalized_block_info = wait_till_block_of_commitment_is_recieved(
         blockinfo_notifier.resubscribe(),
-        CommitmentConfig::processed(),
+        CommitmentConfig::finalized(),
     )
-    .await; // FIXME revert
+    .await;
 
     info!("Got finalized block info: {:?}", finalized_block_info.slot);
 
