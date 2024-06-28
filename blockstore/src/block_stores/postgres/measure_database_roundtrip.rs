@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicU32;
 use std::time::Duration;
 use log::{debug};
 use tokio_postgres::Row;
-use tracing::field::debug;
 use crate::block_stores::postgres::{BlockstorePostgresSessionConfig, PostgresSession};
 
 pub async fn measure_select1_roundtrip(n_connections: usize, pg_session_config: &BlockstorePostgresSessionConfig) -> (u32, Duration) {
@@ -21,12 +20,12 @@ pub async fn measure_select1_roundtrip(n_connections: usize, pg_session_config: 
             // sequenctial roundtrips
             const COUNT: usize = 100;
 
-            for j in 0..COUNT {
+            for _j in 0..COUNT {
                 let _result: Row = postgres_session.query_one("SELECT 1", &[]).await.unwrap();
                 counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
 
-            (started_at.elapsed() / COUNT as u32)
+            started_at.elapsed() / COUNT as u32
 
         });
         jh_tasks.push(jh);

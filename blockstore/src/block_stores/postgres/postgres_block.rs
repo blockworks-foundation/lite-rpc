@@ -7,7 +7,7 @@ use serde_json::Value;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use solana_lite_rpc_core::structures::produced_block::{ProducedBlockInner, TransactionInfo};
-use solana_lite_rpc_core::{encoding::BASE64, structures::produced_block::ProducedBlock};
+use solana_lite_rpc_core::{structures::produced_block::ProducedBlock};
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_transaction_status::Reward;

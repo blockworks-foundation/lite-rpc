@@ -11,8 +11,6 @@ use solana_sdk::commitment_config::CommitmentConfig;
 
 use solana_lite_rpc_core::solana_utils::hash_from_str;
 use solana_lite_rpc_core::structures::block_info::BlockInfo;
-use solana_sdk::signature::Signature;
-use solana_transaction_status::TransactionDetails::Signatures;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 use tokio::sync::broadcast::{self, Receiver};

@@ -102,7 +102,6 @@ pub fn calculate_cummulative(values: &[Point]) -> PercentilesCummulative {
     }
 }
 
-
 pub struct Percentiles {
     // value
     pub v: Vec<f64>,
@@ -117,7 +116,6 @@ impl Display for Percentiles {
         }
         Ok(())
     }
-
 }
 
 #[allow(dead_code)]
@@ -142,8 +140,6 @@ impl PercentilesCummulative {
             .map(|(_p, &cu)| cu)
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

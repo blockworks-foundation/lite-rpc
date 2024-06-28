@@ -1,35 +1,27 @@
+use std::str::FromStr;
+
 use assert_json_diff::assert_json_eq;
-use jsonrpsee::types::error::INVALID_PARAMS_CODE;
-use log::info;
 use serde_json::Value;
 use solana_account_decoder::parse_token::UiTokenAmount;
-use solana_lite_rpc_core::encoding::BinaryEncoding;
-use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
-use solana_rpc_client::rpc_client::RpcClient;
-use solana_rpc_client_api::client_error::ErrorKind::RpcError;
-use solana_rpc_client_api::client_error::{Error, ErrorKind};
-use solana_rpc_client_api::config::RpcBlockConfig;
-use solana_rpc_client_api::request::RpcError::{RpcRequestError, RpcResponseError};
-use solana_rpc_client_api::request::RpcResponseErrorData;
 use solana_sdk::clock::UnixTimestamp;
-use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::instruction::CompiledInstruction;
-use solana_sdk::message::{legacy, v0, MessageHeader, VersionedMessage};
+use solana_sdk::message::{legacy, MessageHeader, v0, VersionedMessage};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::reward_type::RewardType;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::vote::instruction::VoteInstruction;
-use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status::{
-    BlockEncodingOptions, ConfirmedBlock, EncodedConfirmedBlock, EncodedTransaction,
-    EncodedTransactionWithStatusMeta, InnerInstructions, Reward, Rewards,
-    TransactionBinaryEncoding, TransactionDetails, TransactionStatusMeta, TransactionTokenBalance,
+    BlockEncodingOptions, ConfirmedBlock
+    , InnerInstructions, Reward
+    , TransactionDetails, TransactionStatusMeta,
     TransactionWithStatusMeta, UiTransactionEncoding, UiTransactionTokenBalance,
     VersionedTransactionWithStatusMeta,
 };
-use std::str::FromStr;
-use tower::balance;
+use solana_transaction_status::option_serializer::OptionSerializer;
+
+use solana_lite_rpc_core::encoding::BinaryEncoding;
+use solana_lite_rpc_core::structures::produced_block::TransactionInfo;
 
 #[test]
 fn test_map_tx_with_meta() {

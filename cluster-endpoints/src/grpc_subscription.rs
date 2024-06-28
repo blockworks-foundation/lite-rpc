@@ -5,7 +5,7 @@ use crate::grpc_multiplex::{
 };
 use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
-use log::{info, trace};
+use log::{trace};
 use solana_account_decoder::parse_token::UiTokenAmount;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::structures::account_data::AccountNotificationMessage;
@@ -32,8 +32,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::option_serializer::OptionSerializer;
 use solana_transaction_status::{
-    InnerInstruction, InnerInstructions, Reward, RewardType, TransactionStatusMeta,
-    TransactionTokenBalance, UiTransactionTokenBalance,
+    InnerInstruction, InnerInstructions, Reward, RewardType, UiTransactionTokenBalance,
 };
 use std::cell::OnceCell;
 use std::sync::Arc;

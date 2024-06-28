@@ -6,7 +6,7 @@ pub mod measure_database_roundtrip;
 use anyhow::Context;
 pub use postgres_config::BlockstorePostgresSessionConfig;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Serialize};
 use serde_json::Value;
 // pub use postgres_session::BlockstorePostgresWriteSession;
 pub use postgres_session::PostgresSession;

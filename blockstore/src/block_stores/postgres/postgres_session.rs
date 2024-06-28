@@ -1,18 +1,17 @@
-use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use native_tls::{Certificate, Identity, TlsConnector};
 use postgres_native_tls::MakeTlsConnector;
-use prometheus::{
-    exponential_buckets, histogram_opts, linear_buckets, register_histogram_vec, HistogramVec,
-};
+use prometheus::histogram_opts;
+use prometheus::register_histogram_vec;
+use prometheus::HistogramVec;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use tokio::sync::RwLock;
-use tokio::time::Instant;
+
 use tokio_postgres::{
     config::SslMode, tls::MakeTlsConnect, types::ToSql, Client, CopyInSink, Error, NoTls, Row,
     Socket,
