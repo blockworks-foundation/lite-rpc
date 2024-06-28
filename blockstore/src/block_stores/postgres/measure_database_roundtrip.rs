@@ -19,12 +19,14 @@ pub async fn measure_select1_roundtrip(n_connections: usize, pg_session_config: 
 
             let started_at = tokio::time::Instant::now();
             // 100 sequenctial roundtrips
-            for j in 0..1000 {
+            const COUNT: usize = 1000;
+
+            for j in 0..COUNT {
                 let _result: Row = postgres_session.query_one("SELECT 1", &[]).await.unwrap();
                 counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
 
-            (started_at.elapsed())
+            (started_at.elapsed() / COUNT as u32)
 
         });
         jh_tasks.push(jh);
