@@ -76,8 +76,8 @@ pub fn start_postgres_block_store_importer_task(
                         "Successfully stored block {} to postgres which took {:.2}ms",
                         block.slot,
                         elapsed.as_secs_f64() * 1000.0);
-                    if elapsed > Duration::from_millis(150) {
-                        warn!("(soft_realtime) Write operation was slow!");
+                    if elapsed > Duration::from_millis(250) {
+                        warn!("(soft_realtime) Write operation was slow ({:.2?})!", elapsed);
                     }
 
                     if first_block_written.set(block.slot).is_err() {

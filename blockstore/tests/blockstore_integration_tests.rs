@@ -206,8 +206,8 @@ fn storage_listen(
                         block.slot,
                         elapsed.as_secs_f64() * 1000.0, block_notifier.len()
                     );
-                    if elapsed > Duration::from_millis(150) {
-                        warn!("(soft_realtime) Write operation was slow!");
+                    if elapsed > Duration::from_millis(250) {
+                        warn!("(soft_realtime) Write operation was slow ({:.2?})!", elapsed);
                     }
 
                     // debounce for 4 slots but run at least every 10 slots
