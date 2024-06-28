@@ -24,42 +24,6 @@ function createTransaction(): Transaction {
     return transaction;
 }
 
-// test('send and confrim with websockets', async () => {
-//     const tx = createTransaction();
-//     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-//     let signature = await connection.sendTransaction(tx, [payer], {});
-//     console.log("confirming transaction ", signature);
-//     let resolve = () => {
-//     };
-//     let _reject = () => {
-//     };
-
-//     let promise = new Promise<void>((res, rej) => {
-//         resolve = res;
-//         _reject = rej;
-//     });
-//     connection.onSignatureWithOptions(signature, (signatureResult, context) => {
-//         console.log("signature processed");
-//     }, {
-//         commitment: 'processed'
-//     });
-
-//     connection.onSignatureWithOptions(signature, (signatureResult, context) => {
-//         console.log("signature confirmed");
-//     }, {
-//         commitment: 'confirmed'
-//     });
-
-//     connection.onSignatureWithOptions(signature, (signatureResult, context) => {
-//         console.log("signature finalized");
-//         resolve();
-//     }, {
-//         commitment: 'finalized'
-//     });
-//     console.log("waiting for promise")
-//     await promise;
-// });
-
 test('send and confirm transaction BlockheightBasedTransactionConfirmationStrategy', async () => {
     const tx = createTransaction();
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
