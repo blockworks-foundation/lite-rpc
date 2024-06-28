@@ -31,7 +31,7 @@ lazy_static::lazy_static! {
 }
 
 
-const PARALLEL_WRITE_SESSIONS: usize = 1;
+const PARALLEL_WRITE_SESSIONS: usize = 4;
 const MIN_WRITE_CHUNK_SIZE: usize = 500;
 
 // #[derive(Clone)]
@@ -47,7 +47,7 @@ impl PostgresBlockStore {
         epoch_schedule: EpochCache,
         pg_session_config: BlockstorePostgresSessionConfig,
     ) -> Self {
-        let (num_queries, avg_time) = measure_select1_roundtrip(&pg_session_config).await;
+        let (num_queries, avg_time) = measure_select1_roundtrip(PARALLEL_WRITE_SESSIONS, &pg_session_config).await;
         info!("Measured roundtrip to database, num queries: {}, avg roundtrip: {:.2?}", num_queries, avg_time);
 
         let session = PostgresSession::new(pg_session_config.clone())
@@ -70,6 +70,8 @@ impl PostgresBlockStore {
         );
 
         Self::check_write_role(&session).await;
+        Self::configure_work_mem(&session).await;
+        Self::relax_commit_settings(&session).await;
 
         info!("Initialized PostgreSQL Blockstore Writer with {} write sessions", PARALLEL_WRITE_SESSIONS);
 
@@ -99,6 +101,28 @@ impl PostgresBlockStore {
                 role
             );
         }
+    }
+
+    async fn configure_work_mem(session: &PostgresSession) {
+        session
+            .execute("SET work_mem TO '256MB'", &[])
+            .await
+            .unwrap();
+        let work_mem: String = session
+            .query_one("show work_mem", &[])
+            .await
+            .unwrap()
+            .get("work_mem");
+        info!("Configured work_mem={}", work_mem);
+    }
+
+    async fn relax_commit_settings(session: &PostgresSession) {
+        session
+            .execute("SET synchronous_commit TO 'off'", &[])
+            .await
+            .unwrap();
+        // note: commit_delay can be changed but requires superuser
+        info!("Disabled synchronous_commit");
     }
 
     // return true if schema was actually created
