@@ -3,7 +3,7 @@ name = "solana-lite-rpc-accounts-on-demand"
 version = "0.2.4"
 edition = "2021"
 description = "Library which implements accounts on demand service in lite-rpc. Whenever account is not available it will fetch from rpc and create a geyser stream to update it automatically."
-rust-version = "1.73.0"
+rust-version = "1.75.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 

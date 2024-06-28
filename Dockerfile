@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.2
-FROM lukemathwalker/cargo-chef:0.1.62-rust-1.73-bookworm as base
+FROM lukemathwalker/cargo-chef:0.1.62-rust-1.75-bookworm as base
 WORKDIR /app
 
 FROM base AS plan
