@@ -18,8 +18,8 @@ pub async fn measure_select1_roundtrip(n_connections: usize, pg_session_config: 
             let postgres_session = PostgresSession::new(postgres_session_config).await.unwrap();
 
             let started_at = tokio::time::Instant::now();
-            // 100 sequenctial roundtrips
-            const COUNT: usize = 1000;
+            // sequenctial roundtrips
+            const COUNT: usize = 100;
 
             for j in 0..COUNT {
                 let _result: Row = postgres_session.query_one("SELECT 1", &[]).await.unwrap();
