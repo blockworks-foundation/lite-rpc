@@ -1,7 +1,7 @@
 // This class will manage the lifecycle for a transaction
 // It will send, replay if necessary and confirm by listening to blocks
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     tpu_utils::tpu_service::TpuService,
@@ -9,6 +9,7 @@ use crate::{
     tx_sender::TxSender,
 };
 use anyhow::bail;
+use prometheus::{histogram_opts, register_histogram, Histogram};
 use solana_lite_rpc_core::{
     solana_utils::SerializableTransaction, structures::transaction_sent_info::SentTransactionInfo,
     types::SlotStream,
@@ -18,11 +19,22 @@ use solana_lite_rpc_core::{
     structures::notifications::NotificationSender,
     AnyhowJoinHandle,
 };
-use solana_sdk::transaction::VersionedTransaction;
+use solana_sdk::{
+    compute_budget::{self, ComputeBudgetInstruction},
+    transaction::{Transaction, VersionedTransaction},
+};
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
     time::Instant,
 };
+
+lazy_static::lazy_static! {
+    static ref PRIORITY_FEES_HISTOGRAM: Histogram = register_histogram!(histogram_opts!(
+        "literpc_txs_priority_fee",
+        "Priority fees of transactions sent by lite-rpc",
+    ))
+    .unwrap();
+}
 
 #[derive(Clone)]
 pub struct TransactionServiceBuilder {
@@ -110,6 +122,15 @@ pub struct TransactionService {
 impl TransactionService {
     pub async fn send_transaction(
         &self,
+        tx: Transaction,
+        max_retries: Option<u16>,
+    ) -> anyhow::Result<String> {
+        let raw_tx = bincode::serialize(&tx)?;
+        self.send_wire_transaction(raw_tx, max_retries).await
+    }
+
+    pub async fn send_wire_transaction(
+        &self,
         raw_tx: Vec<u8>,
         max_retries: Option<u16>,
     ) -> anyhow::Result<String> {
@@ -132,12 +153,37 @@ impl TransactionService {
             bail!("Blockhash not found in block store".to_string());
         };
 
+        if self.block_information_store.get_last_blockheight() > last_valid_blockheight {
+            bail!("Blockhash is expired");
+        }
+
+        let prioritization_fee = {
+            let mut prioritization_fee = 0;
+            for ix in tx.message.instructions() {
+                if ix
+                    .program_id(tx.message.static_account_keys())
+                    .eq(&compute_budget::id())
+                {
+                    let ix_which = solana_sdk::borsh1::try_from_slice_unchecked::<
+                        ComputeBudgetInstruction,
+                    >(ix.data.as_slice());
+                    if let Ok(ComputeBudgetInstruction::SetComputeUnitPrice(fees)) = ix_which {
+                        prioritization_fee = fees;
+                    }
+                }
+            }
+            prioritization_fee
+        };
+
+        PRIORITY_FEES_HISTOGRAM.observe(prioritization_fee as f64);
+
         let max_replay = max_retries.map_or(self.max_retries, |x| x as usize);
         let transaction_info = SentTransactionInfo {
             signature,
             last_valid_block_height: last_valid_blockheight,
             slot,
-            transaction: raw_tx,
+            transaction: Arc::new(raw_tx),
+            prioritization_fee,
         };
         if let Err(e) = self
             .transaction_channel
@@ -166,3 +212,5 @@ impl TransactionService {
         Ok(signature.to_string())
     }
 }
+
+mod test {}

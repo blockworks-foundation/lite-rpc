@@ -60,7 +60,7 @@ impl CalculatedSchedule {
             None => {
                 let BlockInformation { slot, .. } = data_cache
                     .block_information_store
-                    .get_latest_block(commitment)
+                    .get_latest_block_information(commitment)
                     .await;
                 slot
             }

@@ -1,5 +1,5 @@
-use std::fmt::Display;
 use itertools::Itertools;
+use std::fmt::Display;
 use std::iter::zip;
 
 // #[derive(Clone, Copy, Debug, Default)]
@@ -28,9 +28,7 @@ pub struct HistValue {
 
 /// `quantile` function is the same as the median if q=50, the same as the minimum if q=0 and the same as the maximum if q=100.
 
-pub fn calculate_percentiles(
-    input: &[f64],
-) -> Percentiles {
+pub fn calculate_percentiles(input: &[f64]) -> Percentiles {
     if input.is_empty() {
         // note: percentile for empty array is undefined
         return Percentiles {
@@ -43,8 +41,7 @@ pub fn calculate_percentiles(
     assert!(is_monotonic, "array of values must be sorted");
 
     let p_step = 5;
-    let i_percentiles = (0..=100)
-        .step_by(p_step).collect_vec();
+    let i_percentiles = (0..=100).step_by(p_step).collect_vec();
 
     let mut bucket_values = Vec::with_capacity(i_percentiles.len());
     let mut percentiles = Vec::with_capacity(i_percentiles.len());
@@ -65,11 +62,8 @@ pub fn calculate_percentiles(
     }
 }
 
-
-pub fn calculate_cummulative(
-    fees_spent_in_block: &[Point],
-) -> PercentilesCummulative {
-    if fees_spent_in_block.is_empty() {
+pub fn calculate_cummulative(values: &[Point]) -> PercentilesCummulative {
+    if values.is_empty() {
         // note: percentile for empty array is undefined
         return PercentilesCummulative {
             bucket_values: vec![],
@@ -77,26 +71,24 @@ pub fn calculate_cummulative(
         };
     }
 
-    let is_monotonic = fees_spent_in_block.windows(2).all(|w| w[0].priority <= w[1].priority);
+    let is_monotonic = values.windows(2).all(|w| w[0].priority <= w[1].priority);
     assert!(is_monotonic, "array of values must be sorted");
 
-    let value_sum: f64 = fees_spent_in_block.iter().map(|x| x.value).sum();
-    let mut agg: f64 = fees_spent_in_block[0].value;
+    let value_sum: f64 = values.iter().map(|x| x.value).sum();
+    let mut agg: f64 = values[0].value;
     let mut index = 0;
     let p_step = 5;
 
-    let percentiles = (0..=100)
-        .step_by(p_step)
-        .map(|p| p as f64)
-        .collect_vec();
+    let percentiles = (0..=100).step_by(p_step).map(|p| p as f64).collect_vec();
 
-    let dist = percentiles.iter()
+    let dist = percentiles
+        .iter()
         .map(|percentile| {
             while agg < (value_sum * *percentile) / 100.0 {
                 index += 1;
-                agg += fees_spent_in_block[index].value;
+                agg += values[index].value;
             }
-            let priority = fees_spent_in_block[index].priority;
+            let priority = values[index].priority;
             HistValue {
                 percentile: *percentile as f32,
                 value: priority,
@@ -105,14 +97,8 @@ pub fn calculate_cummulative(
         .collect_vec();
 
     PercentilesCummulative {
-        bucket_values: dist
-            .iter()
-            .map(|fee_point| fee_point.value)
-            .collect_vec(),
-        percentiles: dist
-            .iter()
-            .map(|fee_point| fee_point.percentile as f32 / 100.0)
-            .collect_vec(),
+        bucket_values: dist.iter().map(|hv| hv.value).collect_vec(),
+        percentiles: dist.iter().map(|hv| hv.percentile / 100.0).collect_vec(),
     }
 }
 
@@ -164,29 +150,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_calculate_supp_info() {
-        let mut fees_spent_in_block = vec![2.0, 4.0, 5.0, 3.0, 1.0];
-        fees_spent_in_block.sort_by_key(|&x| (x * 100.0) as i64);
-        let supp_info = calculate_percentiles(&fees_spent_in_block).v;
-        assert_eq!(supp_info[0], 1.0);
-        assert_eq!(supp_info[10], 3.0);
-        assert_eq!(supp_info[15], 4.0);
-        assert_eq!(supp_info[18], 5.0);
-        assert_eq!(supp_info[20], 5.0);
+    fn test_calculate_percentiles() {
+        let mut values = vec![2.0, 4.0, 5.0, 3.0, 1.0];
+        values.sort_by_key(|&x| (x * 100.0) as i64);
+        let percentiles = calculate_percentiles(&values).v;
+        assert_eq!(percentiles[0], 1.0);
+        assert_eq!(percentiles[10], 3.0);
+        assert_eq!(percentiles[15], 4.0);
+        assert_eq!(percentiles[18], 5.0);
+        assert_eq!(percentiles[20], 5.0);
     }
 
     #[test]
-    fn test_calculate_supp_info_by_cu() {
+    fn test_calculate_percentiles_by_cu() {
         // total of 20000 CU where consumed
-        let prio_fees_in_block = vec![
-            Point::from((100.0, 10000.0)),
-            Point::from((200.0, 10000.0)),
-        ];
+        let values = vec![Point::from((100.0, 10000.0)), Point::from((200.0, 10000.0))];
         let PercentilesCummulative {
             bucket_values: by_cu,
             percentiles: by_cu_percentiles,
             ..
-        } = calculate_cummulative(&prio_fees_in_block);
+        } = calculate_cummulative(&values);
         assert_eq!(by_cu_percentiles[10], 0.5);
         assert_eq!(by_cu[10], 100.0); // need more than 100 to beat 50% of the CU
         assert_eq!(by_cu[11], 200.0); // need more than 200 to beat 55% of the CU
@@ -195,27 +178,27 @@ mod tests {
 
     #[test]
     fn test_empty_array() {
-        let fees_spent_in_block = vec![];
-        let supp_info = calculate_percentiles(&fees_spent_in_block).v;
+        let values = vec![];
+        let percentiles = calculate_percentiles(&values).v;
         // note: this is controversal
-        assert!(supp_info.is_empty());
+        assert!(percentiles.is_empty());
     }
     #[test]
     fn test_zeros() {
-        let fees_spent_in_block = vec![Point::from((0.0, 0.0)), Point::from((0.0, 0.0))];
-        let supp_info = calculate_cummulative(&fees_spent_in_block).bucket_values;
-        assert_eq!(supp_info[0], 0.0);
+        let values = vec![Point::from((0.0, 0.0)), Point::from((0.0, 0.0))];
+        let percentiles = calculate_cummulative(&values).bucket_values;
+        assert_eq!(percentiles[0], 0.0);
     }
 
     #[test]
     fn test_statisticshowto() {
-        let fees_spent_in_block = vec![30.0, 33.0, 43.0, 53.0, 56.0, 67.0, 68.0, 72.0];
-        let supp_info = calculate_percentiles(&fees_spent_in_block);
-        assert_eq!(supp_info.v[5], 43.0);
-        assert_eq!(supp_info.p[5], 0.25);
-        assert_eq!(supp_info.get_bucket_value(0.25), Some(43.0));
+        let values = vec![30.0, 33.0, 43.0, 53.0, 56.0, 67.0, 68.0, 72.0];
+        let percentiles = calculate_percentiles(&values);
+        assert_eq!(percentiles.v[5], 43.0);
+        assert_eq!(percentiles.p[5], 0.25);
+        assert_eq!(percentiles.get_bucket_value(0.25), Some(43.0));
 
-        let fees_spent_in_block = vec![
+        let values = vec![
             Point::from((30.0, 1.0)),
             Point::from((33.0, 2.0)),
             Point::from((43.0, 3.0)),
@@ -225,10 +208,9 @@ mod tests {
             Point::from((68.0, 7.0)),
             Point::from((72.0, 8.0)),
         ];
-        let supp_info = calculate_cummulative(&fees_spent_in_block);
-        assert_eq!(supp_info.percentiles[20], 1.0);
-        assert_eq!(supp_info.bucket_values[20], 72.0);
-
+        let percentiles = calculate_cummulative(&values);
+        assert_eq!(percentiles.percentiles[20], 1.0);
+        assert_eq!(percentiles.bucket_values[20], 72.0);
     }
 
     #[test]
@@ -237,9 +219,9 @@ mod tests {
         // In diesem Fall lautet es also 5.
         let values = vec![3.0, 5.0, 5.0, 6.0, 7.0, 7.0, 8.0, 10.0, 10.0];
 
-        let supp_info = calculate_percentiles(&values);
-        assert_eq!(supp_info.p[4], 0.20);
-        assert_eq!(supp_info.v[5], 5.0);
+        let percentiles = calculate_percentiles(&values);
+        assert_eq!(percentiles.p[4], 0.20);
+        assert_eq!(percentiles.v[5], 5.0);
 
         let values = vec![
             Point::from((3.0, 1.0)),
@@ -252,18 +234,18 @@ mod tests {
             Point::from((10.0, 8.0)),
             Point::from((10.0, 9.0)),
         ];
-        let supp_info = calculate_cummulative(&values);
-        assert_eq!(supp_info.percentiles[19], 0.95);
-        assert_eq!(supp_info.percentiles[20], 1.0);
-        assert_eq!(supp_info.bucket_values[19], 10.0);
-        assert_eq!(supp_info.bucket_values[20], 10.0);
+        let percentiles = calculate_cummulative(&values);
+        assert_eq!(percentiles.percentiles[19], 0.95);
+        assert_eq!(percentiles.percentiles[20], 1.0);
+        assert_eq!(percentiles.bucket_values[19], 10.0);
+        assert_eq!(percentiles.bucket_values[20], 10.0);
     }
 
     #[test]
     fn test_large_list() {
-        let fees_spent_in_block = (0..1000).map(|i| i as f64).collect_vec();
-        let supp_info = calculate_percentiles(&fees_spent_in_block);
-        assert_eq!(supp_info.v[19], 950.0);
-        assert_eq!(supp_info.p[19], 0.95);
+        let values = (0..1000).map(|i| i as f64).collect_vec();
+        let percentiles = calculate_percentiles(&values);
+        assert_eq!(percentiles.v[19], 950.0);
+        assert_eq!(percentiles.p[19], 0.95);
     }
 }

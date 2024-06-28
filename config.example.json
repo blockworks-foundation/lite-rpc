@@ -1,6 +1,6 @@
 {
-  "rpc_addr": "http://0.0.0.0:8899",
-  "ws_addr": "ws://0.0.0.0:8900",
+  "rpc_addr": "http://rpcnode-upstream:8899",
+  "ws_addr": "ws://rpcnode-upstream:8900",
   "lite_rpc_http_addr": "[::]:8890",
   "lite_rpc_ws_addr": "[::]:8891",
   "fanout_size": 18,
@@ -10,8 +10,8 @@
   "transaction_retry_after_secs": 3,
   "quic_proxy_addr": null,
   "use_grpc": false,
-  "calculate_leader_schedule_form_geyser": false,
-  "grpc_addr": "http://127.0.0.0:10000",
+  "calculate_leader_schedule_from_geyser": false,
+  "grpc_addr": "http://yellowstone-grpc-upstream:10000",
   "grpc_x_token": null,
   "postgres": {
     "pg_config": "your_postgres_config",

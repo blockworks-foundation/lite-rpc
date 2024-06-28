@@ -15,7 +15,7 @@ use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature, Signer};
 
 use solana_sdk::transaction::{Transaction, VersionedTransaction};
-use solana_streamer::nonblocking::quic::ConnectionPeerType;
+use solana_streamer::nonblocking::quic::{ConnectionPeerType, SpawnNonBlockingServerResult};
 use solana_streamer::packet::PacketBatch;
 use solana_streamer::quic::StreamStats;
 use solana_streamer::streamer::StakedNodes;
@@ -60,6 +60,8 @@ const QUIC_CONNECTION_PARAMS: QuicConnectionParameters = QuicConnectionParameter
     unistream_timeout: Duration::from_secs(2),
     write_timeout: Duration::from_secs(2),
     number_of_transactions_per_unistream: 10,
+    unistreams_to_create_new_connection_in_percentage: 10,
+    prioritization_heap_size: None,
 };
 
 #[test]
@@ -422,21 +424,23 @@ async fn solana_quic_streamer_start() {
     let keypair = Keypair::new();
     // gossip_host is used in the server certificate
     let gossip_host = "127.0.0.1".parse().unwrap();
-    let (_, stats, t) = solana_streamer::nonblocking::quic::spawn_server(
-        "test-quic-server",
-        sock.try_clone().unwrap(),
-        &keypair,
-        gossip_host,
-        sender,
-        exit.clone(),
-        1,
-        staked_nodes,
-        10,
-        10,
-        Duration::from_millis(1000),
-        Duration::from_millis(1000),
-    )
-    .unwrap();
+    let SpawnNonBlockingServerResult { stats, thread, .. } =
+        solana_streamer::nonblocking::quic::spawn_server(
+            "test-quic-server",
+            sock.try_clone().unwrap(),
+            &keypair,
+            gossip_host,
+            sender,
+            exit.clone(),
+            1,
+            staked_nodes,
+            10,
+            10,
+            9999, // max_streams_per_ms
+            Duration::from_millis(1000),
+            Duration::from_millis(1000),
+        )
+        .unwrap();
 
     let addr = sock.local_addr().unwrap().ip();
     let port = sock.local_addr().unwrap().port();
@@ -445,7 +449,7 @@ async fn solana_quic_streamer_start() {
     // sleep(Duration::from_millis(500)).await;
 
     exit.store(true, Ordering::Relaxed);
-    t.await.unwrap();
+    thread.await.unwrap();
 
     stats.report("test-quic-streamer");
 }
@@ -497,13 +501,14 @@ async fn start_literpc_client_direct_mode(
 
     // get information about the optional validator identity stake
     // populated from get_stakes_for_identity()
+    let stakes = if test_case_params.stake_connection {
+        30
+    } else {
+        0
+    };
     let identity_stakes = IdentityStakesData {
-        peer_type: ConnectionPeerType::Staked,
-        stakes: if test_case_params.stake_connection {
-            30
-        } else {
-            0
-        }, // stake of lite-rpc
+        peer_type: ConnectionPeerType::Staked(stakes),
+        stakes, // stake of lite-rpc
         min_stakes: 0,
         max_stakes: 40,
         total_stakes: 100,
@@ -597,13 +602,14 @@ async fn start_literpc_client_proxy_mode(
 
     // get information about the optional validator identity stake
     // populated from get_stakes_for_identity()
+    let stake = if test_case_params.stake_connection {
+        30
+    } else {
+        0
+    };
     let _identity_stakes = IdentityStakesData {
-        peer_type: ConnectionPeerType::Staked,
-        stakes: if test_case_params.stake_connection {
-            30
-        } else {
-            0
-        }, // stake of lite-rpc
+        peer_type: ConnectionPeerType::Staked(stake), // not sure if that is correct
+        stakes: stake,                                // stake of lite-rpc
         min_stakes: 0,
         max_stakes: 40,
         total_stakes: 100,
@@ -703,21 +709,23 @@ impl SolanaQuicStreamer {
         let keypair = Keypair::new();
         // gossip_host is used in the server certificate
         let gossip_host = "127.0.0.1".parse().unwrap();
-        let (_, stats, jh) = solana_streamer::nonblocking::quic::spawn_server(
-            "test-quic-server",
-            udp_socket.try_clone().unwrap(),
-            &keypair,
-            gossip_host,
-            sender,
-            exit.clone(),
-            MAX_QUIC_CONNECTIONS_PER_PEER,
-            staked_nodes,
-            10,
-            10,
-            Duration::from_millis(1000),
-            Duration::from_millis(1000),
-        )
-        .unwrap();
+        let SpawnNonBlockingServerResult { stats, thread, .. } =
+            solana_streamer::nonblocking::quic::spawn_server(
+                "test-quic-server",
+                udp_socket.try_clone().unwrap(),
+                &keypair,
+                gossip_host,
+                sender,
+                exit.clone(),
+                MAX_QUIC_CONNECTIONS_PER_PEER,
+                staked_nodes,
+                10,
+                10,
+                9999, // max_streams_per_ms
+                Duration::from_millis(1000),
+                Duration::from_millis(1000),
+            )
+            .unwrap();
 
         let addr = udp_socket.local_addr().unwrap().ip();
         let port = udp_socket.local_addr().unwrap().port();
@@ -726,7 +734,7 @@ impl SolanaQuicStreamer {
         Self {
             sock: udp_socket,
             exit,
-            join_handler: jh,
+            join_handler: thread,
             stats,
         }
     }
@@ -742,13 +750,14 @@ pub fn build_raw_sample_tx(i: u32) -> SentTransactionInfo {
     let tx = build_sample_tx(&payer_keypair, i);
 
     let transaction =
-        bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx");
+        Arc::new(bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx"));
 
     SentTransactionInfo {
         signature: *tx.get_signature(),
         slot: 1,
         transaction,
         last_valid_block_height: 300,
+        prioritization_fee: 0,
     }
 }
 

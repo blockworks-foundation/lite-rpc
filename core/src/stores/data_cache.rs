@@ -45,7 +45,7 @@ impl DataCache {
     pub async fn clean(&self, ttl_duration: std::time::Duration) {
         let block_info = self
             .block_information_store
-            .get_latest_block_info(CommitmentConfig::finalized())
+            .get_latest_block_information(CommitmentConfig::finalized())
             .await;
         self.block_information_store.clean().await;
         self.txs.clean(block_info.block_height);
@@ -53,20 +53,21 @@ impl DataCache {
         self.tx_subs.clean(ttl_duration);
     }
 
-    pub async fn check_if_confirmed_or_expired_blockheight(
+    pub fn check_if_confirmed_or_expired_blockheight(
         &self,
         sent_transaction_info: &SentTransactionInfo,
-        current_blockheight: u64,
     ) -> bool {
-        self.txs
-            .is_transaction_confirmed(&sent_transaction_info.signature)
-            || current_blockheight > sent_transaction_info.last_valid_block_height
+        let last_block_height = self.block_information_store.get_last_blockheight();
+        last_block_height > sent_transaction_info.last_valid_block_height
+            || self
+                .txs
+                .is_transaction_confirmed(&sent_transaction_info.signature)
     }
 
     pub async fn get_current_epoch(&self, commitment: CommitmentConfig) -> Epoch {
         let BlockInformation { slot, .. } = self
             .block_information_store
-            .get_latest_block(commitment)
+            .get_latest_block_information(commitment)
             .await;
         self.epoch_data.get_epoch_at_slot(slot)
     }
@@ -76,6 +77,7 @@ impl DataCache {
             block_information_store: BlockInformationStore::new(BlockInformation {
                 block_height: 0,
                 blockhash: Hash::new_unique(),
+                cleanup_slot: 1000,
                 commitment_config: CommitmentConfig::finalized(),
                 last_valid_blockheight: 300,
                 slot: 0,

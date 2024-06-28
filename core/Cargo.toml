@@ -3,7 +3,7 @@ name = "solana-lite-rpc-core"
 version = "0.2.4"
 edition = "2021"
 description = "Core classes and methods used by solana lite rpc"
-rust-version = "1.73.0"
+rust-version = "1.75.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
@@ -35,3 +35,7 @@ chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }
 itertools = { workspace = true }
+prometheus = { workspace = true }
+
+[dev-dependencies]
+rand = "0.8.5"

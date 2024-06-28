@@ -1,5 +1,5 @@
 use crate::endpoint_stremers::EndpointStreaming;
-use crate::grpc::gprc_accounts_streaming::create_grpc_account_streaming;
+use crate::grpc::grpc_accounts_streaming::create_grpc_account_streaming;
 use crate::grpc_multiplex::{
     create_grpc_multiplex_blocks_subscription, create_grpc_multiplex_processed_slots_subscription,
 };
@@ -8,6 +8,7 @@ use itertools::Itertools;
 use log::{info, trace};
 use solana_account_decoder::parse_token::UiTokenAmount;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_lite_rpc_core::structures::account_data::AccountNotificationMessage;
 use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
     structures::produced_block::{ProducedBlock, TransactionInfo},
@@ -17,7 +18,6 @@ use solana_sdk::message::legacy;
 use solana_sdk::program_utils::limited_deserialize;
 use solana_sdk::vote::instruction::VoteInstruction;
 use solana_sdk::{
-    borsh0_10::try_from_slice_unchecked,
     commitment_config::CommitmentConfig,
     compute_budget::{self, ComputeBudgetInstruction},
     hash::Hash,
@@ -37,6 +37,7 @@ use solana_transaction_status::{
 };
 use std::cell::OnceCell;
 use std::sync::Arc;
+use tokio::sync::Notify;
 use tracing::trace_span;
 
 use crate::rpc_polling::vote_accounts_and_cluster_info_polling::{
@@ -292,18 +293,16 @@ fn map_versioned_message(versioned: bool, full_message: v0::Message) -> Versione
 
 fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, Option<u64>) {
     let cu_requested_cell: OnceCell<u32> = OnceCell::new();
-    let legacy_cu_requested_cell: OnceCell<u32> = OnceCell::new();
-
     let prioritization_fees_cell: OnceCell<u64> = OnceCell::new();
-    let legacy_prio_fees_cell: OnceCell<u64> = OnceCell::new();
 
     for compute_budget_ins in message.instructions().iter().filter(|instruction| {
         instruction
             .program_id(message.static_account_keys())
             .eq(&compute_budget::id())
     }) {
-        if let Ok(budget_ins) =
-            try_from_slice_unchecked::<ComputeBudgetInstruction>(compute_budget_ins.data.as_slice())
+        if let Ok(budget_ins) = solana_sdk::borsh1::try_from_slice_unchecked::<
+            ComputeBudgetInstruction,
+        >(compute_budget_ins.data.as_slice())
         {
             match budget_ins {
                 // aka cu requested
@@ -318,16 +317,6 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
                         .set(price)
                         .expect("prioritization_fees must be set only once");
                 }
-                // legacy
-                ComputeBudgetInstruction::RequestUnitsDeprecated {
-                    units,
-                    additional_fee,
-                } => {
-                    let _ = legacy_cu_requested_cell.set(units);
-                    if additional_fee > 0 {
-                        let _ = legacy_prio_fees_cell.set(((units * 1000) / additional_fee) as u64);
-                    };
-                }
                 _ => {
                     trace!("skip compute budget instruction");
                 }
@@ -335,14 +324,8 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
         }
     }
 
-    let cu_requested = cu_requested_cell
-        .get()
-        .or(legacy_cu_requested_cell.get())
-        .cloned();
-    let prioritization_fees = prioritization_fees_cell
-        .get()
-        .or(legacy_prio_fees_cell.get())
-        .cloned();
+    let cu_requested = cu_requested_cell.get().cloned();
+    let prioritization_fees = prioritization_fees_cell.get().cloned();
     (cu_requested, prioritization_fees)
 }
 
@@ -358,22 +341,28 @@ pub fn create_grpc_subscription(
     let (slot_multiplex_channel, jh_multiplex_slotstream) =
         create_grpc_multiplex_processed_slots_subscription(grpc_sources.clone());
 
-    let (block_multiplex_channel, jh_multiplex_blockstream) =
+    let (block_multiplex_channel, blockmeta_channel, jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources.clone());
 
     let cluster_info_polling = poll_cluster_info(rpc_client.clone(), cluster_info_sx);
     let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
-
     // accounts
     if !accounts_filter.is_empty() {
-        let (account_jh, processed_account_stream) =
-            create_grpc_account_streaming(grpc_sources, accounts_filter);
+        let (account_sender, accounts_stream) =
+            tokio::sync::broadcast::channel::<AccountNotificationMessage>(1024);
+        let account_jh = create_grpc_account_streaming(
+            grpc_sources,
+            accounts_filter,
+            account_sender,
+            Arc::new(Notify::new()),
+        );
         let streamers = EndpointStreaming {
             blocks_notifier: block_multiplex_channel,
+            blockinfo_notifier: blockmeta_channel,
             slot_notifier: slot_multiplex_channel,
             cluster_info_notifier,
             vote_account_notifier,
-            processed_account_stream: Some(processed_account_stream),
+            processed_account_stream: Some(accounts_stream),
         };
 
         let endpoint_tasks = vec![
@@ -387,6 +376,7 @@ pub fn create_grpc_subscription(
     } else {
         let streamers = EndpointStreaming {
             blocks_notifier: block_multiplex_channel,
+            blockinfo_notifier: blockmeta_channel,
             slot_notifier: slot_multiplex_channel,
             cluster_info_notifier,
             vote_account_notifier,

@@ -70,7 +70,7 @@ async fn storage_test() {
     let (slot_notifier, _jh_multiplex_slotstream) =
         create_grpc_multiplex_processed_slots_subscription(grpc_sources.clone());
 
-    let (blocks_notifier, _jh_multiplex_blockstream) =
+    let (blocks_notifier, _blockmeta_output_stream, _jh_multiplex_blockstream) =
         create_grpc_multiplex_blocks_subscription(grpc_sources);
 
     let (epoch_cache, _) = EpochCache::bootstrap_epoch(&rpc_client).await.unwrap();

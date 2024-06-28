@@ -4,7 +4,7 @@ use crate::quic_connection_utils::{
 use futures::FutureExt;
 use log::warn;
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
-use quinn::{Connection, Endpoint};
+use quinn::{Connection, Endpoint, VarInt};
 use solana_lite_rpc_core::structures::rotating_queue::RotatingQueue;
 use solana_sdk::pubkey::Pubkey;
 use std::{
@@ -14,7 +14,7 @@ use std::{
         Arc,
     },
 };
-use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore};
+use tokio::sync::{broadcast, OwnedSemaphorePermit, RwLock, Semaphore};
 
 pub type EndpointPool = RotatingQueue<Endpoint>;
 
@@ -40,7 +40,6 @@ pub struct QuicConnection {
     identity: Pubkey,
     socket_address: SocketAddr,
     connection_params: QuicConnectionParameters,
-    exit_signal: Arc<AtomicBool>,
     timeout_counters: Arc<AtomicU64>,
     has_connected_once: Arc<AtomicBool>,
 }
@@ -51,7 +50,6 @@ impl QuicConnection {
         endpoint: Endpoint,
         socket_address: SocketAddr,
         connection_params: QuicConnectionParameters,
-        exit_signal: Arc<AtomicBool>,
     ) -> Self {
         Self {
             connection: Arc::new(RwLock::new(None)),
@@ -60,13 +58,16 @@ impl QuicConnection {
             identity,
             socket_address,
             connection_params,
-            exit_signal,
             timeout_counters: Arc::new(AtomicU64::new(0)),
             has_connected_once: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    async fn connect(&self, is_already_connected: bool) -> Option<Connection> {
+    async fn connect(
+        &self,
+        is_already_connected: bool,
+        exit_notify: broadcast::Receiver<()>,
+    ) -> Option<Connection> {
         QuicConnectionUtils::connect(
             self.identity,
             is_already_connected,
@@ -74,12 +75,12 @@ impl QuicConnection {
             self.socket_address,
             self.connection_params.connection_timeout,
             self.connection_params.connection_retry_count,
-            self.exit_signal.clone(),
+            exit_notify,
         )
         .await
     }
 
-    pub async fn get_connection(&self) -> Option<Connection> {
+    pub async fn get_connection(&self, exit_notify: broadcast::Receiver<()>) -> Option<Connection> {
         // get new connection reset if necessary
         let last_stable_id = self.last_stable_id.load(Ordering::Relaxed) as usize;
         let conn = self.connection.read().await.clone();
@@ -95,7 +96,7 @@ impl QuicConnection {
                         Some(connection)
                     } else {
                         NB_QUIC_CONNECTION_RESET.inc();
-                        let new_conn = self.connect(true).await;
+                        let new_conn = self.connect(true, exit_notify).await;
                         if let Some(new_conn) = new_conn {
                             *conn = Some(new_conn);
                             conn.clone()
@@ -110,43 +111,64 @@ impl QuicConnection {
             }
             None => {
                 NB_QUIC_CONNECTION_REQUESTED.inc();
-                let connection = self.connect(false).await;
-                *self.connection.write().await = connection.clone();
+                // so that only one instance is connecting
+                let mut lk = self.connection.write().await;
+                if lk.is_some() {
+                    // connection has recently been established/ just use it
+                    return (*lk).clone();
+                }
+                let connection = self.connect(false, exit_notify).await;
+                *lk = connection.clone();
                 self.has_connected_once.store(true, Ordering::Relaxed);
                 connection
             }
         }
     }
 
-    pub async fn send_transaction(&self, tx: Vec<u8>) {
+    pub async fn send_transaction(&self, tx: &Vec<u8>, mut exit_notify: broadcast::Receiver<()>) {
         let connection_retry_count = self.connection_params.connection_retry_count;
         for _ in 0..connection_retry_count {
-            if self.exit_signal.load(Ordering::Relaxed) {
-                // return
-                return;
-            }
-
             let mut do_retry = false;
-            let connection = self.get_connection().await;
+
+            let connection = tokio::select! {
+                conn = self.get_connection(exit_notify.resubscribe()) => {
+                    conn
+                },
+                _ = exit_notify.recv() => {
+                    break;
+                }
+            };
 
             if let Some(connection) = connection {
                 TRIED_SEND_TRANSCTION_TRIED.inc();
                 let current_stable_id = connection.stable_id() as u64;
-                match QuicConnectionUtils::open_unistream(
-                    connection,
-                    self.connection_params.unistream_timeout,
-                )
-                .await
-                {
+                let open_uni_result = tokio::select! {
+                    res = QuicConnectionUtils::open_unistream(
+                        connection,
+                        self.connection_params.unistream_timeout,
+                    ) => {
+                        res
+                    },
+                    _ = exit_notify.recv() => {
+                        break;
+                    }
+                };
+                match open_uni_result {
                     Ok(send_stream) => {
-                        match QuicConnectionUtils::write_all(
-                            send_stream,
-                            &tx,
-                            self.identity,
-                            self.connection_params,
-                        )
-                        .await
-                        {
+                        let write_add_result = tokio::select! {
+                            res = QuicConnectionUtils::write_all(
+                                send_stream,
+                                tx,
+                                self.identity,
+                                self.connection_params,
+                            ) => {
+                                res
+                            },
+                            _ = exit_notify.recv() => {
+                                break;
+                            }
+                        };
+                        match write_add_result {
                             Ok(()) => {
                                 SEND_TRANSCTION_SUCESSFUL.inc();
                             }
@@ -172,7 +194,7 @@ impl QuicConnection {
                 }
             } else {
                 NB_QUIC_COULDNOT_ESTABLISH_CONNECTION.inc();
-                warn!(
+                log::debug!(
                     "Could not establish connection with {}",
                     self.identity.to_string()
                 );
@@ -203,6 +225,13 @@ impl QuicConnection {
             None => false,
         }
     }
+
+    pub async fn close(&self) {
+        let lk = self.connection.read().await;
+        if let Some(connection) = lk.as_ref() {
+            connection.close(VarInt::from_u32(0), b"Not needed");
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -211,7 +240,7 @@ pub struct QuicConnectionPool {
     // counting semaphore is ideal way to manage backpressure on the connection
     // because a connection can create only N unistream connections
     transactions_in_sending_semaphore: Vec<Arc<Semaphore>>,
-    permit_threshold: usize,
+    threshold_to_create_new_connection: usize,
 }
 
 pub struct PooledConnection {
@@ -225,7 +254,6 @@ impl QuicConnectionPool {
         endpoints: EndpointPool,
         socket_address: SocketAddr,
         connection_parameters: QuicConnectionParameters,
-        exit_signal: Arc<AtomicBool>,
         nb_connection: usize,
         max_number_of_unistream_connection: usize,
     ) -> Self {
@@ -237,7 +265,6 @@ impl QuicConnectionPool {
                 endpoints.get().expect("Should get and endpoint"),
                 socket_address,
                 connection_parameters,
-                exit_signal.clone(),
             ));
         }
         Self {
@@ -250,8 +277,11 @@ impl QuicConnectionPool {
                 });
                 v
             },
-            permit_threshold: max_number_of_unistream_connection
-                .saturating_mul(90)
+            threshold_to_create_new_connection: max_number_of_unistream_connection
+                .saturating_mul(std::cmp::min(
+                    connection_parameters.unistreams_to_create_new_connection_in_percentage,
+                    100,
+                ) as usize)
                 .saturating_div(100),
         }
     }
@@ -263,7 +293,7 @@ impl QuicConnectionPool {
 
             if !connection.has_connected_atleast_once()
                 || (connection.is_connected().await
-                    && sem.available_permits() > self.permit_threshold)
+                    && sem.available_permits() > self.threshold_to_create_new_connection)
             {
                 // if it is connection is not yet connected even once or connection is still open
                 if let Ok(permit) = sem.clone().try_acquire_owned() {
@@ -286,9 +316,6 @@ impl QuicConnectionPool {
         let (permit, index) = self.get_permit_and_index().await?;
         // establish a connection if the connection has not yet been used
         let connection = self.connections[index].clone();
-        if !connection.has_connected_atleast_once() {
-            connection.get_connection().await;
-        }
         Ok(PooledConnection { connection, permit })
     }
 
@@ -298,5 +325,11 @@ impl QuicConnectionPool {
 
     pub fn is_empty(&self) -> bool {
         self.connections.is_empty()
+    }
+
+    pub async fn close_all(&self) {
+        for connection in &self.connections {
+            connection.close().await;
+        }
     }
 }

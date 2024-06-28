@@ -56,7 +56,7 @@ impl IdentityStakes {
         if let Some(stakes) = map_of_stakes.get(&self.identity.to_string()) {
             let only_stakes = map_of_stakes.iter().map(|x| *x.1).collect_vec();
             let identity_stakes = IdentityStakesData {
-                peer_type: ConnectionPeerType::Staked,
+                peer_type: ConnectionPeerType::Staked(*stakes), // Staked -> Staked(*stakes) .. not sure if that is correct
                 stakes: *stakes,
                 min_stakes: only_stakes.iter().min().map_or(0, |x| *x),
                 max_stakes: only_stakes.iter().max().map_or(0, |x| *x),

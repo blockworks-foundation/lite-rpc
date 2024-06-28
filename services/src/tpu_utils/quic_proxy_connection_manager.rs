@@ -85,11 +85,19 @@ impl QuicProxyConnectionManager {
             *lock = list_of_nodes;
         }
 
-        if self.simple_thread_started.load(Relaxed) {
+        if self
+            .simple_thread_started
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_err()
+        {
             // already started
             return;
         }
-        self.simple_thread_started.store(true, Relaxed);
 
         info!("Starting very simple proxy thread");
 
@@ -171,6 +179,7 @@ impl QuicProxyConnectionManager {
                             transaction,
                             ..
                         }) => {
+                            let transaction = transaction.as_ref().clone();
                             TxData::new(signature, transaction)
                         },
                         Err(e) => {
@@ -187,6 +196,7 @@ impl QuicProxyConnectionManager {
                                 transaction,
                                 ..
                             }) => {
+                                let transaction = transaction.as_ref().clone();
                                 txs.push(TxData::new(signature, transaction));
                             },
                             Err(TryRecvError::Empty) => {

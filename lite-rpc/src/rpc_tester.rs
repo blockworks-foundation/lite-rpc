@@ -20,7 +20,7 @@ impl RpcTester {
 
 impl RpcTester {
     /// Starts a loop that checks if the rpc is responding every 5 seconds
-    pub async fn start(self) -> anyhow::Result<()> {
+    pub async fn start(self, use_grpc: bool) -> anyhow::Result<()> {
         let mut error_counter = 0;
         let rpc_client = self.rpc_client;
         loop {
@@ -29,13 +29,19 @@ impl RpcTester {
             // do a simple request to self for getVersion
             let Err(err) = rpc_client.get_slot().await else {
                 RPC_RESPONDING.set(1.0);
+                error_counter = 0;
                 continue;
             };
 
             RPC_RESPONDING.set(0.0);
             error_counter += 1;
             if error_counter > 10 {
-                bail!("RPC seems down restarting service error {err:?}");
+                if use_grpc {
+                    log::error!("RPC seems down");
+                    error_counter = 0;
+                } else {
+                    bail!("RPC seems down restarting service error {err:?}");
+                }
             }
         }
     }

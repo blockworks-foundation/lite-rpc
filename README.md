@@ -48,7 +48,8 @@ $ cargo test
 
 *bench*
 ```bash
-$ cd bench and cargo run --release
+$ cd bench
+$ RUST_LOG=info cargo run -- --help
 ```
 
 Find a new file named `metrics.csv` in the project root.

@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use futures::StreamExt;
 use merge_streams::MergeStreams;
 use std::{
@@ -6,29 +7,34 @@ use std::{
     time::Duration,
 };
 
-use geyser_grpc_connector::GrpcSourceConfig;
+use geyser_grpc_connector::yellowstone_grpc_util::{
+    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
+};
+use geyser_grpc_connector::{GeyserGrpcClient, GrpcSourceConfig};
 use itertools::Itertools;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
-        account_data::{AccountData, AccountNotificationMessage, AccountStream},
+        account_data::{AccountData, AccountNotificationMessage},
         account_filter::{AccountFilterType, AccountFilters, MemcmpFilterData},
     },
     AnyhowJoinHandle,
 };
 use solana_sdk::{account::Account, pubkey::Pubkey};
-use tokio::sync::broadcast;
+use tokio::sync::Notify;
 use yellowstone_grpc_proto::geyser::{
     subscribe_request_filter_accounts_filter::Filter,
     subscribe_request_filter_accounts_filter_memcmp::Data, subscribe_update::UpdateOneof,
     SubscribeRequest, SubscribeRequestFilterAccounts, SubscribeRequestFilterAccountsFilter,
     SubscribeRequestFilterAccountsFilterMemcmp,
 };
+use yellowstone_grpc_proto::tonic::service::Interceptor;
 
 pub fn start_account_streaming_tasks(
     grpc_config: GrpcSourceConfig,
     accounts_filters: AccountFilters,
-    account_stream_sx: tokio::sync::mpsc::UnboundedSender<AccountNotificationMessage>,
+    account_stream_sx: tokio::sync::broadcast::Sender<AccountNotificationMessage>,
+    has_started: Arc<Notify>,
 ) -> AnyhowJoinHandle {
     tokio::spawn(async move {
         'main_loop: loop {
@@ -98,23 +104,14 @@ pub fn start_account_streaming_tasks(
 
             let program_subscription = SubscribeRequest {
                 accounts: subscribe_programs,
-                slots: Default::default(),
-                transactions: Default::default(),
-                blocks: Default::default(),
-                blocks_meta: Default::default(),
-                entry: Default::default(),
-                commitment: Some(processed_commitment.into()),
                 accounts_data_slice: Default::default(),
-                ping: None,
+                commitment: Some(processed_commitment.into()),
+                ..Default::default()
             };
 
-            let mut client = yellowstone_grpc_client::GeyserGrpcClient::connect(
-                grpc_config.grpc_addr.clone(),
-                grpc_config.grpc_x_token.clone(),
-                None,
-            )
-            .unwrap();
-            let account_stream = client.subscribe_once2(program_subscription).await.unwrap();
+            let mut client = create_connection(&grpc_config).await?;
+
+            let account_stream = client.subscribe_once(program_subscription).await.unwrap();
 
             // each account subscription batch will require individual stream
             let mut subscriptions = vec![account_stream];
@@ -134,35 +131,31 @@ pub fn start_account_streaming_tasks(
                         filters: vec![],
                     },
                 );
-                let mut client = yellowstone_grpc_client::GeyserGrpcClient::connect(
-                    grpc_config.grpc_addr.clone(),
-                    grpc_config.grpc_x_token.clone(),
-                    None,
-                )
-                .unwrap();
+                let mut client = create_connection(&grpc_config).await?;
 
                 let account_request = SubscribeRequest {
                     accounts: accounts_subscription,
-                    slots: Default::default(),
-                    transactions: Default::default(),
-                    blocks: Default::default(),
-                    blocks_meta: Default::default(),
-                    entry: Default::default(),
-                    commitment: Some(processed_commitment.into()),
                     accounts_data_slice: Default::default(),
-                    ping: None,
+                    commitment: Some(processed_commitment.into()),
+                    ..Default::default()
                 };
 
-                let account_stream = client.subscribe_once2(account_request).await.unwrap();
+                let account_stream = client.subscribe_once(account_request).await.unwrap();
                 subscriptions.push(account_stream);
             }
             let mut merged_stream = subscriptions.merge();
 
             while let Some(message) = merged_stream.next().await {
-                let message = message.unwrap();
+                let Ok(message) = message else {
+                    // channel broken resubscribe
+                    break;
+                };
+
                 let Some(update) = message.update_oneof else {
                     continue;
                 };
+
+                has_started.notify_one();
 
                 match update {
                     UpdateOneof::Account(account) => {
@@ -212,49 +205,72 @@ pub fn start_account_streaming_tasks(
     })
 }
 
+async fn create_connection(
+    grpc_config: &GrpcSourceConfig,
+) -> anyhow::Result<GeyserGrpcClient<impl Interceptor + Sized>> {
+    connect_with_timeout_with_buffers(
+        grpc_config.grpc_addr.clone(),
+        grpc_config.grpc_x_token.clone(),
+        None,
+        Some(Duration::from_secs(10)),
+        Some(Duration::from_secs(10)),
+        GeyserGrpcClientBufferConfig {
+            buffer_size: Some(65536),
+            conn_window: Some(5242880),
+            stream_window: Some(4194304),
+        },
+    )
+    .await
+    .map_err(|e| anyhow!("Failed to connect to grpc source: {e:?}"))
+}
+
 pub fn create_grpc_account_streaming(
     grpc_sources: Vec<GrpcSourceConfig>,
     accounts_filters: AccountFilters,
-) -> (AnyhowJoinHandle, AccountStream) {
-    let (account_sender, accounts_stream) = broadcast::channel::<AccountNotificationMessage>(1024);
-
+    account_stream_sx: tokio::sync::broadcast::Sender<AccountNotificationMessage>,
+    notify_abort: Arc<Notify>,
+) -> AnyhowJoinHandle {
     let jh: AnyhowJoinHandle = tokio::spawn(async move {
         loop {
-            let (accounts_sx, mut accounts_rx) = tokio::sync::mpsc::unbounded_channel();
             let jhs = grpc_sources
                 .iter()
                 .map(|grpc_config| {
                     start_account_streaming_tasks(
                         grpc_config.clone(),
                         accounts_filters.clone(),
-                        accounts_sx.clone(),
+                        account_stream_sx.clone(),
+                        Arc::new(Notify::new()),
                     )
                 })
                 .collect_vec();
-            drop(accounts_sx);
 
+            let mut rx = account_stream_sx.subscribe();
             loop {
-                match tokio::time::timeout(Duration::from_secs(60), accounts_rx.recv()).await {
-                    Ok(Some(data)) => {
-                        let _ = account_sender.send(data);
-                    }
-                    Ok(None) => {
-                        log::error!("All grpc accounts channels close; restarting subscription");
-                        break;
-                    }
-                    Err(_elapsed) => {
-                        log::error!("No accounts data for a minute; restarting subscription");
+                tokio::select! {
+                    data = tokio::time::timeout(Duration::from_secs(60), rx.recv()) => {
+                        match data{
+                            Ok(Ok(_)) => {
+                                // do nothing / notification channel is working fine
+                            }
+                            Ok(Err(e)) => {
+                                log::error!("Grpc stream failed by error : {e:?}");
+                                break;
+                            }
+                            Err(_elapsed) => {
+                                log::error!("No accounts data for a minute; restarting subscription");
+                                break;
+                            }
+                        }
+                    },
+                    _ = notify_abort.notified() => {
+                        log::debug!("Account stream aborted");
                         break;
                     }
                 }
             }
-
-            for jh in jhs {
-                // abort previous handles
-                jh.abort();
-            }
+            jhs.iter().for_each(|x| x.abort());
         }
     });
 
-    (jh, accounts_stream)
+    jh
 }

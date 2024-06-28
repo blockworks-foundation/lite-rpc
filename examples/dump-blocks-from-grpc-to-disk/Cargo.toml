@@ -12,7 +12,7 @@ path = "src/grpc_dump_blocks.rs"
 
 [dependencies]
 solana-sdk = { workspace = true }
-geyser-grpc-connector = { tag = "v0.10.2+yellowstone.1.12+solana.1.17.15", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+geyser-grpc-connector = { workspace = true }
 
 solana-lite-rpc-cluster-endpoints = { workspace = true }
 yellowstone-grpc-proto = { workspace = true }

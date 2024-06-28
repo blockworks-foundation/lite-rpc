@@ -10,14 +10,18 @@ use lite_rpc::cli::Config;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
-use lite_rpc::{DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE, MAX_NB_OF_CONNECTIONS_WITH_LEADERS};
-use log::{debug, info, warn};
+use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
+use log::{info, warn};
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
 use solana_lite_rpc_accounts_on_demand::accounts_on_demand::AccountsOnDemand;
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
+
+use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
+    GrpcConnectionTimeouts, GrpcSourceConfig,
+};
 use solana_lite_rpc_cluster_endpoints::grpc_inspect::{
     debugtask_blockstream_confirmation_sequence, debugtask_blockstream_slot_progression,
 };
@@ -37,14 +41,13 @@ use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
-    produced_block::ProducedBlock,
 };
 use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
 use solana_lite_rpc_core::types::BlockStream;
+use solana_lite_rpc_core::utils::wait_till_block_of_commitment_is_recieved;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
-use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceConfig};
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
@@ -57,10 +60,8 @@ use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_imp
 };
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
-use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
-    GrpcConnectionTimeouts, GrpcSourceConfig,
-};
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
+use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
@@ -71,35 +72,13 @@ use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
-use tokio::time::{timeout, Instant};
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
 
-async fn get_latest_block(
-    mut block_stream: BlockStream,
-    commitment_config: CommitmentConfig,
-) -> ProducedBlock {
-    let started = Instant::now();
-    loop {
-        match timeout(Duration::from_millis(500), block_stream.recv()).await {
-            Ok(Ok(block)) => {
-                if block.commitment_config == commitment_config {
-                    return block;
-                }
-            }
-            Err(_elapsed) => {
-                debug!(
-                    "waiting for latest block ({}) ... {:.02}ms",
-                    commitment_config.commitment,
-                    started.elapsed().as_secs_f32() * 1000.0
-                );
-            }
-            Ok(Err(_error)) => {
-                panic!("Did not recv blocks");
-            }
-        }
-    }
-}
+// jemalloc seems to be better at keeping the memory footprint reasonable over
+// longer periods of time
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 pub async fn start_postgres(
     config: Option<postgres_logger::PostgresSessionConfig>,
@@ -141,6 +120,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         address_lookup_tables_binary,
         account_filters,
         enable_accounts_on_demand_accounts_service,
+        quic_connection_parameters,
         use_postgres_blockstore,
         enable_postgres_block_store_importer,
         ..
@@ -172,9 +152,9 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     }
 
     let timeouts = GrpcConnectionTimeouts {
-        connect_timeout: Duration::from_secs(5),
-        request_timeout: Duration::from_secs(5),
-        subscribe_timeout: Duration::from_secs(5),
+        connect_timeout: Duration::from_secs(15),
+        request_timeout: Duration::from_secs(15),
+        subscribe_timeout: Duration::from_secs(15),
         receive_timeout: Duration::from_secs(15),
     };
 
@@ -202,6 +182,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let EndpointStreaming {
         // note: blocks_notifier will be dropped at some point
         blocks_notifier,
+        blockinfo_notifier,
         cluster_info_notifier,
         slot_notifier,
         vote_account_notifier,
@@ -236,8 +217,10 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
         let account_service = AccountService::new(account_storage, account_notification_sender);
 
-        account_service
-            .process_account_stream(account_stream.resubscribe(), blocks_notifier.resubscribe());
+        account_service.process_account_stream(
+            account_stream.resubscribe(),
+            blockinfo_notifier.resubscribe(),
+        );
 
         account_service
             .populate_from_rpc(
@@ -251,22 +234,25 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         None
     };
 
-    warn!("WORKAROUND Waiting for first finalized block...");
-    let finalized_block =
-        get_latest_block(blocks_notifier.resubscribe(), CommitmentConfig::processed()).await; // FIXME revert
+    warn!("WORKAROUND Waiting for first finalized block info...");
+    let finalized_block_info = wait_till_block_of_commitment_is_recieved(
+        blockinfo_notifier.resubscribe(),
+        CommitmentConfig::processed(),
+    )
+    .await; // FIXME revert
 
-    info!("Got finalized block: {:?}", finalized_block.slot);
+    info!("Got finalized block info: {:?}", finalized_block_info.slot);
 
     let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
 
     let block_information_store =
-        BlockInformationStore::new(BlockInformation::from_block(&finalized_block));
+        BlockInformationStore::new(BlockInformation::from_block_info(&finalized_block_info));
 
     let data_cache = DataCache {
         block_information_store,
         cluster_info: ClusterInfo::default(),
         identity_stakes: IdentityStakes::new(validator_identity.pubkey()),
-        slot_cache: SlotCache::new(finalized_block.slot),
+        slot_cache: SlotCache::new(finalized_block_info.slot),
         tx_subs: SubscriptionStore::default(),
         txs: TxStore {
             store: Arc::new(DashMap::new()),
@@ -283,6 +269,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     // to avoid laggin we resubscribe to block notification
     let data_caching_service = data_cache_service.listen(
         blocks_notifier.resubscribe(),
+        blockinfo_notifier.resubscribe(),
         slot_notifier.resubscribe(),
         cluster_info_notifier,
         vote_account_notifier,
@@ -328,22 +315,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,
         maximum_transaction_in_queue: 20000,
-        quic_connection_params: QuicConnectionParameters {
-            connection_timeout: Duration::from_secs(1),
-            connection_retry_count: 10,
-            finalize_timeout: Duration::from_millis(1000),
-            max_number_of_connections: args
-                .max_number_of_connection
-                .unwrap_or(MAX_NB_OF_CONNECTIONS_WITH_LEADERS),
-            unistream_timeout: Duration::from_millis(500),
-            write_timeout: Duration::from_secs(1),
-            number_of_transactions_per_unistream: 1,
-        },
+        quic_connection_params: quic_connection_parameters.unwrap_or_default(),
         tpu_connection_path,
     };
 
     let spawner = ServiceSpawner {
-        prometheus_addr,
         data_cache: data_cache.clone(),
     };
     //init grpc leader schedule and vote account is configured.
@@ -357,7 +333,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     .await?;
     let tx_sender = TxSender::new(data_cache.clone(), tpu_service.clone());
     let tx_replayer =
-        TransactionReplayer::new(tpu_service.clone(), data_cache.txs.clone(), retry_after);
+        TransactionReplayer::new(tpu_service.clone(), data_cache.clone(), retry_after);
     let (transaction_service, tx_service_jh) = spawner.spawn_tx_service(
         tx_sender,
         tx_replayer,
@@ -368,7 +344,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         slot_notifier.resubscribe(),
     );
 
-    let support_service = tokio::spawn(async move { spawner.spawn_support_services().await });
+    let support_service =
+        tokio::spawn(async move { spawner.spawn_support_services(prometheus_addr).await });
 
     // Block store importer
     if enable_postgres_block_store_importer {
@@ -432,6 +409,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         pubsub_service,
         lite_rpc_ws_addr,
         lite_rpc_http_addr,
+        None,
     ));
     drop(slot_notifier);
 
@@ -481,7 +459,7 @@ fn setup_grpc_stream_debugging(blocks_notifier: &BlockStream) {
     debugtask_blockstream_confirmation_sequence(blocks_notifier.resubscribe());
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 16)]
+#[tokio::main()]
 pub async fn main() -> anyhow::Result<()> {
     setup_tracing_subscriber();
 
@@ -491,7 +469,7 @@ pub async fn main() -> anyhow::Result<()> {
     let Config { rpc_addr, .. } = &config;
     // rpc client
     let rpc_client = Arc::new(RpcClient::new(rpc_addr.clone()));
-    let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start());
+    let rpc_tester = tokio::spawn(RpcTester::new(rpc_client.clone()).start(config.use_grpc));
 
     info!("Use RPC address: {}", obfuscate_rpcurl(rpc_addr));
 
@@ -505,7 +483,7 @@ pub async fn main() -> anyhow::Result<()> {
         res = main => {
             // This should never happen
             log::error!("Services quit unexpectedly {res:?}");
-            bail!("")
+            bail!("Service quit unexpectedly {res:?}");
         }
         _ = ctrl_c_signal => {
             log::info!("Received ctrl+c signal");
@@ -539,14 +517,6 @@ fn parse_host_port(host_port: &str) -> Result<SocketAddr, String> {
     } else {
         Ok(addrs[0])
     }
-}
-
-// http://mango.rpcpool.com/c232ab232ba2323
-fn obfuscate_rpcurl(rpc_addr: &str) -> String {
-    if rpc_addr.contains("rpcpool.com") {
-        return rpc_addr.replacen(char::is_numeric, "X", 99);
-    }
-    rpc_addr.to_string()
 }
 
 fn setup_tracing_subscriber() {

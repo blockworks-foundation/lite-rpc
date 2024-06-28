@@ -3,26 +3,41 @@ name = "bench"
 version = "0.2.4"
 edition = "2021"
 
+[[bin]]
+name = "bench"
+path = "src/main.rs"
+
+[[bin]]
+# WIP
+name = "benchnew"
+path = "src/benchnew.rs"
+
 [dependencies]
+clap = { workspace = true }
+csv = "1.2.1"
+dirs = "5.0.0"
+solana-lite-rpc-util = { workspace = true }
 solana-sdk = { workspace = true }
 solana-rpc-client = { workspace = true }
+solana-transaction-status = { workspace = true }
+solana-rpc-client-api = { workspace = true }
 log = { workspace = true }
+tracing = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-clap = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
-tracing-subscriber = { workspace = true }
-csv = "1.2.1"
-dirs = "5.0.0"
+tracing-subscriber = { workspace = true, features = ["std", "env-filter"] }
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 futures = { workspace = true }
 dashmap = { workspace = true }
-lazy_static = "1.4.0"
 bincode = { workspace = true }
 itertools = "0.10.5"
 spl-memo = "4.0.0"
+url = "*"
+reqwest = "0.11.26"
+lazy_static = "1.4.0"
 
 [dev-dependencies]
 bincode = { workspace = true }

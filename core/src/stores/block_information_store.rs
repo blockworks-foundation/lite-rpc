@@ -4,9 +4,11 @@ use log::info;
 
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::{clock::MAX_RECENT_BLOCKHASHES, slot_history::Slot};
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::structures::block_info::BlockInfo;
 use crate::structures::produced_block::ProducedBlock;
 use solana_sdk::hash::Hash;
 
@@ -15,6 +17,7 @@ pub struct BlockInformation {
     pub slot: u64,
     pub block_height: u64,
     pub last_valid_blockheight: u64,
+    pub cleanup_slot: Slot,
     pub blockhash: Hash,
     pub commitment_config: CommitmentConfig,
     pub block_time: u64,
@@ -26,9 +29,21 @@ impl BlockInformation {
             slot: block.slot,
             block_height: block.block_height,
             last_valid_blockheight: block.block_height + MAX_RECENT_BLOCKHASHES as u64,
+            cleanup_slot: block.block_height + 1000,
             blockhash: block.blockhash,
             commitment_config: block.commitment_config,
             block_time: block.block_time,
+        }
+    }
+    pub fn from_block_info(block_info: &BlockInfo) -> Self {
+        BlockInformation {
+            slot: block_info.slot,
+            block_height: block_info.block_height,
+            last_valid_blockheight: block_info.block_height + MAX_RECENT_BLOCKHASHES as u64,
+            cleanup_slot: block_info.block_height + 1000,
+            blockhash: block_info.blockhash,
+            commitment_config: block_info.commitment_config,
+            block_time: block_info.block_time,
         }
     }
 }
@@ -41,6 +56,7 @@ impl BlockInformation {
 pub struct BlockInformationStore {
     // maps Block Hash -> Block information
     blocks: Arc<DashMap<Hash, BlockInformation>>,
+    last_blockheight: Arc<AtomicU64>,
     latest_confirmed_block: Arc<RwLock<BlockInformation>>,
     latest_finalized_block: Arc<RwLock<BlockInformation>>,
 }
@@ -55,6 +71,7 @@ impl BlockInformationStore {
         );
 
         Self {
+            last_blockheight: Arc::new(AtomicU64::new(latest_finalized_block.block_height)),
             latest_confirmed_block: Arc::new(RwLock::new(latest_finalized_block.clone())),
             latest_finalized_block: Arc::new(RwLock::new(latest_finalized_block)),
             blocks,
@@ -86,17 +103,10 @@ impl BlockInformationStore {
             .blockhash
     }
 
-    pub async fn get_latest_block_info(
+    pub async fn get_latest_block_information(
         &self,
         commitment_config: CommitmentConfig,
     ) -> BlockInformation {
-        self.get_latest_block_arc(commitment_config)
-            .read()
-            .await
-            .clone()
-    }
-
-    pub async fn get_latest_block(&self, commitment_config: CommitmentConfig) -> BlockInformation {
         self.get_latest_block_arc(commitment_config)
             .read()
             .await
@@ -107,10 +117,29 @@ impl BlockInformationStore {
         // save slot copy to avoid borrow issues
         let slot = block_info.slot;
         let commitment_config = block_info.commitment_config;
-        // check if the block has already been added with higher commitment level
-        match self.blocks.get_mut(&block_info.blockhash) {
-            Some(mut prev_block_info) => {
-                let should_update = match prev_block_info.commitment_config.commitment {
+        if self
+            .last_blockheight
+            .load(std::sync::atomic::Ordering::Relaxed)
+            < block_info.block_height
+        {
+            // update last seen blockheight
+            self.last_blockheight.store(
+                block_info.block_height,
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+
+        // update latest block
+        {
+            let latest_block = self.get_latest_block_arc(commitment_config);
+            if slot > latest_block.read().await.slot {
+                *latest_block.write().await = block_info.clone();
+            }
+        }
+
+        match self.blocks.entry(block_info.blockhash) {
+            dashmap::mapref::entry::Entry::Occupied(entry) => {
+                let should_update = match entry.get().commitment_config.commitment {
                     CommitmentLevel::Finalized => false, // should never update blocks of finalized commitment
                     CommitmentLevel::Confirmed => {
                         commitment_config == CommitmentConfig::finalized()
@@ -120,27 +149,21 @@ impl BlockInformationStore {
                             || commitment_config == CommitmentConfig::finalized()
                     }
                 };
-                if !should_update {
-                    return false;
+                if should_update {
+                    entry.replace_entry(block_info);
                 }
-                *prev_block_info = block_info.clone();
+                should_update
             }
-            None => {
-                self.blocks.insert(block_info.blockhash, block_info.clone());
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(block_info);
+                true
             }
         }
-
-        // update latest block
-        let latest_block = self.get_latest_block_arc(commitment_config);
-        if slot > latest_block.read().await.slot {
-            *latest_block.write().await = block_info;
-        }
-        true
     }
 
     pub async fn clean(&self) {
         let finalized_block_information = self
-            .get_latest_block_info(CommitmentConfig::finalized())
+            .get_latest_block_information(CommitmentConfig::finalized())
             .await;
         let before_length = self.blocks.len();
         self.blocks
@@ -163,7 +186,7 @@ impl BlockInformationStore {
         blockhash: &Hash,
         commitment_config: CommitmentConfig,
     ) -> (bool, Slot) {
-        let latest_block = self.get_latest_block(commitment_config).await;
+        let latest_block = self.get_latest_block_information(commitment_config).await;
         match self.blocks.get(blockhash) {
             Some(block_information) => (
                 latest_block.block_height <= block_information.last_valid_blockheight,
@@ -182,5 +205,10 @@ impl BlockInformationStore {
                 None
             }
         })
+    }
+
+    pub fn get_last_blockheight(&self) -> u64 {
+        self.last_blockheight
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
