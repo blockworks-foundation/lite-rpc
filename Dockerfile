@@ -7,7 +7,7 @@ COPY . .
 WORKDIR /app
 RUN cargo chef prepare --recipe-path recipe.json
 
-FROM chef as build
+FROM base as build
 COPY --from=plan /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY . .
