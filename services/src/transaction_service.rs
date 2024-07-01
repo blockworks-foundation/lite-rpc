@@ -21,7 +21,7 @@ use solana_lite_rpc_core::{
 };
 use solana_sdk::{
     compute_budget::{self, ComputeBudgetInstruction},
-    transaction::{Transaction, VersionedTransaction},
+    transaction::VersionedTransaction,
 };
 use tokio::{
     sync::mpsc::{self, Sender, UnboundedSender},
@@ -122,7 +122,7 @@ pub struct TransactionService {
 impl TransactionService {
     pub async fn send_transaction(
         &self,
-        tx: Transaction,
+        tx: VersionedTransaction,
         max_retries: Option<u16>,
     ) -> anyhow::Result<String> {
         let raw_tx = bincode::serialize(&tx)?;

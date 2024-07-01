@@ -1,4 +1,4 @@
-import { Connection, Keypair, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction, BlockheightBasedTransactionConfirmationStrategy, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import { Connection, Keypair, sendAndConfirmTransaction, Transaction, PublicKey, TransactionInstruction, BlockheightBasedTransactionConfirmationStrategy, TransactionMessage, VersionedTransaction, VersionedMessage, MessageV0 } from "@solana/web3.js";
 import * as fs from "fs";
 import * as os from "os";
 import * as crypto from "crypto";
@@ -24,10 +24,28 @@ function createTransaction(): Transaction {
     return transaction;
 }
 
+function createVersionedMessage(blockhash: string, payer: PublicKey): MessageV0 {
+    return new MessageV0({
+        header: {
+            numRequiredSignatures: 1,
+            numReadonlySignedAccounts: 0,
+            numReadonlyUnsignedAccounts: 0,
+        },
+        staticAccountKeys: [payer, MEMO_PROGRAM_ID],
+        recentBlockhash: blockhash,
+        compiledInstructions: [{
+            programIdIndex: 1,
+            accountKeyIndexes: [],
+            data: Buffer.from(crypto.randomBytes(20).toString('hex')),
+          }],
+        addressTableLookups: [],
+      })
+}
+
 test('send and confirm transaction BlockheightBasedTransactionConfirmationStrategy', async () => {
     const tx = createTransaction();
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
-    const signature = await connection.sendTransaction(tx, [payer]);
+    const signature = await connection.sendTransaction(tx, [payer], {});
     console.log(`https://explorer.solana.com/tx/${signature}`);
     await connection.confirmTransaction({
         blockhash,
@@ -43,6 +61,21 @@ test('send and confirm transaction legacy confrim', async () => {
     const signature = await connection.sendTransaction(tx, [payer]);
     console.log(`https://explorer.solana.com/tx/${signature}`);
     await connection.confirmTransaction(signature);
+});
+
+test('send and confirm versioned transaction', async () => {
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+    const message = createVersionedMessage(blockhash, payer.publicKey);
+    let versionedTransaction = new VersionedTransaction( message, [payer.secretKey])
+    versionedTransaction.sign([payer])
+    const signature = await connection.sendRawTransaction(versionedTransaction.serialize(), {});
+    console.log(`https://explorer.solana.com/tx/${signature}`);
+    await connection.confirmTransaction({
+        blockhash,
+        lastValidBlockHeight,
+        signature,
+        abortSignal: undefined
+    });
 });
 
 test('send and confirm transaction', async () => {
