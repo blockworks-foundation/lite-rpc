@@ -13,9 +13,10 @@ pub use postgres_session::PostgresSession;
 
 mod postgres_block;
 mod postgres_config;
-mod postgres_epoch;
+pub mod postgres_epoch;
 mod postgres_session;
 mod postgres_transaction;
+pub mod postgres_mappings; // TODO remove pub
 
 // role for block store componente owner with full write access
 pub const LITERPC_ROLE: &str = "r_literpc";

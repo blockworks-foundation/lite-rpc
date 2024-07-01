@@ -17,6 +17,7 @@ use solana_sdk::slot_history::Slot;
 use tokio::{try_join};
 use tokio_postgres::error::SqlState;
 use crate::block_stores::postgres::measure_database_roundtrip::measure_select1_roundtrip;
+use crate::block_stores::postgres::postgres_mappings::{build_create_account_mapping_table_statement, build_create_transaction_mapping_table_statement};
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -167,8 +168,22 @@ impl PostgresBlockStore {
             .execute_multiple(&statement)
             .await
             .context("create blocks table for new epoch")?;
+        
+        // mapping table for transactions by signature
+        let statement = build_create_transaction_mapping_table_statement(epoch);
+        self.session
+            .execute_multiple(&statement)
+            .await
+            .context("create transaction mapping table for new epoch")?;
 
-        // create transaction table
+        // mapping table for accounts by pubkey
+        let statement = build_create_account_mapping_table_statement(epoch);
+        self.session
+            .execute_multiple(&statement)
+            .await
+            .context("create account mapping table for new epoch")?;
+        
+        // create transaction_blockdata table
         let statement = PostgresTransaction::build_create_table_statement(epoch);
         self.session
             .execute_multiple(&statement)

@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -6,7 +7,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::block_stores::postgres::{BlockstorePostgresSessionConfig, json_deserialize, json_serialize};
 use futures_util::pin_mut;
 use itertools::Itertools;
-use log::{debug, info};
+use log::{debug, info, warn};
 use serde_json::Value;
 use solana_lite_rpc_core::encoding::BinaryEncoding;
 use solana_lite_rpc_core::solana_utils::hash_from_str;
@@ -162,31 +163,12 @@ impl PostgresTransaction {
         let schema = PostgresEpoch::build_schema_name(epoch);
         format!(
             r#"
-                -- lookup table; maps signatures to generated int8 transaction ids
-                -- no updates or deletes, only INSERTs
-                CREATE TABLE {schema}.transaction_ids(
-                    transaction_id bigserial NOT NULL,
-                    signature varchar(88) NOT NULL,
-                    PRIMARY KEY (transaction_id) INCLUDE(signature) WITH (FILLFACTOR=80),
-	                UNIQUE(signature) INCLUDE (transaction_id) WITH (FILLFACTOR=80)
-                ) WITH (FILLFACTOR=100, toast_tuple_target=128);
-                -- signature might end up on TOAST which is okey because the data gets pulled from index
-                ALTER TABLE {schema}.transaction_ids
-                    SET (
-                        autovacuum_vacuum_scale_factor=0,
-                        autovacuum_vacuum_threshold=10000,
-                        autovacuum_vacuum_insert_scale_factor=0,
-                        autovacuum_vacuum_insert_threshold=50000,
-                        autovacuum_analyze_scale_factor=0,
-                        autovacuum_analyze_threshold=50000
-                        );
-
                 -- parameter 'schema' is something like 'rpc2a_epoch_592'
                 CREATE TABLE IF NOT EXISTS {schema}.transaction_blockdata(
                     slot bigint NOT NULL,
                      -- transaction_id must exist in the transaction_ids table
                     transaction_id bigint NOT NULL,
-                    signature varchar(88) NOT NULL,
+                    -- signature varchar(88) NOT NULL,
                     idx int4 NOT NULL,
                     cu_consumed bigint NOT NULL,
                     cu_requested bigint,
@@ -205,9 +187,9 @@ impl PostgresTransaction {
                     pre_token_balances jsonb[] NOT NULL,
                     post_token_balances jsonb[] NOT NULL,
                     -- model_transaction_blockdata
-                    PRIMARY KEY (slot, signature) WITH (FILLFACTOR=90)
+                    PRIMARY KEY (slot, transaction_id) WITH (FILLFACTOR=90)
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
-                ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN signature SET STORAGE PLAIN;
+                --ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN signature SET STORAGE PLAIN;
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN message SET STORAGE EXTENDED;
                 ALTER TABLE {schema}.transaction_blockdata
@@ -254,6 +236,26 @@ impl PostgresTransaction {
         transactions: &[PostgresTransaction],
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
+
+        // upsert all sigatures into transaction_ids table and return the mappings
+        let statement = format!(
+            r#"
+            INSERT INTO {schema}.transaction_ids(signature)
+                SELECT signature from unnest($1::text[]) tx_sig(signature)
+            ON CONFLICT DO NOTHING
+            RETURNING *
+            "#,
+        );
+
+        let started_at = Instant::now();
+        // TODO reduce cloning
+        let unique_tx_sigs = transactions.iter().map(|tx| &tx.signature).dedup().cloned().collect_vec();
+        let mappings = postgres_session.query_list(statement.as_str(), &[&unique_tx_sigs]).await?;
+
+        for mappp in mappings {
+            warn!("mapping {:?}", mappp);
+        }
+        
 
         let statement = r#"
             CREATE TEMP TABLE transaction_raw_blockdata(
@@ -395,19 +397,19 @@ impl PostgresTransaction {
         // note: session has lock_timeout configured
         // tried LOCK TABLE {schema}.transaction_ids IN EXCLUSIVE MODE but is slowed down things
         // cost of "ON CONFLICT DO NOTHING" -> `
-        let statement = format!(
-            r#"
-            CREATE TEMP TABLE transaction_ids_temp_mapping AS WITH mapping AS (
-                INSERT INTO {schema}.transaction_ids(signature)
-                SELECT signature from transaction_raw_blockdata
-                ON CONFLICT DO NOTHING
-                RETURNING *
-            )
-            SELECT transaction_id, signature FROM mapping
-            "#,
-        );
-        let started_at = Instant::now();
-        postgres_session.execute(statement.as_str(), &[]).await?;
+        // let statement = format!(
+        //     r#"
+        //     CREATE TEMP TABLE transaction_ids_temp_mapping AS WITH mapping AS (
+        //         INSERT INTO {schema}.transaction_ids(signature)
+        //         SELECT signature from transaction_raw_blockdata
+        //         ON CONFLICT DO NOTHING
+        //         RETURNING *
+        //     )
+        //     SELECT transaction_id, signature FROM mapping
+        //     "#,
+        // );
+        // let started_at = Instant::now();
+        // postgres_session.execute(statement.as_str(), &[]).await?;
         // TODO try primary key or even withou
 
         debug!(

@@ -17,17 +17,19 @@ use solana_sdk::commitment_config::CommitmentConfig;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, process};
+use anyhow::Context;
+use itertools::Itertools;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
-
-struct PostgresEpoch(EpochRef);
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_epoch::PostgresEpoch;
+use solana_lite_rpc_blockstore::block_stores::postgres::postgres_mappings::{build_create_account_mapping_table_statement, build_create_transaction_mapping_table_statement};
 
 #[tokio::test]
-async fn setup_database() {
+async fn setup_database() -> anyhow::Result<()> {
 
     // RUST_LOG=info,storage_integration_tests=debug,solana_lite_rpc_blockstore=trace
     tracing_subscriber::fmt()
@@ -47,25 +49,65 @@ async fn setup_database() {
 
     let slot = 777;
     let epoch_cache = EpochCache::new_for_tests();
-    
-    let block_store = PostgresBlockStore::new(epoch_cache, pg_session_config.clone()).await;
+
+    let block_store = PostgresBlockStore::new(epoch_cache.clone(), pg_session_config.clone()).await;
+    let session = PostgresSession::new(pg_session_config.clone())
+        .await
+        .unwrap();
+    session.execute("DROP SCHEMA IF EXISTS rpc2a_epoch_0 CASCADE", &[]).await.unwrap();
+
+
+    let created_fresh = block_store.prepare_epoch_schema(slot).await.expect("prepare epoch schema must succeed");
+
+    let epoch = epoch_cache.get_epoch_at_slot(slot).into();
+    let schema = PostgresEpoch::build_schema_name(epoch);
+
+    assert!(created_fresh, "should have created a new schema");
+
+    let statement = format!(
+        r#"
+            INSERT INTO {schema}.transaction_ids(signature)
+                SELECT signature from unnest($1::text[]) tx_sig(signature)
+            ON CONFLICT DO NOTHING
+            RETURNING *
+            "#,
+        schema = schema
+    );
+
+    let started_at = tokio::time::Instant::now();
+    // TODO reduce cloning
+
+    let transactions = vec![
+        "1HHzohWLufQNTPtqoTCx1moRZRMzrp18Cv3udttUuxzupdCqSLouQyhE3qU9FVBQ87pZbs3YQUj9RXaw22Ezc3E",
+        "24Y9QqcPxCFkppxVCuJ6dXe9CFZQHCQ775mebQbFir1G6yEn3dUcRJYjpbyrxHJkwVqjuVJsL1nvMy8VtuugRCwM",
+    ];
+    let transactions: Vec<FooWithSig> = transactions.iter().map(|s| crate::FooWithSig {
+        signature: s.to_string(),
+    }).collect();
+
+    let unique_tx_sigs = transactions.iter().map(|tx| &tx.signature).dedup().cloned().collect_vec();
+    {
+        let mappings = session.query_list(statement.as_str(), &[&unique_tx_sigs]).await?;
+
+        for mappp in mappings {
+            info!("Mapping: {}->{}", mappp.get::<_, i64>(0), mappp.get::<_, &str>(1));
+        }
+    }
 
     {
-        let session = PostgresSession::new(pg_session_config.clone())
-            .await
-            .unwrap();
-        session.execute("DROP SCHEMA IF EXISTS rpc2a_epoch_0 CASCADE", &[]).await.unwrap();
+        let mappings = session.query_list(statement.as_str(), &[&unique_tx_sigs]).await?;
+
+        for mappp in mappings {
+            info!("Mapping: {}->{}", mappp.get::<_, i64>(0), mappp.get::<_, &str>(1));
+        }
     }
-    
-    let created_fresh = block_store.prepare_epoch_schema(slot).await.expect("prepare epoch schema must succeed");
-    assert!(created_fresh, "should have created a new schema");
-    let started_at = tokio::time::Instant::now();
-    // let result = block_store.save_confirmed_block(&slot).await;
-    // let elapsed = started_at.elapsed();
-    
-    
 
 
+    Ok(())
+}
+
+struct FooWithSig {
+    signature: String,
 }
 
 
