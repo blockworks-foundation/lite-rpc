@@ -208,28 +208,6 @@ impl PostgresTransaction {
         )
     }
 
-    pub fn build_citus_distribute_table_statement(epoch: EpochRef, table_name: &str, distribution_column: &str) -> String {
-        let schema = PostgresEpoch::build_schema_name(epoch);
-        format!(
-            r#"
-                DO $$
-                    DECLARE has_citus boolean;
-                BEGIN
-                    has_citus = exists (SELECT name FROM pg_available_extensions() WHERE name='citus');
-                    IF has_citus THEN
-                        RAISE INFO 'Use citus extension, will distribute table';
-                        PERFORM create_distributed_table('{schema}.{table_name}', '{distribution_column}');
-                    ELSE
-                        RAISE INFO 'No citus extension found';
-                    END IF;
-                END; $$
-            "#,
-            schema = schema,
-            table_name = table_name,
-            distribution_column = distribution_column,
-        )
-    }
-
     // assumes that sigature mappings are available
     pub async fn save_transactions_from_block(
         postgres_session: &PostgresSession,
@@ -238,34 +216,6 @@ impl PostgresTransaction {
         transactions: &[PostgresTransaction],
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
-
-        let started_at = Instant::now();
-
-        // let statement = r#"
-        //     CREATE TEMP TABLE transaction_raw_blockdata(
-        //         slot bigint NOT NULL,
-        //         transaction_id bigint NOT NULL,
-        //         idx int4 NOT NULL,
-        //         cu_consumed bigint NOT NULL,
-        //         cu_requested bigint,
-        //         prioritization_fees bigint,
-        //         recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
-        //         err jsonb,
-        //         message_version int4 NOT NULL,
-        //         message text NOT NULL,
-        //         writable_accounts text[],
-        //         readable_accounts text[],
-        //         fee int8 NOT NULL,
-        //         pre_balances int8[] NOT NULL,
-        //         post_balances int8[] NOT NULL,
-        //         inner_instructions jsonb[],
-        //         log_messages text[] COMPRESSION lz4,
-        //         pre_token_balances jsonb[] NOT NULL,
-        //         post_token_balances jsonb[] NOT NULL
-        //         -- model_transaction_blockdata
-        //     );
-        // "#;
-        // postgres_session.execute_multiple(statement).await?;
 
         let statement = format!(r#"
             COPY {schema}.transaction_blockdata(
@@ -374,69 +324,6 @@ impl PostgresTransaction {
         }
 
         let num_rows = writer.finish().await?;
-        debug!(
-            "inserted {} raw transaction data rows into temp table in {:.2}ms",
-            num_rows,
-            started_at.elapsed().as_secs_f64() * 1000.0
-        );
-
-        // let statement = format!(
-        //     r#"
-        //         INSERT INTO {schema}.transaction_blockdata(
-        //             slot,
-        //             transaction_id,
-        //             signature,
-        //             idx,
-        //             cu_consumed,
-        //             cu_requested,
-        //             prioritization_fees,
-        //             recent_blockhash,
-        //             err,
-        //             message_version,
-        //             message,
-        //             writable_accounts,
-        //             readable_accounts,
-        //             fee,
-        //             pre_balances,
-        //             post_balances,
-        //             inner_instructions,
-        //             log_messages,
-        //             pre_token_balances,
-        //             post_token_balances
-        //             -- model_transaction_blockdata
-        //         )
-        //         SELECT
-        //             slot,
-        //             transaction_id,
-        //             signature,
-        //             idx,
-        //             cu_consumed,
-        //             cu_requested,
-        //             prioritization_fees,
-        //             recent_blockhash,
-        //             err,
-        //             message_version,
-        //             message,
-        //             writable_accounts,
-        //             readable_accounts,
-        //             fee,
-        //             pre_balances,
-        //             post_balances,
-        //             inner_instructions,
-        //             log_messages,
-        //             pre_token_balances,
-        //             post_token_balances
-        //             -- model_transaction_blockdata
-        //         FROM transaction_raw_blockdata
-        //         INNER JOIN transaction_ids_temp_mapping USING(signature)
-        // "#,
-        //     schema = schema,
-        // );
-        // let started_at = Instant::now();
-        //
-        // // postgres_session.execute_explain(&statement, &[], Duration::from_millis(50)).await?;
-        // postgres_session.execute(&statement, &[]).await?;
-
         debug!(
             "inserted {} rows into transaction block table in {:.2}ms",
             num_rows,
