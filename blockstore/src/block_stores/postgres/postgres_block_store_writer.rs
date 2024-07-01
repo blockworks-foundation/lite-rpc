@@ -18,7 +18,7 @@ use solana_sdk::slot_history::Slot;
 use tokio::{try_join};
 use tokio_postgres::error::SqlState;
 use crate::block_stores::postgres::measure_database_roundtrip::measure_select1_roundtrip;
-use crate::block_stores::postgres::postgres_mappings::{build_create_account_mapping_table_statement, build_create_transaction_mapping_table_statement, perform_transaction_mapping};
+use crate::block_stores::postgres::postgres_mappings::{build_create_account_mapping_table_statement, build_create_transaction_mapping_table_statement, perform_account_mapping, perform_transaction_mapping};
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -270,8 +270,19 @@ impl PostgresBlockStore {
         let started_txs = Instant::now();
 
         let tx_mapping = {
+            // TODO check allocations
             let sigantures = transactions.iter().map(|tx| tx.signature.as_str()).collect::<Vec<_>>();
             let mapping = perform_transaction_mapping(&write_session_single, epoch.into(), &sigantures).await?;
+            Arc::new(mapping)
+        };
+
+        let acc_mapping = {
+            let account_keys = transactions.iter()
+                .flat_map(|tx| tx.readable_accounts.iter().chain(tx.writable_accounts.iter()))
+                .dedup()
+                .map(|pk| pk.as_str())
+                .collect_vec();
+            let mapping = perform_account_mapping(&write_session_single, epoch.into(), &account_keys).await?;
             Arc::new(mapping)
         };
 
