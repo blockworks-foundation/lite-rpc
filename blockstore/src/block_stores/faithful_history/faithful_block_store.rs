@@ -1,5 +1,5 @@
 use anyhow::bail;
-use log::warn;
+use log::{info, warn};
 use solana_lite_rpc_cluster_endpoints::rpc_polling;
 use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -32,10 +32,10 @@ impl FaithfulBlockStore {
         // TODO check what parameters we want
         let faithful_config = RpcBlockConfig {
             encoding: Some(UiTransactionEncoding::Base58),
-            transaction_details: Some(TransactionDetails::Full),
-            rewards: None,
-            commitment: None,
-            max_supported_transaction_version: None,
+            transaction_details: Some(TransactionDetails::None),
+            rewards: Some(false),
+            commitment: Some(CommitmentConfig::finalized()),
+            max_supported_transaction_version: Some(0),
         };
 
         match self

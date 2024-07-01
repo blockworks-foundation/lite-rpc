@@ -7,6 +7,8 @@ use solana_lite_rpc_core::structures::produced_block::ProducedBlock;
 
 use solana_sdk::slot_history::Slot;
 use std::ops::{Deref, RangeInclusive};
+use std::sync::Arc;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 
 #[derive(Debug, Clone)]
 pub enum BlockSource {
@@ -46,11 +48,14 @@ impl MultipleStrategyBlockStorage {
             "without"
         );
 
+        let faithful_rpc_client = Some(Arc::new(RpcClient::new("http://rpc.old-faithful.net".to_string())));
+
+
         Self {
             block_storage_query,
             // faithful_history not used ATM
-            faithful_block_storage: None,
-            // faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
+            // faithful_block_storage: None,
+            faithful_block_storage: faithful_rpc_client.map(|rpc| FaithfulBlockStore::new(rpc)),
         }
     }
 
@@ -100,6 +105,7 @@ impl MultipleStrategyBlockStorage {
         // 2.1. if yes; fetch from Postgres
         // 2.2. if not: try to fetch from faithful_history
 
+        // TODO what to do if slot is newer than what we have in the database?
         match self.block_storage_query.is_block_in_range(slot).await {
             true => {
                 debug!(
@@ -138,11 +144,10 @@ impl MultipleStrategyBlockStorage {
                         result_source: BlockSource::FaithfulArchive,
                     })
                 }
-                Err(_) => {
+                Err(rpc_err) => {
                     debug!(
-                        "Block {} not found in faithful_history storage - giving up",
-                        slot
-                    );
+                        "Block {} not found in faithful_history storage - giving up: {}",
+                        slot, rpc_err);
                     bail!(format!("Block {} not found in faithful_history", slot));
                 }
             }
