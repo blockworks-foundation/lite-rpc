@@ -1,7 +1,7 @@
 use log::{debug, error, info, warn};
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_query::PostgresQueryBlockStore;
 use solana_lite_rpc_blockstore::block_stores::postgres::postgres_block_store_writer::PostgresBlockStore;
-use solana_lite_rpc_blockstore::block_stores::postgres::BlockstorePostgresSessionConfig;
+use solana_lite_rpc_blockstore::block_stores::postgres::{BlockstorePostgresSessionConfig, PostgresSession};
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
@@ -23,6 +23,51 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
+
+struct PostgresEpoch(EpochRef);
+
+#[tokio::test]
+async fn setup_database() {
+
+    // RUST_LOG=info,storage_integration_tests=debug,solana_lite_rpc_blockstore=trace
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+    configure_panic_hook();
+
+    let no_pgconfig = env::var("PG_CONFIG").is_err();
+
+    let pg_session_config = if no_pgconfig {
+        info!("No PG_CONFIG env - use hartcoded defaults for integration test");
+        BlockstorePostgresSessionConfig::new_for_tests()
+    } else {
+        info!("PG_CONFIG env defined");
+        BlockstorePostgresSessionConfig::new_from_env("BLOCKSTOREDB").unwrap()
+    };
+
+    let slot = 777;
+    let epoch_cache = EpochCache::new_for_tests();
+    
+    let block_store = PostgresBlockStore::new(epoch_cache, pg_session_config.clone()).await;
+
+    {
+        let session = PostgresSession::new(pg_session_config.clone())
+            .await
+            .unwrap();
+        session.execute("DROP SCHEMA IF EXISTS rpc2a_epoch_0 CASCADE", &[]).await.unwrap();
+    }
+    
+    let created_fresh = block_store.prepare_epoch_schema(slot).await.expect("prepare epoch schema must succeed");
+    assert!(created_fresh, "should have created a new schema");
+    let started_at = tokio::time::Instant::now();
+    // let result = block_store.save_confirmed_block(&slot).await;
+    // let elapsed = started_at.elapsed();
+    
+    
+
+
+}
+
 
 const CHANNEL_SIZE_WARNING_THRESHOLD: usize = 5;
 #[ignore = "need to enable postgres"]
