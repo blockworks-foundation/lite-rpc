@@ -213,6 +213,7 @@ impl PostgresTransaction {
         postgres_session: &PostgresSession,
         epoch: EpochRef,
         tx_mapping: Arc<BiMap<String, i64>>,
+        acc_mapping: Arc<BiMap<String, i64>>,
         transactions: &[PostgresTransaction],
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);

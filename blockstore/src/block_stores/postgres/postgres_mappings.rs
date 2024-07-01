@@ -1,6 +1,7 @@
 use bimap::BiMap;
 use itertools::Itertools;
 use log::{debug, info, trace};
+use tokio::time::Instant;
 use tracing::field::debug;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use crate::block_stores::postgres::postgres_epoch::PostgresEpoch;
@@ -35,6 +36,7 @@ pub fn build_create_transaction_mapping_table_statement(epoch: EpochRef) -> Stri
 
 // note: sigantures might contain duplicates but that's quite rare and can be ignored for transactions
 pub async fn perform_transaction_mapping(postgres_session: &PostgresSession, epoch: EpochRef, signatures: &[&str]) -> anyhow::Result<BiMap<String, i64>> {
+    let started_at = Instant::now();
     let schema = PostgresEpoch::build_schema_name(epoch);
     let statement = format!(
         r#"
@@ -73,6 +75,7 @@ pub async fn perform_transaction_mapping(postgres_session: &PostgresSession, epo
     let map = BiMap::from_iter(mapping_pairs);
 
     trace!("Transaction mapping from database: {:?}", map);
+    debug!("Upserted {} transactions into mapping table in {:.2}ms", map.len(), started_at.elapsed().as_secs_f32() * 1000.0);
     Ok(map)
 }
 
@@ -106,12 +109,13 @@ pub fn build_create_account_mapping_table_statement(epoch: EpochRef) -> String {
 
 // account_keys is deduped
 pub async fn perform_account_mapping(postgres_session: &PostgresSession, epoch: EpochRef, account_keys: &[&str]) -> anyhow::Result<BiMap<String, i64>> {
+    let started_at = Instant::now();
     let schema = PostgresEpoch::build_schema_name(epoch);
     let statement = format!(
         r#"
            WITH
             account_keys AS (
-                SELECT account_key from unnest($1::text[]) acc_sig(account_key)
+                SELECT account_key from unnest($1::text[]) requested_account_keys(account_key)
             ),
             inserted AS
             (
@@ -140,9 +144,10 @@ pub async fn perform_account_mapping(postgres_session: &PostgresSession, epoch: 
             (account_key, acc_id)
         });
 
-    // pubkey <-> tx_id
+    // pubkey <-> acc_id
     let map = BiMap::from_iter(mapping_pairs);
 
     trace!("Accounts mapping from database: {:?}", map);
+    debug!("Upserted {} accounts into mapping table in {:.2}ms", map.len(), started_at.elapsed().as_secs_f32() * 1000.0);
     Ok(map)
 }

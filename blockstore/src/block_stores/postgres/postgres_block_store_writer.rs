@@ -292,7 +292,7 @@ impl PostgresBlockStore {
         for (i, chunk) in chunks.into_iter().enumerate() {
             let session = &self.write_sessions[i];
             let future =
-                PostgresTransaction::save_transactions_from_block(session, epoch.into(), tx_mapping.clone(), chunk);
+                PostgresTransaction::save_transactions_from_block(session, epoch.into(), tx_mapping.clone(), acc_mapping.clone(), chunk);
             queries_fut.push(future);
         }
         let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;
