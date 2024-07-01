@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
@@ -17,7 +18,7 @@ use solana_sdk::slot_history::Slot;
 use tokio::{try_join};
 use tokio_postgres::error::SqlState;
 use crate::block_stores::postgres::measure_database_roundtrip::measure_select1_roundtrip;
-use crate::block_stores::postgres::postgres_mappings::{build_create_account_mapping_table_statement, build_create_transaction_mapping_table_statement};
+use crate::block_stores::postgres::postgres_mappings::{build_create_account_mapping_table_statement, build_create_transaction_mapping_table_statement, perform_transaction_mapping};
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -268,13 +269,19 @@ impl PostgresBlockStore {
 
         let started_txs = Instant::now();
 
+        let tx_mapping = {
+            let sigantures = transactions.iter().map(|tx| tx.signature.as_str()).collect::<Vec<_>>();
+            let mapping = perform_transaction_mapping(&write_session_single, epoch.into(), &sigantures).await?;
+            Arc::new(mapping)
+        };
+
         let mut queries_fut = Vec::new();
         let n_sessions = self.write_sessions.len();
         let (chunk_size, chunks, n_chunks) = Self::tx_chunks(&transactions, n_sessions);
         for (i, chunk) in chunks.into_iter().enumerate() {
             let session = &self.write_sessions[i];
             let future =
-                PostgresTransaction::save_transactions_from_block(session, epoch.into(), chunk);
+                PostgresTransaction::save_transactions_from_block(session, epoch.into(), tx_mapping.clone(), chunk);
             queries_fut.push(future);
         }
         let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;

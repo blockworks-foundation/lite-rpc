@@ -18,7 +18,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, process};
 use anyhow::Context;
+use bimap::BiMap;
 use itertools::Itertools;
+use solana_sdk::signature::Signature;
+use solana_transaction_status::TransactionDetails::Signatures;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::broadcast::Receiver;
 use tokio::task::JoinHandle;
@@ -56,7 +59,6 @@ async fn setup_database() -> anyhow::Result<()> {
         .unwrap();
     session.execute("DROP SCHEMA IF EXISTS rpc2a_epoch_0 CASCADE", &[]).await.unwrap();
 
-
     let created_fresh = block_store.prepare_epoch_schema(slot).await.expect("prepare epoch schema must succeed");
 
     let epoch = epoch_cache.get_epoch_at_slot(slot).into();
@@ -66,10 +68,24 @@ async fn setup_database() -> anyhow::Result<()> {
 
     let statement = format!(
         r#"
-            INSERT INTO {schema}.transaction_ids(signature)
+            WITH
+            sigs AS (
                 SELECT signature from unnest($1::text[]) tx_sig(signature)
-            ON CONFLICT DO NOTHING
-            RETURNING *
+            ),
+            inserted AS
+            (
+                INSERT INTO {schema}.transaction_ids(signature)
+                    SELECT signature from sigs
+                ON CONFLICT DO NOTHING
+                RETURNING *
+            ),
+            existed AS
+            (
+                SELECT * FROM {schema}.transaction_ids WHERE transaction_id not in (SELECT transaction_id FROM inserted)
+            )
+            SELECT transaction_id, signature FROM inserted
+            UNION ALL
+            SELECT transaction_id, signature FROM existed
             "#,
         schema = schema
     );
@@ -77,31 +93,40 @@ async fn setup_database() -> anyhow::Result<()> {
     let started_at = tokio::time::Instant::now();
     // TODO reduce cloning
 
-    let transactions = vec![
-        "1HHzohWLufQNTPtqoTCx1moRZRMzrp18Cv3udttUuxzupdCqSLouQyhE3qU9FVBQ87pZbs3YQUj9RXaw22Ezc3E",
-        "24Y9QqcPxCFkppxVCuJ6dXe9CFZQHCQ775mebQbFir1G6yEn3dUcRJYjpbyrxHJkwVqjuVJsL1nvMy8VtuugRCwM",
+    let mut transactions = vec![
+        "1HHzohWLufQNTPtqoTCx1moRZRMzrp18Cv3udttUuxzupdCqSLouQyhE3qU9FVBQ87pZbs3YQUj9RXaw22Ezc3E".to_string(),
+        "24Y9QqcPxCFkppxVCuJ6dXe9CFZQHCQ775mebQbFir1G6yEn3dUcRJYjpbyrxHJkwVqjuVJsL1nvMy8VtuugRCwM".to_string(),
     ];
+
+    for i in 0..5 {
+        let random_sig = Signature::new_unique().to_string();
+        transactions.push(random_sig);
+    }
+
     let transactions: Vec<FooWithSig> = transactions.iter().map(|s| crate::FooWithSig {
         signature: s.to_string(),
     }).collect();
 
     let unique_tx_sigs = transactions.iter().map(|tx| &tx.signature).dedup().cloned().collect_vec();
-    {
+    
         let mappings = session.query_list(statement.as_str(), &[&unique_tx_sigs]).await?;
 
-        for mappp in mappings {
+        for mappp in &mappings {
             info!("Mapping: {}->{}", mappp.get::<_, i64>(0), mappp.get::<_, &str>(1));
         }
-    }
 
-    {
-        let mappings = session.query_list(statement.as_str(), &[&unique_tx_sigs]).await?;
+        let mapping_pairs = mappings.iter()
+            .map(|row| {
+                let tx_id: i64 = row.get(0);
+                let tx_sig: String = row.get(1);
+                (tx_sig, tx_id)
+            });
+        // sig <-> tx_id
+        let tx_id_by_signature = BiMap::from_iter(mapping_pairs);
 
-        for mappp in mappings {
-            info!("Mapping: {}->{}", mappp.get::<_, i64>(0), mappp.get::<_, &str>(1));
-        }
-    }
 
+        info!("tx_id_by_signature: {:?}", tx_id_by_signature);
+    
 
     Ok(())
 }

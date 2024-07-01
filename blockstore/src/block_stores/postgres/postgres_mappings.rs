@@ -1,5 +1,10 @@
+use bimap::BiMap;
+use itertools::Itertools;
+use log::{debug, trace};
+use tracing::field::debug;
 use solana_lite_rpc_core::structures::epoch::EpochRef;
 use crate::block_stores::postgres::postgres_epoch::PostgresEpoch;
+use crate::block_stores::postgres::PostgresSession;
 
 pub fn build_create_transaction_mapping_table_statement(epoch: EpochRef) -> String {
     let schema = PostgresEpoch::build_schema_name(epoch);
@@ -26,6 +31,49 @@ pub fn build_create_transaction_mapping_table_statement(epoch: EpochRef) -> Stri
             "#,
         schema = schema
     )
+}
+
+// note: sigantures might contain duplicates but that's quite rare and can be ignored for transactions
+pub async fn perform_transaction_mapping(postgres_session: &PostgresSession, epoch: EpochRef, signatures: &[&str]) -> anyhow::Result<BiMap<String, i64>> {
+    let schema = PostgresEpoch::build_schema_name(epoch);
+    let statement = format!(
+        r#"
+            WITH
+            sigs AS (
+                SELECT signature from unnest($1::text[]) tx_sig(signature)
+            ),
+            inserted AS
+            (
+                INSERT INTO {schema}.transaction_ids(signature)
+                    SELECT signature from sigs
+                ON CONFLICT DO NOTHING
+                RETURNING *
+            ),
+            existed AS
+            (
+                SELECT * FROM {schema}.transaction_ids WHERE transaction_id not in (SELECT transaction_id FROM inserted)
+            )
+            SELECT transaction_id, signature FROM inserted
+            UNION ALL
+            SELECT transaction_id, signature FROM existed
+            "#,
+        schema = schema
+    );
+
+    let mappings = postgres_session.query_list(statement.as_str(), &[&signatures]).await?;
+
+    let mapping_pairs = mappings.iter()
+        .map(|row| {
+            let tx_id: i64 = row.get(0);
+            let tx_sig: String = row.get(1);
+            (tx_sig, tx_id)
+        });
+
+    // sig <-> tx_id
+    let map = BiMap::from_iter(mapping_pairs);
+
+    trace!("Transaction mapping from database: {:?}", map);
+    Ok(map)
 }
 
 

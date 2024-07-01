@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use bimap::BiMap;
 
 
 use crate::block_stores::postgres::{BlockstorePostgresSessionConfig, json_deserialize, json_serialize};
@@ -229,64 +230,47 @@ impl PostgresTransaction {
         )
     }
 
-
+    // assumes that sigature mappings are available
     pub async fn save_transactions_from_block(
         postgres_session: &PostgresSession,
         epoch: EpochRef,
+        tx_mapping: Arc<BiMap<String, i64>>,
         transactions: &[PostgresTransaction],
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
 
-        // upsert all sigatures into transaction_ids table and return the mappings
-        let statement = format!(
-            r#"
-            INSERT INTO {schema}.transaction_ids(signature)
-                SELECT signature from unnest($1::text[]) tx_sig(signature)
-            ON CONFLICT DO NOTHING
-            RETURNING *
-            "#,
-        );
-
         let started_at = Instant::now();
-        // TODO reduce cloning
-        let unique_tx_sigs = transactions.iter().map(|tx| &tx.signature).dedup().cloned().collect_vec();
-        let mappings = postgres_session.query_list(statement.as_str(), &[&unique_tx_sigs]).await?;
 
-        for mappp in mappings {
-            warn!("mapping {:?}", mappp);
-        }
-        
+        // let statement = r#"
+        //     CREATE TEMP TABLE transaction_raw_blockdata(
+        //         slot bigint NOT NULL,
+        //         transaction_id bigint NOT NULL,
+        //         idx int4 NOT NULL,
+        //         cu_consumed bigint NOT NULL,
+        //         cu_requested bigint,
+        //         prioritization_fees bigint,
+        //         recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
+        //         err jsonb,
+        //         message_version int4 NOT NULL,
+        //         message text NOT NULL,
+        //         writable_accounts text[],
+        //         readable_accounts text[],
+        //         fee int8 NOT NULL,
+        //         pre_balances int8[] NOT NULL,
+        //         post_balances int8[] NOT NULL,
+        //         inner_instructions jsonb[],
+        //         log_messages text[] COMPRESSION lz4,
+        //         pre_token_balances jsonb[] NOT NULL,
+        //         post_token_balances jsonb[] NOT NULL
+        //         -- model_transaction_blockdata
+        //     );
+        // "#;
+        // postgres_session.execute_multiple(statement).await?;
 
-        let statement = r#"
-            CREATE TEMP TABLE transaction_raw_blockdata(
-                slot bigint NOT NULL,
-                signature varchar(88) NOT NULL,
-                idx int4 NOT NULL,
-                cu_consumed bigint NOT NULL,
-                cu_requested bigint,
-                prioritization_fees bigint,
-                recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
-                err jsonb,
-                message_version int4 NOT NULL,
-                message text NOT NULL,
-                writable_accounts text[],
-                readable_accounts text[],
-                fee int8 NOT NULL,
-                pre_balances int8[] NOT NULL,
-                post_balances int8[] NOT NULL,
-                inner_instructions jsonb[],
-                log_messages text[] COMPRESSION lz4,
-                pre_token_balances jsonb[] NOT NULL,
-                post_token_balances jsonb[] NOT NULL
-                -- model_transaction_blockdata
-            );
-        "#;
-        postgres_session.execute_multiple(statement).await?;
-
-        let statement = r#"
-            COPY transaction_raw_blockdata(
+        let statement = format!(r#"
+            COPY {schema}.transaction_blockdata(
                 slot,
-                signature,
+                transaction_id,
                 idx,
                 cu_consumed,
                 cu_requested,
@@ -306,14 +290,14 @@ impl PostgresTransaction {
                 post_token_balances
                 -- model_transaction_blockdata
             ) FROM STDIN BINARY
-        "#;
+        "#, schema = schema);
         let started_at = Instant::now();
-        let sink: CopyInSink<bytes::Bytes> = postgres_session.copy_in(statement).await?;
+        let sink: CopyInSink<bytes::Bytes> = postgres_session.copy_in(&statement).await?;
         let writer = BinaryCopyInWriter::new(
             sink,
             &[
                 Type::INT8,        // slot
-                Type::VARCHAR,     // signature
+                Type::INT8,        // transaction_id
                 Type::INT4,        // idx
                 Type::INT8,        // cu_consumed
                 Type::INT8,        // cu_requested
@@ -360,11 +344,13 @@ impl PostgresTransaction {
                 // model_transaction_blockdata
             } = tx;
 
+            let transaction_id = tx_mapping.get_by_left(signature).expect("transaction_id must exist in mapping table");
+
             writer
                 .as_mut()
                 .write(&[
                     &slot,
-                    &signature,
+                    &transaction_id,
                     &idx_in_block,
                     &cu_consumed,
                     &cu_requested,
@@ -394,86 +380,62 @@ impl PostgresTransaction {
             started_at.elapsed().as_secs_f64() * 1000.0
         );
 
-        // note: session has lock_timeout configured
-        // tried LOCK TABLE {schema}.transaction_ids IN EXCLUSIVE MODE but is slowed down things
-        // cost of "ON CONFLICT DO NOTHING" -> `
         // let statement = format!(
         //     r#"
-        //     CREATE TEMP TABLE transaction_ids_temp_mapping AS WITH mapping AS (
-        //         INSERT INTO {schema}.transaction_ids(signature)
-        //         SELECT signature from transaction_raw_blockdata
-        //         ON CONFLICT DO NOTHING
-        //         RETURNING *
-        //     )
-        //     SELECT transaction_id, signature FROM mapping
-        //     "#,
+        //         INSERT INTO {schema}.transaction_blockdata(
+        //             slot,
+        //             transaction_id,
+        //             signature,
+        //             idx,
+        //             cu_consumed,
+        //             cu_requested,
+        //             prioritization_fees,
+        //             recent_blockhash,
+        //             err,
+        //             message_version,
+        //             message,
+        //             writable_accounts,
+        //             readable_accounts,
+        //             fee,
+        //             pre_balances,
+        //             post_balances,
+        //             inner_instructions,
+        //             log_messages,
+        //             pre_token_balances,
+        //             post_token_balances
+        //             -- model_transaction_blockdata
+        //         )
+        //         SELECT
+        //             slot,
+        //             transaction_id,
+        //             signature,
+        //             idx,
+        //             cu_consumed,
+        //             cu_requested,
+        //             prioritization_fees,
+        //             recent_blockhash,
+        //             err,
+        //             message_version,
+        //             message,
+        //             writable_accounts,
+        //             readable_accounts,
+        //             fee,
+        //             pre_balances,
+        //             post_balances,
+        //             inner_instructions,
+        //             log_messages,
+        //             pre_token_balances,
+        //             post_token_balances
+        //             -- model_transaction_blockdata
+        //         FROM transaction_raw_blockdata
+        //         INNER JOIN transaction_ids_temp_mapping USING(signature)
+        // "#,
+        //     schema = schema,
         // );
         // let started_at = Instant::now();
-        // postgres_session.execute(statement.as_str(), &[]).await?;
-        // TODO try primary key or even withou
-
-        debug!(
-            "inserted {} signatures into transaction_ids table in {:.2}ms",
-            transactions.len(),
-            started_at.elapsed().as_secs_f64() * 1000.0
-        );
-
-        let statement = format!(
-            r#"
-                INSERT INTO {schema}.transaction_blockdata(
-                    slot,
-                    transaction_id,
-                    signature,
-                    idx,
-                    cu_consumed,
-                    cu_requested,
-                    prioritization_fees,
-                    recent_blockhash,
-                    err,
-                    message_version,
-                    message,
-                    writable_accounts,
-                    readable_accounts,
-                    fee,
-                    pre_balances,
-                    post_balances,
-                    inner_instructions,
-                    log_messages,
-                    pre_token_balances,
-                    post_token_balances
-                    -- model_transaction_blockdata
-                )
-                SELECT
-                    slot,
-                    transaction_id,
-                    signature,
-                    idx,
-                    cu_consumed,
-                    cu_requested,
-                    prioritization_fees,
-                    recent_blockhash,
-                    err,
-                    message_version,
-                    message,
-                    writable_accounts,
-                    readable_accounts,
-                    fee,
-                    pre_balances,
-                    post_balances,
-                    inner_instructions,
-                    log_messages,
-                    pre_token_balances,
-                    post_token_balances
-                    -- model_transaction_blockdata
-                FROM transaction_raw_blockdata
-                INNER JOIN transaction_ids_temp_mapping USING(signature)
-        "#,
-            schema = schema,
-        );
-        let started_at = Instant::now();
-
-        // postgres_session.execute_explain(&statement, &[], Duration::from_millis(50)).await?;
-        postgres_session.execute(&statement, &[]).await?;
+        //
+        // // postgres_session.execute_explain(&statement, &[], Duration::from_millis(50)).await?;
+        // postgres_session.execute(&statement, &[]).await?;
 
         debug!(
             "inserted {} rows into transaction block table in {:.2}ms",
@@ -509,6 +471,7 @@ impl PostgresTransaction {
                     post_token_balances
                     -- model_transaction_blockdata
                 FROM {schema}.transaction_blockdata
+                INNER JOIN {schema}.transaction_ids tx_ids USING(transaction_id)
                 WHERE slot = {}
             "#,
             slot,
