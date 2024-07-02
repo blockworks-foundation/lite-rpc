@@ -11,6 +11,8 @@ use crate::benches::rpc_interface::{
 };
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
+use url::Url;
+use solana_lite_rpc_util::obfuscate_rpcurl;
 
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct Metric {
@@ -28,6 +30,7 @@ pub struct Metric {
 pub async fn confirmation_rate(
     payer_path: &Path,
     rpc_url: String,
+    tx_status_websocket_addr: Option<String>,
     tx_params: BenchmarkTransactionParams,
     max_timeout: Duration,
     txs_per_run: usize,
@@ -37,8 +40,11 @@ pub async fn confirmation_rate(
 
     assert!(num_of_runs > 0, "num_of_runs must be greater than 0");
 
-    let rpc = Arc::new(RpcClient::new(rpc_url));
-    info!("RPC: {}", rpc.as_ref().url());
+    let rpc = Arc::new(RpcClient::new(rpc_url.clone()));
+    info!("RPC: {}", obfuscate_rpcurl(&rpc.as_ref().url()));
+    
+    let ws_addr = tx_status_websocket_addr.unwrap_or_else(|| rpc_url.replace("http:", "ws:").replace("https:", "wss:"));
+    info!("WS ADDR: {}", obfuscate_rpcurl(&ws_addr));
 
     let payer: Arc<Keypair> = Arc::new(read_keypair_file(payer_path).unwrap());
     info!("Payer: {}", payer.pubkey().to_string());
@@ -46,7 +52,7 @@ pub async fn confirmation_rate(
     let mut rpc_results = Vec::with_capacity(num_of_runs);
 
     for _ in 0..num_of_runs {
-        match send_bulk_txs_and_wait(&rpc, &payer, txs_per_run, &tx_params, max_timeout)
+        match send_bulk_txs_and_wait(&rpc, Url::parse(&ws_addr).expect("Invalid Url"), &payer, txs_per_run, &tx_params, max_timeout)
             .await
             .context("send bulk tx and wait")
         {
@@ -72,6 +78,7 @@ pub async fn confirmation_rate(
 
 pub async fn send_bulk_txs_and_wait(
     rpc: &RpcClient,
+    tx_status_websocket_addr: Url,
     payer: &Keypair,
     num_txs: usize,
     tx_params: &BenchmarkTransactionParams,
@@ -87,7 +94,7 @@ pub async fn send_bulk_txs_and_wait(
 
     trace!("Sending {} transactions in bulk ..", txs.len());
     let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, &txs, max_timeout)
+        send_and_confirm_bulk_transactions(rpc, tx_status_websocket_addr, payer.pubkey(), &txs, max_timeout)
             .await
             .context("send and confirm bulk tx")?;
     trace!("Done sending {} transaction.", txs.len());
@@ -127,9 +134,9 @@ pub async fn send_bulk_txs_and_wait(
             }
             ConfirmationResponseFromRpc::Timeout(elapsed) => {
                 debug!(
-                    "Signature {} not confirmed after {:.02}ms",
+                    "Signature {} not confirmed after {:.03}s",
                     tx_sig,
-                    elapsed.as_secs_f32() * 1000.0
+                    elapsed.as_secs_f32()
                 );
                 tx_sent += 1;
                 tx_unconfirmed += 1;

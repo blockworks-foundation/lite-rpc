@@ -13,6 +13,10 @@ name = "benchnew"
 path = "src/benchnew.rs"
 
 [dependencies]
+
+websocket-tungstenite-retry = { git = "https://github.com/grooviegermanikus/websocket-tungstenite-retry.git", tag = "v0.8.0" }
+jsonrpsee-types = "0.22.2"
+
 clap = { workspace = true }
 csv = "1.2.1"
 dirs = "5.0.0"

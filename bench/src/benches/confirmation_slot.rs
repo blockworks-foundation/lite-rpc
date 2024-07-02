@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::str::FromStr;
 use std::time::Duration;
 
 use crate::benches::rpc_interface::{
@@ -13,8 +14,10 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Signature, Signer};
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
+use solana_sdk::pubkey::Pubkey;
 use tokio::time::{sleep, Instant};
 use url::Url;
+use crate::benches::tx_status_websocket_collector::start_tx_status_collector;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Metric {
@@ -46,6 +49,8 @@ pub async fn confirmation_slot(
     payer_path: &Path,
     rpc_a_url: String,
     rpc_b_url: String,
+    tx_status_websocket_addr_a: Option<String>,
+    tx_status_websocket_addr_b: Option<String>,
     tx_params: BenchmarkTransactionParams,
     max_timeout: Duration,
     num_of_runs: usize,
@@ -59,6 +64,11 @@ pub async fn confirmation_slot(
     info!("RPC A: {}", obfuscate_rpcurl(&rpc_a_url));
     info!("RPC B: {}", obfuscate_rpcurl(&rpc_b_url));
 
+    let ws_addr_a = tx_status_websocket_addr_a.unwrap_or_else(|| rpc_a_url.replace("http:", "ws:").replace("https:", "wss:"));
+    let ws_addr_b = tx_status_websocket_addr_b.unwrap_or_else(|| rpc_b_url.replace("http:", "ws:").replace("https:", "wss:"));
+    let ws_addr_a = Url::parse(&ws_addr_a).expect("Invalid URL");
+    let ws_addr_b = Url::parse(&ws_addr_b).expect("Invalid URL");
+
     let rpc_a_url =
         Url::parse(&rpc_a_url).map_err(|e| anyhow!("Failed to parse RPC A URL: {}", e))?;
     let rpc_b_url =
@@ -66,12 +76,20 @@ pub async fn confirmation_slot(
 
     let mut rng = create_rng(None);
     let payer = read_keypair_file(payer_path).expect("payer file");
-    info!("Payer: {}", payer.pubkey().to_string());
+    let payer_pubkey = payer.pubkey();
+    info!("Payer: {}", payer_pubkey.to_string());
     // let mut ping_thing_tasks = vec![];
+
+    // FIXME
+    // let (tx_status_map, jh_collector) = start_tx_status_collector(Url::parse(&tx_status_websocket_addr).unwrap(), payer.pubkey(), CommitmentConfig::confirmed()).await;
 
     for _ in 0..num_of_runs {
         let rpc_a = create_rpc_client(&rpc_a_url);
         let rpc_b = create_rpc_client(&rpc_b_url);
+
+        let ws_addr_a = ws_addr_a.clone();
+        let ws_addr_b = ws_addr_b.clone();
+
         // measure network time to reach the respective RPC endpoints,
         // used to mitigate the difference in distance by delaying the txn sending
         let time_a = rpc_roundtrip_duration(&rpc_a).await?.as_secs_f64();
@@ -95,13 +113,13 @@ pub async fn confirmation_slot(
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
             debug!("(A) sending tx {}", rpc_a_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_a, rpc_a_tx, max_timeout).await
+            send_and_confirm_transaction(&rpc_a, ws_addr_a, payer_pubkey, rpc_a_tx, max_timeout).await
         });
 
         let b_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(b_delay)).await;
             debug!("(B) sending tx {}", rpc_b_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_b, rpc_b_tx, max_timeout).await
+            send_and_confirm_transaction(&rpc_b, ws_addr_b, payer_pubkey, rpc_b_tx, max_timeout).await
         });
 
         let (a, b) = tokio::join!(a_task, b_task);
@@ -156,11 +174,13 @@ async fn create_tx(
 
 async fn send_and_confirm_transaction(
     rpc: &RpcClient,
+    tx_status_websocket_addr: Url,
+    payer_pubkey: Pubkey,
     tx: VersionedTransaction,
     max_timeout: Duration,
 ) -> anyhow::Result<ConfirmationResponseFromRpc> {
     let result_vec: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, &[tx], max_timeout).await?;
+        send_and_confirm_bulk_transactions(rpc, tx_status_websocket_addr, payer_pubkey, &[tx], max_timeout).await?;
     assert_eq!(result_vec.len(), 1, "expected 1 result");
     let (_sig, confirmation_response) = result_vec.into_iter().next().unwrap();
 

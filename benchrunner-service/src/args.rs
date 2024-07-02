@@ -6,6 +6,8 @@ pub struct TenantConfig {
     // technical identifier for the tenant, e.g. "solana-rpc"
     pub tenant_id: String,
     pub rpc_addr: String,
+    // needs to point to a reliable websocket server that can be used to get tx status
+    pub tx_status_ws_addr: Option<String>,
 }
 
 // recommend to use one payer keypair for all targets and fund that keypair with enough SOL
@@ -39,7 +41,7 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .find(|(v, _)| *v == format!("TENANT{}_ID", tc))
                 .iter()
                 .exactly_one()
-                .expect("need ID")
+                .expect("need TENANT_X_ID")
                 .1
                 .to_string(),
             rpc_addr: v
@@ -47,9 +49,16 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .find(|(v, _)| *v == format!("TENANT{}_RPC_ADDR", tc))
                 .iter()
                 .exactly_one()
-                .expect("need RPC_ADDR")
+                .expect("need TENANT_X_RPC_ADDR")
                 .1
                 .to_string(),
+            tx_status_ws_addr: v
+                .iter()
+                .find(|(v, _)| *v == format!("TENANT{}_TX_STATUS_WS_ADDR", tc))
+                .iter()
+                .at_most_one()
+                .expect("need TENANT_X_TX_STATUS_WS_ADDR")
+                .map(|(_, v)| v.to_string())
         })
         .collect::<Vec<TenantConfig>>();
 
