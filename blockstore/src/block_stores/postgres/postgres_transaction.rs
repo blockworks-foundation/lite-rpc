@@ -357,7 +357,7 @@ impl PostgresTransaction {
                     cu_requested,
                     prioritization_fees,
                     err,
-                    recent_blockhash,
+                    bh_ids.blockhash recent_blockhash,
                     message_version,
                     message, -- TODO remove
                     --writable_accounts,
@@ -372,6 +372,7 @@ impl PostgresTransaction {
                     -- model_transaction_blockdata
                 FROM {schema}.transaction_blockdata
                 INNER JOIN {schema}.transaction_ids tx_ids USING(transaction_id)
+                INNER JOIN {schema}.blockhash_ids bh_ids ON bh_ids.blockhash_id=recent_blockhash
                 WHERE slot = {}
             "#,
             slot,
