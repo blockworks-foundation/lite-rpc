@@ -178,8 +178,8 @@ impl PostgresTransaction {
                     err jsonb COMPRESSION lz4,
                     message_version int4 NOT NULL,
                     message text COMPRESSION lz4 NOT NULL,
-                    writable_accounts text[] COMPRESSION lz4,
-                    readable_accounts text[] COMPRESSION lz4,
+                    writable_accounts bigint[] NOT NULL,
+                    readable_accounts bigint[] NOT NULL,
                     fee int8 NOT NULL,
                     pre_balances int8[] NOT NULL,
                     post_balances int8[] NOT NULL,
@@ -257,8 +257,8 @@ impl PostgresTransaction {
                 Type::JSONB,       // err
                 Type::INT4,        // message_version
                 Type::TEXT,        // message
-                Type::TEXT_ARRAY,  // writable_accounts
-                Type::TEXT_ARRAY,  // readable_accounts
+                Type::INT8_ARRAY,  // writable_accounts
+                Type::INT8_ARRAY,  // readable_accounts
                 Type::INT8,        // fee
                 Type::INT8_ARRAY,  // pre_balances
                 Type::INT8_ARRAY,  // post_balances
@@ -297,6 +297,16 @@ impl PostgresTransaction {
 
             let transaction_id = tx_mapping.get_by_left(signature).expect("transaction_id must exist in mapping table");
 
+            let readable_account_ids = readable_accounts.iter()
+                .map(|r_account| acc_mapping.get_by_left(r_account).expect("account_id must exist in mapping table"))
+                .copied()
+                .collect_vec();
+            
+            let writable_account_ids = writable_accounts.iter()
+                .map(|w_account| acc_mapping.get_by_left(w_account).expect("account_id must exist in mapping table"))
+                .copied()
+                .collect_vec();
+
             writer
                 .as_mut()
                 .write(&[
@@ -310,8 +320,8 @@ impl PostgresTransaction {
                     &err,
                     &message_version,
                     &message,
-                    &writable_accounts,
-                    &readable_accounts,
+                    &writable_account_ids,
+                    &readable_account_ids,
                     &fee,
                     &pre_balances,
                     &post_balances,
