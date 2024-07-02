@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use crate::block_stores::postgres::{LITERPC_QUERY_ROLE, LITERPC_ROLE};
 use anyhow::{bail, Context, Result};
 use futures_util::future::join_all;
+use futures_util::join;
 use itertools::Itertools;
 use log::{debug, info, trace, warn};
 use prometheus::histogram_opts;
@@ -269,22 +270,24 @@ impl PostgresBlockStore {
 
         let started_txs = Instant::now();
 
-        let tx_mapping = {
+        let fut_tx_mapping = async {
             // TODO check allocations
             let sigantures = transactions.iter().map(|tx| tx.signature.as_str()).collect::<Vec<_>>();
-            let mapping = perform_transaction_mapping(&write_session_single, epoch.into(), &sigantures).await?;
+            let mapping = perform_transaction_mapping(&write_session_single, epoch.into(), &sigantures).await.expect("must succeed");
             Arc::new(mapping)
         };
 
-        let acc_mapping = {
+        let fut_acc_mapping = async {
             let account_keys = transactions.iter()
                 .flat_map(|tx| tx.readable_accounts.iter().chain(tx.writable_accounts.iter()))
                 .dedup()
                 .map(|pk| pk.as_str())
                 .collect_vec();
-            let mapping = perform_account_mapping(&write_session_single, epoch.into(), &account_keys).await?;
+            let mapping = perform_account_mapping(&write_session_single, epoch.into(), &account_keys).await.expect("must succeed");
             Arc::new(mapping)
         };
+
+        let (tx_mapping, acc_mapping) = join!(fut_tx_mapping, fut_acc_mapping);
 
         let mut queries_fut = Vec::new();
         let n_sessions = self.write_sessions.len();
