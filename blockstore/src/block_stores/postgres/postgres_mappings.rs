@@ -41,18 +41,18 @@ pub async fn perform_transaction_mapping(postgres_session: &PostgresSession, epo
     let statement = format!(
         r#"
             WITH
-            sigs AS (
-                SELECT signature from unnest($1::text[]) tx_sig(signature)
+            requested_sigs AS (
+                SELECT signature from unnest($1::text[]) tab(signature)
             ),
             existed AS
             (
                 SELECT * FROM {schema}.transaction_ids
-                INNER JOIN sigs USING(signature)
+                INNER JOIN requested_sigs USING(signature)
             ),
             inserted AS
             (
                 INSERT INTO {schema}.transaction_ids(signature)
-                    SELECT signature from sigs
+                    SELECT signature FROM requested_sigs
                 ON CONFLICT DO NOTHING
                 RETURNING *
             )
@@ -115,18 +115,18 @@ pub async fn perform_account_mapping(postgres_session: &PostgresSession, epoch: 
     let statement = format!(
         r#"
            WITH
-            account_keys AS (
-                SELECT account_key from unnest($1::text[]) requested_account_keys(account_key)
+            requested_account_keys AS (
+                SELECT account_key from unnest($1::text[]) tab(account_key)
             ),
             existed AS
             (
                 SELECT * FROM {schema}.account_ids
-                INNER JOIN account_keys USING(account_key)
+                INNER JOIN requested_account_keys USING(account_key)
             ),
             inserted AS
             (
                 INSERT INTO {schema}.account_ids(account_key)
-                    SELECT account_key from account_keys
+                    SELECT account_key FROM requested_account_keys
                 ON CONFLICT DO NOTHING
                 RETURNING *
             )
@@ -187,18 +187,18 @@ pub async fn perform_blockhash_mapping(postgres_session: &PostgresSession, epoch
     let statement = format!(
         r#"
            WITH
-            blockhashes AS (
-                SELECT blockhash from unnest($1::text[]) requested_blockhashes(blockhash)
+            requested_blockhashes AS (
+                SELECT blockhash from unnest($1::text[]) tab(blockhash)
             ),
             existed AS
             (
                 SELECT * FROM {schema}.blockhash_ids
-                INNER JOIN blockhashes USING(blockhash)
+                INNER JOIN requested_blockhashes USING(blockhash)
             ),
             inserted AS
             (
                 INSERT INTO {schema}.blockhash_ids(blockhash)
-                    SELECT blockhash from blockhashes
+                    SELECT blockhash from requested_blockhashes
                 ON CONFLICT DO NOTHING
                 RETURNING *
             )
