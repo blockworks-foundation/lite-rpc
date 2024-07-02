@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -47,7 +48,7 @@ pub struct PostgresTransaction {
     pub err: Option<Value>,
     // V0 -> 0, Legacy -> -2020
     pub message_version: i32,
-    pub message: String,
+    pub message: Box<[u8]>,
     pub writable_accounts: Vec<String>,
     pub readable_accounts: Vec<String>,
     // note: solana uses u64 but SQL does not support that
@@ -73,7 +74,7 @@ impl PostgresTransaction {
             recent_blockhash: value.recent_blockhash.to_string(),
             err: value.err.clone().map(|x| json_serialize(&x)),
             message_version: Self::map_message_version(&value.message),
-            message: BinaryEncoding::Base64.encode(value.message.serialize()),
+            message: lz4_flex::block::compress_prepend_size(&value.message.serialize()).into_boxed_slice(),
             writable_accounts: value
                 .writable_accounts
                 .clone()
@@ -115,9 +116,8 @@ impl PostgresTransaction {
     }
 
     pub fn to_transaction_info(&self) -> TransactionInfo {
-        let message = BinaryEncoding::Base64
-            .deserialize(&self.message)
-            .expect("serialized message");
+        let message_decompressed = lz4_flex::block::decompress_size_prepended(&self.message).expect("must be LZ4 compressed");
+        let message = bincode::deserialize(&message_decompressed).expect("must be deserializable");
         TransactionInfo {
             signature: Signature::from_str(self.signature.as_str()).unwrap(),
             index: self.idx_in_block,
@@ -177,7 +177,7 @@ impl PostgresTransaction {
                     recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
                     err jsonb COMPRESSION lz4,
                     message_version int4 NOT NULL,
-                    message text COMPRESSION lz4 NOT NULL,
+                    message bytea NOT NULL, -- lz4 block compressed bincode serialized VersionedMessage
                     writable_accounts bigint[] NOT NULL,
                     readable_accounts bigint[] NOT NULL,
                     fee int8 NOT NULL,
@@ -256,7 +256,7 @@ impl PostgresTransaction {
                 Type::VARCHAR,     // recent_blockhash
                 Type::JSONB,       // err
                 Type::INT4,        // message_version
-                Type::TEXT,        // message
+                Type::BYTEA,  // message
                 Type::INT8_ARRAY,  // writable_accounts
                 Type::INT8_ARRAY,  // readable_accounts
                 Type::INT8,        // fee
@@ -319,7 +319,7 @@ impl PostgresTransaction {
                     &recent_blockhash,
                     &err,
                     &message_version,
-                    &message,
+                    &message.as_ref(),
                     &writable_account_ids,
                     &readable_account_ids,
                     &fee,
@@ -444,7 +444,7 @@ fn create_tx(slot: i64, idx_in_block: i32) -> PostgresTransaction {
         recent_blockhash: "recent_blockhash".to_string(),
         err: Some(Value::Null),
         message_version: 1,
-        message: "message".to_string(),
+        message: Box::from("message".as_bytes()),
         writable_accounts: vec!["writable_accounts".to_string()],
         readable_accounts: vec!["readable_accounts".to_string()],
         fee: 1,

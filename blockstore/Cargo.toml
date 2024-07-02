@@ -45,6 +45,7 @@ rand = "0.8.5"
 lazy_static = "1.4.0"
 regex = "1.10.3"
 bimap = "0.6.3"
+lz4_flex = "0.11.3"
 
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
