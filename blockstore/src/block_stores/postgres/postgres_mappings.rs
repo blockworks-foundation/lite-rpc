@@ -14,7 +14,7 @@ pub fn build_create_transaction_mapping_table_statement(epoch: EpochRef) -> Stri
                 -- lookup table; maps signatures to generated int8 transaction ids
                 -- no updates or deletes, only INSERTs
                 CREATE TABLE {schema}.transaction_ids(
-                    transaction_id bigserial NOT NULL,
+                    transaction_id serial NOT NULL,
                     signature varchar(88) NOT NULL,
                     PRIMARY KEY (transaction_id) INCLUDE(signature) WITH (FILLFACTOR=80),
 	                UNIQUE(signature) INCLUDE (transaction_id) WITH (FILLFACTOR=80)
@@ -35,7 +35,7 @@ pub fn build_create_transaction_mapping_table_statement(epoch: EpochRef) -> Stri
 }
 
 // note: sigantures might contain duplicates but that's quite rare and can be ignored for transactions
-pub async fn perform_transaction_mapping(postgres_session: &PostgresSession, epoch: EpochRef, signatures: &[&str]) -> anyhow::Result<BiMap<String, i64>> {
+pub async fn perform_transaction_mapping(postgres_session: &PostgresSession, epoch: EpochRef, signatures: &[&str]) -> anyhow::Result<BiMap<String, i32>> {
     let started_at = Instant::now();
     let schema = PostgresEpoch::build_schema_name(epoch);
     let statement = format!(
@@ -66,7 +66,7 @@ pub async fn perform_transaction_mapping(postgres_session: &PostgresSession, epo
 
     let mapping_pairs = mappings.iter()
         .map(|row| {
-            let tx_id: i64 = row.get(0);
+            let tx_id: i32 = row.get(0);
             let tx_sig: String = row.get(1);
             (tx_sig, tx_id)
         });
@@ -156,13 +156,13 @@ pub fn build_create_blockhash_mapping_table_statement(epoch: EpochRef) -> String
     let schema = PostgresEpoch::build_schema_name(epoch);
     format!(
         r#"
-                CREATE TABLE {schema}.blockhashes(
+                CREATE TABLE {schema}.blockhash_ids(
                     blockhash_id serial NOT NULL,
                     blockhash varchar(44) NOT NULL,
                     PRIMARY KEY (blockhash_id) INCLUDE(blockhash) WITH (FILLFACTOR=80),
 	                UNIQUE(blockhash) INCLUDE (blockhash_id) WITH (FILLFACTOR=80)
                 ) WITH (FILLFACTOR=100, toast_tuple_target=128);
-                ALTER TABLE {schema}.blockhashes
+                ALTER TABLE {schema}.blockhash_ids
                     SET (
                         autovacuum_vacuum_scale_factor=0,
                         autovacuum_vacuum_threshold=10000,
@@ -190,14 +190,14 @@ pub async fn perform_blockhash_mapping(postgres_session: &PostgresSession, epoch
             ),
             inserted AS
             (
-                INSERT INTO {schema}.blockhashes(blockhash)
+                INSERT INTO {schema}.blockhash_ids(blockhash)
                     SELECT blockhash from blockhashes
                 ON CONFLICT DO NOTHING
                 RETURNING *
             ),
             existed AS
             (
-                SELECT * FROM {schema}.blockhashes WHERE blockhash_id not in (SELECT blockhash_id FROM inserted)
+                SELECT * FROM {schema}.blockhash_ids WHERE blockhash_id not in (SELECT blockhash_id FROM inserted)
             )
             SELECT blockhash_id, blockhash FROM inserted
             UNION ALL

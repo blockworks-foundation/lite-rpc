@@ -15,8 +15,9 @@ ORDER BY idx
 ## Conventions for SQL Table Names and Aliases
 
 
-| Table Name            | Alias    |
-|-----------------------|----------|
-| transaction_blockdata | tx_block |
-| transaction_ids       | tx_map   |
-| account_ids           | acc_map  |
+| Table Name            | Alias         |
+|-----------------------|---------------|
+| transaction_blockdata | tx_block      |
+| transaction_ids       | tx_map        |
+| account_ids           | acc_map       |
+| bh_map         | blockhash_map |

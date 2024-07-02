@@ -168,7 +168,7 @@ impl PostgresTransaction {
                 CREATE TABLE IF NOT EXISTS {schema}.transaction_blockdata(
                     slot bigint NOT NULL,
                      -- transaction_id must exist in the transaction_ids table
-                    transaction_id bigint NOT NULL,
+                    transaction_id int4 NOT NULL,
                     -- signature varchar(88) NOT NULL,
                     idx int4 NOT NULL,
                     cu_consumed bigint NOT NULL,
@@ -211,7 +211,7 @@ impl PostgresTransaction {
     pub async fn save_transactions_from_block(
         postgres_session: &PostgresSession,
         epoch: EpochRef,
-        tx_mapping: Arc<BiMap<String, i64>>,
+        tx_mapping: Arc<BiMap<String, i32>>,
         acc_mapping: Arc<BiMap<String, i64>>,
         blockhash_mapping: Arc<BiMap<String, i32>>,
         transactions: &[PostgresTransaction],
@@ -248,12 +248,12 @@ impl PostgresTransaction {
             sink,
             &[
                 Type::INT8,        // slot
-                Type::INT8,        // transaction_id
+                Type::INT4,        // transaction_id
                 Type::INT4,        // idx
                 Type::INT8,        // cu_consumed
                 Type::INT8,        // cu_requested
                 Type::INT8,        // prioritization_fees
-                Type::INT4,     // recent_blockhash (blockhash_id)
+                Type::INT4,         // recent_blockhash (blockhash_id)
                 Type::JSONB,       // err
                 Type::INT4,        // message_version
                 Type::BYTEA,        // message
