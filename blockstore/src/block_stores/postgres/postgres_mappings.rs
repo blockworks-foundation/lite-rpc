@@ -44,16 +44,17 @@ pub async fn perform_transaction_mapping(postgres_session: &PostgresSession, epo
             sigs AS (
                 SELECT signature from unnest($1::text[]) tx_sig(signature)
             ),
+            existed AS
+            (
+                SELECT * FROM {schema}.transaction_ids
+                INNER JOIN sigs USING(signature)
+            ),
             inserted AS
             (
                 INSERT INTO {schema}.transaction_ids(signature)
                     SELECT signature from sigs
                 ON CONFLICT DO NOTHING
                 RETURNING *
-            ),
-            existed AS
-            (
-                SELECT * FROM {schema}.transaction_ids WHERE transaction_id not in (SELECT transaction_id FROM inserted)
             )
             SELECT transaction_id, signature FROM inserted
             UNION ALL
@@ -117,16 +118,17 @@ pub async fn perform_account_mapping(postgres_session: &PostgresSession, epoch: 
             account_keys AS (
                 SELECT account_key from unnest($1::text[]) requested_account_keys(account_key)
             ),
+            existed AS
+            (
+                SELECT * FROM {schema}.account_ids
+                INNER JOIN account_keys USING(account_key)
+            ),
             inserted AS
             (
                 INSERT INTO {schema}.account_ids(account_key)
                     SELECT account_key from account_keys
                 ON CONFLICT DO NOTHING
                 RETURNING *
-            ),
-            existed AS
-            (
-                SELECT * FROM {schema}.account_ids WHERE acc_id not in (SELECT acc_id FROM inserted)
             )
             SELECT acc_id, account_key FROM inserted
             UNION ALL
@@ -188,16 +190,17 @@ pub async fn perform_blockhash_mapping(postgres_session: &PostgresSession, epoch
             blockhashes AS (
                 SELECT blockhash from unnest($1::text[]) requested_blockhashes(blockhash)
             ),
+            existed AS
+            (
+                SELECT * FROM {schema}.blockhash_ids
+                INNER JOIN blockhashes USING(blockhash)
+            ),
             inserted AS
             (
                 INSERT INTO {schema}.blockhash_ids(blockhash)
                     SELECT blockhash from blockhashes
                 ON CONFLICT DO NOTHING
                 RETURNING *
-            ),
-            existed AS
-            (
-                SELECT * FROM {schema}.blockhash_ids WHERE blockhash_id not in (SELECT blockhash_id FROM inserted)
             )
             SELECT blockhash_id, blockhash FROM inserted
             UNION ALL
