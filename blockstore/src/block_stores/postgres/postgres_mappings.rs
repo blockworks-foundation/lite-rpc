@@ -107,7 +107,7 @@ pub fn build_create_account_mapping_table_statement(epoch: EpochRef) -> String {
     )
 }
 
-// account_keys is deduped
+// account_keys should be deduped by caller
 pub async fn perform_account_mapping(postgres_session: &PostgresSession, epoch: EpochRef, account_keys: &[&str]) -> anyhow::Result<BiMap<String, i64>> {
     let started_at = Instant::now();
     let schema = PostgresEpoch::build_schema_name(epoch);
@@ -149,5 +149,76 @@ pub async fn perform_account_mapping(postgres_session: &PostgresSession, epoch: 
 
     trace!("Accounts mapping from database: {:?}", map);
     debug!("Upserted {} accounts into mapping table in {:.2}ms", map.len(), started_at.elapsed().as_secs_f32() * 1000.0);
+    Ok(map)
+}
+
+pub fn build_create_blockhash_mapping_table_statement(epoch: EpochRef) -> String {
+    let schema = PostgresEpoch::build_schema_name(epoch);
+    format!(
+        r#"
+                CREATE TABLE {schema}.blockhashes(
+                    blockhash_id serial NOT NULL,
+                    blockhash varchar(44) NOT NULL,
+                    PRIMARY KEY (blockhash_id) INCLUDE(blockhash) WITH (FILLFACTOR=80),
+	                UNIQUE(blockhash) INCLUDE (blockhash_id) WITH (FILLFACTOR=80)
+                ) WITH (FILLFACTOR=100, toast_tuple_target=128);
+                ALTER TABLE {schema}.blockhashes
+                    SET (
+                        autovacuum_vacuum_scale_factor=0,
+                        autovacuum_vacuum_threshold=10000,
+                        autovacuum_vacuum_insert_scale_factor=0,
+                        autovacuum_vacuum_insert_threshold=50000,
+                        autovacuum_analyze_scale_factor=0,
+                        autovacuum_analyze_threshold=50000
+                        );
+            "#,
+        schema = schema
+    )
+}
+
+
+
+// blockhash should be deduped by caller
+pub async fn perform_blockhash_mapping(postgres_session: &PostgresSession, epoch: EpochRef, blockhashes: &[&str]) -> anyhow::Result<BiMap<String, i32>> {
+    let started_at = Instant::now();
+    let schema = PostgresEpoch::build_schema_name(epoch);
+    let statement = format!(
+        r#"
+           WITH
+            blockhashes AS (
+                SELECT blockhash from unnest($1::text[]) requested_blockhashes(blockhash)
+            ),
+            inserted AS
+            (
+                INSERT INTO {schema}.blockhashes(blockhash)
+                    SELECT blockhash from blockhashes
+                ON CONFLICT DO NOTHING
+                RETURNING *
+            ),
+            existed AS
+            (
+                SELECT * FROM {schema}.blockhashes WHERE blockhash_id not in (SELECT blockhash_id FROM inserted)
+            )
+            SELECT blockhash_id, blockhash FROM inserted
+            UNION ALL
+            SELECT blockhash_id, blockhash FROM existed
+            "#,
+        schema = schema
+    );
+
+    let mappings = postgres_session.query_list(statement.as_str(), &[&blockhashes]).await?;
+
+    let mapping_pairs = mappings.iter()
+        .map(|row| {
+            let blockhash_id: i32 = row.get(0);
+            let blockhash: String = row.get(1);
+            (blockhash, blockhash_id)
+        });
+
+    // blockhash <-> blockhash_id
+    let map = BiMap::from_iter(mapping_pairs);
+
+    trace!("Blockhash mapping from database: {:?}", map);
+    debug!("Upserted {} blockhashes into mapping table in {:.2}ms", map.len(), started_at.elapsed().as_secs_f32() * 1000.0);
     Ok(map)
 }

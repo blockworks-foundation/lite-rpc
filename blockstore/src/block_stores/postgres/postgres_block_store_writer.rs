@@ -19,7 +19,7 @@ use solana_sdk::slot_history::Slot;
 use tokio::{try_join};
 use tokio_postgres::error::SqlState;
 use crate::block_stores::postgres::measure_database_roundtrip::measure_select1_roundtrip;
-use crate::block_stores::postgres::postgres_mappings::{build_create_account_mapping_table_statement, build_create_transaction_mapping_table_statement, perform_account_mapping, perform_transaction_mapping};
+use crate::block_stores::postgres::postgres_mappings::{build_create_account_mapping_table_statement, build_create_blockhash_mapping_table_statement, build_create_transaction_mapping_table_statement, perform_account_mapping, perform_blockhash_mapping, perform_transaction_mapping};
 
 use super::postgres_block::*;
 use super::postgres_config::*;
@@ -185,6 +185,13 @@ impl PostgresBlockStore {
             .await
             .context("create account mapping table for new epoch")?;
         
+        // mapping table for blockhashes
+        let statement = build_create_blockhash_mapping_table_statement(epoch);
+        self.session
+            .execute_multiple(&statement)
+            .await
+            .context("create blockhash mapping table for new epoch")?;
+        
         // create transaction_blockdata table
         let statement = PostgresTransaction::build_create_table_statement(epoch);
         self.session
@@ -287,7 +294,16 @@ impl PostgresBlockStore {
             Arc::new(mapping)
         };
 
-        let (tx_mapping, acc_mapping) = join!(fut_tx_mapping, fut_acc_mapping);
+        let fut_blockhash_mapping = async {
+            let blockhashes = transactions.iter()
+                .map(|tx| tx.recent_blockhash.as_str())
+                .dedup()
+                .collect_vec();
+            let mapping = perform_blockhash_mapping(&write_session_single, epoch.into(), &blockhashes).await.expect("must succeed");
+            Arc::new(mapping)
+        };
+
+        let (tx_mapping, acc_mapping, blockhash_mapping) = join!(fut_tx_mapping, fut_acc_mapping, fut_blockhash_mapping);
 
         let mut queries_fut = Vec::new();
         let n_sessions = self.write_sessions.len();
@@ -295,7 +311,7 @@ impl PostgresBlockStore {
         for (i, chunk) in chunks.into_iter().enumerate() {
             let session = &self.write_sessions[i];
             let future =
-                PostgresTransaction::save_transactions_from_block(session, epoch.into(), tx_mapping.clone(), acc_mapping.clone(), chunk);
+                PostgresTransaction::save_transactions_from_block(session, epoch.into(), tx_mapping.clone(), acc_mapping.clone(), blockhash_mapping.clone(), chunk);
             queries_fut.push(future);
         }
         let all_results: Vec<Result<()>> = futures_util::future::join_all(queries_fut).await;

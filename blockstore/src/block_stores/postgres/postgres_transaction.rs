@@ -174,7 +174,7 @@ impl PostgresTransaction {
                     cu_consumed bigint NOT NULL,
                     cu_requested bigint,
                     prioritization_fees bigint,
-                    recent_blockhash varchar(44) COMPRESSION lz4 NOT NULL,
+                    recent_blockhash int4 NOT NULL,
                     err jsonb COMPRESSION lz4,
                     message_version int4 NOT NULL,
                     message bytea NOT NULL, -- lz4 block compressed bincode serialized VersionedMessage
@@ -191,7 +191,6 @@ impl PostgresTransaction {
                     PRIMARY KEY (slot, transaction_id) WITH (FILLFACTOR=90)
                 ) WITH (FILLFACTOR=90,TOAST_TUPLE_TARGET=128);
                 --ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN signature SET STORAGE PLAIN;
-                ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN recent_blockhash SET STORAGE EXTENDED;
                 ALTER TABLE {schema}.transaction_blockdata ALTER COLUMN message SET STORAGE EXTENDED;
                 ALTER TABLE {schema}.transaction_blockdata
                     SET (
@@ -214,6 +213,7 @@ impl PostgresTransaction {
         epoch: EpochRef,
         tx_mapping: Arc<BiMap<String, i64>>,
         acc_mapping: Arc<BiMap<String, i64>>,
+        blockhash_mapping: Arc<BiMap<String, i32>>,
         transactions: &[PostgresTransaction],
     ) -> anyhow::Result<()> {
         let schema = PostgresEpoch::build_schema_name(epoch);
@@ -253,10 +253,10 @@ impl PostgresTransaction {
                 Type::INT8,        // cu_consumed
                 Type::INT8,        // cu_requested
                 Type::INT8,        // prioritization_fees
-                Type::VARCHAR,     // recent_blockhash
+                Type::INT4,     // recent_blockhash (blockhash_id)
                 Type::JSONB,       // err
                 Type::INT4,        // message_version
-                Type::BYTEA,  // message
+                Type::BYTEA,        // message
                 Type::INT8_ARRAY,  // writable_accounts
                 Type::INT8_ARRAY,  // readable_accounts
                 Type::INT8,        // fee
@@ -296,6 +296,8 @@ impl PostgresTransaction {
             } = tx;
 
             let transaction_id = tx_mapping.get_by_left(signature).expect("transaction_id must exist in mapping table");
+            
+            let recent_blockhash_id = blockhash_mapping.get_by_left(recent_blockhash).expect("blockhash_id must exist in mapping table");
 
             let readable_account_ids = readable_accounts.iter()
                 .map(|r_account| acc_mapping.get_by_left(r_account).expect("account_id must exist in mapping table"))
@@ -316,7 +318,7 @@ impl PostgresTransaction {
                     &cu_consumed,
                     &cu_requested,
                     &prioritization_fees,
-                    &recent_blockhash,
+                    &recent_blockhash_id,
                     &err,
                     &message_version,
                     &message.as_ref(),
