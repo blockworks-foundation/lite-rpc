@@ -366,11 +366,23 @@ impl PostgresBlockStore {
         );
         let statement2 = format!(
             r#"
-                VACUUM (SKIP_LOCKED true, PROCESS_TOAST false, TRUNCATE false, INDEX_CLEANUP off) {schema}.transaction_blockdata
+                VACUUM (SKIP_LOCKED true, PROCESS_TOAST false, TRUNCATE false, INDEX_CLEANUP off) {schema}.account_ids
             "#,
             schema = PostgresEpoch::build_schema_name(epoch),
         );
         let statement3 = format!(
+            r#"
+                VACUUM (SKIP_LOCKED true, PROCESS_TOAST false, TRUNCATE false, INDEX_CLEANUP off) {schema}.blockhash_ids
+            "#,
+            schema = PostgresEpoch::build_schema_name(epoch),
+        );
+        let statement4 = format!(
+            r#"
+                VACUUM (SKIP_LOCKED true, PROCESS_TOAST false, TRUNCATE false, INDEX_CLEANUP off) {schema}.transaction_blockdata
+            "#,
+            schema = PostgresEpoch::build_schema_name(epoch),
+        );
+        let statement5 = format!(
             r#"
                 VACUUM (SKIP_LOCKED true, PROCESS_TOAST false, TRUNCATE false, INDEX_CLEANUP off) {schema}.blocks
             "#,
@@ -383,6 +395,8 @@ impl PostgresBlockStore {
             write_session.execute_multiple(&statement1),
             write_session.execute_multiple(&statement2),
             write_session.execute_multiple(&statement3),
+            write_session.execute_multiple(&statement4),
+            write_session.execute_multiple(&statement5),
         );
 
         let elapsed = started.elapsed();
