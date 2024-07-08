@@ -9,10 +9,10 @@ use std::time::Duration;
 use crate::benches::rpc_interface::{
     send_and_confirm_bulk_transactions, ConfirmationResponseFromRpc,
 };
+use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signature::{read_keypair_file, Keypair, Signature, Signer};
 use url::Url;
-use solana_lite_rpc_util::obfuscate_rpcurl;
 
 #[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct Metric {
@@ -42,8 +42,9 @@ pub async fn confirmation_rate(
 
     let rpc = Arc::new(RpcClient::new(rpc_url.clone()));
     info!("RPC: {}", obfuscate_rpcurl(&rpc.as_ref().url()));
-    
-    let ws_addr = tx_status_websocket_addr.unwrap_or_else(|| rpc_url.replace("http:", "ws:").replace("https:", "wss:"));
+
+    let ws_addr = tx_status_websocket_addr
+        .unwrap_or_else(|| rpc_url.replace("http:", "ws:").replace("https:", "wss:"));
     info!("WS ADDR: {}", obfuscate_rpcurl(&ws_addr));
 
     let payer: Arc<Keypair> = Arc::new(read_keypair_file(payer_path).unwrap());
@@ -52,9 +53,16 @@ pub async fn confirmation_rate(
     let mut rpc_results = Vec::with_capacity(num_of_runs);
 
     for _ in 0..num_of_runs {
-        match send_bulk_txs_and_wait(&rpc, Url::parse(&ws_addr).expect("Invalid Url"), &payer, txs_per_run, &tx_params, max_timeout)
-            .await
-            .context("send bulk tx and wait")
+        match send_bulk_txs_and_wait(
+            &rpc,
+            Url::parse(&ws_addr).expect("Invalid Url"),
+            &payer,
+            txs_per_run,
+            &tx_params,
+            max_timeout,
+        )
+        .await
+        .context("send bulk tx and wait")
         {
             Ok(stat) => {
                 rpc_results.push(stat);
@@ -94,9 +102,15 @@ pub async fn send_bulk_txs_and_wait(
 
     trace!("Sending {} transactions in bulk ..", txs.len());
     let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, tx_status_websocket_addr, payer.pubkey(), &txs, max_timeout)
-            .await
-            .context("send and confirm bulk tx")?;
+        send_and_confirm_bulk_transactions(
+            rpc,
+            tx_status_websocket_addr,
+            payer.pubkey(),
+            &txs,
+            max_timeout,
+        )
+        .await
+        .context("send and confirm bulk tx")?;
     trace!("Done sending {} transaction.", txs.len());
 
     let mut tx_sent = 0;

@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::str::FromStr;
 use std::time::Duration;
 
 use crate::benches::rpc_interface::{
@@ -11,13 +10,12 @@ use anyhow::anyhow;
 use log::{debug, info, warn};
 use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{read_keypair_file, Signature, Signer};
 use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair};
-use solana_sdk::pubkey::Pubkey;
 use tokio::time::{sleep, Instant};
 use url::Url;
-use crate::benches::tx_status_websocket_collector::start_tx_status_collector;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Metric {
@@ -64,8 +62,10 @@ pub async fn confirmation_slot(
     info!("RPC A: {}", obfuscate_rpcurl(&rpc_a_url));
     info!("RPC B: {}", obfuscate_rpcurl(&rpc_b_url));
 
-    let ws_addr_a = tx_status_websocket_addr_a.unwrap_or_else(|| rpc_a_url.replace("http:", "ws:").replace("https:", "wss:"));
-    let ws_addr_b = tx_status_websocket_addr_b.unwrap_or_else(|| rpc_b_url.replace("http:", "ws:").replace("https:", "wss:"));
+    let ws_addr_a = tx_status_websocket_addr_a
+        .unwrap_or_else(|| rpc_a_url.replace("http:", "ws:").replace("https:", "wss:"));
+    let ws_addr_b = tx_status_websocket_addr_b
+        .unwrap_or_else(|| rpc_b_url.replace("http:", "ws:").replace("https:", "wss:"));
     let ws_addr_a = Url::parse(&ws_addr_a).expect("Invalid URL");
     let ws_addr_b = Url::parse(&ws_addr_b).expect("Invalid URL");
 
@@ -113,13 +113,15 @@ pub async fn confirmation_slot(
         let a_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(a_delay)).await;
             debug!("(A) sending tx {}", rpc_a_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_a, ws_addr_a, payer_pubkey, rpc_a_tx, max_timeout).await
+            send_and_confirm_transaction(&rpc_a, ws_addr_a, payer_pubkey, rpc_a_tx, max_timeout)
+                .await
         });
 
         let b_task = tokio::spawn(async move {
             sleep(Duration::from_secs_f64(b_delay)).await;
             debug!("(B) sending tx {}", rpc_b_tx.signatures[0]);
-            send_and_confirm_transaction(&rpc_b, ws_addr_b, payer_pubkey, rpc_b_tx, max_timeout).await
+            send_and_confirm_transaction(&rpc_b, ws_addr_b, payer_pubkey, rpc_b_tx, max_timeout)
+                .await
         });
 
         let (a, b) = tokio::join!(a_task, b_task);
@@ -180,7 +182,14 @@ async fn send_and_confirm_transaction(
     max_timeout: Duration,
 ) -> anyhow::Result<ConfirmationResponseFromRpc> {
     let result_vec: Vec<(Signature, ConfirmationResponseFromRpc)> =
-        send_and_confirm_bulk_transactions(rpc, tx_status_websocket_addr, payer_pubkey, &[tx], max_timeout).await?;
+        send_and_confirm_bulk_transactions(
+            rpc,
+            tx_status_websocket_addr,
+            payer_pubkey,
+            &[tx],
+            max_timeout,
+        )
+        .await?;
     assert_eq!(result_vec.len(), 1, "expected 1 result");
     let (_sig, confirmation_response) = result_vec.into_iter().next().unwrap();
 

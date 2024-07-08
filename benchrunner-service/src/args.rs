@@ -58,7 +58,7 @@ pub fn read_tenant_configs(env_vars: Vec<(String, String)>) -> Vec<TenantConfig>
                 .iter()
                 .at_most_one()
                 .expect("need TENANT_X_TX_STATUS_WS_ADDR")
-                .map(|(_, v)| v.to_string())
+                .map(|(_, v)| v.to_string()),
         })
         .collect::<Vec<TenantConfig>>();
 

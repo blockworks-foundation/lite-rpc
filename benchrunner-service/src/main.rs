@@ -23,7 +23,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::OnceCell;
-use solana_lite_rpc_util::obfuscate_rpcurl;
 
 #[tokio::main]
 async fn main() {

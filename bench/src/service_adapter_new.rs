@@ -22,7 +22,8 @@ pub async fn benchnew_confirmation_rate_servicerunner(
     };
     let max_timeout = Duration::from_secs(60);
 
-    let ws_addr = tx_status_websocket_addr.unwrap_or_else(|| rpc_addr.replace("http:", "ws:").replace("https:", "wss:"));
+    let ws_addr = tx_status_websocket_addr
+        .unwrap_or_else(|| rpc_addr.replace("http:", "ws:").replace("https:", "wss:"));
 
     let result = send_bulk_txs_and_wait(
         &rpc,

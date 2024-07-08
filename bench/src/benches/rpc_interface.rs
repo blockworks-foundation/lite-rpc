@@ -1,32 +1,29 @@
+use crate::benches::tx_status_websocket_collector::start_tx_status_collector;
 use anyhow::{bail, Context, Error};
+
 use futures::future::join_all;
 use futures::TryFutureExt;
 use itertools::Itertools;
-use log::{debug, info, trace, warn};
+use log::{debug, trace, warn};
+
+use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_rpc_client_api::client_error::ErrorKind;
 use solana_rpc_client_api::config::RpcSendTransactionConfig;
+
 use solana_sdk::clock::Slot;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Signature;
 use solana_sdk::transaction::VersionedTransaction;
 use solana_transaction_status::TransactionConfirmationStatus;
 use std::collections::{HashMap, HashSet};
-use std::iter::zip;
-use std::str::FromStr;
+
 use std::sync::Arc;
 use std::time::Duration;
-use dashmap::mapref::multiple::RefMulti;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
-use solana_rpc_client_api::response::{Response, RpcBlockUpdate, RpcResponseContext, SlotUpdate};
-use solana_sdk::pubkey::Pubkey;
-use tokio::time::{Instant, timeout};
+use tokio::time::Instant;
 use url::Url;
-use websocket_tungstenite_retry::websocket_stable::WsMessage;
-use solana_lite_rpc_util::obfuscate_rpcurl;
-use crate::benches::tx_status_websocket_collector::start_tx_status_collector;
 
 pub fn create_rpc_client(rpc_url: &Url) -> RpcClient {
     RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed())
@@ -65,7 +62,12 @@ pub async fn send_and_confirm_bulk_transactions(
     };
 
     // note: we get confirmed but never finaliized
-    let (tx_status_map, _jh_collector) = start_tx_status_collector(tx_status_websocket_addr.clone(), payer_pubkey, CommitmentConfig::confirmed()).await;
+    let (tx_status_map, _jh_collector) = start_tx_status_collector(
+        tx_status_websocket_addr.clone(),
+        payer_pubkey,
+        CommitmentConfig::confirmed(),
+    )
+    .await;
 
     let started_at = Instant::now();
     trace!(
@@ -145,7 +147,10 @@ pub async fn send_and_confirm_bulk_transactions(
 
     // items get moved from pending_status_set to result_status_map
 
-    debug!("Waiting for transaction confirmations from websocket source <{}> ..", obfuscate_rpcurl(tx_status_websocket_addr.as_str()));
+    debug!(
+        "Waiting for transaction confirmations from websocket source <{}> ..",
+        obfuscate_rpcurl(tx_status_websocket_addr.as_str())
+    );
     let started_at = Instant::now();
     let timeout_at = started_at + max_timeout;
     // "poll" the status dashmap
@@ -163,10 +168,14 @@ pub async fn send_and_confirm_bulk_transactions(
             let (tx_sig, confirmed_slot) = multi.pair();
 
             // status is confirmed
-            if pending_status_set.remove(&tx_sig) {
-                trace!("take status for sig {:?} and confirmed_slot: {:?} from websocket source", tx_sig, confirmed_slot);
+            if pending_status_set.remove(tx_sig) {
+                trace!(
+                    "take status for sig {:?} and confirmed_slot: {:?} from websocket source",
+                    tx_sig,
+                    confirmed_slot
+                );
                 let prev_value = result_status_map.insert(
-                    tx_sig.clone(),
+                    *tx_sig,
                     ConfirmationResponseFromRpc::Success(
                         send_slot,
                         *confirmed_slot,
@@ -177,9 +186,7 @@ pub async fn send_and_confirm_bulk_transactions(
                 );
                 assert!(prev_value.is_none(), "Must not override existing value");
             }
-
         } // -- END for tx_status_map loop
-
 
         if pending_status_set.is_empty() {
             debug!(
