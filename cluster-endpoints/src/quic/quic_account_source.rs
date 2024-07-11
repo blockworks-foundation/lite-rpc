@@ -100,6 +100,11 @@ pub async fn create_quic_account_source_endpoint(
     let (client, mut messages, mut tasks) =
         QuicClient::new(quic_url, ConnectionParameters::default()).await?;
     let (account_sx, account_rx) = tokio::sync::broadcast::channel(64 * 1024);
+
+    // start listening to deleted accounts
+    client
+        .subscribe(vec![QuicGeyserFilter::DeletedAccounts])
+        .await?;
     let quic_account_src = QuicAccountSource { client, rpc_url };
 
     let tasks_jh = tokio::spawn(async move {

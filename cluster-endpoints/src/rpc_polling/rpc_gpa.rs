@@ -91,13 +91,12 @@ pub async fn get_program_account(
                             };
 
                             // compress just account_data
-
                             account_store
                                 .initilize_or_update_account(AccountData {
                                     pubkey: Pubkey::from_str(&key_account.p)?,
                                     account: Arc::new(Account::from_solana_account(
                                         account,
-                                        CompressionMethod::Lz4(1),
+                                        CompressionMethod::Lz4(8),
                                     )),
                                     updated_slot,
                                     write_version: 0,
@@ -175,7 +174,7 @@ pub async fn get_program_account(
                             pubkey: accounts[index],
                             account: Arc::new(Account::from_solana_account(
                                 account,
-                                CompressionMethod::Lz4(1),
+                                CompressionMethod::Lz4(8),
                             )),
                             updated_slot,
                             write_version: 0,

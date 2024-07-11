@@ -2572,7 +2572,7 @@ checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 [[package]]
 name = "lite-account-manager-common"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#f815147a2ddfc2f8e752a9bdf15b1fe9178b4441"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#3d602ef6ab92868aeceacc62a1b6fa4cb3e36787"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2591,7 +2591,7 @@ dependencies = [
 [[package]]
 name = "lite-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#f815147a2ddfc2f8e752a9bdf15b1fe9178b4441"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#3d602ef6ab92868aeceacc62a1b6fa4cb3e36787"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2609,7 +2609,7 @@ dependencies = [
 [[package]]
 name = "lite-accounts-on-demand"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#f815147a2ddfc2f8e752a9bdf15b1fe9178b4441"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#3d602ef6ab92868aeceacc62a1b6fa4cb3e36787"
 dependencies = [
  "async-trait",
  "futures",
@@ -2686,7 +2686,7 @@ dependencies = [
 [[package]]
 name = "lite-token-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#f815147a2ddfc2f8e752a9bdf15b1fe9178b4441"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#3d602ef6ab92868aeceacc62a1b6fa4cb3e36787"
 dependencies = [
  "anyhow",
  "arrayref",
