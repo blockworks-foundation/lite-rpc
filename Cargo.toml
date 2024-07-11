@@ -101,3 +101,4 @@ quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geys
 lite-account-manager-common = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
 lite-account-storage = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
 lite-accounts-on-demand = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
+lite-token-account-storage = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }

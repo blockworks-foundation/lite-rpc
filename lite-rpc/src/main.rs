@@ -10,6 +10,7 @@ use lite_account_manager_common::{
     mutable_filter_store::MutableFilterStore,
 };
 use lite_account_storage::inmemory_account_store::InmemoryAccountStore;
+use lite_account_storage::storage_by_program_id::StorageByProgramId;
 use lite_accounts_on_demand::accounts_on_demand::AccountsOnDemand;
 use lite_rpc::account_service::AccountService;
 use lite_rpc::bridge::LiteBridge;
@@ -19,6 +20,9 @@ use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
+use lite_token_account_storage::inmemory_token_account_storage::InmemoryTokenAccountStorage;
+use lite_token_account_storage::inmemory_token_storage::TokenProgramAccountsStorage;
+use lite_token_account_storage::{TOKEN_PROGRAM_2022_ID, TOKEN_PROGRAM_ID};
 use log::info;
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
@@ -67,6 +71,7 @@ use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer;
+use std::collections::HashMap;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
@@ -196,6 +201,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                 Arc::new(quic_account_source);
             quic_client_tasks.append(&mut tasks);
 
+            let has_token_program = account_filters
+                .iter()
+                .filter_map(|x| x.program_id)
+                .any(|x| x == TOKEN_PROGRAM_ID || x == TOKEN_PROGRAM_2022_ID);
+
             let account_storage: Arc<dyn AccountStorageInterface> =
                 if enable_accounts_on_demand_accounts_service {
                     // mutable filter store
@@ -203,17 +213,44 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                     mutable_filters_store
                         .add_account_filters(&account_filters)
                         .await;
+
+                    let account_store: Arc<dyn AccountStorageInterface> = if has_token_program {
+                        let defualt_store =
+                            Arc::new(InmemoryAccountStore::new(mutable_filters_store.clone()));
+                        let token_account_store = Arc::new(InmemoryTokenAccountStorage::default());
+                        let token_store: Arc<dyn AccountStorageInterface> =
+                            Arc::new(TokenProgramAccountsStorage::new(token_account_store));
+                        let mut program_dispatch = HashMap::new();
+                        program_dispatch.insert(TOKEN_PROGRAM_ID, token_store.clone());
+                        program_dispatch.insert(TOKEN_PROGRAM_2022_ID, token_store.clone());
+                        Arc::new(StorageByProgramId::new(program_dispatch, defualt_store))
+                    } else {
+                        Arc::new(InmemoryAccountStore::new(mutable_filters_store.clone()))
+                    };
                     Arc::new(AccountsOnDemand::new(
                         quic_account_source.clone(),
                         mutable_filters_store.clone(),
-                        Arc::new(InmemoryAccountStore::new(mutable_filters_store)),
+                        account_store,
                     ))
                 } else {
                     // no accounts on demand use const filter store
                     let mut simple_filter_store = SimpleFilterStore::default();
                     simple_filter_store.add_account_filters(&account_filters);
-                    // lets use inmemory storage for now
-                    Arc::new(InmemoryAccountStore::new(Arc::new(simple_filter_store)))
+                    let simple_filter_store = Arc::new(simple_filter_store);
+
+                    if has_token_program {
+                        let defualt_store =
+                            Arc::new(InmemoryAccountStore::new(simple_filter_store));
+                        let token_account_store = Arc::new(InmemoryTokenAccountStorage::default());
+                        let token_store: Arc<dyn AccountStorageInterface> =
+                            Arc::new(TokenProgramAccountsStorage::new(token_account_store));
+                        let mut program_dispatch = HashMap::new();
+                        program_dispatch.insert(TOKEN_PROGRAM_ID, token_store.clone());
+                        program_dispatch.insert(TOKEN_PROGRAM_2022_ID, token_store.clone());
+                        Arc::new(StorageByProgramId::new(program_dispatch, defualt_store))
+                    } else {
+                        Arc::new(InmemoryAccountStore::new(simple_filter_store))
+                    }
                 };
 
             let account_service = AccountService::new(
