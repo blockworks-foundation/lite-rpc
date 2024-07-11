@@ -6,7 +6,6 @@ use geyser_grpc_connector::GrpcSourceConfig;
 use itertools::Itertools;
 use log::trace;
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::{
     structures::produced_block::{ProducedBlock, TransactionInfo},
     AnyhowJoinHandle,
@@ -242,7 +241,6 @@ fn map_compute_budget_instructions(message: &VersionedMessage) -> (Option<u32>, 
 pub fn create_grpc_subscription(
     rpc_client: Arc<RpcClient>,
     grpc_sources: Vec<GrpcSourceConfig>,
-    accounts_filter: AccountFilters,
 ) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
     let (cluster_info_sx, cluster_info_notifier) = tokio::sync::broadcast::channel(10);
     let (va_sx, vote_account_notifier) = tokio::sync::broadcast::channel(10);
@@ -256,26 +254,19 @@ pub fn create_grpc_subscription(
 
     let cluster_info_polling = poll_cluster_info(rpc_client.clone(), cluster_info_sx);
     let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
-    // accounts
-    if !accounts_filter.is_empty() {
-        log::error!("Please use quic plugin instead of grpc if you want to use accounts : https://github.com/blockworks-foundation/quic_geyser_plugin");
-        anyhow::bail!("using grpc for accounts notification is deprecated");
-    } else {
-        let streamers = EndpointStreaming {
-            blocks_notifier: block_multiplex_channel,
-            blockinfo_notifier: blockmeta_channel,
-            slot_notifier: slot_multiplex_channel,
-            cluster_info_notifier,
-            vote_account_notifier,
-            processed_account_stream: None,
-        };
+    let streamers = EndpointStreaming {
+        blocks_notifier: block_multiplex_channel,
+        blockinfo_notifier: blockmeta_channel,
+        slot_notifier: slot_multiplex_channel,
+        cluster_info_notifier,
+        vote_account_notifier,
+    };
 
-        let endpoint_tasks = vec![
-            jh_multiplex_slotstream,
-            jh_multiplex_blockstream,
-            cluster_info_polling,
-            vote_accounts_polling,
-        ];
-        Ok((streamers, endpoint_tasks))
-    }
+    let endpoint_tasks = vec![
+        jh_multiplex_slotstream,
+        jh_multiplex_blockstream,
+        cluster_info_polling,
+        vote_accounts_polling,
+    ];
+    Ok((streamers, endpoint_tasks))
 }

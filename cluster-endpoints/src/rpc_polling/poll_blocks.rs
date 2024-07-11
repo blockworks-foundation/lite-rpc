@@ -320,6 +320,7 @@ pub fn from_ui_block(
 fn map_block_info(produced_block: &ProducedBlock) -> BlockInfo {
     BlockInfo {
         slot: produced_block.slot,
+        parent_slot: produced_block.parent_slot,
         block_height: produced_block.block_height,
         blockhash: produced_block.blockhash,
         commitment_config: produced_block.commitment_config,

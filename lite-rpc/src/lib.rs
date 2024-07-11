@@ -1,6 +1,7 @@
 use const_env::from_env;
 use solana_transaction_status::TransactionConfirmationStatus;
 
+pub mod account_service;
 pub mod bridge;
 pub mod bridge_pubsub;
 pub mod cli;

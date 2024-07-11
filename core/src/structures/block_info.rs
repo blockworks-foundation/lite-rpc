@@ -4,6 +4,7 @@ use solana_sdk::hash::Hash;
 #[derive(Clone, Debug)]
 pub struct BlockInfo {
     pub slot: u64,
+    pub parent_slot: u64,
     pub block_height: u64,
     pub blockhash: Hash,
     pub commitment_config: CommitmentConfig,

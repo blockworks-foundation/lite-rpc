@@ -1,13 +1,12 @@
+use lite_account_manager_common::account_data::AccountNotificationMessage;
 use prometheus::{opts, register_int_counter, IntCounter};
-use solana_lite_rpc_accounts::account_service::AccountService;
-use solana_lite_rpc_core::{
-    commitment_utils::Commitment, stores::data_cache::DataCache,
-    structures::account_data::AccountNotificationMessage, types::BlockStream,
-};
+
+use solana_lite_rpc_core::{stores::data_cache::DataCache, types::BlockStream};
 use std::{str::FromStr, sync::Arc, time::Duration};
 use tokio::sync::broadcast::error::RecvError::{Closed, Lagged};
 
 use crate::{
+    account_service::AccountService,
     jsonrpsee_subscrption_handler_sink::JsonRpseeSubscriptionHandlerSink,
     rpc_pubsub::LiteRpcPubSubServer,
 };
@@ -332,7 +331,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         }
                         // check config
                         // check if commitment match
-                        if Commitment::from(config_commitment) != commitment {
+                        if config_commitment != commitment {
                             continue;
                         }
                         // check for min context slot
@@ -433,7 +432,7 @@ impl LiteRpcPubSubServer for LitePubSubBridge {
                         }
                         // check config
                         // check if commitment match
-                        if Commitment::from(config_commitment) != commitment {
+                        if config_commitment != commitment {
                             continue;
                         }
                         // check for min context slot

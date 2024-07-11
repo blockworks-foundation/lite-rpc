@@ -2,7 +2,6 @@ use itertools::Itertools;
 use jsonrpsee::core::RpcResult;
 use prometheus::{opts, register_int_counter, IntCounter};
 use solana_account_decoder::UiAccount;
-use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::prioritization_fee_calculation_method::PrioritizationFeeCalculationMethod;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
@@ -38,6 +37,7 @@ use solana_lite_rpc_services::{
     transaction_service::TransactionService, tx_sender::TXS_IN_CHANNEL,
 };
 
+use crate::account_service::AccountService;
 use crate::rpc_errors::RpcErrors;
 use crate::{
     configs::{IsBlockHashValidConfig, SendTransactionConfig},

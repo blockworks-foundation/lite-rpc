@@ -12,15 +12,17 @@ use geyser_grpc_connector::yellowstone_grpc_util::{
 };
 use geyser_grpc_connector::{GeyserGrpcClient, GrpcSourceConfig};
 use itertools::Itertools;
-use solana_lite_rpc_core::{
-    commitment_utils::Commitment,
-    structures::{
-        account_data::{Account, AccountData, AccountNotificationMessage},
-        account_filter::{AccountFilterType, AccountFilters, MemcmpFilterData},
-    },
-    AnyhowJoinHandle,
+use solana_lite_rpc_core::AnyhowJoinHandle;
+
+use lite_account_manager_common::{
+    account_data::CompressionMethod,
+    account_data::{Account, AccountData, AccountNotificationMessage},
+    account_filter::{AccountFilterType, AccountFilters, MemcmpFilterData},
 };
-use solana_sdk::{account::Account as SolanaAccount, pubkey::Pubkey};
+
+use solana_sdk::{
+    account::Account as SolanaAccount, commitment_config::CommitmentConfig, pubkey::Pubkey,
+};
 use tokio::sync::Notify;
 use yellowstone_grpc_proto::geyser::{
     subscribe_request_filter_accounts_filter::Filter,
@@ -176,12 +178,15 @@ pub fn start_account_streaming_tasks(
                             let notification = AccountNotificationMessage {
                                 data: AccountData {
                                     pubkey: Pubkey::new_from_array(account_pk_bytes),
-                                    account: Arc::new(Account::from_solana_account(solana_account, solana_lite_rpc_core::structures::account_data::CompressionMethod::Lz4(1))),
+                                    account: Arc::new(Account::from_solana_account(
+                                        solana_account,
+                                        CompressionMethod::Lz4(1),
+                                    )),
                                     updated_slot: account.slot,
                                     write_version: account_data.write_version,
                                 },
                                 // TODO update with processed commitment / check above
-                                commitment: Commitment::Processed,
+                                commitment: CommitmentConfig::processed(),
                             };
                             if account_stream_sx.send(notification).is_err() {
                                 // non recoverable, i.e the whole stream is being restarted

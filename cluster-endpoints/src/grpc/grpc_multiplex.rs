@@ -170,6 +170,7 @@ fn create_grpc_multiplex_block_info_task(
                                     tip = proposed_slot;
                                     let block_meta = BlockInfo {
                                         slot: proposed_slot,
+                                        parent_slot: block_meta.parent_slot,
                                         block_height: block_meta
                                             .block_height
                                             .expect("block_height from geyser block meta")

@@ -2,9 +2,7 @@ use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use quic_geyser_client::non_blocking::client::Client;
 use quic_geyser_common::{
-    filters::AccountFilter as GeyserAccountFilter,
-    filters::AccountFilterType as GeyserAccountFilterType, filters::Filter as QuicGeyserFilter,
-    filters::MemcmpFilter as QuicGeyserMemcmpFilter, types::block::Block as QuicGeyserBlock,
+    filters::Filter as QuicGeyserFilter, types::block::Block as QuicGeyserBlock,
     types::block_meta::BlockMeta as QuicGeyserBlockMeta,
     types::connections_parameters::ConnectionParameters,
 };
@@ -12,8 +10,6 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
     structures::{
-        account_data::{Account, AccountData, AccountNotificationMessage, Data},
-        account_filter::AccountFilters,
         block_info::BlockInfo,
         produced_block::{ProducedBlock, ProducedBlockInner, TransactionInfo},
         slot_notification::SlotNotification,
@@ -64,6 +60,7 @@ fn convert_quic_block_meta(
 ) -> BlockInfo {
     solana_lite_rpc_core::structures::block_info::BlockInfo {
         slot: block_meta.slot,
+        parent_slot: block_meta.parent_slot,
         block_height: block_meta.block_height.unwrap_or_default(),
         blockhash: Hash::from_str(&block_meta.blockhash.clone())
             .expect("blockhash should be valid"),
@@ -122,8 +119,7 @@ fn convert_quic_block(
 pub async fn create_quic_endpoint(
     rpc_client: Arc<RpcClient>,
     endpoint_url: String,
-    accounts_filter: AccountFilters,
-) -> anyhow::Result<(Client, EndpointStreaming, Vec<AnyhowJoinHandle>)> {
+) -> anyhow::Result<(EndpointStreaming, Vec<AnyhowJoinHandle>)> {
     let (slot_sx, slot_notifier) = tokio::sync::broadcast::channel(16);
     let (block_sx, blocks_notifier) = tokio::sync::broadcast::channel(16);
     let (blockinfo_sx, blockinfo_notifier) = tokio::sync::broadcast::channel(16);
@@ -137,48 +133,15 @@ pub async fn create_quic_endpoint(
     let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
     endpoint_tasks.push(vote_accounts_polling);
 
-    let (quic_client, mut quic_notification_reciever) =
+    let (quic_client, mut quic_notification_reciever, mut client_tasks) =
         Client::new(endpoint_url, ConnectionParameters::default()).await?;
-    let mut subscriptions = vec![
+    let subscriptions = vec![
         QuicGeyserFilter::Slot,
         QuicGeyserFilter::BlockMeta,
         QuicGeyserFilter::BlockAll,
     ];
+    endpoint_tasks.append(&mut client_tasks);
 
-    let (processed_account_stream, account_sender) = if !accounts_filter.is_empty() {
-        let (sx, rx) = tokio::sync::broadcast::channel(64 * 1024);
-        (Some(rx), Some(sx))
-    } else {
-        (None, None)
-    };
-
-    for account_filter in accounts_filter {
-        let accounts = Some(account_filter.accounts.iter().copied().collect());
-        let geyser_account_filter = GeyserAccountFilter {
-            owner: account_filter.program_id,
-            accounts,
-            filter: None,
-        };
-
-        if let Some(filters) = account_filter.filters {
-            let mut geyser_account_filter = geyser_account_filter.clone();
-            geyser_account_filter.accounts = None;
-            for filter in filters {
-                let quic_geyser_filter = match filter {
-                    solana_lite_rpc_core::structures::account_filter::AccountFilterType::Datasize(size) => GeyserAccountFilterType::Datasize(size),
-                    solana_lite_rpc_core::structures::account_filter::AccountFilterType::Memcmp(memcmp) => GeyserAccountFilterType::Memcmp(QuicGeyserMemcmpFilter{
-                        offset: memcmp.offset,
-                        data: quic_geyser_common::filters::MemcmpFilterData::Bytes(memcmp.bytes()),
-                    }),
-                };
-                geyser_account_filter.filter = Some(quic_geyser_filter);
-                subscriptions.push(QuicGeyserFilter::Account(geyser_account_filter.clone()));
-            }
-        } else {
-            // subscribe to all the accounts
-            subscriptions.push(QuicGeyserFilter::Account(geyser_account_filter));
-        }
-    }
     log::info!(
         "Subscribing to quic geyser plugin with {} subscriptions",
         subscriptions.len()
@@ -189,7 +152,6 @@ pub async fn create_quic_endpoint(
         let slot_sx = slot_sx;
         let block_sx = block_sx;
         let blockinfo_sx = blockinfo_sx;
-        let account_sender = account_sender;
         let mut current_slot = 0;
         let mut map_of_slot_data = BTreeMap::<Slot, SlotData>::new();
 
@@ -209,42 +171,6 @@ pub async fn create_quic_endpoint(
             QUIC_GEYSER_NOTIFICATIONS.inc();
 
             match notification_message {
-                quic_geyser_common::message::Message::AccountMsg(account_mesage) => {
-                    QUIC_GEYSER_ACCOUNT_NOTIFICATIONS.inc();
-                    if account_mesage.slot_identifier.slot > current_slot {
-                        current_slot = account_mesage.slot_identifier.slot;
-                        slot_sx
-                            .send(SlotNotification {
-                                processed_slot: account_mesage.slot_identifier.slot,
-                                estimated_processed_slot: account_mesage.slot_identifier.slot,
-                            })
-                            .expect("slot notification should be sent");
-                    }
-                    if let Some(account_sender) = &account_sender {
-                        account_sender.send(AccountNotificationMessage{
-                            data: AccountData {
-                                pubkey: account_mesage.pubkey,
-                                account: Arc::new(Account {
-                                    lamports: account_mesage.lamports,
-                                    data: match account_mesage.compression_type {
-                                        quic_geyser_common::compression::CompressionType::None => {
-                                            Data::Uncompressed(account_mesage.data)
-                                        },
-                                        quic_geyser_common::compression::CompressionType::Lz4Fast(_) | quic_geyser_common::compression::CompressionType::Lz4(_) => {
-                                            Data::Lz4 { binary: account_mesage.data, len: account_mesage.data_length as usize }
-                                        },
-                                    },
-                                    owner: account_mesage.owner,
-                                    executable: account_mesage.executable,
-                                    rent_epoch: account_mesage.rent_epoch,
-                                }),
-                                updated_slot: account_mesage.slot_identifier.slot,
-                                write_version: account_mesage.write_version,
-                            },
-                            commitment: solana_lite_rpc_core::commitment_utils::Commitment::Processed,
-                        }).expect("account notification should be sent");
-                    }
-                }
                 quic_geyser_common::message::Message::SlotMsg(slot_message) => {
                     QUIC_GEYSER_SLOT_NOTIFICATIONS.inc();
                     if slot_message.slot > current_slot {
@@ -374,8 +300,7 @@ pub async fn create_quic_endpoint(
         slot_notifier,
         cluster_info_notifier,
         vote_account_notifier,
-        processed_account_stream,
     };
 
-    Ok((quic_client, streamers, endpoint_tasks))
+    Ok((streamers, endpoint_tasks))
 }

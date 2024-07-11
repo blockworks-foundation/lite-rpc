@@ -14,8 +14,6 @@ members = [
     "bench",
     "benchrunner-service",
     "address-lookup-tables",
-    "accounts",
-    "accounts-on-demand",
     #examples
     "examples/custom-tpu-send-transactions"
 ]
@@ -83,8 +81,6 @@ solana-lite-rpc-blockstore = {path = "blockstore", version="0.2.4"}
 solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.4"}
 solana-lite-rpc-prioritization-fees = {path = "prioritization_fees", version="0.2.4"}
 solana-lite-rpc-address-lookup-tables = {path = "address-lookup-tables", version="0.2.4"}
-solana-lite-rpc-accounts = {path = "accounts", version = "0.2.4"}
-solana-lite-rpc-accounts-on-demand = {path = "accounts-on-demand", version = "0.2.4"}
 bench = { path = "bench", version="0.2.4" }
 
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.15.0+solana.1.18" }
@@ -100,3 +96,8 @@ zstd = "0.11.2"
 # QUIC GEYSER PLUGIN
 quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
 quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
+
+# ACCOUNTS SERVICES
+lite-account-manager-common = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
+lite-account-storage = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
+lite-accounts-on-demand = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }

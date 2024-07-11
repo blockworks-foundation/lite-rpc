@@ -1,6 +1,11 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use itertools::Itertools;
+use lite_account_manager_common::{
+    account_data::{Account, AccountData, CompressionMethod},
+    account_filter::AccountFilters,
+    account_store_interface::AccountStorageInterface,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use solana_account_decoder::UiDataSliceConfig;
@@ -9,20 +14,12 @@ use solana_client::{
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
     rpc_response::OptionalContext,
 };
-use solana_lite_rpc_core::{
-    encoding::BASE64,
-    structures::{
-        account_data::{Account, AccountData, CompressionMethod},
-        account_filter::AccountFilters,
-    },
-};
+use solana_lite_rpc_core::encoding::BASE64;
 use solana_sdk::{
     account::{Account as SolanaAccount, AccountSharedData, ReadableAccount},
     commitment_config::CommitmentConfig,
     pubkey::Pubkey,
 };
-
-use crate::account_store_interface::AccountStorageInterface;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

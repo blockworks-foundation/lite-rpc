@@ -3,6 +3,15 @@ pub mod rpc_tester;
 use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
+use lite_account_manager_common::accounts_source_interface::AccountsSourceInterface;
+use lite_account_manager_common::simple_filter_store::SimpleFilterStore;
+use lite_account_manager_common::{
+    account_filter::AccountFilters, account_store_interface::AccountStorageInterface,
+    mutable_filter_store::MutableFilterStore,
+};
+use lite_account_storage::inmemory_account_store::InmemoryAccountStore;
+use lite_accounts_on_demand::accounts_on_demand::AccountsOnDemand;
+use lite_rpc::account_service::AccountService;
 use lite_rpc::bridge::LiteBridge;
 use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
@@ -11,12 +20,6 @@ use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
 use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use log::info;
-use solana_lite_rpc_accounts::account_service::AccountService;
-use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
-use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
-use solana_lite_rpc_accounts::simple_filter_store::SimpleFilterStore;
-use solana_lite_rpc_accounts_on_demand::mutable_filter_store;
-use solana_lite_rpc_accounts_on_demand::quic_plugin_accounts_on_demand::QuicPluginAccountsOnDemand;
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
@@ -30,8 +33,10 @@ use solana_lite_rpc_cluster_endpoints::grpc::grpc_inspect::{
 use solana_lite_rpc_cluster_endpoints::grpc::grpc_subscription::create_grpc_subscription;
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
+use solana_lite_rpc_cluster_endpoints::quic::quic_account_source::create_quic_account_source_endpoint;
 use solana_lite_rpc_cluster_endpoints::quic::quic_subsciption::create_quic_endpoint;
 use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
+
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::stores::{
     block_information_store::{BlockInformation, BlockInformationStore},
@@ -40,7 +45,6 @@ use solana_lite_rpc_core::stores::{
     subscription_store::SubscriptionStore,
     tx_store::TxStore,
 };
-use solana_lite_rpc_core::structures::account_filter::AccountFilters;
 use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
@@ -170,36 +174,37 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                         )
                     })
                     .collect(),
-                account_filters.clone(),
             )?,
             None,
         )
     } else if let Some(quic_geyser_plugin_config) = quic_geyser_plugin_config {
-        info!("Using quic geyser subscription");
-        let (client, endpoint, tasks) = create_quic_endpoint(
-            rpc_client.clone(),
-            quic_geyser_plugin_config.url,
-            account_filters.clone(),
-        )
-        .await?;
+        info!("Using quic geyser plugin");
+        let (endpoint, mut quic_client_tasks) =
+            create_quic_endpoint(rpc_client.clone(), quic_geyser_plugin_config.url.clone()).await?;
 
-        let accounts_service = if let Some(account_stream) = &endpoint.processed_account_stream {
-            const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
+        let accounts_service = if !account_filters.is_empty() {
             // Accounts notifications will be spurious when slots change
             // 256 seems very reasonable so that there are no account notification is missed and memory usage
-            let (account_notification_sender, _) = tokio::sync::broadcast::channel(5000);
+            let (account_notification_sender, _) = tokio::sync::broadcast::channel(16 * 1024);
+            let (quic_account_source, account_stream, mut tasks) =
+                create_quic_account_source_endpoint(
+                    quic_geyser_plugin_config.url,
+                    rpc_client.url(),
+                )
+                .await?;
+            let quic_account_source: Arc<dyn AccountsSourceInterface> =
+                Arc::new(quic_account_source);
+            quic_client_tasks.append(&mut tasks);
 
             let account_storage: Arc<dyn AccountStorageInterface> =
                 if enable_accounts_on_demand_accounts_service {
                     // mutable filter store
-                    let mutable_filters_store =
-                        Arc::new(mutable_filter_store::MutableFilterStore::default());
+                    let mutable_filters_store = Arc::new(MutableFilterStore::default());
                     mutable_filters_store
                         .add_account_filters(&account_filters)
                         .await;
-                    Arc::new(QuicPluginAccountsOnDemand::new(
-                        client,
-                        rpc_client.clone(),
+                    Arc::new(AccountsOnDemand::new(
+                        quic_account_source.clone(),
                         mutable_filters_store.clone(),
                         Arc::new(InmemoryAccountStore::new(mutable_filters_store)),
                     ))
@@ -211,25 +216,23 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                     Arc::new(InmemoryAccountStore::new(Arc::new(simple_filter_store)))
                 };
 
-            let account_service = AccountService::new(account_storage, account_notification_sender);
-
-            account_service.process_account_stream(
-                account_stream.resubscribe(),
-                endpoint.blockinfo_notifier.resubscribe(),
+            let account_service = AccountService::new(
+                quic_account_source,
+                account_storage,
+                account_notification_sender,
             );
 
             account_service
-                .populate_from_rpc(
-                    rpc_client.url(),
-                    &account_filters,
-                    MAX_CONNECTIONS_IN_PARALLEL,
-                )
+                .process_account_stream(account_stream, endpoint.blockinfo_notifier.resubscribe());
+
+            account_service
+                .subscribe_and_create_snapshot(&account_filters)
                 .await?;
             Some(account_service)
         } else {
             None
         };
-        ((endpoint, tasks), accounts_service)
+        ((endpoint, quic_client_tasks), accounts_service)
     } else {
         info!("Creating RPC poll subscription...");
         (

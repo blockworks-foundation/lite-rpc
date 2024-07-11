@@ -1,7 +1,5 @@
 // this mod will contain all the core structures that are defined for lite-rpc
 
-pub mod account_data;
-pub mod account_filter;
 pub mod block_info;
 pub mod epoch;
 pub mod identity_stakes;

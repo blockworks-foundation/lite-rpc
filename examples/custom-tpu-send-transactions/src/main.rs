@@ -274,7 +274,6 @@ async fn main() -> anyhow::Result<()> {
                 None,
                 timeouts,
             )],
-            vec![],
         )?
     } else {
         create_json_rpc_polling_subscription(rpc_client.clone(), 100)?
