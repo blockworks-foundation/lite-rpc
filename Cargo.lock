@@ -2571,13 +2571,14 @@ checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 [[package]]
 name = "lite-account-manager-common"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#7fe6a390d8f3dc6179f28fd7010130435e362103"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#5850536fc85e2b50f15c85b0c7098b29faf11461"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.21.7",
  "bs58",
  "itertools 0.10.5",
+ "log",
  "lz4",
  "serde",
  "serde_json",
@@ -2590,7 +2591,7 @@ dependencies = [
 [[package]]
 name = "lite-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#7fe6a390d8f3dc6179f28fd7010130435e362103"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#5850536fc85e2b50f15c85b0c7098b29faf11461"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2608,7 +2609,7 @@ dependencies = [
 [[package]]
 name = "lite-accounts-on-demand"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#7fe6a390d8f3dc6179f28fd7010130435e362103"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#5850536fc85e2b50f15c85b0c7098b29faf11461"
 dependencies = [
  "async-trait",
  "futures",
@@ -2685,7 +2686,7 @@ dependencies = [
 [[package]]
 name = "lite-token-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#7fe6a390d8f3dc6179f28fd7010130435e362103"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#5850536fc85e2b50f15c85b0c7098b29faf11461"
 dependencies = [
  "anyhow",
  "arrayref",
@@ -3613,7 +3614,7 @@ dependencies = [
 [[package]]
 name = "quic-geyser-client"
 version = "0.1.5"
-source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=main#e54af6aa9d221d5aea79a572bddd9911daed860d"
+source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=main#88a32a4ac161bba85f9a50f7d67ff5a67c867aba"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3630,7 +3631,7 @@ dependencies = [
 [[package]]
 name = "quic-geyser-common"
 version = "0.1.5"
-source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=main#e54af6aa9d221d5aea79a572bddd9911daed860d"
+source = "git+https://github.com/blockworks-foundation/quic_geyser_plugin.git?branch=main#88a32a4ac161bba85f9a50f7d67ff5a67c867aba"
 dependencies = [
  "anyhow",
  "bincode",

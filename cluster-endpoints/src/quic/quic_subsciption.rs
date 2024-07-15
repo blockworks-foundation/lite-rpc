@@ -133,21 +133,6 @@ pub async fn create_quic_endpoint(
     let vote_accounts_polling = poll_vote_accounts(rpc_client.clone(), va_sx);
     endpoint_tasks.push(vote_accounts_polling);
 
-    let (quic_client, mut quic_notification_reciever, mut client_tasks) =
-        Client::new(endpoint_url, ConnectionParameters::default()).await?;
-    let subscriptions = vec![
-        QuicGeyserFilter::Slot,
-        QuicGeyserFilter::BlockMeta,
-        QuicGeyserFilter::BlockAll,
-    ];
-    endpoint_tasks.append(&mut client_tasks);
-
-    log::info!(
-        "Subscribing to quic geyser plugin with {} subscriptions",
-        subscriptions.len()
-    );
-    quic_client.subscribe(subscriptions).await?;
-
     let quic_geyser_client_task = tokio::spawn(async move {
         let slot_sx = slot_sx;
         let block_sx = block_sx;
@@ -156,141 +141,159 @@ pub async fn create_quic_endpoint(
         let mut map_of_slot_data = BTreeMap::<Slot, SlotData>::new();
 
         loop {
-            let message_or_timeout =
-                tokio::time::timeout(Duration::from_secs(10), quic_notification_reciever.recv())
-                    .await;
-            let Ok(maybe_message) = message_or_timeout else {
-                log::error!("quic geyser plugin timedout");
-                break;
-            };
+            let (quic_client, mut quic_notification_reciever, client_tasks) =
+                Client::new(endpoint_url.clone(), ConnectionParameters::default()).await?;
+            let subscriptions = vec![
+                QuicGeyserFilter::Slot,
+                QuicGeyserFilter::BlockMeta,
+                QuicGeyserFilter::BlockAll,
+            ];
 
-            let Some(notification_message) = maybe_message else {
-                log::error!("quic geyser plugin client broken");
-                break;
-            };
-            QUIC_GEYSER_NOTIFICATIONS.inc();
+            log::info!(
+                "Subscribing to quic geyser plugin with {} subscriptions",
+                subscriptions.len()
+            );
+            quic_client.subscribe(subscriptions).await?;
 
-            match notification_message {
-                quic_geyser_common::message::Message::SlotMsg(slot_message) => {
-                    QUIC_GEYSER_SLOT_NOTIFICATIONS.inc();
-                    if slot_message.slot > current_slot {
-                        current_slot = slot_message.slot;
-                        slot_sx
-                            .send(SlotNotification {
-                                processed_slot: slot_message.slot,
-                                estimated_processed_slot: slot_message.slot,
-                            })
-                            .expect("slot notification should be sent");
-                    }
+            loop {
+                let message_or_timeout = tokio::time::timeout(
+                    Duration::from_secs(10),
+                    quic_notification_reciever.recv(),
+                )
+                .await;
+                let Ok(maybe_message) = message_or_timeout else {
+                    log::error!("quic geyser plugin timedout");
+                    break;
+                };
 
-                    let slot_data = match map_of_slot_data.get_mut(&slot_message.slot) {
-                        Some(value) => value,
-                        None => {
-                            map_of_slot_data.insert(slot_message.slot, SlotData::default());
-                            map_of_slot_data.get_mut(&slot_message.slot).unwrap()
-                        }
-                    };
-                    let slot_message_commitment = Commitment::from(slot_message.commitment_config);
-                    let slot_data_commitment = Commitment::from(slot_data.commitment_config);
-                    if slot_data_commitment < slot_message_commitment {
-                        // update commitment
-                        slot_data.commitment_config = slot_message.commitment_config;
-                        if let Some(block_meta) = &slot_data.block_meta {
-                            // redispatch meta with new commitment
-                            blockinfo_sx
-                                .send(convert_quic_block_meta(
-                                    block_meta,
-                                    slot_message.commitment_config,
-                                ))
-                                .expect("block meta notification should be sent");
+                let Some(notification_message) = maybe_message else {
+                    log::error!("quic geyser plugin client broken");
+                    break;
+                };
+                QUIC_GEYSER_NOTIFICATIONS.inc();
+
+                match notification_message {
+                    quic_geyser_common::message::Message::SlotMsg(slot_message) => {
+                        QUIC_GEYSER_SLOT_NOTIFICATIONS.inc();
+                        if slot_message.slot > current_slot {
+                            current_slot = slot_message.slot;
+                            slot_sx
+                                .send(SlotNotification {
+                                    processed_slot: slot_message.slot,
+                                    estimated_processed_slot: slot_message.slot,
+                                })
+                                .expect("slot notification should be sent");
                         }
 
-                        if let Some(block) = &slot_data.block {
-                            // redispatch meta with new commitment
-                            block_sx
-                                .send(convert_quic_block(block, slot_message.commitment_config))
-                                .expect("block meta notification should be sent");
-                        }
-                    }
+                        let slot_data = match map_of_slot_data.get_mut(&slot_message.slot) {
+                            Some(value) => value,
+                            None => {
+                                map_of_slot_data.insert(slot_message.slot, SlotData::default());
+                                map_of_slot_data.get_mut(&slot_message.slot).unwrap()
+                            }
+                        };
+                        let slot_message_commitment =
+                            Commitment::from(slot_message.commitment_config);
+                        let slot_data_commitment = Commitment::from(slot_data.commitment_config);
+                        if slot_data_commitment < slot_message_commitment {
+                            // update commitment
+                            slot_data.commitment_config = slot_message.commitment_config;
+                            if let Some(block_meta) = &slot_data.block_meta {
+                                // redispatch meta with new commitment
+                                blockinfo_sx
+                                    .send(convert_quic_block_meta(
+                                        block_meta,
+                                        slot_message.commitment_config,
+                                    ))
+                                    .expect("block meta notification should be sent");
+                            }
 
-                    if slot_message.commitment_config == CommitmentConfig::finalized() {
-                        // remove old data
-                        while let Some((key, value)) = map_of_slot_data.first_key_value() {
-                            // all old slots that already have been notified
-                            if (*key <= slot_message.slot
-                                && value.block.is_some()
-                                && value.block_meta.is_some()) // slot already notified for finalized
-                                || slot_message.slot.saturating_sub(*key) > 150
-                            // slot too old
-                            {
-                                map_of_slot_data.pop_first();
-                            } else {
-                                break;
+                            if let Some(block) = &slot_data.block {
+                                // redispatch meta with new commitment
+                                block_sx
+                                    .send(convert_quic_block(block, slot_message.commitment_config))
+                                    .expect("block meta notification should be sent");
+                            }
+                        }
+
+                        if slot_message.commitment_config == CommitmentConfig::finalized() {
+                            // remove old data
+                            while let Some((key, value)) = map_of_slot_data.first_key_value() {
+                                // all old slots that already have been notified
+                                if (*key <= slot_message.slot
+                                    && value.block.is_some()
+                                    && value.block_meta.is_some()) // slot already notified for finalized
+                                    || slot_message.slot.saturating_sub(*key) > 150
+                                // slot too old
+                                {
+                                    map_of_slot_data.pop_first();
+                                } else {
+                                    break;
+                                }
                             }
                         }
                     }
-                }
-                quic_geyser_common::message::Message::BlockMetaMsg(block_meta) => {
-                    QUIC_GEYSER_BLOCKMETA_NOTIFICATIONS.inc();
-                    if block_meta.slot > current_slot {
-                        current_slot = block_meta.slot;
-                        slot_sx
-                            .send(SlotNotification {
-                                processed_slot: block_meta.slot,
-                                estimated_processed_slot: block_meta.slot,
-                            })
-                            .expect("slot notification should be sent");
-                    }
-
-                    let slot_data = match map_of_slot_data.get_mut(&block_meta.slot) {
-                        Some(value) => value,
-                        None => {
-                            map_of_slot_data.insert(block_meta.slot, SlotData::default());
-                            map_of_slot_data.get_mut(&block_meta.slot).unwrap()
+                    quic_geyser_common::message::Message::BlockMetaMsg(block_meta) => {
+                        QUIC_GEYSER_BLOCKMETA_NOTIFICATIONS.inc();
+                        if block_meta.slot > current_slot {
+                            current_slot = block_meta.slot;
+                            slot_sx
+                                .send(SlotNotification {
+                                    processed_slot: block_meta.slot,
+                                    estimated_processed_slot: block_meta.slot,
+                                })
+                                .expect("slot notification should be sent");
                         }
-                    };
-                    // probably the slot was already in confrimed or finalized commitment
-                    blockinfo_sx
-                        .send(convert_quic_block_meta(
-                            &block_meta,
-                            slot_data.commitment_config,
-                        ))
-                        .expect("block meta notification should be sent");
 
-                    slot_data.block_meta = Some(block_meta);
-                }
-                quic_geyser_common::message::Message::BlockMsg(block) => {
-                    QUIC_GEYSER_BLOCK_NOTIFICATIONS.inc();
-                    if block.meta.slot > current_slot {
-                        current_slot = block.meta.slot;
-                        slot_sx
-                            .send(SlotNotification {
-                                processed_slot: block.meta.slot,
-                                estimated_processed_slot: block.meta.slot,
-                            })
-                            .expect("slot notification should be sent");
+                        let slot_data = match map_of_slot_data.get_mut(&block_meta.slot) {
+                            Some(value) => value,
+                            None => {
+                                map_of_slot_data.insert(block_meta.slot, SlotData::default());
+                                map_of_slot_data.get_mut(&block_meta.slot).unwrap()
+                            }
+                        };
+                        // probably the slot was already in confrimed or finalized commitment
+                        blockinfo_sx
+                            .send(convert_quic_block_meta(
+                                &block_meta,
+                                slot_data.commitment_config,
+                            ))
+                            .expect("block meta notification should be sent");
+
+                        slot_data.block_meta = Some(block_meta);
                     }
-
-                    let slot_data = match map_of_slot_data.get_mut(&block.meta.slot) {
-                        Some(value) => value,
-                        None => {
-                            map_of_slot_data.insert(block.meta.slot, SlotData::default());
-                            map_of_slot_data.get_mut(&block.meta.slot).unwrap()
+                    quic_geyser_common::message::Message::BlockMsg(block) => {
+                        QUIC_GEYSER_BLOCK_NOTIFICATIONS.inc();
+                        if block.meta.slot > current_slot {
+                            current_slot = block.meta.slot;
+                            slot_sx
+                                .send(SlotNotification {
+                                    processed_slot: block.meta.slot,
+                                    estimated_processed_slot: block.meta.slot,
+                                })
+                                .expect("slot notification should be sent");
                         }
-                    };
-                    block_sx
-                        .send(convert_quic_block(&block, slot_data.commitment_config))
-                        .expect("block notification should be sent");
-                    slot_data.block = Some(block);
-                }
-                _ => {
-                    log::error!("quic geyser send notification which is not supported");
+
+                        let slot_data = match map_of_slot_data.get_mut(&block.meta.slot) {
+                            Some(value) => value,
+                            None => {
+                                map_of_slot_data.insert(block.meta.slot, SlotData::default());
+                                map_of_slot_data.get_mut(&block.meta.slot).unwrap()
+                            }
+                        };
+                        block_sx
+                            .send(convert_quic_block(&block, slot_data.commitment_config))
+                            .expect("block notification should be sent");
+                        slot_data.block = Some(block);
+                    }
+                    _ => {
+                        log::error!("quic geyser send notification which is not supported");
+                    }
                 }
             }
+            client_tasks.iter().for_each(|x| x.abort());
+            log::error!("quic geyser plugin exited because the client connection failed or connection timed out");
         }
-
-        log::error!("quic geyser plugin exited because the client connection failed or connection timed out");
-        panic!("quic geyser plugin exit");
     });
     endpoint_tasks.push(quic_geyser_client_task);
 
