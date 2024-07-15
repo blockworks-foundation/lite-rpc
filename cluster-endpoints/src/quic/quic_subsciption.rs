@@ -28,7 +28,7 @@ use crate::{
 lazy_static::lazy_static! {
     static ref QUIC_GEYSER_NOTIFICATIONS: IntGauge =
        register_int_gauge!(opts!("literpc_quic_geyser_notifications", "Quic geyser notifications")).unwrap();
-    static ref QUIC_GEYSER_ACCOUNT_NOTIFICATIONS: IntGauge =
+    pub static ref QUIC_GEYSER_ACCOUNT_NOTIFICATIONS: IntGauge =
        register_int_gauge!(opts!("literpc_quic_geyser_accounts_notifications", "Quic geyser accounts notification")).unwrap();
     static ref QUIC_GEYSER_SLOT_NOTIFICATIONS: IntGauge =
        register_int_gauge!(opts!("literpc_quic_geyser_slot_notifications", "Quic geyser slot notification")).unwrap();

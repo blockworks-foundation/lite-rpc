@@ -20,6 +20,8 @@ use quic_geyser_common::{
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 
+use crate::quic::quic_subsciption::QUIC_GEYSER_ACCOUNT_NOTIFICATIONS;
+
 pub struct QuicAccountSource {
     client: QuicClient,
     rpc_url: String,
@@ -111,6 +113,7 @@ pub async fn create_quic_account_source_endpoint(
         while let Some(message) = messages.recv().await {
             match message {
                 quic_geyser_common::message::Message::AccountMsg(account) => {
+                    QUIC_GEYSER_ACCOUNT_NOTIFICATIONS.inc();
                     if account_sx.send(AccountNotificationMessage {
                         data: AccountData {
                             pubkey: account.pubkey,
