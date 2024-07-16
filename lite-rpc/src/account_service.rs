@@ -62,60 +62,53 @@ impl AccountService {
         &self,
         filters: &AccountFilters,
     ) -> anyhow::Result<()> {
-        let accounts_to_subscribe: HashSet<Pubkey> =
-            filters.iter().flat_map(|x| x.accounts.clone()).collect();
+        let account_source = self.account_source.clone();
+        let account_storage = self.account_store.clone();
+        let filters = filters.clone();
+        tokio::task::spawn_blocking(move || {
+            let accounts_to_subscribe: HashSet<Pubkey> =
+                filters.iter().flat_map(|x| x.accounts.clone()).collect();
 
-        if !accounts_to_subscribe.is_empty() {
-            self.account_source
-                .subscribe_accounts(accounts_to_subscribe)
-                .await?;
-        }
-
-        for filter in filters {
-            if let Some(program_id) = filter.program_id {
-                self.account_source
-                    .subscribe_program_accounts(program_id, filter.filters.clone())
-                    .await?;
+            if !accounts_to_subscribe.is_empty() {
+                account_source.subscribe_accounts(accounts_to_subscribe)?;
             }
-        }
-        self.account_source
-            .save_snapshot(self.account_store.clone(), filters.clone())
-            .await?;
-        Ok(())
+
+            for filter in &filters {
+                if let Some(program_id) = filter.program_id {
+                    account_source
+                        .subscribe_program_accounts(program_id, filter.filters.clone())?;
+                }
+            }
+            account_source.save_snapshot(account_storage.clone(), filters)?;
+            Ok(())
+        })
+        .await
+        .unwrap()
     }
 
     pub fn process_account_stream(
         &self,
-        mut account_stream: AccountStream,
+        account_stream: AccountStream,
         mut block_stream: BlockInfoStream,
     ) -> Vec<AnyhowJoinHandle> {
         let this = self.clone();
-        let processed_task = tokio::spawn(async move {
-            loop {
-                match account_stream.recv().await {
-                    Ok(account_notification) => {
-                        ACCOUNT_UPDATES.inc();
-                        if this
-                            .account_store
-                            .update_account(
-                                account_notification.data.clone(),
-                                account_notification.commitment.into(),
-                            )
-                            .await
-                        {
-                            let _ = this.account_notification_sender.send(account_notification);
-                        }
+        let processed_task = tokio::task::spawn_blocking(move || loop {
+            match account_stream.recv() {
+                Ok(account_notification) => {
+                    ACCOUNT_UPDATES.inc();
+                    if this.account_store.update_account(
+                        account_notification.data.clone(),
+                        account_notification.commitment.into(),
+                    ) {
+                        let _ = this.account_notification_sender.send(account_notification);
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
-                        log::error!(
-                            "Account Stream Lagged by {}, we may have missed some account updates",
-                            e
-                        );
-                        continue;
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                        bail!("Account Stream Broken");
-                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "Account Stream Lagged by {}, we may have missed some account updates",
+                        e
+                    );
+                    continue;
                 }
             }
         });
@@ -130,17 +123,14 @@ impl AccountService {
                             continue;
                         }
                         let commitment = Commitment::from(block_info.commitment_config);
-                        let updated_accounts = this
-                            .account_store
-                            .process_slot_data(
-                                SlotInfo {
-                                    slot: block_info.slot,
-                                    parent: block_info.parent_slot,
-                                    root: 0,
-                                },
-                                commitment,
-                            )
-                            .await;
+                        let updated_accounts = this.account_store.process_slot_data(
+                            SlotInfo {
+                                slot: block_info.slot,
+                                parent: block_info.parent_slot,
+                                root: 0,
+                            },
+                            commitment,
+                        );
 
                         if block_info.commitment_config.is_finalized() {
                             ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
@@ -205,7 +195,7 @@ impl AccountService {
 
         let commitment = Commitment::from(commitment);
 
-        if let Some(account_data) = self.account_store.get_account(account, commitment).await? {
+        if let Some(account_data) = self.account_store.get_account(account, commitment)? {
             // if minimum context slot is not satisfied return Null
             let minimum_context_slot = config
                 .as_ref()
@@ -244,11 +234,13 @@ impl AccountService {
             .unwrap_or_default()
             .unwrap_or_default();
         let commitment = Commitment::from(commitment);
+        let account_store = self.account_store.clone();
 
-        let program_accounts = self
-            .account_store
-            .get_program_accounts(program_id, account_filter, commitment)
-            .await?;
+        let program_accounts = tokio::task::spawn_blocking(move || {
+            account_store.get_program_accounts(program_id, account_filter, commitment)
+        })
+        .await
+        .unwrap();
         let min_context_slot = config
             .as_ref()
             .map(|c| {
@@ -260,6 +252,7 @@ impl AccountService {
             })
             .unwrap_or_default()
             .unwrap_or_default();
+        let program_accounts = program_accounts?;
         let slot = program_accounts
             .iter()
             .map(|program_account| program_account.updated_slot)

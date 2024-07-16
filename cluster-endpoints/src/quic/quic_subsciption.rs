@@ -157,7 +157,7 @@ pub async fn create_quic_endpoint(
 
             loop {
                 let message_or_timeout = tokio::time::timeout(
-                    Duration::from_secs(10),
+                    Duration::from_secs(60),
                     quic_notification_reciever.recv(),
                 )
                 .await;

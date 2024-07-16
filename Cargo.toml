@@ -98,7 +98,7 @@ quic-geyser-client = { git = "https://github.com/blockworks-foundation/quic_geys
 quic-geyser-common = { git = "https://github.com/blockworks-foundation/quic_geyser_plugin.git", branch = "main" }
 
 # ACCOUNTS SERVICES
-lite-account-manager-common = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
-lite-account-storage = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
-lite-accounts-on-demand = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
-lite-token-account-storage = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "main" }
+lite-account-manager-common = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "removing_tokio" }
+lite-account-storage = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "removing_tokio" }
+lite-accounts-on-demand = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "removing_tokio" }
+lite-token-account-storage = { git = "https://github.com/blockworks-foundation/solana-lite-account-manager.git", branch = "removing_tokio" }

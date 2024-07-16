@@ -23,22 +23,22 @@ use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
 use crate::quic::quic_subsciption::QUIC_GEYSER_ACCOUNT_NOTIFICATIONS;
 
 pub struct QuicAccountSource {
-    client: QuicClient,
+    client_subcsciptions_sx: tokio::sync::mpsc::UnboundedSender<Vec<QuicGeyserFilter>>,
     rpc_url: String,
 }
 
-#[async_trait::async_trait]
 impl AccountsSourceInterface for QuicAccountSource {
-    async fn subscribe_accounts(&self, account: HashSet<Pubkey>) -> anyhow::Result<()> {
+    fn subscribe_accounts(&self, account: HashSet<Pubkey>) -> anyhow::Result<()> {
         let filter = QuicGeyserFilter::Account(AccountFilter {
             accounts: Some(account),
             owner: None,
             filter: None,
         });
-        self.client.subscribe(vec![filter]).await
+        self.client_subcsciptions_sx.send(vec![filter])?;
+        Ok(())
     }
 
-    async fn subscribe_program_accounts(
+    fn subscribe_program_accounts(
         &self,
         program_id: Pubkey,
         filters: Option<Vec<AccountFilterType>>,
@@ -75,10 +75,11 @@ impl AccountsSourceInterface for QuicAccountSource {
                     .collect_vec()
             },
         );
-        self.client.subscribe(filters).await
+        self.client_subcsciptions_sx.send(filters)?;
+        Ok(())
     }
 
-    async fn save_snapshot(
+    fn save_snapshot(
         &self,
         storage: Arc<dyn AccountStorageInterface>,
         account_filters: AccountFilters,
@@ -91,7 +92,6 @@ impl AccountsSourceInterface for QuicAccountSource {
             100,
             storage,
         )
-        .await
     }
 }
 
@@ -99,61 +99,80 @@ pub async fn create_quic_account_source_endpoint(
     quic_url: String,
     rpc_url: String,
 ) -> anyhow::Result<(QuicAccountSource, AccountStream, Vec<AnyhowJoinHandle>)> {
-    let (client, mut messages, mut tasks) =
-        QuicClient::new(quic_url, ConnectionParameters::default()).await?;
-    let (account_sx, account_rx) = tokio::sync::broadcast::channel(64 * 1024);
+    let (account_sx, account_rx) = std::sync::mpsc::channel();
+    let (client_subcsciptions_sx, mut subscription_rx) = tokio::sync::mpsc::unbounded_channel();
 
     // start listening to deleted accounts
-    client
-        .subscribe(vec![QuicGeyserFilter::DeletedAccounts])
-        .await?;
-    let quic_account_src = QuicAccountSource { client, rpc_url };
+    let quic_account_src = QuicAccountSource {
+        client_subcsciptions_sx,
+        rpc_url,
+    };
 
-    let tasks_jh = tokio::spawn(async move {
-        while let Some(message) = messages.recv().await {
-            match message {
-                quic_geyser_common::message::Message::AccountMsg(account) => {
-                    QUIC_GEYSER_ACCOUNT_NOTIFICATIONS.inc();
-                    if account_sx.send(AccountNotificationMessage {
-                        data: AccountData {
-                            pubkey: account.pubkey,
-                            account: Arc::new(Account {
-                                lamports: account.lamports,
-                                data: match account.compression_type {
-                                    quic_geyser_common::compression::CompressionType::None => {
-                                        Data::Uncompressed(account.data)
-                                    }
-                                    quic_geyser_common::compression::CompressionType::Lz4Fast(
-                                        _
-                                    )
-                                    | quic_geyser_common::compression::CompressionType::Lz4(_) => {
-                                        Data::Lz4 {
-                                            binary: account.data,
-                                            len: account.data_length as usize,
-                                        }
-                                    }
-                                },
-                                owner: account.owner,
-                                executable: account.executable,
-                                rent_epoch: account.rent_epoch,
-                            }),
-                            updated_slot: account.slot_identifier.slot,
-                            write_version: account.write_version,
-                        },
-                        commitment: CommitmentConfig::processed(),
-                    }).is_err() {
-                        log::error!("accounts channel closed");
+    let tasks_jh = tokio::task::spawn(async move {
+        let (client, mut messages, tasks) =
+            QuicClient::new(quic_url, ConnectionParameters::default()).await?;
+        client
+            .subscribe(vec![QuicGeyserFilter::DeletedAccounts])
+            .await?;
+
+        loop {
+            tokio::select! {
+                message = messages.recv() => {
+                    if let Some(message) = message {
+                        match message {
+                            quic_geyser_common::message::Message::AccountMsg(account) => {
+                                QUIC_GEYSER_ACCOUNT_NOTIFICATIONS.inc();
+                                if account_sx.send(AccountNotificationMessage {
+                                    data: AccountData {
+                                        pubkey: account.pubkey,
+                                        account: Arc::new(Account {
+                                            lamports: account.lamports,
+                                            data: match account.compression_type {
+                                                quic_geyser_common::compression::CompressionType::None => {
+                                                    Data::Uncompressed(account.data)
+                                                }
+                                                quic_geyser_common::compression::CompressionType::Lz4Fast(
+                                                    _
+                                                )
+                                                | quic_geyser_common::compression::CompressionType::Lz4(_) => {
+                                                    Data::Lz4 {
+                                                        binary: account.data,
+                                                        len: account.data_length as usize,
+                                                    }
+                                                }
+                                            },
+                                            owner: account.owner,
+                                            executable: account.executable,
+                                            rent_epoch: account.rent_epoch,
+                                        }),
+                                        updated_slot: account.slot_identifier.slot,
+                                        write_version: account.write_version,
+                                    },
+                                    commitment: CommitmentConfig::processed(),
+                                }).is_err() {
+                                    log::error!("accounts channel closed");
+                                    break;
+                                }
+                            }
+                            _ => {
+                                // should not have any other message
+                                log::error!("error account processing thread recieved unknown message from geyser : {:?}", message);
+                            }
+                        }
+                    } else {
                         break;
                     }
-                }
-                _ => {
-                    // should not have any other message
-                    log::error!("error account processing thread recieved unknown message from geyser : {:?}", message);
+                },
+                rx_subscriptions = subscription_rx.recv() => {
+                    if let Some(rx_subscriptions) = rx_subscriptions {
+                        client.subscribe(rx_subscriptions).await?;
+                    }
                 }
             }
         }
+
+        tasks.iter().for_each(|x| x.abort());
         anyhow::bail!("error accounts notification processing task closed");
     });
-    tasks.push(tasks_jh);
-    Ok((quic_account_src, account_rx, tasks))
+    Ok((quic_account_src, account_rx, vec![tasks_jh]))
 }

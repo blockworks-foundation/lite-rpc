@@ -2571,10 +2571,9 @@ checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 [[package]]
 name = "lite-account-manager-common"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#5850536fc85e2b50f15c85b0c7098b29faf11461"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#9e858cfe2d7bf0b6005c05e93f0047ef1a42148b"
 dependencies = [
  "anyhow",
- "async-trait",
  "base64 0.21.7",
  "bs58",
  "itertools 0.10.5",
@@ -2584,16 +2583,14 @@ dependencies = [
  "serde_json",
  "solana-rpc-client-api",
  "solana-sdk",
- "tokio",
  "zstd 0.11.2+zstd.1.5.2",
 ]
 
 [[package]]
 name = "lite-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#5850536fc85e2b50f15c85b0c7098b29faf11461"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#9e858cfe2d7bf0b6005c05e93f0047ef1a42148b"
 dependencies = [
- "async-trait",
  "bincode",
  "dashmap",
  "futures",
@@ -2603,15 +2600,13 @@ dependencies = [
  "log",
  "prometheus",
  "solana-sdk",
- "tokio",
 ]
 
 [[package]]
 name = "lite-accounts-on-demand"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#5850536fc85e2b50f15c85b0c7098b29faf11461"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#9e858cfe2d7bf0b6005c05e93f0047ef1a42148b"
 dependencies = [
- "async-trait",
  "futures",
  "itertools 0.10.5",
  "lazy_static",
@@ -2622,7 +2617,6 @@ dependencies = [
  "solana-account-decoder",
  "solana-client",
  "solana-sdk",
- "tokio",
 ]
 
 [[package]]
@@ -2686,11 +2680,10 @@ dependencies = [
 [[package]]
 name = "lite-token-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=main#5850536fc85e2b50f15c85b0c7098b29faf11461"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#9e858cfe2d7bf0b6005c05e93f0047ef1a42148b"
 dependencies = [
  "anyhow",
  "arrayref",
- "async-trait",
  "bincode",
  "bitflags 2.6.0",
  "dashmap",
@@ -2706,7 +2699,6 @@ dependencies = [
  "solana-sdk",
  "spl-token",
  "spl-token-2022 3.0.4",
- "tokio",
 ]
 
 [[package]]

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use solana_account_decoder::UiDataSliceConfig;
 use solana_client::{
-    nonblocking::rpc_client::RpcClient,
+    rpc_client::RpcClient,
     rpc_config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
     rpc_response::OptionalContext,
 };
@@ -28,7 +28,7 @@ pub struct RpcKeyedCompressedAccount {
     pub a: String,
 }
 
-pub async fn get_program_account(
+pub fn get_program_account(
     rpc_url: String,
     filters: &AccountFilters,
     max_request_in_parallel: usize,
@@ -54,21 +54,19 @@ pub async fn get_program_account(
             if let Some(program_id) = &filter.program_id {
                 log::info!("gPA for {}", program_id.to_string());
 
-                let result = rpc_client
-                    .send::<OptionalContext<Vec<RpcKeyedCompressedAccount>>>(
-                        solana_client::rpc_request::RpcRequest::Custom {
-                            method: "getProgramAccountsCompressed",
-                        },
-                        json!([
-                            program_id.to_string(),
-                            RpcProgramAccountsConfig {
-                                filters: filter.get_rpc_filter(),
-                                with_context: Some(true),
-                                ..Default::default()
-                            }
-                        ]),
-                    )
-                    .await;
+                let result = rpc_client.send::<OptionalContext<Vec<RpcKeyedCompressedAccount>>>(
+                    solana_client::rpc_request::RpcRequest::Custom {
+                        method: "getProgramAccountsCompressed",
+                    },
+                    json!([
+                        program_id.to_string(),
+                        RpcProgramAccountsConfig {
+                            filters: filter.get_rpc_filter(),
+                            with_context: Some(true),
+                            ..Default::default()
+                        }
+                    ]),
+                );
 
                 // failed to get over compressed program accounts
                 match result {
@@ -91,17 +89,15 @@ pub async fn get_program_account(
                             };
 
                             // compress just account_data
-                            account_store
-                                .initilize_or_update_account(AccountData {
-                                    pubkey: Pubkey::from_str(&key_account.p)?,
-                                    account: Arc::new(Account::from_solana_account(
-                                        account,
-                                        CompressionMethod::Lz4(8),
-                                    )),
-                                    updated_slot,
-                                    write_version: 0,
-                                })
-                                .await;
+                            account_store.initilize_or_update_account(AccountData {
+                                pubkey: Pubkey::from_str(&key_account.p)?,
+                                account: Arc::new(Account::from_solana_account(
+                                    account,
+                                    CompressionMethod::Lz4(8),
+                                )),
+                                updated_slot,
+                                write_version: 0,
+                            });
                         }
                     }
                     _ => {
@@ -125,8 +121,7 @@ pub async fn get_program_account(
                                     },
                                     with_context: None,
                                 },
-                            )
-                            .await?
+                            )?
                             .iter()
                             .map(|(pk, _)| *pk)
                             .collect_vec();
@@ -143,17 +138,15 @@ pub async fn get_program_account(
             let mut fetch_accounts = vec![];
             let mut updated_slot = 0;
             for _ in 0..number_of_retires {
-                let accounts = rpc_client
-                    .get_multiple_accounts_with_config(
-                        accounts,
-                        RpcAccountInfoConfig {
-                            encoding: Some(solana_account_decoder::UiAccountEncoding::Base64),
-                            data_slice: None,
-                            commitment: Some(CommitmentConfig::finalized()),
-                            min_context_slot: None,
-                        },
-                    )
-                    .await;
+                let accounts = rpc_client.get_multiple_accounts_with_config(
+                    accounts,
+                    RpcAccountInfoConfig {
+                        encoding: Some(solana_account_decoder::UiAccountEncoding::Base64),
+                        data_slice: None,
+                        commitment: Some(CommitmentConfig::finalized()),
+                        min_context_slot: None,
+                    },
+                );
                 match accounts {
                     Ok(response) => {
                         fetch_accounts = response.value;
@@ -169,17 +162,15 @@ pub async fn get_program_account(
             }
             for (index, account) in fetch_accounts.drain(0..).enumerate() {
                 if let Some(account) = account {
-                    account_store
-                        .initilize_or_update_account(AccountData {
-                            pubkey: accounts[index],
-                            account: Arc::new(Account::from_solana_account(
-                                account,
-                                CompressionMethod::Lz4(8),
-                            )),
-                            updated_slot,
-                            write_version: 0,
-                        })
-                        .await;
+                    account_store.initilize_or_update_account(AccountData {
+                        pubkey: accounts[index],
+                        account: Arc::new(Account::from_solana_account(
+                            account,
+                            CompressionMethod::Lz4(8),
+                        )),
+                        updated_slot,
+                        write_version: 0,
+                    });
                 }
             }
         }

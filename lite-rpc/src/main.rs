@@ -210,9 +210,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
                 if enable_accounts_on_demand_accounts_service {
                     // mutable filter store
                     let mutable_filters_store = Arc::new(MutableFilterStore::default());
-                    mutable_filters_store
-                        .add_account_filters(&account_filters)
-                        .await;
+                    mutable_filters_store.add_account_filters(&account_filters);
 
                     let account_store: Arc<dyn AccountStorageInterface> = if has_token_program {
                         let defualt_store =
