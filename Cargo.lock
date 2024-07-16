@@ -2571,7 +2571,7 @@ checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 [[package]]
 name = "lite-account-manager-common"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#9e858cfe2d7bf0b6005c05e93f0047ef1a42148b"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#2fb8baa873e8c847eababd34367de97c5469c638"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2589,7 +2589,7 @@ dependencies = [
 [[package]]
 name = "lite-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#9e858cfe2d7bf0b6005c05e93f0047ef1a42148b"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#2fb8baa873e8c847eababd34367de97c5469c638"
 dependencies = [
  "bincode",
  "dashmap",
@@ -2605,7 +2605,7 @@ dependencies = [
 [[package]]
 name = "lite-accounts-on-demand"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#9e858cfe2d7bf0b6005c05e93f0047ef1a42148b"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#2fb8baa873e8c847eababd34367de97c5469c638"
 dependencies = [
  "futures",
  "itertools 0.10.5",
@@ -2680,7 +2680,7 @@ dependencies = [
 [[package]]
 name = "lite-token-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#9e858cfe2d7bf0b6005c05e93f0047ef1a42148b"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#2fb8baa873e8c847eababd34367de97c5469c638"
 dependencies = [
  "anyhow",
  "arrayref",
@@ -3206,7 +3206,7 @@ checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
 dependencies = [
  "cfg-if",
  "libc",
- "redox_syscall 0.5.2",
+ "redox_syscall 0.5.3",
  "smallvec",
  "windows-targets 0.52.6",
 ]
@@ -3835,9 +3835,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c82cf8cff14456045f55ec4241383baeff27af886adb72ffb2162f99911de0fd"
+checksum = "2a908a6e00f1fdd0dfd9c0eb08ce85126f6d8bbda50017e74bc4a4b7d4a926a4"
 dependencies = [
  "bitflags 2.6.0",
 ]
