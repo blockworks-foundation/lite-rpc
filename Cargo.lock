@@ -2571,7 +2571,7 @@ checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 [[package]]
 name = "lite-account-manager-common"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#2fb8baa873e8c847eababd34367de97c5469c638"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?tag=v0.1.0#870656be65c7099068a9726e3f51d579c877f42f"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2589,7 +2589,7 @@ dependencies = [
 [[package]]
 name = "lite-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#2fb8baa873e8c847eababd34367de97c5469c638"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?tag=v0.1.0#870656be65c7099068a9726e3f51d579c877f42f"
 dependencies = [
  "bincode",
  "dashmap",
@@ -2605,7 +2605,7 @@ dependencies = [
 [[package]]
 name = "lite-accounts-on-demand"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#2fb8baa873e8c847eababd34367de97c5469c638"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?tag=v0.1.0#870656be65c7099068a9726e3f51d579c877f42f"
 dependencies = [
  "futures",
  "itertools 0.10.5",
@@ -2680,7 +2680,7 @@ dependencies = [
 [[package]]
 name = "lite-token-account-storage"
 version = "0.1.0"
-source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?branch=removing_tokio#2fb8baa873e8c847eababd34367de97c5469c638"
+source = "git+https://github.com/blockworks-foundation/solana-lite-account-manager.git?tag=v0.1.0#870656be65c7099068a9726e3f51d579c877f42f"
 dependencies = [
  "anyhow",
  "arrayref",
@@ -6161,9 +6161,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.38.0"
+version = "1.38.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba4f4a02a7a80d6f274636f0aa95c7e383b912d41fe721a31f29e29698585a4a"
+checksum = "eb2caba9f80616f438e09748d5acda951967e1ea58508ef53d9c6402485a46df"
 dependencies = [
  "backtrace",
  "bytes",
