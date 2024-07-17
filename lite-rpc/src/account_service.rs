@@ -104,11 +104,8 @@ impl AccountService {
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Account Stream Lagged by {}, we may have missed some account updates",
-                        e
-                    );
-                    continue;
+                    log::error!("Account stream broken {}", e);
+                    bail!("account stream broken");
                 }
             }
         });
