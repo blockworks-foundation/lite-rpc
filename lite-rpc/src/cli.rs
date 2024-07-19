@@ -19,7 +19,7 @@ use solana_rpc_client_api::client_error::reqwest::Url;
 #[command(author, version, about, long_about = None)]
 pub struct Args {
     /// config.json
-    #[arg(short, long)]
+    #[arg(short = 'c', long)]
     pub config: Option<String>,
 }
 
