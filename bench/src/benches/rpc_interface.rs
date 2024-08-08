@@ -100,7 +100,7 @@ pub async fn send_and_confirm_bulk_transactions(
         .context("get slot afterwards")?;
 
     if after_send_slot - send_slot > 0 {
-        warn!(
+        debug!(
             "Slot advanced during sending transactions: {} -> {}",
             send_slot, after_send_slot
         );
