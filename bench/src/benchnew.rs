@@ -78,7 +78,7 @@ enum SubCommand {
         #[clap(short, long)]
         size_tx: TxSize,
         /// Maximum confirmation time in milliseconds. After this, the txn is considered unconfirmed
-        #[clap(short, long, default_value_t = 15_000)]
+        #[clap(short, long, default_value_t = 30_000)]
         max_timeout_ms: u64,
         #[clap(short, long)]
         num_of_runs: usize,
