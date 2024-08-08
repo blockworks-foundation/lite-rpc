@@ -23,6 +23,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 pub fn create_rpc_client(rpc_url: &Url) -> RpcClient {
@@ -47,6 +48,7 @@ pub async fn send_and_confirm_bulk_transactions(
     txs: &[VersionedTransaction],
     max_timeout: Duration,
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
+    debug!("Send transaction with timeout {:?}", max_timeout);
     trace!("Polling for next slot ..");
     let send_slot = poll_next_slot_start(rpc_client)
         .await
@@ -61,13 +63,20 @@ pub async fn send_and_confirm_bulk_transactions(
         min_context_slot: None,
     };
 
-    // note: we get confirmed but never finaliized
+    let tx_listener_startup_token = CancellationToken::new();
+
+    // note: we get confirmed but never finalized
+    let tx_listener_startup_token_cp = tx_listener_startup_token.clone();
     let (tx_status_map, _jh_collector) = start_tx_status_collector(
         tx_status_websocket_addr.clone(),
         payer_pubkey,
         CommitmentConfig::confirmed(),
+        tx_listener_startup_token_cp,
     )
     .await;
+
+    // waiting for thread to cancel the token
+    tx_listener_startup_token.cancelled().await;
 
     let started_at = Instant::now();
     trace!(

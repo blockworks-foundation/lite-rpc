@@ -10,15 +10,18 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::AbortHandle;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 use websocket_tungstenite_retry::websocket_stable;
 use websocket_tungstenite_retry::websocket_stable::WsMessage;
 
 // returns map of transaction signatures to the slot they were confirmed
+// the caller must await for the token to be cancelled to prevent startup race condition
 pub async fn start_tx_status_collector(
     ws_url: Url,
     payer_pubkey: Pubkey,
     commitment_config: CommitmentConfig,
+    startup_token: CancellationToken,
 ) -> (Arc<DashMap<Signature, Slot>>, AbortHandle) {
     // e.g. "commitment"
     let commitment_str = format!("{:?}", commitment_config);
@@ -52,6 +55,8 @@ pub async fn start_tx_status_collector(
 
     let observed_transactions_write = Arc::downgrade(&observed_transactions);
     let jh = tokio::spawn(async move {
+        // notify the caller that we are ready to receive messages
+        startup_token.cancel();
         while let Ok(msg) = channel.recv().await {
             if let WsMessage::Text(payload) = msg {
                 let ws_result: jsonrpsee_types::SubscriptionResponse<Response<RpcBlockUpdate>> =
