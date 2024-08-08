@@ -15,7 +15,7 @@ use url::Url;
 use websocket_tungstenite_retry::websocket_stable;
 use websocket_tungstenite_retry::websocket_stable::WsMessage;
 
-// returns map of transaction signatures to the slot they were confirmed
+// returns map of transaction signatures to the slot they were confirmed (or finalized)
 // the caller must await for the token to be cancelled to prevent startup race condition
 pub async fn start_tx_status_collector(
     ws_url: Url,
@@ -23,9 +23,9 @@ pub async fn start_tx_status_collector(
     commitment_config: CommitmentConfig,
     startup_token: CancellationToken,
 ) -> (Arc<DashMap<Signature, Slot>>, AbortHandle) {
-    // e.g. "commitment"
     let commitment_str = format!("{:?}", commitment_config);
 
+    // note: no commitment paramter is provided; according to the docs we get confirmed+finalized but never processed
     let mut web_socket_slots = websocket_stable::StableWebSocket::new_with_timeout(
         ws_url,
         json!({
@@ -57,6 +57,7 @@ pub async fn start_tx_status_collector(
     let jh = tokio::spawn(async move {
         // notify the caller that we are ready to receive messages
         startup_token.cancel();
+        debug!("Websocket subscription to 'blockSubscribe' is ready to observe signatures in confirmed blocks");
         while let Ok(msg) = channel.recv().await {
             if let WsMessage::Text(payload) = msg {
                 let ws_result: jsonrpsee_types::SubscriptionResponse<Response<RpcBlockUpdate>> =
@@ -72,10 +73,7 @@ pub async fn start_tx_status_collector(
                 {
                     for tx_sig in tx_sigs_from_block {
                         let tx_sig = Signature::from_str(&tx_sig).unwrap();
-                        debug!(
-                            "Transaction signature found in block: {} - slot {}",
-                            tx_sig, slot
-                        );
+                        debug!("Transaction signature found in block {}: {}", slot, tx_sig);
                         map.entry(tx_sig).or_insert(slot);
                     }
                 }
