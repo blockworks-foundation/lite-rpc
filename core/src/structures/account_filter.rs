@@ -68,7 +68,7 @@ impl From<&RpcFilterType> for AccountFilterType {
             RpcFilterType::DataSize(size) => AccountFilterType::Datasize(*size),
             RpcFilterType::Memcmp(memcmp) => {
                 let bytes = memcmp.bytes().map(|x| (*x).clone()).unwrap_or_default();
-                let offset = memcmp.offset as u64;
+                let offset = memcmp.offset() as u64;
                 AccountFilterType::Memcmp(MemcmpFilter {
                     offset,
                     data: MemcmpFilterData::Bytes(bytes),

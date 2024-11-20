@@ -8,7 +8,7 @@ members = [
     "lite-rpc",
     "quic-forward-proxy",
     "quic-forward-proxy-integration-test",
-    "cluster-endpoints",
+#    "cluster-endpoints",
     "blockstore",
     "prioritization_fees",
     "bench",
@@ -28,19 +28,20 @@ license = "AGPL"
 edition = "2021"
 
 [workspace.dependencies]
-solana-sdk = "~1.18.15"
-solana-rpc-client = "~1.18.15"
-solana-rpc-client-api = "~1.18.15"
-solana-transaction-status = "~1.18.15"
-solana-version = "~1.18.15"
-solana-client = "~1.18.15"
-solana-net-utils = "~1.18.15"
-solana-pubsub-client = "~1.18.15"
-solana-streamer = "~1.18.15"
-solana-account-decoder = "~1.18.15"
-solana-ledger = "~1.18.15"
-solana-program = "~1.18.15"
-solana-address-lookup-table-program = "~1.18.15"
+solana-sdk = "2.0.16"
+solana-rpc-client = "2.0.16"
+solana-rpc-client-api = "2.0.16"
+solana-transaction-status = "2.0.16"
+solana-version = "2.0.16"
+solana-client = "2.0.16"
+solana-net-utils = "2.0.16"
+solana-pubsub-client = "2.0.16"
+solana-streamer = "2.0.16"
+solana-account-decoder = "2.0.16"
+solana-ledger = "2.0.16"
+solana-program = "2.0.16"
+solana-accounts-db = "2.0.16"
+solana-address-lookup-table-program = "2.0.16"
 itertools = "0.10.5"
 rangetools = "0.1.4"
 serde = { version = "1.0.160", features = ["derive"] }
@@ -74,6 +75,7 @@ jemallocator = "0.5"
 quinn = "0.10.2"
 quinn-proto = "0.10.5"
 rustls = { version = "0.21.7", default-features = false, features = ["quic"] }
+rcgen = "0.13.1"
 
 solana-lite-rpc-services = {path = "services", version="0.2.4"}
 solana-lite-rpc-core = {path = "core", version="0.2.4"}
@@ -87,9 +89,9 @@ solana-lite-rpc-accounts = {path = "accounts", version = "0.2.4"}
 solana-lite-rpc-accounts-on-demand = {path = "accounts-on-demand", version = "0.2.4"}
 bench = { path = "bench", version="0.2.4" }
 
-yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.15.0+solana.1.18" }
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
 #geyser-grpc-connector = { path = "../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.15+solana.1.18", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
+#geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.15+solana.1.18", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
 
 
 async-trait = "0.1.68"

@@ -12,13 +12,9 @@ impl From<&CommitmentLevel> for Commitment {
     #[allow(deprecated)]
     fn from(value: &CommitmentLevel) -> Self {
         match value {
-            CommitmentLevel::Finalized | CommitmentLevel::Root | CommitmentLevel::Max => {
-                Commitment::Finalized
-            }
-            CommitmentLevel::Confirmed
-            | CommitmentLevel::Single
-            | CommitmentLevel::SingleGossip => Commitment::Confirmed,
-            CommitmentLevel::Processed | CommitmentLevel::Recent => Commitment::Processed,
+            CommitmentLevel::Finalized => Commitment::Finalized,
+            CommitmentLevel::Confirmed => Commitment::Confirmed,
+            CommitmentLevel::Processed => Commitment::Processed,
         }
     }
 }
@@ -27,13 +23,9 @@ impl From<CommitmentLevel> for Commitment {
     #[allow(deprecated)]
     fn from(value: CommitmentLevel) -> Self {
         match value {
-            CommitmentLevel::Finalized | CommitmentLevel::Root | CommitmentLevel::Max => {
-                Commitment::Finalized
-            }
-            CommitmentLevel::Confirmed
-            | CommitmentLevel::Single
-            | CommitmentLevel::SingleGossip => Commitment::Confirmed,
-            CommitmentLevel::Processed | CommitmentLevel::Recent => Commitment::Processed,
+            CommitmentLevel::Finalized => Commitment::Finalized,
+            CommitmentLevel::Confirmed => Commitment::Confirmed,
+            CommitmentLevel::Processed => Commitment::Processed,
         }
     }
 }
