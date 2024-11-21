@@ -14,10 +14,10 @@ fn new_accounts_db(account_paths: Vec<PathBuf>) -> AccountsDb {
 mod tests {
     use std::sync::Arc;
 
+    use crate::accounts_db::create_test_accounts;
     use solana_accounts_db::accounts::Accounts;
     use solana_accounts_db::accounts_db::AccountsDb;
     use solana_sdk::pubkey::Pubkey;
-    use crate::accounts_db::create_test_accounts;
 
     #[test]
     fn test() {

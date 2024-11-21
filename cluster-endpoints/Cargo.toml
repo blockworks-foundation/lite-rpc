@@ -8,7 +8,7 @@ repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 
 [dependencies]
-#geyser-grpc-connector = { workspace = true }
+geyser-grpc-connector = { workspace = true }
 
 solana-sdk = { workspace = true }
 solana-rpc-client-api = { workspace = true }
