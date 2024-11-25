@@ -1,13 +1,15 @@
+use std::{sync::Arc, time::Duration};
+
 use async_trait::async_trait;
 use dashmap::DashMap;
 use itertools::Itertools;
-use prometheus::{opts, register_int_gauge, IntGauge};
+use prometheus::{IntGauge, opts, register_int_gauge};
 use serde::{Deserialize, Serialize};
-use solana_address_lookup_table_program::state::AddressLookupTable;
-use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey};
-use std::{sync::Arc, time::Duration};
+use solana_sdk::address_lookup_table::state::AddressLookupTable;
+
+use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
 
 lazy_static::lazy_static! {
     static ref LRPC_ALTS_IN_STORE: IntGauge =
@@ -220,12 +222,12 @@ impl AddressLookupTableInterface for AddressLookupTableStore {
                 &message_address_table_lookup.account_key,
                 &message_address_table_lookup.writable_indexes,
             )
-            .await,
+                .await,
             self.get_accounts(
                 &message_address_table_lookup.account_key,
                 &message_address_table_lookup.readonly_indexes,
             )
-            .await,
+                .await,
         )
     }
 

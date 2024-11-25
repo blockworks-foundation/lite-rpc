@@ -14,12 +14,9 @@ use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterf
 use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
-use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
-use std::{
-    net::{IpAddr, Ipv4Addr},
-    sync::Arc,
-};
+use std::{sync::Arc};
+use solana_streamer::tls_certificates::new_dummy_x509_certificate;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
@@ -67,12 +64,7 @@ impl TpuService {
         data_cache: DataCache,
     ) -> anyhow::Result<Self> {
         let (sender, _) = tokio::sync::broadcast::channel(config.maximum_transaction_in_queue);
-        let (certificate, key) = new_self_signed_tls_certificate(
-            identity.as_ref(),
-            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-        )
-        .expect("Failed to initialize QUIC client certificates");
-
+        let (certificate, key) = new_dummy_x509_certificate(identity.as_ref());
         log_gso_workaround();
 
         let connection_manager = match config.tpu_connection_path {
