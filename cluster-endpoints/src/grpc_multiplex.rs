@@ -332,8 +332,12 @@ pub fn create_grpc_multiplex_blocks_subscription(
             let mut startup_completed = false;
             const MAX_ALLOWED_CLEANUP_WITHOUT_RECV: u8 = 12; // 12*5 = 60s without recving data
             'recv_loop: loop {
-                debug!("channel capacities: processed_block_sender={}, block_info_sender_confirmed={}, block_info_sender_finalized={}",
+                debug!("channel capacities:\nprocessed_block_sender={}, \
+                                          \nblock_info_sender_processed={},     \
+                                          \nblock_info_sender_confirmed={},     \
+                                          \nblock_info_sender_finalized={}",
                     processed_block_sender.capacity(),
+                    block_info_sender_processed.capacity(),
                     block_info_sender_confirmed.capacity(),
                     block_info_sender_finalized.capacity()
                 );

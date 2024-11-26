@@ -14,12 +14,12 @@ use quinn::{
 use solana_lite_rpc_core::network_utils::apply_gso_workaround;
 use solana_sdk::quic::QUIC_MAX_TIMEOUT;
 use solana_streamer::nonblocking::quic::ALPN_TPU_PROTOCOL_ID;
-use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use solana_streamer::tls_certificates::new_dummy_x509_certificate;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::RwLock;
 
@@ -267,12 +267,7 @@ async fn new_endpoint_with_validator_identity(validator_identity: ValidatorIdent
         validator_identity
     );
     // the counterpart of this function is get_remote_pubkey+get_pubkey_from_tls_certificate
-    let (certificate, key) = new_self_signed_tls_certificate(
-        &validator_identity.get_keypair_for_tls(),
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-    )
-    .expect("Failed to initialize QUIC connection certificates");
-
+    let (certificate, key) = new_dummy_x509_certificate(&validator_identity.get_keypair_for_tls() );
     create_tpu_client_endpoint(certificate, key)
 }
 

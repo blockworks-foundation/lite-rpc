@@ -35,8 +35,8 @@ impl SelfSignedTlsConfigProvider {
 
     fn gen_tls_certificate_and_key(hostnames: Vec<String>) -> (Certificate, PrivateKey) {
         let cert = generate_simple_self_signed(hostnames).unwrap();
-        let key = cert.serialize_private_key_der();
-        (Certificate(cert.serialize_der().unwrap()), PrivateKey(key))
+        let key = cert.key_pair.serialize_der();
+        (Certificate(cert.key_pair.serialize_der()), PrivateKey(key))
     }
 
     fn build_client_crypto_insecure() -> ClientConfig {

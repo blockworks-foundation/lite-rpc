@@ -69,6 +69,7 @@ use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
+use solana_lite_rpc_accounts::store::AccountsDb;
 
 // jemalloc seems to be better at keeping the memory footprint reasonable over
 // longer periods of time
@@ -188,10 +189,26 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         info!("Disabled grpc stream inspection");
     }
 
+    info!("Waiting for first finalized block info...");
+    let finalized_block_info = wait_till_block_of_commitment_is_recieved(
+        blockinfo_notifier.resubscribe(),
+        CommitmentConfig::finalized(),
+    )
+        .await;
+    info!("Got finalized block info: {:?}", finalized_block_info.slot);
+
+    let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
+
+    let block_information_store =
+        BlockInformationStore::new(BlockInformation::from_block_info(&finalized_block_info));
+
     let accounts_service = if let Some(account_stream) = processed_account_stream {
         // lets use inmemory storage for now
-        let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
-            Arc::new(InmemoryAccountStore::new());
+        // let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
+        //     Arc::new(InmemoryAccountStore::new());
+
+        let accounts_storage: Arc<dyn AccountStorageInterface> = Arc::new(AccountsDb::new());
+
         const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
         // Accounts notifications will be spurious when slots change
         // 256 seems very reasonable so that there are no account notification is missed and memory usage
@@ -201,44 +218,35 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             Arc::new(AccountsOnDemand::new(
                 rpc_client.clone(),
                 gprc_sources,
-                inmemory_account_storage,
+                accounts_storage,
                 account_notification_sender.clone(),
             ))
         } else {
-            inmemory_account_storage
+            accounts_storage
         };
 
-        let account_service = AccountService::new(account_storage, account_notification_sender);
+        let account_service = AccountService::new(
+            account_storage,
+            account_notification_sender
+        );
 
         account_service.process_account_stream(
             account_stream.resubscribe(),
             blockinfo_notifier.resubscribe(),
         );
 
-        account_service
-            .populate_from_rpc(
-                rpc_client.clone(),
-                &account_filters,
-                MAX_CONNECTIONS_IN_PARALLEL,
-            )
-            .await?;
+        // FIXME there should be a flag so that development can happen faster
+        // account_service
+        //     .populate_from_rpc(
+        //         rpc_client.clone(),
+        //         &account_filters,
+        //         MAX_CONNECTIONS_IN_PARALLEL,
+        //     )
+        //     .await?;
         Some(account_service)
     } else {
         None
     };
-
-    info!("Waiting for first finalized block info...");
-    let finalized_block_info = wait_till_block_of_commitment_is_recieved(
-        blockinfo_notifier.resubscribe(),
-        CommitmentConfig::finalized(),
-    )
-    .await;
-    info!("Got finalized block info: {:?}", finalized_block_info.slot);
-
-    let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
-
-    let block_information_store =
-        BlockInformationStore::new(BlockInformation::from_block_info(&finalized_block_info));
 
     let data_cache = DataCache {
         block_information_store,

@@ -19,7 +19,6 @@ use solana_streamer::nonblocking::quic::{ConnectionPeerType, SpawnNonBlockingSer
 use solana_streamer::packet::PacketBatch;
 use solana_streamer::quic::StreamStats;
 use solana_streamer::streamer::StakedNodes;
-use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
