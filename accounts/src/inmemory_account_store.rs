@@ -92,7 +92,7 @@ impl AccountDataByCommitment {
             .unwrap_or(true);
 
         let mut updated = false;
-        if self.processed_accounts.get(&data.updated_slot).is_none() {
+        if !self.processed_accounts.contains_key(&data.updated_slot) {
             // processed not present for the slot
             self.processed_accounts
                 .insert(data.updated_slot, data.clone());

@@ -2,8 +2,8 @@ pub fn histogram(values: &[f64], bins: usize) -> Vec<(f64, usize)> {
     assert!(bins >= 2);
     let mut bucket: Vec<usize> = vec![0; bins];
 
-    let mut min = std::f64::MAX;
-    let mut max = std::f64::MIN;
+    let mut min = f64::MAX;
+    let mut max = f64::MIN;
     for val in values {
         min = min.min(*val);
         max = max.max(*val);

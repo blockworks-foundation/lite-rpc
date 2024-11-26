@@ -14,9 +14,9 @@ use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterf
 use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
-use std::collections::HashMap;
-use std::{sync::Arc};
 use solana_streamer::tls_certificates::new_dummy_x509_certificate;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 lazy_static::lazy_static! {
     static ref NB_CLUSTER_NODES: GenericGauge<prometheus::core::AtomicI64> =
