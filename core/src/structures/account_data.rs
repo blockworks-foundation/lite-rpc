@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::{account::Account, pubkey::Pubkey, slot_history::Slot};
-use solana_sdk::account::AccountSharedData;
 use tokio::sync::broadcast::Receiver;
 
 use crate::commitment_utils::Commitment;

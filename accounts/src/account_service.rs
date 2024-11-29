@@ -191,34 +191,24 @@ impl AccountService {
             loop {
                 match blockinfo_stream.recv().await {
                     Ok(block_info) => {
-                        ///////////////////////////////////////////////
-                        {
-                            let commitment = Commitment::from(block_info.commitment_config);
-                            this.account_store.process_slot_data(block_info.slot, commitment).await;
+
+                        let commitment = Commitment::from(block_info.commitment_config);
+                        let updated_accounts = this.account_store.process_slot_data(block_info.slot, commitment).await;
+                        match commitment {
+                            Commitment::Processed => {}
+                            Commitment::Confirmed => {
+                                ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);
+                            }
+                            Commitment::Finalized => {
+                                ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
+                            }
                         }
-                        ///////////////////////////////////////////////
-                        // FIXME clarify why this is the case
-                        // if block_info.commitment_config.is_processed() {
-                        //     // processed commitment is not processed in this loop
-                        //     continue;
-                        // }
-                        // let commitment = Commitment::from(block_info.commitment_config);
-                        // let updated_accounts = this
-                        //     .account_store
-                        //     .process_slot_data(block_info.slot, commitment)
-                        //     .await;
-                        //
-                        // if block_info.commitment_config.is_finalized() {
-                        //     ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
-                        // } else {
-                        //     ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);
-                        // }
-                        //
-                        // for data in updated_accounts {
-                        //     let _ = this
-                        //         .account_notification_sender
-                        //         .send(AccountNotificationMessage { data, commitment });
-                        // }
+
+                        for data in updated_accounts {
+                            let _ = this
+                                .account_notification_sender
+                                .send(AccountNotificationMessage { data, commitment });
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(e)) => {
                         log::error!("Block Stream Lagged to update accounts by {}", e);

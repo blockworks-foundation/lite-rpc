@@ -1,12 +1,12 @@
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use itertools::Itertools;
 use solana_accounts_db::accounts::Accounts;
 use solana_accounts_db::accounts_db::{AccountsDb as SolanaAccountsDb, AccountsDbConfig, AccountShrinkThreshold, CreateAncientStorage};
 use solana_accounts_db::accounts_file::StorageAccess;
-use solana_accounts_db::accounts_index::{AccountSecondaryIndexes, AccountsIndexConfig, IndexLimitMb, ScanConfig, ScanResult};
+use solana_accounts_db::accounts_index::{AccountSecondaryIndexes, AccountsIndexConfig, IndexLimitMb};
 use solana_accounts_db::ancestors::Ancestors;
 use solana_accounts_db::partitioned_rewards::TestPartitionedEpochRewards;
 use solana_rpc_client_api::filter::RpcFilterType;
@@ -15,9 +15,6 @@ use solana_sdk::clock::{BankId, Slot};
 use solana_sdk::genesis_config::ClusterType;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction_context::TransactionAccount;
-use task::spawn_blocking;
-use tokio::sync::RwLock;
-use tokio::task;
 
 use Commitment::{Confirmed, Finalized};
 use solana_lite_rpc_core::commitment_utils::Commitment;
@@ -58,8 +55,9 @@ pub const ACCOUNTS_DB_CONFIG: AccountsDbConfig = AccountsDbConfig {
 
 pub struct AccountsDb {
     accounts: Accounts,
-    // FIXME probably RwLock or similar
-    commitments: RwLock<HashMap<Commitment, Slot>>,
+    processed_slot: AtomicU64,
+    confirmed_slot: AtomicU64,
+    finalised_slot: AtomicU64,
 }
 
 impl AccountsDb {
@@ -77,7 +75,9 @@ impl AccountsDb {
         let accounts = Accounts::new(Arc::new(db));
         Self {
             accounts,
-            commitments: RwLock::new(HashMap::new()),
+            processed_slot: AtomicU64::new(0),
+            confirmed_slot: AtomicU64::new(0),
+            finalised_slot: AtomicU64::new(0),
         }
     }
 
@@ -86,7 +86,9 @@ impl AccountsDb {
         let accounts = Accounts::new(Arc::new(db));
         Self {
             accounts,
-            commitments: RwLock::new(HashMap::new()),
+            processed_slot: AtomicU64::new(0),
+            confirmed_slot: AtomicU64::new(0),
+            finalised_slot: AtomicU64::new(0),
         }
     }
 }
@@ -105,68 +107,48 @@ impl AccountStorageInterface for AccountsDb {
     }
 
     async fn get_account(&self, account_pk: Pubkey, commitment: Commitment) -> Result<Option<AccountData>, AccountLoadingError> {
-        let ancestors = self.get_ancestors_from_commitment(commitment).await;
-
-        let accounts_db = self.accounts.accounts_db.clone();
+        let ancestors = self.get_ancestors_from_commitment(commitment);
         Ok(
-            spawn_blocking(move || {
-                accounts_db
-                    .load_with_fixed_root(&ancestors, &account_pk)
-                    .map(|(shared_data, slot)| Self::convert_to_account_data(account_pk, slot, shared_data))
-            })
-                .await
-                .map_err(|e| AccountLoadingError::FailedToSpawnTask(format!("Failed to spawn task: {:?}", e)))?
+            self.accounts
+                .load_with_fixed_root(&ancestors, &account_pk)
+                .map(|(shared_data, slot)| Self::convert_to_account_data(account_pk, slot, shared_data))
         )
     }
 
     async fn get_program_accounts(&self, program_pubkey: Pubkey, account_filter: Option<Vec<RpcFilterType>>, commitment: Commitment) -> Option<Vec<AccountData>> {
-        let slot = self.get_slot_from_commitment(commitment).await;
-        let ancestors = Ancestors::from(vec![slot]);
-        let accounts_db = self.accounts.accounts_db.clone();
-        let scan_config = ScanConfig::new(true);
+        let slot = self.get_slot_from_commitment(commitment);
 
-        let transaction_accounts: ScanResult<Vec<TransactionAccount>> = spawn_blocking(move || {
-            let filter = move |data: &AccountSharedData| {
-                if data.owner() != &program_pubkey {
-                    return false;
+        let filter = |data: &AccountSharedData| {
+            match &account_filter {
+                Some(filters) => {
+                    filters.iter().all(|filter| {
+                        match filter {
+                            RpcFilterType::DataSize(size) => data.data().len() == *size as usize,
+                            RpcFilterType::Memcmp(cmp) => cmp.bytes_match(data.data()),
+                            RpcFilterType::TokenAccountState => unimplemented!() // FIXME
+                        }
+                    })
                 }
-                match &account_filter {
-                    Some(filters) => {
-                        filters.iter().all(|filter| {
-                            match filter {
-                                RpcFilterType::DataSize(size) => data.data().len() == *size as usize,
-                                RpcFilterType::Memcmp(cmp) => cmp.bytes_match(data.data()),
-                                RpcFilterType::TokenAccountState => unimplemented!() // FIXME
-                            }
-                        })
-                    }
-                    None => true
-                }
-            };
+                None => true
+            }
+        };
 
-            // implementation from solana accounts.rs with slight adjustments - load_by_program_with_filter
-            let mut collector = Vec::new();
-            accounts_db
-                .scan_accounts(
-                    &ancestors,
-                    BankId::from(slot),
-                    |some_account_tuple| {
-                        Self::load_while_filtering(&mut collector, some_account_tuple, |account| {
-                            filter(account)
-                        })
-                    },
-                    &scan_config,
-                )
-                .map(|_| collector)
-            // TODO The interface should be adjusted and return Rest<Vec<AccountData>> instead
-        }).await.unwrap_or(Ok(vec![]));
+        let transaction_accounts: Vec<TransactionAccount> = self.accounts.load_by_program_slot(slot, Some(&program_pubkey))
+            .into_iter()
+            .filter(|ta| filter(&ta.1))
+            .collect();
 
-        Some(
-            transaction_accounts.unwrap()
-                .into_iter()
-                .map(|ta| { Self::convert_to_account_data(ta.0, slot, ta.1) })
-                .collect_vec()
-        )
+
+        let result = transaction_accounts
+            .into_iter()
+            .map(|ta| { Self::convert_to_account_data(ta.0, slot, ta.1) })
+            .collect_vec();
+
+        if result.is_empty() {
+            None
+        } else {
+            Some(result)
+        }
     }
 
 
@@ -175,77 +157,62 @@ impl AccountStorageInterface for AccountsDb {
             self.accounts.add_root(slot);
         }
 
-        let commitments = self.commitments.read().await.clone();
-
-        let processed = commitments.get(&Processed).cloned().unwrap_or(Slot::from(0u64));
-        let confirmed = commitments.get(&Confirmed).cloned().unwrap_or(Slot::from(0u64));
-        let finalized = commitments.get(&Finalized).cloned().unwrap_or(Slot::from(0u64));
+        let processed = self.processed_slot.load(Ordering::Relaxed);
+        let confirmed = self.confirmed_slot.load(Ordering::Relaxed);
+        let finalized = self.finalised_slot.load(Ordering::Relaxed);
 
         match commitment {
             Processed => {
                 if slot > processed {
-                    self.commitments.write().await.insert(Processed, slot);
+                    self.processed_slot.store(slot, Ordering::Relaxed);
                 }
             }
             Confirmed => {
                 if slot > processed {
-                    self.commitments.write().await.insert(Processed, slot);
+                    self.processed_slot.store(slot, Ordering::Relaxed);
                 }
                 if slot > confirmed {
-                    self.commitments.write().await.insert(Confirmed, slot);
+                    self.confirmed_slot.store(slot, Ordering::Relaxed);
                 }
             }
             Finalized => {
                 if slot > processed {
-                    self.commitments.write().await.insert(Processed, slot);
+                    self.processed_slot.store(slot, Ordering::Relaxed);
                 }
 
                 if slot > confirmed {
-                    self.commitments.write().await.insert(Confirmed, slot);
+                    self.confirmed_slot.store(slot, Ordering::Relaxed);
                 }
 
                 if slot > finalized {
-                    self.commitments.write().await.insert(Finalized, slot);
+                    self.finalised_slot.store(slot, Ordering::Relaxed);
                 }
             }
         }
 
-        // FIXME do we need to return data from here? - why
-        // self.commitments.write().await.insert(commitment, slot);
-        vec![]
+        assert!(self.processed_slot.load(Ordering::Relaxed) >= self.confirmed_slot.load(Ordering::Relaxed));
+        assert!(self.confirmed_slot.load(Ordering::Relaxed) >= self.finalised_slot.load(Ordering::Relaxed));
+
+        self.accounts.load_all(&Ancestors::from(vec![slot]), slot, false)
+            .unwrap()
+            .into_iter()
+            .filter(|(_, _, updated_slot)| *updated_slot == slot)
+            .map(|(key, data, slot)| Self::convert_to_account_data(key, slot, data))
+            .collect_vec()
     }
 }
 
 impl AccountsDb {
-    // borrowed from solana accounts.rs
-    fn load_while_filtering<F: Fn(&AccountSharedData) -> bool>(
-        collector: &mut Vec<TransactionAccount>,
-        some_account_tuple: Option<(&Pubkey, AccountSharedData, Slot)>,
-        filter: F,
-    ) {
-        if let Some(mapped_account_tuple) = some_account_tuple
-            .filter(|(_, account, _)| Self::is_loadable(account.lamports()) && filter(account))
-            .map(|(pubkey, account, _slot)| (*pubkey, account))
-        {
-            collector.push(mapped_account_tuple)
+    fn get_slot_from_commitment(&self, commitment: Commitment) -> Slot {
+        match commitment {
+            Processed => self.processed_slot.load(Ordering::Relaxed),
+            Confirmed => self.confirmed_slot.load(Ordering::Relaxed),
+            Finalized => self.finalised_slot.load(Ordering::Relaxed)
         }
     }
 
-    // borrowed from solana accounts.rs
-    fn is_loadable(lamports: u64) -> bool {
-        // Don't ever load zero lamport accounts into runtime because
-        // the existence of zero-lamport accounts are never deterministic!!
-        lamports > 0
-    }
-
-    async fn get_slot_from_commitment(&self, commitment: Commitment) -> Slot {
-        let lock = self.commitments.read().await;
-        let result = lock.get(&commitment).unwrap().clone();
-        result
-    }
-
-    async fn get_ancestors_from_commitment(&self, commitment: Commitment) -> Ancestors {
-        let slot = self.get_slot_from_commitment(commitment).await;
+    fn get_ancestors_from_commitment(&self, commitment: Commitment) -> Ancestors {
+        let slot = self.get_slot_from_commitment(commitment);
         Ancestors::from(vec![slot])
     }
 
@@ -270,7 +237,7 @@ mod tests {
 
     use solana_sdk::pubkey::Pubkey;
 
-    use solana_lite_rpc_core::commitment_utils::Commitment::Confirmed;
+    use solana_lite_rpc_core::commitment_utils::Commitment::Processed;
 
     use crate::account_store_interface::AccountStorageInterface;
     use crate::store::accounts_db::create_account_data;
@@ -278,15 +245,394 @@ mod tests {
 
     #[tokio::test]
     async fn store_new_account() {
-        let test_instance = AccountsDb::new_for_testing();
+        let ti = AccountsDb::new_for_testing();
 
-        let program_key = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
-        let account_1_key = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+        let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+        let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
 
-        let account_1_data = create_account_data(1, account_1_key, program_key, &[0u8; 23]);
-        test_instance.initilize_or_update_account(account_1_data).await;
+        let ad = create_account_data(2, ak, pk, 1);
+        ti.initilize_or_update_account(ad).await;
 
-        let result = test_instance.get_account(account_1_key, Confirmed).await;
+        ti.process_slot_data(2, Processed).await;
+
+        let result = ti.get_account(ak, Processed).await;
+        assert!(result.is_ok());
+        let data = result.unwrap().unwrap();
+        assert_eq!(data.updated_slot, 2);
+        assert_eq!(data.account.lamports, 1);
+    }
+
+    mod get_account {
+        use std::str::FromStr;
+
+        use solana_sdk::pubkey::Pubkey;
+
+        use solana_lite_rpc_core::commitment_utils::Commitment::{Confirmed, Finalized, Processed};
+
+        use crate::account_store_interface::AccountStorageInterface;
+        use crate::store::accounts_db::create_account_data;
+        use crate::store::AccountsDb;
+
+        #[tokio::test]
+        async fn different_commitments() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+
+            ti.process_slot_data(5, Processed).await;
+            ti.process_slot_data(4, Confirmed).await;
+            ti.process_slot_data(3, Finalized).await;
+
+            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10)).await;
+            ti.initilize_or_update_account(create_account_data(4, ak, pk, 20)).await;
+            ti.initilize_or_update_account(create_account_data(3, ak, pk, 30)).await;
+
+            let processed = ti.get_account(ak, Processed).await.unwrap().unwrap();
+            assert_eq!(processed.updated_slot, 5);
+            assert_eq!(processed.account.lamports, 10);
+
+            let confirmed = ti.get_account(ak, Confirmed).await.unwrap().unwrap();
+            assert_eq!(confirmed.updated_slot, 4);
+            assert_eq!(confirmed.account.lamports, 20);
+
+            let finalized = ti.get_account(ak, Finalized).await.unwrap().unwrap();
+            assert_eq!(finalized.updated_slot, 3);
+            assert_eq!(finalized.account.lamports, 30);
+        }
+
+        #[tokio::test]
+        async fn becoming_available_after_slot_update() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+
+            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10)).await;
+
+// Slot = Processed
+            ti.process_slot_data(5, Processed).await;
+
+            let processed = ti.get_account(ak, Processed).await.unwrap().unwrap();
+            assert_eq!(processed.updated_slot, 5);
+            assert_eq!(processed.account.lamports, 10);
+
+            let confirmed = ti.get_account(ak, Confirmed).await.unwrap();
+            assert_eq!(confirmed, None);
+
+            let finalized = ti.get_account(ak, Finalized).await.unwrap();
+            assert_eq!(finalized, None);
+
+// Slot = Confirmed
+            ti.process_slot_data(5, Confirmed).await;
+
+            let processed = ti.get_account(ak, Processed).await.unwrap().unwrap();
+            assert_eq!(processed.updated_slot, 5);
+            assert_eq!(processed.account.lamports, 10);
+
+            let confirmed = ti.get_account(ak, Confirmed).await.unwrap().unwrap();
+            assert_eq!(confirmed.updated_slot, 5);
+            assert_eq!(confirmed.account.lamports, 10);
+
+            let finalized = ti.get_account(ak, Finalized).await.unwrap();
+            assert_eq!(finalized, None);
+
+// Slot = Finalized
+            ti.process_slot_data(5, Finalized).await;
+
+            let processed = ti.get_account(ak, Processed).await.unwrap().unwrap();
+            assert_eq!(processed.updated_slot, 5);
+            assert_eq!(processed.account.lamports, 10);
+
+            let confirmed = ti.get_account(ak, Confirmed).await.unwrap().unwrap();
+            assert_eq!(confirmed.updated_slot, 5);
+            assert_eq!(confirmed.account.lamports, 10);
+
+            let finalized = ti.get_account(ak, Finalized).await.unwrap().unwrap();
+            assert_eq!(finalized.updated_slot, 5);
+            assert_eq!(finalized.account.lamports, 10);
+        }
+    }
+
+    mod get_program_accounts {
+        use std::str::FromStr;
+
+        use solana_rpc_client_api::filter::{Memcmp, RpcFilterType};
+        use solana_sdk::pubkey::Pubkey;
+
+        use solana_lite_rpc_core::commitment_utils::Commitment::{Confirmed, Finalized, Processed};
+
+        use crate::account_store_interface::AccountStorageInterface;
+        use crate::store::accounts_db::{create_account_data, create_account_data_with_data};
+        use crate::store::AccountsDb;
+
+        #[tokio::test]
+        async fn different_commitments() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+
+            ti.process_slot_data(5, Processed).await;
+            ti.process_slot_data(4, Confirmed).await;
+            ti.process_slot_data(3, Finalized).await;
+
+            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10)).await;
+            ti.initilize_or_update_account(create_account_data(4, ak, pk, 20)).await;
+            ti.initilize_or_update_account(create_account_data(3, ak, pk, 30)).await;
+
+            let processed = ti.get_program_accounts(pk, None, Processed).await.unwrap().pop().unwrap();
+            assert_eq!(processed.updated_slot, 5);
+            assert_eq!(processed.account.lamports, 10);
+
+            let confirmed = ti.get_program_accounts(pk, None, Confirmed).await.unwrap().pop().unwrap();
+            assert_eq!(confirmed.updated_slot, 4);
+            assert_eq!(confirmed.account.lamports, 20);
+
+            let finalized = ti.get_program_accounts(pk, None, Finalized).await.unwrap().pop().unwrap();
+            assert_eq!(finalized.updated_slot, 3);
+            assert_eq!(finalized.account.lamports, 30);
+        }
+
+        #[tokio::test]
+        async fn becoming_available_after_slot_update() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+
+            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10)).await;
+
+// Slot = Processed
+            ti.process_slot_data(5, Processed).await;
+
+            let processed = ti.get_program_accounts(pk, None, Processed).await.unwrap().pop().unwrap();
+            assert_eq!(processed.updated_slot, 5);
+            assert_eq!(processed.account.lamports, 10);
+
+            let confirmed = ti.get_program_accounts(pk, None, Confirmed).await;
+            assert_eq!(confirmed, None);
+
+            let finalized = ti.get_program_accounts(pk, None, Finalized).await;
+            assert_eq!(finalized, None);
+
+// Slot = Confirmed
+            ti.process_slot_data(5, Confirmed).await;
+
+            let processed = ti.get_program_accounts(pk, None, Processed).await.unwrap().pop().unwrap();
+            assert_eq!(processed.updated_slot, 5);
+            assert_eq!(processed.account.lamports, 10);
+
+            let confirmed = ti.get_program_accounts(pk, None, Confirmed).await.unwrap().pop().unwrap();
+            assert_eq!(confirmed.updated_slot, 5);
+            assert_eq!(confirmed.account.lamports, 10);
+
+            let finalized = ti.get_program_accounts(pk, None, Finalized).await;
+            assert_eq!(finalized, None);
+
+// Slot = Finalized
+            ti.process_slot_data(5, Finalized).await;
+
+            let processed = ti.get_program_accounts(pk, None, Processed).await.unwrap().pop().unwrap();
+            assert_eq!(processed.updated_slot, 5);
+            assert_eq!(processed.account.lamports, 10);
+
+            let confirmed = ti.get_program_accounts(pk, None, Confirmed).await.unwrap().pop().unwrap();
+            assert_eq!(confirmed.updated_slot, 5);
+            assert_eq!(confirmed.account.lamports, 10);
+
+            let finalized = ti.get_program_accounts(pk, None, Finalized).await.unwrap().pop().unwrap();
+            assert_eq!(finalized.updated_slot, 5);
+            assert_eq!(finalized.account.lamports, 10);
+        }
+
+        #[tokio::test]
+        async fn filter_by_data_size() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak1 = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+            let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
+
+            ti.process_slot_data(5, Processed).await;
+            ti.initilize_or_update_account(create_account_data_with_data(5, ak1, pk, Vec::from("abc"))).await;
+            ti.initilize_or_update_account(create_account_data_with_data(5, ak2, pk, Vec::from("abcdef"))).await;
+
+            let mut result = ti.get_program_accounts(pk, Some(vec![RpcFilterType::DataSize(3)]), Processed).await.unwrap();
+            assert_eq!(result.len(), 1);
+            let result = result.pop().unwrap();
+            assert_eq!(result.pubkey, ak1);
+            assert_eq!(result.updated_slot, 5);
+            assert_eq!(result.account.data, Vec::from("abc"));
+        }
+
+        #[tokio::test]
+        async fn filter_by_mem_cmp() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak1 = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+            let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
+
+            ti.process_slot_data(5, Processed).await;
+            ti.initilize_or_update_account(create_account_data_with_data(5, ak1, pk, Vec::from("abc"))).await;
+            ti.initilize_or_update_account(create_account_data_with_data(5, ak2, pk, Vec::from("abcdef"))).await;
+
+            let mut result = ti.get_program_accounts(pk, Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(1, Vec::from("bcdef")))]), Processed).await.unwrap();
+            assert_eq!(result.len(), 1);
+            let result = result.pop().unwrap();
+            assert_eq!(result.pubkey, ak2);
+            assert_eq!(result.updated_slot, 5);
+            assert_eq!(result.account.data, Vec::from("abcdef"));
+        }
+
+        #[tokio::test]
+        async fn multiple_filter() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak1 = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+            let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
+
+            ti.process_slot_data(5, Processed).await;
+            ti.initilize_or_update_account(create_account_data_with_data(5, ak1, pk, Vec::from("abc"))).await;
+            ti.initilize_or_update_account(create_account_data_with_data(5, ak2, pk, Vec::from("abcdef"))).await;
+
+            let mut result = ti.get_program_accounts(pk, Some(vec![
+                RpcFilterType::DataSize(6),
+                RpcFilterType::Memcmp(Memcmp::new_raw_bytes(1, Vec::from("bcdef"))),
+            ]), Processed).await.unwrap();
+
+            assert_eq!(result.len(), 1);
+            let result = result.pop().unwrap();
+            assert_eq!(result.pubkey, ak2);
+            assert_eq!(result.updated_slot, 5);
+            assert_eq!(result.account.data, Vec::from("abcdef"));
+        }
+
+
+        #[tokio::test]
+        async fn contradicting_filter() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak1 = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+            let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
+
+            ti.process_slot_data(5, Processed).await;
+            ti.initilize_or_update_account(create_account_data_with_data(5, ak1, pk, Vec::from("abc"))).await;
+            ti.initilize_or_update_account(create_account_data_with_data(5, ak2, pk, Vec::from("abcdef"))).await;
+
+            let result = ti.get_program_accounts(pk, Some(vec![
+                RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, Vec::from("a"))),
+                RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, Vec::from("b"))),
+            ]), Processed).await;
+            assert_eq!(result, None);
+        }
+    }
+
+    mod process_slot_data {
+        use std::str::FromStr;
+        use std::sync::atomic::Ordering::Relaxed;
+
+        use solana_sdk::pubkey::Pubkey;
+
+        use solana_lite_rpc_core::commitment_utils::Commitment::{Confirmed, Finalized, Processed};
+
+        use crate::account_store_interface::AccountStorageInterface;
+        use crate::store::accounts_db::create_account_data;
+        use crate::store::AccountsDb;
+
+        #[tokio::test]
+        async fn first_time_invocation() {
+            let ti = AccountsDb::new_for_testing();
+
+            ti.process_slot_data(3, Processed).await;
+            ti.process_slot_data(2, Confirmed).await;
+            ti.process_slot_data(1, Finalized).await;
+
+            assert_eq!(ti.processed_slot.load(Relaxed), 3);
+            assert_eq!(ti.confirmed_slot.load(Relaxed), 2);
+            assert_eq!(ti.finalised_slot.load(Relaxed), 1);
+        }
+
+        #[tokio::test]
+        async fn only_updates_processed_slot() {
+            let ti = AccountsDb::new_for_testing();
+
+            ti.process_slot_data(1, Processed).await;
+            ti.process_slot_data(1, Confirmed).await;
+            ti.process_slot_data(1, Finalized).await;
+
+            ti.process_slot_data(2, Processed).await;
+
+            assert_eq!(ti.processed_slot.load(Relaxed), 2);
+            assert_eq!(ti.confirmed_slot.load(Relaxed), 1);
+            assert_eq!(ti.finalised_slot.load(Relaxed), 1);
+        }
+
+        #[tokio::test]
+        async fn update_processed_slot_when_confirmed_slot_is_ahead() {
+            let ti = AccountsDb::new_for_testing();
+
+            ti.process_slot_data(1, Processed).await;
+            ti.process_slot_data(1, Confirmed).await;
+            ti.process_slot_data(1, Finalized).await;
+
+            ti.process_slot_data(2, Confirmed).await;
+
+            assert_eq!(ti.processed_slot.load(Relaxed), 2);
+            assert_eq!(ti.confirmed_slot.load(Relaxed), 2);
+            assert_eq!(ti.finalised_slot.load(Relaxed), 1);
+        }
+
+        #[tokio::test]
+        async fn update_processed_and_confirmed_slot_when_finalized_slot_is_ahead() {
+            let ti = AccountsDb::new_for_testing();
+
+            ti.process_slot_data(1, Processed).await;
+            ti.process_slot_data(1, Confirmed).await;
+            ti.process_slot_data(1, Finalized).await;
+
+            ti.process_slot_data(2, Finalized).await;
+
+            assert_eq!(ti.processed_slot.load(Relaxed), 2);
+            assert_eq!(ti.confirmed_slot.load(Relaxed), 2);
+            assert_eq!(ti.finalised_slot.load(Relaxed), 2);
+        }
+
+        #[tokio::test]
+        async fn returns_updated_account_if_commitment_changes_to_finalized() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+
+            let result = ti.process_slot_data(3, Processed).await;
+            assert_eq!(result.len(), 0);
+
+            ti.initilize_or_update_account(create_account_data(3, ak, pk, 10)).await;
+
+            let result = ti.process_slot_data(3, Confirmed).await;
+            assert_eq!(result.len(), 0);
+
+            let result = ti.process_slot_data(3, Finalized).await;
+            assert_eq!(result.len(), 1)
+        }
+
+        #[tokio::test]
+        async fn does_not_return_updated_account_if_different_slot_gets_finalized() {
+            let ti = AccountsDb::new_for_testing();
+
+            let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
+            let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
+
+            ti.initilize_or_update_account(create_account_data(3, ak, pk, 10)).await;
+            ti.process_slot_data(3, Finalized).await;
+
+            let result = ti.process_slot_data(4, Finalized).await;
+            assert_eq!(result.len(), 0)
+        }
     }
 }
 
@@ -294,112 +640,37 @@ pub fn create_account_data(
     updated_slot: Slot,
     pubkey: Pubkey,
     program: Pubkey,
-    data: &[u8],
+    lamports: u64,
 ) -> AccountData {
     AccountData {
         pubkey,
         account: Arc::new(Account {
-            lamports: 42,
-            data: Vec::from(data),
+            lamports,
+            data: Vec::from([]),
             owner: program,
             executable: false,
             rent_epoch: 0,
         }),
         updated_slot,
     }
-
-
-    // #[test]
-    // fn test() {
-    //     let db = AccountsDb::new_single_for_tests();
-    //     let accounts = Accounts::new(Arc::new(db));
-    //
-    //     // let num_slots = 4;
-    //     // let num_accounts = 10_000;
-    //     // println!("Creating {num_accounts} accounts");
-    //
-    //     // let pubkeys: Vec<_> = (0..num_slots)
-    //     //     .into_iter()
-    //     //     .map(|slot| {
-    //     //         let mut pubkeys: Vec<Pubkey> = vec![];
-    //     //         create_test_accounts(
-    //     //             &accounts,
-    //     //             &mut pubkeys,
-    //     //             num_accounts / num_slots,
-    //     //             slot as u64,
-    //     //         );
-    //     //         pubkeys
-    //     //     })
-    //     //     .collect();
-    //     //
-    //     // let pubkeys: Vec<_> = pubkeys.into_iter().flatten().collect();
-    //
-    //     // println!("{:?}", pubkeys);
-    //     let pubkey = solana_sdk::pubkey::new_rand();
-    //     let mut rng = rand::thread_rng();
-    //     let program = Pubkey::new_unique();
-    //     // let acc = create_random_account(
-    //     //     &mut rng,
-    //     //     1,
-    //     //     pubkey,
-    //     //     program,
-    //     // );
-    //     // println!("{acc:?}");
-    //
-    //     let account = AccountSharedData::new(
-    //         1 as u64,
-    //         0,
-    //         AccountSharedData::default().owner(),
-    //     );
-    //
-    //     println!("{program:?}");
-    //
-    //     let account_for_storage = [(&pubkey, &account)];
-    //     let to_store = (1u64, account_for_storage.as_slice());
-    //
-    //     accounts.store_accounts_cached(to_store)
-    // }
-    //
-    // fn create_random_account(
-    //     rng: &mut ThreadRng,
-    //     updated_slot: Slot,
-    //     pubkey: Pubkey,
-    //     program: Pubkey,
-    // ) -> AccountData {
-    //     let length: usize = rng.gen_range(100..1000);
-    //     AccountData {
-    //         pubkey,
-    //         account: Arc::new(Account {
-    //             lamports: rng.gen(),
-    //             data: (0..length).map(|_| rng.gen::<u8>()).collect_vec(),
-    //             owner: program,
-    //             executable: false,
-    //             rent_epoch: 0,
-    //         }),
-    //         updated_slot,
-    //     }
-    // }
 }
-//
-// pub fn create_test_accounts(
-//     accounts: &Accounts,
-//     pubkeys: &mut Vec<Pubkey>,
-//     num: usize,
-//     slot: Slot,
-// ) {
-//     let data_size = 0;
-//
-//     for t in 0..num {
-//         let pubkey = solana_sdk::pubkey::new_rand();
-//         let account = AccountSharedData::new(
-//             (t + 1) as u64,
-//             data_size,
-//             AccountSharedData::default().owner(),
-//         );
-//         // accounts.store_slow_uncached(slot, &pubkey, &account);
-//         let random_account = self
-//
-//         accounts.store_accounts_cached()
-//         pubkeys.push(pubkey);
-//     }
-// }
+
+
+pub fn create_account_data_with_data(
+    updated_slot: Slot,
+    ak: Pubkey,
+    program: Pubkey,
+    data: Vec<u8>,
+) -> AccountData {
+    AccountData {
+        pubkey: ak,
+        account: Arc::new(Account {
+            lamports: 1,
+            data,
+            owner: program,
+            executable: false,
+            rent_epoch: 0,
+        }),
+        updated_slot,
+    }
+}
