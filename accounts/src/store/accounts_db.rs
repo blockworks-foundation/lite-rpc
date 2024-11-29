@@ -11,7 +11,7 @@ use solana_accounts_db::ancestors::Ancestors;
 use solana_accounts_db::partitioned_rewards::TestPartitionedEpochRewards;
 use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::account::{Account, AccountSharedData, ReadableAccount};
-use solana_sdk::clock::{BankId, Slot};
+use solana_sdk::clock::Slot;
 use solana_sdk::genesis_config::ClusterType;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction_context::TransactionAccount;

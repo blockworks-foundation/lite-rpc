@@ -1,25 +1,37 @@
-pub mod rpc_tester;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::sync::Arc;
+use std::time::Duration;
 
-use crate::rpc_tester::RpcTester;
 use anyhow::bail;
 use dashmap::DashMap;
 use itertools::Itertools;
+use log::info;
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::signature::Keypair;
+use solana_sdk::signer::Signer;
+use tokio::io::AsyncReadExt;
+use tokio::sync::mpsc;
+use tokio::sync::RwLock;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
+
 use lite_rpc::bridge::LiteBridge;
 use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
+use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
+use lite_rpc::postgres_logger;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
-use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
-use log::info;
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
+use solana_lite_rpc_accounts::store::AccountsDb;
 use solana_lite_rpc_accounts_on_demand::accounts_on_demand::AccountsOnDemand;
 use solana_lite_rpc_address_lookup_tables::address_lookup_table_store::AddressLookupTableStore;
 use solana_lite_rpc_blockstore::history::History;
 use solana_lite_rpc_cluster_endpoints::endpoint_stremers::EndpointStreaming;
-
 use solana_lite_rpc_cluster_endpoints::geyser_grpc_connector::{
     GrpcConnectionTimeouts, GrpcSourceConfig,
 };
@@ -30,6 +42,7 @@ use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscripti
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
+use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::stores::{
     block_information_store::{BlockInformation, BlockInformationStore},
@@ -38,38 +51,26 @@ use solana_lite_rpc_core::stores::{
     subscription_store::SubscriptionStore,
     tx_store::TxStore,
 };
-use solana_lite_rpc_core::structures::account_filter::AccountFilters;
-use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
 };
+use solana_lite_rpc_core::structures::account_filter::AccountFilters;
+use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::utils::wait_till_block_of_commitment_is_recieved;
-use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
+use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
 use solana_lite_rpc_services::tpu_utils::tpu_connection_path::TpuConnectionPath;
 use solana_lite_rpc_services::tpu_utils::tpu_service::{TpuService, TpuServiceConfig};
 use solana_lite_rpc_services::transaction_replayer::TransactionReplayer;
 use solana_lite_rpc_services::tx_sender::TxSender;
-
-use lite_rpc::postgres_logger;
-use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_lite_rpc_util::obfuscate_rpcurl;
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::commitment_config::CommitmentConfig;
-use solana_sdk::signature::Keypair;
-use solana_sdk::signer::Signer;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::io::AsyncReadExt;
-use tokio::sync::mpsc;
-use tokio::sync::RwLock;
-use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::EnvFilter;
-use solana_lite_rpc_accounts::store::AccountsDb;
+
+use crate::rpc_tester::RpcTester;
+
+pub mod rpc_tester;
 
 // jemalloc seems to be better at keeping the memory footprint reasonable over
 // longer periods of time
@@ -115,6 +116,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         enable_address_lookup_tables,
         address_lookup_tables_binary,
         account_filters,
+        use_accounts_db,
         enable_accounts_on_demand_accounts_service,
         quic_connection_parameters,
         ..
@@ -203,11 +205,11 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         BlockInformationStore::new(BlockInformation::from_block_info(&finalized_block_info));
 
     let accounts_service = if let Some(account_stream) = processed_account_stream {
-        // lets use inmemory storage for now
-        // let inmemory_account_storage: Arc<dyn AccountStorageInterface> =
-        //     Arc::new(InmemoryAccountStore::new());
-
-        let accounts_storage: Arc<dyn AccountStorageInterface> = Arc::new(AccountsDb::new());
+        let accounts_storage: Arc<dyn AccountStorageInterface> = if use_accounts_db.unwrap_or(false) {
+            Arc::new(AccountsDb::new())
+        } else {
+            Arc::new(InmemoryAccountStore::new())
+        };
 
         const MAX_CONNECTIONS_IN_PARALLEL: usize = 10;
         // Accounts notifications will be spurious when slots change
@@ -227,7 +229,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
 
         let account_service = AccountService::new(
             account_storage,
-            account_notification_sender
+            account_notification_sender,
         );
 
         account_service.process_account_stream(
@@ -235,14 +237,13 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             blockinfo_notifier.resubscribe(),
         );
 
-        // FIXME there should be a flag so that development can happen faster
-        // account_service
-        //     .populate_from_rpc(
-        //         rpc_client.clone(),
-        //         &account_filters,
-        //         MAX_CONNECTIONS_IN_PARALLEL,
-        //     )
-        //     .await?;
+        account_service
+            .populate_from_rpc(
+                rpc_client.clone(),
+                &account_filters,
+                MAX_CONNECTIONS_IN_PARALLEL,
+            )
+            .await?;
         Some(account_service)
     } else {
         None
@@ -330,7 +331,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         leader_schedule,
         data_cache.clone(),
     )
-    .await?;
+        .await?;
     let tx_sender = TxSender::new(data_cache.clone(), tpu_service.clone());
     let tx_replayer =
         TransactionReplayer::new(tpu_service.clone(), data_cache.clone(), retry_after);
