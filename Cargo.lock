@@ -490,7 +490,7 @@ dependencies = [
  "axum-core",
  "bytes",
  "futures-util",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.1",
  "http-body-util",
  "itoa",
@@ -516,7 +516,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures-util",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.1",
  "http-body-util",
  "mime",
@@ -583,7 +583,7 @@ dependencies = [
  "bincode",
  "clap 4.5.21",
  "csv",
- "dashmap",
+ "dashmap 5.5.3",
  "dirs",
  "futures",
  "itertools 0.10.5",
@@ -600,7 +600,7 @@ dependencies = [
  "solana-rpc-client-api",
  "solana-sdk",
  "solana-transaction-status",
- "spl-memo 4.0.4",
+ "spl-memo 4.0.0",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1305,7 +1305,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "clap 4.5.21",
- "dashmap",
+ "dashmap 5.5.3",
  "futures",
  "itertools 0.10.5",
  "log",
@@ -1367,6 +1367,20 @@ dependencies = [
  "once_cell",
  "parking_lot_core",
  "rayon",
+]
+
+[[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
 ]
 
 [[package]]
@@ -1862,8 +1876,8 @@ dependencies = [
 
 [[package]]
 name = "geyser-grpc-connector"
-version = "2.0.0"
-source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?branch=2.0.16#214886a27da719807fbc3cbdbf7fb717bc280e7e"
+version = "0.11.0+yellowstone.2.0.0"
+source = "git+https://github.com/blockworks-foundation/geyser-grpc-connector.git?branch=2.0.16#9ce723fb06cdcd1981f7da7acffda59f5b4a613d"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1871,7 +1885,7 @@ dependencies = [
  "bincode",
  "clap 4.5.21",
  "csv",
- "dashmap",
+ "dashmap 6.1.0",
  "derive_more",
  "futures",
  "itertools 0.10.5",
@@ -1982,7 +1996,7 @@ dependencies = [
  "fnv",
  "futures-core",
  "futures-sink",
- "http 1.1.0",
+ "http 1.2.0",
  "indexmap 2.6.0",
  "slab",
  "tokio",
@@ -2120,9 +2134,9 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
+checksum = "f16ca2af56261c99fba8bac40a10251ce8188205a4c448fbb745a2e4daa76fea"
 dependencies = [
  "bytes",
  "fnv",
@@ -2147,7 +2161,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1efedce1fb8e6913f23e0c92de8e62cd5b772a67e7b3946df930a62566c93184"
 dependencies = [
  "bytes",
- "http 1.1.0",
+ "http 1.2.0",
 ]
 
 [[package]]
@@ -2158,7 +2172,7 @@ checksum = "793429d76616a256bcb62c2a2ec2bed781c8307e797e2598c50010f2bee2544f"
 dependencies = [
  "bytes",
  "futures-util",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.1",
  "pin-project-lite",
 ]
@@ -2221,7 +2235,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "h2 0.4.7",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.1",
  "httparse",
  "httpdate",
@@ -2283,7 +2297,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.1",
  "hyper 1.5.1",
  "pin-project-lite",
@@ -2479,9 +2493,9 @@ dependencies = [
 
 [[package]]
 name = "index_list"
-version = "0.2.13"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e6ba961c14e98151cd6416dd3685efe786a94c38bc1a535c06ceff0a1600813"
+checksum = "fa38453685e5fe724fd23ff6c1a158c1e2ca21ce0c2718fa11e96e70e99fd4de"
 
 [[package]]
 name = "indexmap"
@@ -2561,15 +2575,6 @@ name = "itertools"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
@@ -2921,7 +2926,7 @@ dependencies = [
  "chrono",
  "clap 4.5.21",
  "const_env",
- "dashmap",
+ "dashmap 5.5.3",
  "dotenv",
  "futures",
  "futures-util",
@@ -3767,12 +3772,12 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.13.3"
+version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b0487d90e047de87f984913713b85c601c05609aad5b0df4b4573fbf69aa13f"
+checksum = "2c0fef6c4230e4ccf618a35c59d7ede15dea37de8427500f50aff708806e42ec"
 dependencies = [
  "bytes",
- "prost-derive 0.13.3",
+ "prost-derive 0.13.4",
 ]
 
 [[package]]
@@ -3799,20 +3804,19 @@ dependencies = [
 
 [[package]]
 name = "prost-build"
-version = "0.13.3"
+version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c1318b19085f08681016926435853bbf7858f9c082d0999b80550ff5d9abe15"
+checksum = "d0f3e5beed80eb580c68e2c600937ac2c4eedabdfd5ef1e5b7ea4f3fba84497b"
 dependencies = [
- "bytes",
  "heck 0.5.0",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "log",
  "multimap 0.10.0",
  "once_cell",
  "petgraph",
  "prettyplease 0.2.25",
- "prost 0.13.3",
- "prost-types 0.13.3",
+ "prost 0.13.4",
+ "prost-types 0.13.4",
  "regex",
  "syn 2.0.89",
  "tempfile",
@@ -3833,12 +3837,12 @@ dependencies = [
 
 [[package]]
 name = "prost-derive"
-version = "0.13.3"
+version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9552f850d5f0964a4e4d0bf306459ac29323ddfbae05e35a7c0d35cb0803cc5"
+checksum = "157c5a9d7ea5c2ed2d9fb8f495b64759f7816c7eaea54ba3978f0d63000162e3"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.89",
@@ -3855,11 +3859,11 @@ dependencies = [
 
 [[package]]
 name = "prost-types"
-version = "0.13.3"
+version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4759aa0d3a6232fb8dbdb97b61de2c20047c68aca932c7ed76da9d788508d670"
+checksum = "cc2f1e56baa61e93533aebc21af4d2134b70f66275e0fcdf3cbe43d77ff7e8fc"
 dependencies = [
- "prost 0.13.3",
+ "prost 0.13.4",
 ]
 
 [[package]]
@@ -4312,9 +4316,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.18"
+version = "0.23.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c9cc1d47e243d655ace55ed38201c19ae02c148ae56412ab8750e8f0166ab7f"
+checksum = "934b404430bb06b3fae2cba809eb45a1ab1aecd64491213d7c3301b88393f8d1"
 dependencies = [
  "log",
  "once_cell",
@@ -4795,7 +4799,7 @@ dependencies = [
  "bytemuck_derive",
  "bzip2",
  "crossbeam-channel",
- "dashmap",
+ "dashmap 5.5.3",
  "index_list",
  "indexmap 2.6.0",
  "itertools 0.12.1",
@@ -4911,7 +4915,7 @@ checksum = "e4042e0b2c2b44db89d59eab832b4a66c6fc03e2a7e9383e7b75faf76d162c61"
 dependencies = [
  "async-trait",
  "bincode",
- "dashmap",
+ "dashmap 5.5.3",
  "futures",
  "futures-util",
  "indexmap 2.6.0",
@@ -5053,7 +5057,7 @@ dependencies = [
  "bs58 0.4.0",
  "bytes",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "futures",
  "itertools 0.10.5",
  "lazy_static",
@@ -5094,7 +5098,7 @@ dependencies = [
  "bs58 0.4.0",
  "bytes",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "futures",
  "itertools 0.10.5",
  "lazy_static",
@@ -5137,7 +5141,7 @@ dependencies = [
  "bs58 0.4.0",
  "bytes",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "futures",
  "itertools 0.10.5",
  "lazy_static",
@@ -5205,7 +5209,7 @@ dependencies = [
  "bincode",
  "bytes",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "futures",
  "futures-util",
  "itertools 0.10.5",
@@ -5241,7 +5245,7 @@ dependencies = [
  "bs58 0.4.0",
  "bytes",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "derive_more",
  "futures",
  "geyser-grpc-connector",
@@ -5283,7 +5287,7 @@ dependencies = [
  "bs58 0.4.0",
  "bytes",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "futures",
  "itertools 0.10.5",
  "log",
@@ -5311,7 +5315,7 @@ dependencies = [
 name = "solana-lite-rpc-prioritization-fees"
 version = "0.3.0"
 dependencies = [
- "dashmap",
+ "dashmap 5.5.3",
  "itertools 0.10.5",
  "jsonrpsee",
  "lazy_static",
@@ -5338,7 +5342,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap 4.5.21",
- "dashmap",
+ "dashmap 5.5.3",
  "dotenv",
  "futures",
  "itertools 0.10.5",
@@ -5379,7 +5383,7 @@ dependencies = [
  "clap 4.5.21",
  "countmap",
  "crossbeam-channel",
- "dashmap",
+ "dashmap 5.5.3",
  "dotenv",
  "futures",
  "itertools 0.10.5",
@@ -5420,7 +5424,7 @@ dependencies = [
  "chrono",
  "countmap",
  "crossbeam-channel",
- "dashmap",
+ "dashmap 5.5.3",
  "futures",
  "itertools 0.10.5",
  "lazy_static",
@@ -5458,7 +5462,7 @@ dependencies = [
  "bs58 0.4.0",
  "bytes",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "derive_more",
  "futures",
  "itertools 0.10.5",
@@ -5958,7 +5962,7 @@ dependencies = [
  "async-channel",
  "bytes",
  "crossbeam-channel",
- "dashmap",
+ "dashmap 5.5.3",
  "futures-util",
  "histogram",
  "indexmap 2.6.0",
@@ -6304,9 +6308,9 @@ dependencies = [
 
 [[package]]
 name = "spl-memo"
-version = "4.0.4"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a49f49f95f2d02111ded31696ab38a081fab623d4c76bd4cb074286db4560836"
+checksum = "f0f180b03318c3dbab3ef4e1e4d46d5211ae3c780940dd0a28695aba4b59a75a"
 dependencies = [
  "solana-program 1.18.26",
 ]
@@ -6832,12 +6836,11 @@ dependencies = [
 
 [[package]]
 name = "tokio-rustls"
-version = "0.26.0"
+version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c7bc40d0e5a97695bb96e27995cd3a08538541b0a846f65bba7a359f36700d4"
+checksum = "5f6d0975eaace0cf0fcadee4e4aaa5da15b5c079146f2cffb67c113be122bf37"
 dependencies = [
- "rustls 0.23.18",
- "rustls-pki-types",
+ "rustls 0.23.19",
  "tokio",
 ]
 
@@ -6946,7 +6949,7 @@ dependencies = [
  "bytes",
  "flate2",
  "h2 0.4.7",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.1",
  "http-body-util",
  "hyper 1.5.1",
@@ -6954,12 +6957,12 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
- "prost 0.13.3",
+ "prost 0.13.4",
  "rustls-native-certs 0.8.1",
  "rustls-pemfile 2.2.0",
  "socket2",
  "tokio",
- "tokio-rustls 0.26.0",
+ "tokio-rustls 0.26.1",
  "tokio-stream",
  "tower 0.4.13",
  "tower-layer",
@@ -6975,8 +6978,8 @@ checksum = "9557ce109ea773b399c9b9e5dca39294110b74f1f342cb347a80d1fce8c26a11"
 dependencies = [
  "prettyplease 0.2.25",
  "proc-macro2",
- "prost-build 0.13.3",
- "prost-types 0.13.3",
+ "prost-build 0.13.4",
+ "prost-types 0.13.4",
  "quote",
  "syn 2.0.89",
 ]
@@ -6988,7 +6991,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1eaf34ddb812120f5c601162d5429933c9b527d901ab0e7f930d3147e33a09b2"
 dependencies = [
  "async-stream",
- "prost 0.13.3",
+ "prost 0.13.4",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -7816,7 +7819,7 @@ source = "git+https://github.com/rpcpool/yellowstone-grpc.git?tag=v2.0.0+solana.
 dependencies = [
  "anyhow",
  "bincode",
- "prost 0.13.3",
+ "prost 0.13.4",
  "protobuf-src",
  "solana-account-decoder",
  "solana-sdk",
