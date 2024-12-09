@@ -577,7 +577,7 @@ dependencies = [
 
 [[package]]
 name = "bench"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1300,7 +1300,7 @@ dependencies = [
 
 [[package]]
 name = "custom-tpu-send-transactions"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1881,8 +1881,8 @@ dependencies = [
  "regex",
  "solana-sdk",
  "tokio",
- "tonic 0.12.3",
- "tonic-health 0.12.3",
+ "tonic",
+ "tonic-health",
  "tracing",
  "url",
  "yellowstone-grpc-client",
@@ -2907,7 +2907,7 @@ checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 
 [[package]]
 name = "lite-rpc"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -3767,16 +3767,6 @@ dependencies = [
 
 [[package]]
 name = "prost"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "deb1435c188b76130da55f17a466d252ff7b1418b2ad3e037d127b94e3411f29"
-dependencies = [
- "bytes",
- "prost-derive 0.12.6",
-]
-
-[[package]]
-name = "prost"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b0487d90e047de87f984913713b85c601c05609aad5b0df4b4573fbf69aa13f"
@@ -3839,19 +3829,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
-]
-
-[[package]]
-name = "prost-derive"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
-dependencies = [
- "anyhow",
- "itertools 0.12.1",
- "proc-macro2",
- "quote",
- "syn 2.0.89",
 ]
 
 [[package]]
@@ -5067,7 +5044,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-accounts"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5108,7 +5085,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-accounts-on-demand"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5151,7 +5128,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-address-lookup-tables"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5189,7 +5166,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-benchrunner-service"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5220,7 +5197,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-blockstore"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5254,7 +5231,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-cluster-endpoints"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -5290,14 +5267,14 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic-health 0.10.2",
+ "tonic-health",
  "tracing",
  "yellowstone-grpc-proto",
 ]
 
 [[package]]
 name = "solana-lite-rpc-core"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5332,7 +5309,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-prioritization-fees"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "dashmap",
  "itertools 0.10.5",
@@ -5431,7 +5408,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-services"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -5471,7 +5448,7 @@ dependencies = [
 
 [[package]]
 name = "solana-lite-rpc-util"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -6958,27 +6935,6 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d560933a0de61cf715926b9cac824d4c883c2c43142f787595e48280c40a1d0e"
-dependencies = [
- "async-trait",
- "base64 0.21.7",
- "bytes",
- "http 0.2.12",
- "http-body 0.4.6",
- "percent-encoding",
- "pin-project",
- "prost 0.12.6",
- "tokio",
- "tokio-stream",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
-name = "tonic"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877c5b330756d856ffcc4553ab34a5684481ade925ecc54bcd1bf02b1d0d4d52"
@@ -7027,19 +6983,6 @@ dependencies = [
 
 [[package]]
 name = "tonic-health"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f80db390246dfb46553481f6024f0082ba00178ea495dbb99e70ba9a4fafb5e1"
-dependencies = [
- "async-stream",
- "prost 0.12.6",
- "tokio",
- "tokio-stream",
- "tonic 0.10.2",
-]
-
-[[package]]
-name = "tonic-health"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1eaf34ddb812120f5c601162d5429933c9b527d901ab0e7f930d3147e33a09b2"
@@ -7048,7 +6991,7 @@ dependencies = [
  "prost 0.13.3",
  "tokio",
  "tokio-stream",
- "tonic 0.12.3",
+ "tonic",
 ]
 
 [[package]]
@@ -7861,8 +7804,8 @@ dependencies = [
  "bytes",
  "futures",
  "thiserror",
- "tonic 0.12.3",
- "tonic-health 0.12.3",
+ "tonic",
+ "tonic-health",
  "yellowstone-grpc-proto",
 ]
 
@@ -7878,7 +7821,7 @@ dependencies = [
  "solana-account-decoder",
  "solana-sdk",
  "solana-transaction-status",
- "tonic 0.12.3",
+ "tonic",
  "tonic-build",
 ]
 
