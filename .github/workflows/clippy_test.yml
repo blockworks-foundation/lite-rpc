@@ -20,7 +20,7 @@ jobs:
       - name: Install Linux Packages
         run: |
           sudo apt-get update -y
-          sudo apt-get install libssl-dev openssl -y
+          sudo apt-get install libssl-dev openssl protobuf-compiler -y
 
       - uses: actions/checkout@v4
 

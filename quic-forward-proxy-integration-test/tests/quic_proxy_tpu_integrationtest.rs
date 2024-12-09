@@ -19,11 +19,11 @@ use solana_streamer::nonblocking::quic::{ConnectionPeerType, SpawnNonBlockingSer
 use solana_streamer::packet::PacketBatch;
 use solana_streamer::quic::StreamStats;
 use solana_streamer::streamer::StakedNodes;
-use solana_streamer::tls_certificates::new_self_signed_tls_certificate;
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 
 use itertools::Itertools;
+use solana_streamer::tls_certificates::new_dummy_x509_certificate;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
@@ -423,13 +423,11 @@ async fn solana_quic_streamer_start() {
     // keypair to derive the server tls certificate
     let keypair = Keypair::new();
     // gossip_host is used in the server certificate
-    let gossip_host = "127.0.0.1".parse().unwrap();
     let SpawnNonBlockingServerResult { stats, thread, .. } =
         solana_streamer::nonblocking::quic::spawn_server(
             "test-quic-server",
             sock.try_clone().unwrap(),
             &keypair,
-            gossip_host,
             sender,
             exit.clone(),
             1,
@@ -437,6 +435,7 @@ async fn solana_quic_streamer_start() {
             10,
             10,
             9999, // max_streams_per_ms
+            10,
             Duration::from_millis(1000),
             Duration::from_millis(1000),
         )
@@ -467,11 +466,7 @@ async fn start_literpc_client_direct_mode(
     // (String, Vec<u8>) (signature, transaction)
     let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
     let broadcast_sender = Arc::new(sender);
-    let (certificate, key) = new_self_signed_tls_certificate(
-        literpc_validator_identity.as_ref(),
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-    )
-    .expect("Failed to initialize QUIC connection certificates");
+    let (certificate, key) = new_dummy_x509_certificate(literpc_validator_identity.as_ref());
 
     let tpu_connection_manager =
         TpuConnectionManager::new(certificate, key, fanout_slots as usize).await;
@@ -568,11 +563,7 @@ async fn start_literpc_client_proxy_mode(
     // (String, Vec<u8>) (signature, transaction)
     let (sender, _) = tokio::sync::broadcast::channel(MAXIMUM_TRANSACTIONS_IN_QUEUE);
     let broadcast_sender = Arc::new(sender);
-    let (certificate, key) = new_self_signed_tls_certificate(
-        validator_identity.as_ref(),
-        IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-    )
-    .expect("Failed to initialize QUIC connection certificates");
+    let (certificate, key) = new_dummy_x509_certificate(validator_identity.as_ref());
 
     let quic_proxy_connection_manager =
         QuicProxyConnectionManager::new(certificate, key, forward_proxy_address).await;
@@ -707,14 +698,12 @@ impl SolanaQuicStreamer {
         let exit = Arc::new(AtomicBool::new(false));
         // keypair to derive the server tls certificate
         let keypair = Keypair::new();
-        // gossip_host is used in the server certificate
-        let gossip_host = "127.0.0.1".parse().unwrap();
+
         let SpawnNonBlockingServerResult { stats, thread, .. } =
             solana_streamer::nonblocking::quic::spawn_server(
                 "test-quic-server",
                 udp_socket.try_clone().unwrap(),
                 &keypair,
-                gossip_host,
                 sender,
                 exit.clone(),
                 MAX_QUIC_CONNECTIONS_PER_PEER,
@@ -722,6 +711,7 @@ impl SolanaQuicStreamer {
                 10,
                 10,
                 9999, // max_streams_per_ms
+                10,
                 Duration::from_millis(1000),
                 Duration::from_millis(1000),
             )
