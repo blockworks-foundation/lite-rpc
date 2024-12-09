@@ -170,17 +170,11 @@ impl AddressLookupTableStore {
     }
 
     pub async fn get_accounts(&self, alt: &Pubkey, accounts: &[u8]) -> Vec<Pubkey> {
-        match self
-            .get_accounts_in_address_lookup_table(alt, accounts)
+        self.get_accounts_in_address_lookup_table(alt, accounts)
             .await
-        {
-            Some(x) => x,
-            None => {
-                // forget alt for now, start loading it for next blocks
-                // loading should be on its way
-                vec![]
-            }
-        }
+            // fallback to empty vec; forget alt for now, start loading it for next blocks
+            // loading should be on its way
+            .unwrap_or_default()
     }
 
     pub fn serialize_binary(&self) -> Vec<u8> {
