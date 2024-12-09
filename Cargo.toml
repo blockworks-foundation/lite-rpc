@@ -57,7 +57,7 @@ solana-accounts-db = "~2.0.16"
 solana-address-lookup-table-program = "~2.0.16"
 
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
-geyser-grpc-connector = { git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git", branch = "2.0.16" } # FIXME use tag instead of branch
+geyser-grpc-connector = { git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git", tag = "v0.11.0+yellowstone.2.0.0+solana.2.0" }
 
 
 itertools = "0.10.5"
@@ -93,10 +93,9 @@ jemallocator = "0.5"
 quinn = "0.10.2"
 quinn-proto = "0.10.5"
 rustls = { version = "0.21.7", default-features = false, features = ["quic"] }
-rcgen = "0.9.3"
-
 tonic = "0.12"
 tonic-health = "0.12"
+rcgen = "0.9.3"
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/anza-xyz/curve25519-dalek.git"
