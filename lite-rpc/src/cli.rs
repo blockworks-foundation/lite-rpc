@@ -1,8 +1,8 @@
-use std::{env, time::Duration};
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::{env, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
@@ -11,11 +11,11 @@ use solana_rpc_client_api::client_error::reqwest::Url;
 
 use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
 
+use crate::postgres_logger::{self, PostgresSessionConfig};
 use crate::{
     DEFAULT_FANOUT_SIZE, DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
     DEFAULT_WS_ADDR, MAX_RETRIES,
 };
-use crate::postgres_logger::{self, PostgresSessionConfig};
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]

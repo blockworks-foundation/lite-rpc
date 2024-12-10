@@ -2,7 +2,7 @@ use std::{str::FromStr, sync::Arc};
 
 use anyhow::bail;
 use itertools::Itertools;
-use prometheus::{IntGauge, opts, register_int_gauge};
+use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_account_decoder::{UiAccount, UiDataSliceConfig};
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client_api::{
@@ -12,15 +12,15 @@ use solana_rpc_client_api::{
 use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
 use tokio::sync::broadcast::Sender;
 
+use solana_lite_rpc_core::types::BlockInfoStream;
 use solana_lite_rpc_core::{
-    AnyhowJoinHandle,
     commitment_utils::Commitment,
     structures::{
         account_data::{AccountData, AccountNotificationMessage, AccountStream},
         account_filter::AccountFilters,
     },
+    AnyhowJoinHandle,
 };
-use solana_lite_rpc_core::types::BlockInfoStream;
 
 use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
 
@@ -191,9 +191,11 @@ impl AccountService {
             loop {
                 match blockinfo_stream.recv().await {
                     Ok(block_info) => {
-
                         let commitment = Commitment::from(block_info.commitment_config);
-                        let updated_accounts = this.account_store.process_slot_data(block_info.slot, commitment).await;
+                        let updated_accounts = this
+                            .account_store
+                            .process_slot_data(block_info.slot, commitment)
+                            .await;
                         match commitment {
                             Commitment::Processed => {}
                             Commitment::Confirmed => {

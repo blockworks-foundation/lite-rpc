@@ -1,6 +1,6 @@
 [package]
 name = "solana-lite-rpc-stakevote"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "History implementations used by solana lite rpc"
 rust-version = "1.75.0"

@@ -1,12 +1,16 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use itertools::Itertools;
 use solana_accounts_db::accounts::Accounts;
-use solana_accounts_db::accounts_db::{AccountsDb as SolanaAccountsDb, AccountsDbConfig, AccountShrinkThreshold, CreateAncientStorage};
+use solana_accounts_db::accounts_db::{
+    AccountShrinkThreshold, AccountsDb as SolanaAccountsDb, AccountsDbConfig, CreateAncientStorage,
+};
 use solana_accounts_db::accounts_file::StorageAccess;
-use solana_accounts_db::accounts_index::{AccountSecondaryIndexes, AccountsIndexConfig, IndexLimitMb};
+use solana_accounts_db::accounts_index::{
+    AccountSecondaryIndexes, AccountsIndexConfig, IndexLimitMb,
+};
 use solana_accounts_db::ancestors::Ancestors;
 use solana_accounts_db::partitioned_rewards::TestPartitionedEpochRewards;
 use solana_rpc_client_api::filter::RpcFilterType;
@@ -16,10 +20,10 @@ use solana_sdk::genesis_config::ClusterType;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::transaction_context::TransactionAccount;
 
-use Commitment::{Confirmed, Finalized};
 use solana_lite_rpc_core::commitment_utils::Commitment;
 use solana_lite_rpc_core::commitment_utils::Commitment::Processed;
 use solana_lite_rpc_core::structures::account_data::AccountData;
+use Commitment::{Confirmed, Finalized};
 
 use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
 
@@ -103,19 +107,30 @@ impl AccountStorageInterface for AccountsDb {
     async fn initilize_or_update_account(&self, account_data: AccountData) {
         let shared_data = account_data.account.to_account_shared_data();
         let account_to_store = [(&account_data.pubkey, &shared_data)];
-        self.accounts.store_accounts_cached((account_data.updated_slot, account_to_store.as_slice()));
+        self.accounts
+            .store_accounts_cached((account_data.updated_slot, account_to_store.as_slice()));
     }
 
-    async fn get_account(&self, account_pk: Pubkey, commitment: Commitment) -> Result<Option<AccountData>, AccountLoadingError> {
+    async fn get_account(
+        &self,
+        account_pk: Pubkey,
+        commitment: Commitment,
+    ) -> Result<Option<AccountData>, AccountLoadingError> {
         let ancestors = self.get_ancestors_from_commitment(commitment);
-        Ok(
-            self.accounts
-                .load_with_fixed_root(&ancestors, &account_pk)
-                .map(|(shared_data, slot)| Self::convert_to_account_data(account_pk, slot, shared_data))
-        )
+        Ok(self
+            .accounts
+            .load_with_fixed_root(&ancestors, &account_pk)
+            .map(|(shared_data, slot)| {
+                Self::convert_to_account_data(account_pk, slot, shared_data)
+            }))
     }
 
-    async fn get_program_accounts(&self, program_pubkey: Pubkey, account_filter: Option<Vec<RpcFilterType>>, commitment: Commitment) -> Option<Vec<AccountData>> {
+    async fn get_program_accounts(
+        &self,
+        program_pubkey: Pubkey,
+        account_filter: Option<Vec<RpcFilterType>>,
+        commitment: Commitment,
+    ) -> Option<Vec<AccountData>> {
         let slot = self.get_slot_from_commitment(commitment);
 
         let filter = |data: &AccountSharedData| {
@@ -125,23 +140,24 @@ impl AccountStorageInterface for AccountsDb {
                         match filter {
                             RpcFilterType::DataSize(size) => data.data().len() == *size as usize,
                             RpcFilterType::Memcmp(cmp) => cmp.bytes_match(data.data()),
-                            RpcFilterType::TokenAccountState => unimplemented!() // FIXME
+                            RpcFilterType::TokenAccountState => unimplemented!(), // FIXME
                         }
                     })
                 }
-                None => true
+                None => true,
             }
         };
 
-        let transaction_accounts: Vec<TransactionAccount> = self.accounts.load_by_program_slot(slot, Some(&program_pubkey))
+        let transaction_accounts: Vec<TransactionAccount> = self
+            .accounts
+            .load_by_program_slot(slot, Some(&program_pubkey))
             .into_iter()
             .filter(|ta| filter(&ta.1))
             .collect();
 
-
         let result = transaction_accounts
             .into_iter()
-            .map(|ta| { Self::convert_to_account_data(ta.0, slot, ta.1) })
+            .map(|ta| Self::convert_to_account_data(ta.0, slot, ta.1))
             .collect_vec();
 
         if result.is_empty() {
@@ -150,7 +166,6 @@ impl AccountStorageInterface for AccountsDb {
             Some(result)
         }
     }
-
 
     async fn process_slot_data(&self, slot: Slot, commitment: Commitment) -> Vec<AccountData> {
         if commitment == Finalized {
@@ -190,10 +205,17 @@ impl AccountStorageInterface for AccountsDb {
             }
         }
 
-        assert!(self.processed_slot.load(Ordering::Relaxed) >= self.confirmed_slot.load(Ordering::Relaxed));
-        assert!(self.confirmed_slot.load(Ordering::Relaxed) >= self.finalised_slot.load(Ordering::Relaxed));
+        assert!(
+            self.processed_slot.load(Ordering::Relaxed)
+                >= self.confirmed_slot.load(Ordering::Relaxed)
+        );
+        assert!(
+            self.confirmed_slot.load(Ordering::Relaxed)
+                >= self.finalised_slot.load(Ordering::Relaxed)
+        );
 
-        self.accounts.load_all(&Ancestors::from(vec![slot]), slot, false)
+        self.accounts
+            .load_all(&Ancestors::from(vec![slot]), slot, false)
             .unwrap()
             .into_iter()
             .filter(|(_, _, updated_slot)| *updated_slot == slot)
@@ -207,7 +229,7 @@ impl AccountsDb {
         match commitment {
             Processed => self.processed_slot.load(Ordering::Relaxed),
             Confirmed => self.confirmed_slot.load(Ordering::Relaxed),
-            Finalized => self.finalised_slot.load(Ordering::Relaxed)
+            Finalized => self.finalised_slot.load(Ordering::Relaxed),
         }
     }
 
@@ -216,7 +238,11 @@ impl AccountsDb {
         Ancestors::from(vec![slot])
     }
 
-    fn convert_to_account_data(pk: Pubkey, slot: Slot, shared_data: AccountSharedData) -> AccountData {
+    fn convert_to_account_data(
+        pk: Pubkey,
+        slot: Slot,
+        shared_data: AccountSharedData,
+    ) -> AccountData {
         AccountData {
             pubkey: pk,
             account: Arc::new(Account {
@@ -284,9 +310,12 @@ mod tests {
             ti.process_slot_data(4, Confirmed).await;
             ti.process_slot_data(3, Finalized).await;
 
-            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10)).await;
-            ti.initilize_or_update_account(create_account_data(4, ak, pk, 20)).await;
-            ti.initilize_or_update_account(create_account_data(3, ak, pk, 30)).await;
+            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10))
+                .await;
+            ti.initilize_or_update_account(create_account_data(4, ak, pk, 20))
+                .await;
+            ti.initilize_or_update_account(create_account_data(3, ak, pk, 30))
+                .await;
 
             let processed = ti.get_account(ak, Processed).await.unwrap().unwrap();
             assert_eq!(processed.updated_slot, 5);
@@ -308,9 +337,10 @@ mod tests {
             let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
             let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
 
-            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10)).await;
+            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10))
+                .await;
 
-// Slot = Processed
+            // Slot = Processed
             ti.process_slot_data(5, Processed).await;
 
             let processed = ti.get_account(ak, Processed).await.unwrap().unwrap();
@@ -323,7 +353,7 @@ mod tests {
             let finalized = ti.get_account(ak, Finalized).await.unwrap();
             assert_eq!(finalized, None);
 
-// Slot = Confirmed
+            // Slot = Confirmed
             ti.process_slot_data(5, Confirmed).await;
 
             let processed = ti.get_account(ak, Processed).await.unwrap().unwrap();
@@ -337,7 +367,7 @@ mod tests {
             let finalized = ti.get_account(ak, Finalized).await.unwrap();
             assert_eq!(finalized, None);
 
-// Slot = Finalized
+            // Slot = Finalized
             ti.process_slot_data(5, Finalized).await;
 
             let processed = ti.get_account(ak, Processed).await.unwrap().unwrap();
@@ -377,19 +407,37 @@ mod tests {
             ti.process_slot_data(4, Confirmed).await;
             ti.process_slot_data(3, Finalized).await;
 
-            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10)).await;
-            ti.initilize_or_update_account(create_account_data(4, ak, pk, 20)).await;
-            ti.initilize_or_update_account(create_account_data(3, ak, pk, 30)).await;
+            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10))
+                .await;
+            ti.initilize_or_update_account(create_account_data(4, ak, pk, 20))
+                .await;
+            ti.initilize_or_update_account(create_account_data(3, ak, pk, 30))
+                .await;
 
-            let processed = ti.get_program_accounts(pk, None, Processed).await.unwrap().pop().unwrap();
+            let processed = ti
+                .get_program_accounts(pk, None, Processed)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(processed.updated_slot, 5);
             assert_eq!(processed.account.lamports, 10);
 
-            let confirmed = ti.get_program_accounts(pk, None, Confirmed).await.unwrap().pop().unwrap();
+            let confirmed = ti
+                .get_program_accounts(pk, None, Confirmed)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(confirmed.updated_slot, 4);
             assert_eq!(confirmed.account.lamports, 20);
 
-            let finalized = ti.get_program_accounts(pk, None, Finalized).await.unwrap().pop().unwrap();
+            let finalized = ti
+                .get_program_accounts(pk, None, Finalized)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(finalized.updated_slot, 3);
             assert_eq!(finalized.account.lamports, 30);
         }
@@ -401,12 +449,18 @@ mod tests {
             let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
             let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
 
-            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10)).await;
+            ti.initilize_or_update_account(create_account_data(5, ak, pk, 10))
+                .await;
 
-// Slot = Processed
+            // Slot = Processed
             ti.process_slot_data(5, Processed).await;
 
-            let processed = ti.get_program_accounts(pk, None, Processed).await.unwrap().pop().unwrap();
+            let processed = ti
+                .get_program_accounts(pk, None, Processed)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(processed.updated_slot, 5);
             assert_eq!(processed.account.lamports, 10);
 
@@ -416,32 +470,57 @@ mod tests {
             let finalized = ti.get_program_accounts(pk, None, Finalized).await;
             assert_eq!(finalized, None);
 
-// Slot = Confirmed
+            // Slot = Confirmed
             ti.process_slot_data(5, Confirmed).await;
 
-            let processed = ti.get_program_accounts(pk, None, Processed).await.unwrap().pop().unwrap();
+            let processed = ti
+                .get_program_accounts(pk, None, Processed)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(processed.updated_slot, 5);
             assert_eq!(processed.account.lamports, 10);
 
-            let confirmed = ti.get_program_accounts(pk, None, Confirmed).await.unwrap().pop().unwrap();
+            let confirmed = ti
+                .get_program_accounts(pk, None, Confirmed)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(confirmed.updated_slot, 5);
             assert_eq!(confirmed.account.lamports, 10);
 
             let finalized = ti.get_program_accounts(pk, None, Finalized).await;
             assert_eq!(finalized, None);
 
-// Slot = Finalized
+            // Slot = Finalized
             ti.process_slot_data(5, Finalized).await;
 
-            let processed = ti.get_program_accounts(pk, None, Processed).await.unwrap().pop().unwrap();
+            let processed = ti
+                .get_program_accounts(pk, None, Processed)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(processed.updated_slot, 5);
             assert_eq!(processed.account.lamports, 10);
 
-            let confirmed = ti.get_program_accounts(pk, None, Confirmed).await.unwrap().pop().unwrap();
+            let confirmed = ti
+                .get_program_accounts(pk, None, Confirmed)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(confirmed.updated_slot, 5);
             assert_eq!(confirmed.account.lamports, 10);
 
-            let finalized = ti.get_program_accounts(pk, None, Finalized).await.unwrap().pop().unwrap();
+            let finalized = ti
+                .get_program_accounts(pk, None, Finalized)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
             assert_eq!(finalized.updated_slot, 5);
             assert_eq!(finalized.account.lamports, 10);
         }
@@ -455,10 +534,25 @@ mod tests {
             let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
 
             ti.process_slot_data(5, Processed).await;
-            ti.initilize_or_update_account(create_account_data_with_data(5, ak1, pk, Vec::from("abc"))).await;
-            ti.initilize_or_update_account(create_account_data_with_data(5, ak2, pk, Vec::from("abcdef"))).await;
+            ti.initilize_or_update_account(create_account_data_with_data(
+                5,
+                ak1,
+                pk,
+                Vec::from("abc"),
+            ))
+            .await;
+            ti.initilize_or_update_account(create_account_data_with_data(
+                5,
+                ak2,
+                pk,
+                Vec::from("abcdef"),
+            ))
+            .await;
 
-            let mut result = ti.get_program_accounts(pk, Some(vec![RpcFilterType::DataSize(3)]), Processed).await.unwrap();
+            let mut result = ti
+                .get_program_accounts(pk, Some(vec![RpcFilterType::DataSize(3)]), Processed)
+                .await
+                .unwrap();
             assert_eq!(result.len(), 1);
             let result = result.pop().unwrap();
             assert_eq!(result.pubkey, ak1);
@@ -475,10 +569,32 @@ mod tests {
             let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
 
             ti.process_slot_data(5, Processed).await;
-            ti.initilize_or_update_account(create_account_data_with_data(5, ak1, pk, Vec::from("abc"))).await;
-            ti.initilize_or_update_account(create_account_data_with_data(5, ak2, pk, Vec::from("abcdef"))).await;
+            ti.initilize_or_update_account(create_account_data_with_data(
+                5,
+                ak1,
+                pk,
+                Vec::from("abc"),
+            ))
+            .await;
+            ti.initilize_or_update_account(create_account_data_with_data(
+                5,
+                ak2,
+                pk,
+                Vec::from("abcdef"),
+            ))
+            .await;
 
-            let mut result = ti.get_program_accounts(pk, Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(1, Vec::from("bcdef")))]), Processed).await.unwrap();
+            let mut result = ti
+                .get_program_accounts(
+                    pk,
+                    Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
+                        1,
+                        Vec::from("bcdef"),
+                    ))]),
+                    Processed,
+                )
+                .await
+                .unwrap();
             assert_eq!(result.len(), 1);
             let result = result.pop().unwrap();
             assert_eq!(result.pubkey, ak2);
@@ -495,13 +611,32 @@ mod tests {
             let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
 
             ti.process_slot_data(5, Processed).await;
-            ti.initilize_or_update_account(create_account_data_with_data(5, ak1, pk, Vec::from("abc"))).await;
-            ti.initilize_or_update_account(create_account_data_with_data(5, ak2, pk, Vec::from("abcdef"))).await;
+            ti.initilize_or_update_account(create_account_data_with_data(
+                5,
+                ak1,
+                pk,
+                Vec::from("abc"),
+            ))
+            .await;
+            ti.initilize_or_update_account(create_account_data_with_data(
+                5,
+                ak2,
+                pk,
+                Vec::from("abcdef"),
+            ))
+            .await;
 
-            let mut result = ti.get_program_accounts(pk, Some(vec![
-                RpcFilterType::DataSize(6),
-                RpcFilterType::Memcmp(Memcmp::new_raw_bytes(1, Vec::from("bcdef"))),
-            ]), Processed).await.unwrap();
+            let mut result = ti
+                .get_program_accounts(
+                    pk,
+                    Some(vec![
+                        RpcFilterType::DataSize(6),
+                        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(1, Vec::from("bcdef"))),
+                    ]),
+                    Processed,
+                )
+                .await
+                .unwrap();
 
             assert_eq!(result.len(), 1);
             let result = result.pop().unwrap();
@@ -509,7 +644,6 @@ mod tests {
             assert_eq!(result.updated_slot, 5);
             assert_eq!(result.account.data, Vec::from("abcdef"));
         }
-
 
         #[tokio::test]
         async fn contradicting_filter() {
@@ -520,13 +654,31 @@ mod tests {
             let ak2 = Pubkey::from_str("5VsPdDtqyFw6BmxrTZXKfnTLZy3TgzVA2MA1vZKAfddw").unwrap();
 
             ti.process_slot_data(5, Processed).await;
-            ti.initilize_or_update_account(create_account_data_with_data(5, ak1, pk, Vec::from("abc"))).await;
-            ti.initilize_or_update_account(create_account_data_with_data(5, ak2, pk, Vec::from("abcdef"))).await;
+            ti.initilize_or_update_account(create_account_data_with_data(
+                5,
+                ak1,
+                pk,
+                Vec::from("abc"),
+            ))
+            .await;
+            ti.initilize_or_update_account(create_account_data_with_data(
+                5,
+                ak2,
+                pk,
+                Vec::from("abcdef"),
+            ))
+            .await;
 
-            let result = ti.get_program_accounts(pk, Some(vec![
-                RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, Vec::from("a"))),
-                RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, Vec::from("b"))),
-            ]), Processed).await;
+            let result = ti
+                .get_program_accounts(
+                    pk,
+                    Some(vec![
+                        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, Vec::from("a"))),
+                        RpcFilterType::Memcmp(Memcmp::new_raw_bytes(0, Vec::from("b"))),
+                    ]),
+                    Processed,
+                )
+                .await;
             assert_eq!(result, None);
         }
     }
@@ -611,7 +763,8 @@ mod tests {
             let result = ti.process_slot_data(3, Processed).await;
             assert_eq!(result.len(), 0);
 
-            ti.initilize_or_update_account(create_account_data(3, ak, pk, 10)).await;
+            ti.initilize_or_update_account(create_account_data(3, ak, pk, 10))
+                .await;
 
             let result = ti.process_slot_data(3, Confirmed).await;
             assert_eq!(result.len(), 0);
@@ -627,7 +780,8 @@ mod tests {
             let pk = Pubkey::from_str("HZGMUF6kdCUK6nuc3TdNR6X5HNdGtg5HmVQ8cV2pRiHE").unwrap();
             let ak = Pubkey::from_str("6rRiMihF7UdJz25t5QvS7PgP9yzfubN7TBRv26ZBVAhE").unwrap();
 
-            ti.initilize_or_update_account(create_account_data(3, ak, pk, 10)).await;
+            ti.initilize_or_update_account(create_account_data(3, ak, pk, 10))
+                .await;
             ti.process_slot_data(3, Finalized).await;
 
             let result = ti.process_slot_data(4, Finalized).await;
@@ -654,7 +808,6 @@ pub fn create_account_data(
         updated_slot,
     }
 }
-
 
 pub fn create_account_data_with_data(
     updated_slot: Slot,

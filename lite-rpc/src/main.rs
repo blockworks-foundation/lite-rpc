@@ -13,17 +13,17 @@ use solana_sdk::signer::Signer;
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
-use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::EnvFilter;
 
 use lite_rpc::bridge::LiteBridge;
 use lite_rpc::bridge_pubsub::LitePubSubBridge;
 use lite_rpc::cli::Config;
-use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use lite_rpc::postgres_logger;
 use lite_rpc::postgres_logger::PostgresLogger;
 use lite_rpc::service_spawner::ServiceSpawner;
 use lite_rpc::start_server::start_servers;
+use lite_rpc::DEFAULT_MAX_NUMBER_OF_TXS_IN_QUEUE;
 use solana_lite_rpc_accounts::account_service::AccountService;
 use solana_lite_rpc_accounts::account_store_interface::AccountStorageInterface;
 use solana_lite_rpc_accounts::inmemory_account_store::InmemoryAccountStore;
@@ -42,7 +42,6 @@ use solana_lite_rpc_cluster_endpoints::grpc_subscription::create_grpc_subscripti
 use solana_lite_rpc_cluster_endpoints::json_rpc_leaders_getter::JsonRpcLeaderGetter;
 use solana_lite_rpc_cluster_endpoints::json_rpc_subscription::create_json_rpc_polling_subscription;
 use solana_lite_rpc_cluster_endpoints::rpc_polling::poll_blocks::NUM_PARALLEL_TASKS_DEFAULT;
-use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_core::keypair_loader::load_identity_keypair;
 use solana_lite_rpc_core::stores::{
     block_information_store::{BlockInformation, BlockInformationStore},
@@ -51,14 +50,15 @@ use solana_lite_rpc_core::stores::{
     subscription_store::SubscriptionStore,
     tx_store::TxStore,
 };
+use solana_lite_rpc_core::structures::account_filter::AccountFilters;
+use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::structures::{
     epoch::EpochCache, identity_stakes::IdentityStakes, notifications::NotificationSender,
 };
-use solana_lite_rpc_core::structures::account_filter::AccountFilters;
-use solana_lite_rpc_core::structures::leaderschedule::CalculatedSchedule;
 use solana_lite_rpc_core::traits::address_lookup_table_interface::AddressLookupTableInterface;
 use solana_lite_rpc_core::types::BlockStream;
 use solana_lite_rpc_core::utils::wait_till_block_of_commitment_is_recieved;
+use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_lite_rpc_prioritization_fees::account_prio_service::AccountPrioService;
 use solana_lite_rpc_prioritization_fees::start_block_priofees_task;
 use solana_lite_rpc_services::data_caching_service::DataCachingService;
@@ -196,7 +196,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         blockinfo_notifier.resubscribe(),
         CommitmentConfig::finalized(),
     )
-        .await;
+    .await;
     info!("Got finalized block info: {:?}", finalized_block_info.slot);
 
     let (epoch_data, _current_epoch_info) = EpochCache::bootstrap_epoch(&rpc_client).await?;
@@ -205,7 +205,8 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         BlockInformationStore::new(BlockInformation::from_block_info(&finalized_block_info));
 
     let accounts_service = if let Some(account_stream) = processed_account_stream {
-        let accounts_storage: Arc<dyn AccountStorageInterface> = if use_accounts_db.unwrap_or(false) {
+        let accounts_storage: Arc<dyn AccountStorageInterface> = if use_accounts_db.unwrap_or(false)
+        {
             Arc::new(AccountsDb::new())
         } else {
             Arc::new(InmemoryAccountStore::new())
@@ -227,10 +228,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
             accounts_storage
         };
 
-        let account_service = AccountService::new(
-            account_storage,
-            account_notification_sender,
-        );
+        let account_service = AccountService::new(account_storage, account_notification_sender);
 
         account_service.process_account_stream(
             account_stream.resubscribe(),
@@ -331,7 +329,7 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         leader_schedule,
         data_cache.clone(),
     )
-        .await?;
+    .await?;
     let tx_sender = TxSender::new(data_cache.clone(), tpu_service.clone());
     let tx_replayer =
         TransactionReplayer::new(tpu_service.clone(), data_cache.clone(), retry_after);

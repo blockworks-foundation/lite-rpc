@@ -10,7 +10,7 @@ pub enum AccountLoadingError {
     AccountNotFound,
     ConfigDoesnotContainRequiredFilters,
     OperationTimeOut,
-    FailedToSpawnTask(String)
+    FailedToSpawnTask(String),
 }
 
 #[async_trait]

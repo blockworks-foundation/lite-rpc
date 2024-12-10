@@ -1,6 +1,6 @@
 [package]
 name = "solana-lite-rpc-core"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "Core classes and methods used by solana lite rpc"
 rust-version = "1.75.0"

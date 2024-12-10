@@ -7,8 +7,10 @@ use std::{
     time::Duration,
 };
 
+use geyser_grpc_connector::yellowstone_grpc_util::{
+    connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig,
+};
 use geyser_grpc_connector::{GeyserGrpcClient, GrpcSourceConfig};
-use geyser_grpc_connector::yellowstone_grpc_util::{connect_with_timeout_with_buffers, GeyserGrpcClientBufferConfig};
 use itertools::Itertools;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,

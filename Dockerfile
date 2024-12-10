@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.2
-FROM rust:1.75.0 as base
+FROM rust:1.81.0 as base
 RUN cargo install cargo-chef@0.1.62 --locked
 RUN rustup component add rustfmt
 RUN apt-get update && apt-get install -y clang cmake ssh
