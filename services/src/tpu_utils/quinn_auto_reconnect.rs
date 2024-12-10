@@ -8,7 +8,7 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::debug;
 
-/// copy of quic-proxy AutoReconnect - used that for reference
+// copy of quic-proxy AutoReconnect - used that for reference
 
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RETRY_ATTEMPTS: u32 = 10;
