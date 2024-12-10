@@ -1,0 +1,7 @@
+/target
+.idea/
+*.tmp
+*.db
+unpacked_snapshot/
+*.tar
+*.zst

@@ -15,6 +15,7 @@ members = [
     "benchrunner-service",
     "address-lookup-tables",
     "accounts",
+    "accounts-importer",
     "accounts-on-demand",
     #examples
     "examples/custom-tpu-send-transactions"
@@ -49,12 +50,14 @@ solana-version = "~2.0.16"
 solana-client = "~2.0.16"
 solana-net-utils = "~2.0.16"
 solana-pubsub-client = "~2.0.16"
+solana-runtime = "~2.0.16"
 solana-streamer = "~2.0.16"
 solana-account-decoder = "~2.0.16"
 solana-ledger = "~2.0.16"
 solana-program = "~2.0.16"
 solana-accounts-db = "~2.0.16"
 solana-address-lookup-table-program = "~2.0.16"
+solana-frozen-abi-macro = "~2.0.16"
 
 yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
 geyser-grpc-connector = { git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git", tag = "v0.11.0+yellowstone.2.0.0+solana.2.0" }
