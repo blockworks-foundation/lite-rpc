@@ -27,7 +27,7 @@ pub async fn main() -> anyhow::Result<()> {
 }
 
 async fn parallel_queries(pg_session_config: PostgresSessionConfig) {
-    let many_sessions = vec![
+    let many_sessions = [
         PostgresSession::new(pg_session_config.clone())
             .await
             .unwrap(),

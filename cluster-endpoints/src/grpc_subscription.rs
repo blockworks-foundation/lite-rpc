@@ -125,13 +125,13 @@ pub fn from_grpc_block_update(
             let readable_accounts = account_keys
                 .iter()
                 .enumerate()
-                .filter(|(index, _)| !message.is_maybe_writable(*index))
+                .filter(|(index, _)| !message.is_maybe_writable(*index, None))
                 .map(|(_, pk)| *pk)
                 .collect();
             let writable_accounts = account_keys
                 .iter()
                 .enumerate()
-                .filter(|(index, _)| message.is_maybe_writable(*index))
+                .filter(|(index, _)| message.is_maybe_writable(*index, None))
                 .map(|(_, pk)| *pk)
                 .collect();
 

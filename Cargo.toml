@@ -8,7 +8,7 @@ members = [
     "lite-rpc",
     "quic-forward-proxy",
     "quic-forward-proxy-integration-test",
-    "cluster-endpoints",
+#    "cluster-endpoints",
     "blockstore",
     "prioritization_fees",
     "bench",
@@ -21,26 +21,45 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.4"
+version = "0.3.0"
 authors = ["gmgalactus <gmgalactus@mango.markets>", "GroovieGermanikus <groovie@mango.markets>"]
 repository = "https://github.com/blockworks-foundation/lite-rpc"
 license = "AGPL"
 edition = "2021"
 
 [workspace.dependencies]
-solana-sdk = "~1.18.15"
-solana-rpc-client = "~1.18.15"
-solana-rpc-client-api = "~1.18.15"
-solana-transaction-status = "~1.18.15"
-solana-version = "~1.18.15"
-solana-client = "~1.18.15"
-solana-net-utils = "~1.18.15"
-solana-pubsub-client = "~1.18.15"
-solana-streamer = "~1.18.15"
-solana-account-decoder = "~1.18.15"
-solana-ledger = "~1.18.15"
-solana-program = "~1.18.15"
-solana-address-lookup-table-program = "~1.18.15"
+
+solana-lite-rpc-services = { path = "services", version="0.3.0" }
+solana-lite-rpc-core = { path = "core", version="0.3.0" }
+solana-lite-rpc-util = { path = "util", version="0.3.0" }
+solana-lite-rpc-cluster-endpoints = { path = "cluster-endpoints", version="0.3.0" }
+solana-lite-rpc-blockstore = { path = "blockstore", version="0.3.0" }
+solana-lite-rpc-stakevote = { path = "stake_vote", version="0.3.0" }
+solana-lite-rpc-prioritization-fees = { path = "prioritization_fees", version="0.3.0" }
+solana-lite-rpc-address-lookup-tables = { path = "address-lookup-tables", version="0.3.0" }
+solana-lite-rpc-accounts = { path = "accounts", version = "0.3.0"}
+solana-lite-rpc-accounts-on-demand = { path = "accounts-on-demand", version = "0.3.0"}
+bench = { path = "bench", version="0.3.0" }
+
+solana-sdk = "~2.0.16"
+solana-rpc-client = "~2.0.16"
+solana-rpc-client-api = "~2.0.16"
+solana-transaction-status = "~2.0.16"
+solana-version = "~2.0.16"
+solana-client = "~2.0.16"
+solana-net-utils = "~2.0.16"
+solana-pubsub-client = "~2.0.16"
+solana-streamer = "~2.0.16"
+solana-account-decoder = "~2.0.16"
+solana-ledger = "~2.0.16"
+solana-program = "~2.0.16"
+solana-accounts-db = "~2.0.16"
+solana-address-lookup-table-program = "~2.0.16"
+
+yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v2.0.0+solana.2.0.16" }
+geyser-grpc-connector = { git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git", tag = "v0.11.0+yellowstone.2.0.0+solana.2.0" }
+
+
 itertools = "0.10.5"
 rangetools = "0.1.4"
 serde = { version = "1.0.160", features = ["derive"] }
@@ -50,6 +69,7 @@ bs58 = "0.4.0"
 base64 = "0.21.0"
 borsh = "0.10.3"
 thiserror = "1.0.40"
+async-trait = "0.1.68"
 futures = "0.3.28"
 futures-util = "0.3.28"
 bytes = "1.4.0"
@@ -70,27 +90,13 @@ dotenv = "0.15.0"
 async-channel = "1.8.0"
 merge-streams = "0.1.2"
 jemallocator = "0.5"
-
 quinn = "0.10.2"
 quinn-proto = "0.10.5"
 rustls = { version = "0.21.7", default-features = false, features = ["quic"] }
+tonic = "0.12"
+tonic-health = "0.12"
+rcgen = "0.9.3"
 
-solana-lite-rpc-services = {path = "services", version="0.2.4"}
-solana-lite-rpc-core = {path = "core", version="0.2.4"}
-solana-lite-rpc-util = {path = "util", version="0.2.4"}
-solana-lite-rpc-cluster-endpoints = {path = "cluster-endpoints", version="0.2.4"}
-solana-lite-rpc-blockstore = {path = "blockstore", version="0.2.4"}
-solana-lite-rpc-stakevote = {path = "stake_vote", version="0.2.4"}
-solana-lite-rpc-prioritization-fees = {path = "prioritization_fees", version="0.2.4"}
-solana-lite-rpc-address-lookup-tables = {path = "address-lookup-tables", version="0.2.4"}
-solana-lite-rpc-accounts = {path = "accounts", version = "0.2.4"}
-solana-lite-rpc-accounts-on-demand = {path = "accounts-on-demand", version = "0.2.4"}
-bench = { path = "bench", version="0.2.4" }
-
-yellowstone-grpc-proto = { git = "https://github.com/rpcpool/yellowstone-grpc.git", tag = "v1.15.0+solana.1.18" }
-#geyser-grpc-connector = { path = "../geyser-grpc-connector" }
-geyser-grpc-connector = { tag = "v0.10.6+yellowstone.1.15+solana.1.18", git = "https://github.com/blockworks-foundation/geyser-grpc-connector.git" }
-
-
-async-trait = "0.1.68"
-tonic-health = "0.10"
+[patch.crates-io.curve25519-dalek]
+git = "https://github.com/anza-xyz/curve25519-dalek.git"
+rev = "b500cdc2a920cd5bff9e2dd974d7b97349d61464"

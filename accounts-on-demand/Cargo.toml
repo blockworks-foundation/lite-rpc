@@ -1,6 +1,6 @@
 [package]
 name = "solana-lite-rpc-accounts-on-demand"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "Library which implements accounts on demand service in lite-rpc. Whenever account is not available it will fetch from rpc and create a geyser stream to update it automatically."
 rust-version = "1.73.0"

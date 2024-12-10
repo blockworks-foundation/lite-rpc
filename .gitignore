@@ -6,3 +6,6 @@ bench/metrics.csv
 *out.json*
 .env
 test-ledger
+.idea/
+.run/
+*config.json

@@ -263,7 +263,7 @@ pub fn from_ui_block(
             let mut readable_accounts = vec![];
             let mut writable_accounts = vec![];
             for (index, account) in accounts.iter().enumerate() {
-                if tx.message.is_maybe_writable(index) {
+                if tx.message.is_maybe_writable(index, None) {
                     writable_accounts.push(*account);
                 } else {
                     readable_accounts.push(*account);

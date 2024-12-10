@@ -48,9 +48,9 @@ impl BlockInformation {
 }
 
 /// - Block Information Store
-/// This structure will store block information till where finalized block is still in range of last valid block hash.
-/// So 300 blocks for last valid blockhash and 32 slots between confirmed and finalized.
-/// So it should not store more than 400 blocks information.
+///   This structure will store block information till where finalized block is still in range of last valid block hash.
+///   So 300 blocks for last valid blockhash and 32 slots between confirmed and finalized.
+///   So it should not store more than 400 blocks information.
 #[derive(Clone)]
 pub struct BlockInformationStore {
     // maps Block Hash -> Block information

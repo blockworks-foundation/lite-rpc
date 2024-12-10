@@ -1,6 +1,6 @@
 [package]
 name = "solana-lite-rpc-services"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "Services used by solana lite rpc"
 rust-version = "1.73.0"
@@ -46,3 +46,6 @@ tracing = { workspace = true }
 # note: version 0.5.6 has a known bug
 crossbeam-channel = "0.5.6"
 countmap = "0.2.0"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(tokio_unstable)'] }
