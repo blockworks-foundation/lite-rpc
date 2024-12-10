@@ -1,7 +1,7 @@
 use {
     crate::{
-        AccountsDbFields, AppendVecIterator, DeserializableVersionedBank, deserialize_from,
-        parse_append_vec_name, SerializableAccountStorageEntry, SnapshotError,
+        deserialize_from, parse_append_vec_name, AccountsDbFields, AppendVecIterator,
+        DeserializableVersionedBank, SerializableAccountStorageEntry, SnapshotError,
         SnapshotExtractor, SnapshotResult,
     },
     log::info,
@@ -19,8 +19,8 @@ use crate::append_vec::AppendVec;
 
 /// Extracts account data from a .tar.zst stream.
 pub struct ArchiveSnapshotExtractor<Source>
-    where
-        Source: Read + Unpin + 'static,
+where
+    Source: Read + Unpin + 'static,
 {
     accounts_db_fields: AccountsDbFields<SerializableAccountStorageEntry>,
     _archive: Pin<Box<Archive<zstd::Decoder<'static, BufReader<Source>>>>>,
@@ -28,8 +28,8 @@ pub struct ArchiveSnapshotExtractor<Source>
 }
 
 impl<Source> SnapshotExtractor for ArchiveSnapshotExtractor<Source>
-    where
-        Source: Read + Unpin + 'static,
+where
+    Source: Read + Unpin + 'static,
 {
     fn iter(&mut self) -> AppendVecIterator<'_> {
         Box::new(self.unboxed_iter())
@@ -37,8 +37,8 @@ impl<Source> SnapshotExtractor for ArchiveSnapshotExtractor<Source>
 }
 
 impl<Source> ArchiveSnapshotExtractor<Source>
-    where
-        Source: Read + Unpin + 'static,
+where
+    Source: Read + Unpin + 'static,
 {
     pub fn from_reader(source: Source) -> SnapshotResult<Self> {
         let tar_stream = zstd::stream::read::Decoder::new(source)?;
@@ -94,7 +94,7 @@ impl<Source> ArchiveSnapshotExtractor<Source>
         })
     }
 
-    fn unboxed_iter(&mut self) -> impl Iterator<Item=SnapshotResult<AppendVec>> + '_ {
+    fn unboxed_iter(&mut self) -> impl Iterator<Item = SnapshotResult<AppendVec>> + '_ {
         self.entries
             .take()
             .into_iter()

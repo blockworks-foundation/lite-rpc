@@ -1,5 +1,5 @@
 [package]
-name = "accounts-reader"
+name = "accounts-importer"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
@@ -14,6 +14,7 @@ solana-runtime = { workspace = true }
 solana-sdk = { workspace = true }
 solana-accounts-db = { workspace = true }
 
+solana-lite-rpc-core = { workspace = true }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
@@ -31,6 +32,7 @@ sha2 = "0.10.7"
 tar = "0.4.38"
 thiserror = { workspace = true }
 zstd = "0.11.2"
+tokio = { workspace = true }
 
 [lints.clippy]
 clone_on_ref_ptr = "deny"

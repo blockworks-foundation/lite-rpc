@@ -99,6 +99,8 @@ rustls = { version = "0.21.7", default-features = false, features = ["quic"] }
 tonic = "0.12"
 tonic-health = "0.12"
 rcgen = "0.9.3"
+tokio = { version = "1.28.2", features = ["full", "fs"]}
+
 
 [patch.crates-io.curve25519-dalek]
 git = "https://github.com/anza-xyz/curve25519-dalek.git"

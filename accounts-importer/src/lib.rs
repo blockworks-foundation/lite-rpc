@@ -4,14 +4,15 @@ use {
         AccountsDbFields, DeserializableVersionedBank, deserialize_from,
         SerializableAccountStorageEntry,
     },
-    std::{ffi::OsStr, io::Read, path::Path, str::FromStr},
+    std::{ffi::OsStr, str::FromStr},
     thiserror::Error,
 };
+pub use importer::import;
 
-pub mod append_vec;
-pub mod archived;
-pub mod solana;
-pub mod unpacked;
+pub(crate) mod append_vec;
+pub(crate) mod archived;
+mod importer;
+pub(crate) mod solana;
 
 const SNAPSHOTS_DIR: &str = "snapshots";
 
@@ -75,27 +76,5 @@ impl<'a> StoredAccountMetaHandle<'a> {
 
     pub fn access(&self) -> Option<StoredAccountMeta<'_>> {
         Some(self.append_vec.get_account(self.offset)?.0)
-    }
-}
-
-pub trait ReadProgressTracking {
-    fn new_read_progress_tracker(
-        &self,
-        path: &Path,
-        rd: Box<dyn Read>,
-        file_len: u64,
-    ) -> SnapshotResult<Box<dyn Read>>;
-}
-
-struct NoopReadProgressTracking {}
-
-impl ReadProgressTracking for NoopReadProgressTracking {
-    fn new_read_progress_tracker(
-        &self,
-        _path: &Path,
-        rd: Box<dyn Read>,
-        _file_len: u64,
-    ) -> SnapshotResult<Box<dyn Read>> {
-        Ok(rd)
     }
 }
