@@ -8,14 +8,14 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 use tracing::debug;
 
-/// connection manager with automatic reconnect; designated for connection to Solana TPU nodes
-///
-/// assumptions:
-/// * connection to TPU node is reliable
-/// * manager and TPU nodes run both in data centers with fast internet connectivity
-/// * ping times vary between 50ms and 400ms depending on the location
-/// * TPU address might be wrong which then is a permanent problem
-/// * the ActiveConnection instance gets renewed on leader schedule change
+//! connection manager with automatic reconnect; designated for connection to Solana TPU nodes
+//!
+//! assumptions:
+//! * connection to TPU node is reliable
+//! * manager and TPU nodes run both in data centers with fast internet connectivity
+//! * ping times vary between 50ms and 400ms depending on the location
+//! * TPU address might be wrong which then is a permanent problem
+//! * the ActiveConnection instance gets renewed on leader schedule change
 
 const SEND_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_RETRY_ATTEMPTS: u32 = 10;
