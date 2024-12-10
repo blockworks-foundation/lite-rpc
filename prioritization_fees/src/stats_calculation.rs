@@ -2,7 +2,7 @@ use crate::{prioritization_fee_data::PrioFeesData, rpc_data::FeePoint};
 use itertools::Itertools;
 use std::iter::zip;
 
-/// `quantile` function is the same as the median if q=50, the same as the minimum if q=0 and the same as the maximum if q=100.
+// `quantile` function is the same as the median if q=50, the same as the minimum if q=0 and the same as the maximum if q=100.
 
 pub fn calculate_supp_percentiles(
     // Vec(prioritization_fees, cu_consumed)

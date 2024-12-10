@@ -14,7 +14,6 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[clap(version, about)]
-
 struct Arguments {
     #[clap(subcommand)]
     subcommand: SubCommand,

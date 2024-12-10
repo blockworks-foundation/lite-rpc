@@ -331,7 +331,7 @@ impl Debug for GrpcSource {
 fn url_obfuscate_api_token(url: &str) -> Cow<str> {
     if let Ok(mut parsed) = Url::parse(url) {
         if parsed.path() == "/" {
-            return Cow::Borrowed(url);
+            Cow::Borrowed(url)
         } else {
             parsed.set_path("omitted-secret");
             Cow::Owned(parsed.to_string())
