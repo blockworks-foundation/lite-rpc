@@ -1,4 +1,4 @@
-name: Cargo Nightly Clippy
+name: Cargo clippy+fmt
 
 on:
   push:
@@ -27,8 +27,6 @@ jobs:
       # The toolchain action should definitely be run before the cache action
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          # use toolchain version from rust-toolchain.toml
-          toolchain: nightly
           components: rustfmt, clippy
           cache: true
           # avoid the default "-D warnings" which thrashes cache
@@ -48,5 +46,5 @@ jobs:
 
       - name: Run fmt+clippy
         run: |
-          cargo +nightly fmt --all --check
-          cargo +nightly clippy --locked --workspace --all-targets -- -D warnings
+          cargo fmt --all --check
+          cargo clippy --locked --workspace --all-targets -- -D warnings
