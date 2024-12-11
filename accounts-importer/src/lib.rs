@@ -13,6 +13,8 @@ pub(crate) mod append_vec;
 pub(crate) mod archived;
 mod importer;
 pub(crate) mod solana;
+mod loader_back;
+pub mod snapshot; // FIXME pub(crate)
 
 const SNAPSHOTS_DIR: &str = "snapshots";
 

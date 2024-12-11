@@ -34,6 +34,11 @@ thiserror = { workspace = true }
 zstd = "0.11.2"
 tokio = { workspace = true }
 
+# loader
+#indicatif = { version = "0.17.9" }
+reqwest = { version = "0.12.9", features = ["blocking", "brotli", "deflate", "gzip", "rustls-tls", "json"] }
+solana-download-utils = "2.0.16"
+
 [lints.clippy]
 clone_on_ref_ptr = "deny"
 missing_const_for_fn = "deny"
