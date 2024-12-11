@@ -20,7 +20,7 @@ async fn main() {
         maximum_incremental_snapshot_archives_to_retain: NonZeroUsize::new(100).unwrap(),
     });
 
-    let file = loader.load_latest_snapshot().await.unwrap();
+    let snapshot = loader.load_latest_incremental_snapshot().await.unwrap();
     print!("{file:#?}");
 
     // let result = latest_incremental_snapshot([

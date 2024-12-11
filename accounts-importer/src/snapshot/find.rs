@@ -13,7 +13,7 @@ use crate::snapshot::HostUrl;
 #[derive(Debug)]
 pub struct LatestFullSnapshot {
     pub host: HostUrl,
-    pub full_slot: Slot,
+    pub slot: Slot,
     pub hash: SnapshotHash,
 }
 
@@ -38,7 +38,7 @@ pub async fn latest_full_snapshot(hosts: impl IntoIterator<Item=HostUrl>) -> any
                 let full_slot = parts[0].parse::<u64>().unwrap();
                 let hash = SnapshotHash(Hash::from_str(parts[1]).unwrap());
 
-                snapshots.push(LatestFullSnapshot { host: host.clone(), full_slot, hash })
+                snapshots.push(LatestFullSnapshot { host: host.clone(), slot: full_slot, hash })
             } else {
                 bail!("Unexpected format: {:?}", parts);
             }
@@ -49,7 +49,7 @@ pub async fn latest_full_snapshot(hosts: impl IntoIterator<Item=HostUrl>) -> any
     }
 
     snapshots.into_iter()
-        .max_by(|left, right| left.full_slot.cmp(&right.full_slot))
+        .max_by(|left, right| left.slot.cmp(&right.slot))
         .ok_or_else(|| anyhow!("Unable to find latest snapshot"))
 }
 

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use solana_runtime::snapshot_package::SnapshotKind;
+use solana_sdk::slot_history::Slot;
 
 use crate::snapshot::download::download_snapshot;
 use crate::snapshot::find::{latest_full_snapshot, latest_incremental_snapshot};
@@ -32,31 +33,44 @@ pub struct Loader {
     cfg: Config,
 }
 
+#[derive(Debug)]
+pub struct FullSnapshot {
+    pub path: PathBuf,
+    pub slot: Slot,
+}
+
+#[derive(Debug)]
+pub struct IncrementalSnapshot {
+    pub path: PathBuf,
+    pub full_slot: Slot,
+    pub incremental_slot: Slot,
+}
+
 impl Loader {
     pub fn new(cfg: Config) -> Self {
-        Self {
-            cfg
-        }
+        Self { cfg }
     }
 
-    pub async fn load_latest_snapshot(&self) -> anyhow::Result<PathBuf> {
+    pub async fn load_latest_snapshot(&self) -> anyhow::Result<FullSnapshot> {
         let snapshot = latest_full_snapshot(self.cfg.hosts.clone()).await.unwrap();
 
-        download_snapshot(
+        let path = download_snapshot(
             snapshot.host,
             self.cfg.full_snapshot_path.clone(),
             self.cfg.incremental_snapshot_path.clone(),
-            (snapshot.full_slot, snapshot.hash ),
+            (snapshot.slot, snapshot.hash),
             SnapshotKind::FullSnapshot,
             self.cfg.maximum_full_snapshot_archives_to_retain,
             self.cfg.maximum_incremental_snapshot_archives_to_retain,
             true,
-        ).await.await?
+        ).await.await??;
+
+        Ok(FullSnapshot { path, slot: snapshot.slot })
     }
 
-    pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<PathBuf> {
+    pub async fn load_latest_incremental_snapshot(&self) -> anyhow::Result<IncrementalSnapshot> {
         let snapshot = latest_incremental_snapshot(self.cfg.hosts.clone()).await.unwrap();
-        download_snapshot(
+        let path = download_snapshot(
             snapshot.host,
             self.cfg.full_snapshot_path.clone(),
             self.cfg.incremental_snapshot_path.clone(),
@@ -65,7 +79,9 @@ impl Loader {
             self.cfg.maximum_full_snapshot_archives_to_retain,
             self.cfg.maximum_incremental_snapshot_archives_to_retain,
             true,
-        ).await.await?
+        ).await.await??;
+
+        Ok(IncrementalSnapshot { path, full_slot: snapshot.full_slot, incremental_slot: snapshot.incremental_slot })
     }
 }
 
