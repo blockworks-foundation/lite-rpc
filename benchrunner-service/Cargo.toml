@@ -1,7 +1,7 @@
 
 [package]
 name = "solana-lite-rpc-benchrunner-service"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "Service for running recurring benchmarks"
 rust-version = "1.73.0"

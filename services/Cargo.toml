@@ -1,6 +1,6 @@
 [package]
 name = "solana-lite-rpc-services"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "Services used by solana lite rpc"
 rust-version = "1.73.0"

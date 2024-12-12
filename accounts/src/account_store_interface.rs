@@ -5,11 +5,12 @@ use solana_rpc_client_api::filter::RpcFilterType;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::slot_history::Slot;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum AccountLoadingError {
     AccountNotFound,
     ConfigDoesnotContainRequiredFilters,
     OperationTimeOut,
+    FailedToSpawnTask(String),
 }
 
 #[async_trait]

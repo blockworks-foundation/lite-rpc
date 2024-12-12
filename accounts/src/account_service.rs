@@ -4,6 +4,14 @@ use anyhow::bail;
 use itertools::Itertools;
 use prometheus::{opts, register_int_gauge, IntGauge};
 use solana_account_decoder::{UiAccount, UiDataSliceConfig};
+use solana_rpc_client::nonblocking::rpc_client::RpcClient;
+use solana_rpc_client_api::{
+    config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
+    response::RpcKeyedAccount,
+};
+use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
+use tokio::sync::broadcast::Sender;
+
 use solana_lite_rpc_core::types::BlockInfoStream;
 use solana_lite_rpc_core::{
     commitment_utils::Commitment,
@@ -13,13 +21,6 @@ use solana_lite_rpc_core::{
     },
     AnyhowJoinHandle,
 };
-use solana_rpc_client::nonblocking::rpc_client::RpcClient;
-use solana_rpc_client_api::{
-    config::{RpcAccountInfoConfig, RpcProgramAccountsConfig},
-    response::RpcKeyedAccount,
-};
-use solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, slot_history::Slot};
-use tokio::sync::broadcast::Sender;
 
 use crate::account_store_interface::{AccountLoadingError, AccountStorageInterface};
 
@@ -190,20 +191,19 @@ impl AccountService {
             loop {
                 match blockinfo_stream.recv().await {
                     Ok(block_info) => {
-                        if block_info.commitment_config.is_processed() {
-                            // processed commitment is not processed in this loop
-                            continue;
-                        }
                         let commitment = Commitment::from(block_info.commitment_config);
                         let updated_accounts = this
                             .account_store
                             .process_slot_data(block_info.slot, commitment)
                             .await;
-
-                        if block_info.commitment_config.is_finalized() {
-                            ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
-                        } else {
-                            ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);
+                        match commitment {
+                            Commitment::Processed => {}
+                            Commitment::Confirmed => {
+                                ACCOUNT_UPDATES_CONFIRMED.add(updated_accounts.len() as i64);
+                            }
+                            Commitment::Finalized => {
+                                ACCOUNT_UPDATES_FINALIZED.add(updated_accounts.len() as i64)
+                            }
                         }
 
                         for data in updated_accounts {

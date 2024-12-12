@@ -1,6 +1,6 @@
 [package]
 name = "solana-lite-rpc-accounts"
-version = "0.2.4"
+version = "0.3.0"
 edition = "2021"
 description = "Library which implements accounts in lite-rpc"
 rust-version = "1.73.0"

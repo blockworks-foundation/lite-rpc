@@ -4,16 +4,18 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::{env, time::Duration};
 
+use anyhow::Context;
+use clap::Parser;
+use dotenv::dotenv;
+use solana_rpc_client_api::client_error::reqwest::Url;
+
+use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
+
 use crate::postgres_logger::{self, PostgresSessionConfig};
 use crate::{
     DEFAULT_FANOUT_SIZE, DEFAULT_GRPC_ADDR, DEFAULT_RETRY_TIMEOUT, DEFAULT_RPC_ADDR,
     DEFAULT_WS_ADDR, MAX_RETRIES,
 };
-use anyhow::Context;
-use clap::Parser;
-use dotenv::dotenv;
-use solana_lite_rpc_services::quic_connection_utils::QuicConnectionParameters;
-use solana_rpc_client_api::client_error::reqwest::Url;
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -88,6 +90,9 @@ pub struct Config {
 
     #[serde(default)]
     pub account_filters: Option<String>,
+
+    #[serde(default)]
+    pub use_accounts_db: Option<bool>,
 
     #[serde(default)]
     pub enable_accounts_on_demand_accounts_service: Option<bool>,
@@ -218,6 +223,11 @@ impl Config {
             .or(config.address_lookup_tables_binary);
 
         config.account_filters = env::var("ACCOUNT_FILTERS").ok().or(config.account_filters);
+
+        config.use_accounts_db = env::var("USE_ACCOUNTS_DB")
+            .map(|value| value.parse::<bool>().unwrap())
+            .ok()
+            .or(config.use_accounts_db);
 
         config.enable_accounts_on_demand_accounts_service = env::var("ENABLE_ACCOUNT_ON_DEMAND")
             .map(|value| value.parse::<bool>().unwrap())
