@@ -17,6 +17,9 @@ with commodity vms. Optionally the Lite RCP micro-services can be configured to
 send the transactions to a complementary __QUIC forward proxy__ instead of the
 solana tpu ([details](quic-forward-proxy/README.md)).
 
+
+Only **BASE58** transactions are supported at this time, without any params eg. `preflightCommitment`, `maxRetries`, or `encoding`.
+
 ### Confirmation strategies
 
 1) Subscribe to new blocks using websockets (deprecated)
