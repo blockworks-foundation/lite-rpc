@@ -93,14 +93,18 @@ pub async fn send_bulk_txs_and_wait(
     max_timeout: Duration,
 ) -> anyhow::Result<Metric> {
     trace!("Get latest blockhash and generate transactions");
-    let hash = rpc.get_latest_blockhash().await.map_err(|err| {
+    let recent_blockhash = rpc.get_latest_blockhash().await.map_err(|err| {
         log::error!("Error get latest blockhash : {err:?}");
         err
     })?;
     let mut rng = create_rng(None);
-    let txs = generate_txs(num_txs, payer, hash, &mut rng, tx_params);
+    let txs = generate_txs(num_txs, payer, recent_blockhash, &mut rng, tx_params);
 
-    trace!("Sending {} transactions in bulk ..", txs.len());
+    trace!(
+        "Sending {} transactions with blockhash {} to RPC sendTransaction in bulk ..",
+        txs.len(),
+        recent_blockhash
+    );
     let tx_and_confirmations_from_rpc: Vec<(Signature, ConfirmationResponseFromRpc)> =
         send_and_confirm_bulk_transactions(
             rpc,

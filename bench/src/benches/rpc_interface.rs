@@ -6,7 +6,6 @@ use futures::TryFutureExt;
 use itertools::Itertools;
 use log::{debug, trace, warn};
 
-use solana_lite_rpc_util::obfuscate_rpcurl;
 use solana_rpc_client::nonblocking::rpc_client::RpcClient;
 use solana_rpc_client::rpc_client::SerializableTransaction;
 use solana_rpc_client_api::client_error::ErrorKind;
@@ -23,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::Instant;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 pub fn create_rpc_client(rpc_url: &Url) -> RpcClient {
@@ -34,7 +34,7 @@ pub enum ConfirmationResponseFromRpc {
     // RPC error on send_transaction
     SendError(Arc<ErrorKind>),
     // (sent slot at confirmed commitment, confirmed slot, ..., ...)
-    // transaction_confirmation_status is "confirmed" (finalized is not reported by blockSubscribe websocket
+    // transaction_confirmation_status is "confirmed"
     Success(Slot, Slot, TransactionConfirmationStatus, Duration),
     // timout waiting for confirmation status
     Timeout(Duration),
@@ -47,11 +47,11 @@ pub async fn send_and_confirm_bulk_transactions(
     txs: &[VersionedTransaction],
     max_timeout: Duration,
 ) -> anyhow::Result<Vec<(Signature, ConfirmationResponseFromRpc)>> {
-    trace!("Polling for next slot ..");
-    let send_slot = poll_next_slot_start(rpc_client)
-        .await
-        .context("poll for next start slot")?;
-    trace!("Send slot: {}", send_slot);
+    debug!(
+        "send_transaction for {} txs with timeout {:.03}s",
+        txs.len(),
+        max_timeout.as_secs_f32()
+    );
 
     let send_config = RpcSendTransactionConfig {
         skip_preflight: true,
@@ -61,13 +61,26 @@ pub async fn send_and_confirm_bulk_transactions(
         min_context_slot: None,
     };
 
-    // note: we get confirmed but never finaliized
+    let tx_listener_startup_token = CancellationToken::new();
+
+    // note: we get confirmed but not finalized
+    let tx_listener_startup_token_cp = tx_listener_startup_token.clone();
     let (tx_status_map, _jh_collector) = start_tx_status_collector(
         tx_status_websocket_addr.clone(),
         payer_pubkey,
         CommitmentConfig::confirmed(),
+        tx_listener_startup_token_cp,
     )
     .await;
+
+    // waiting for thread to cancel the token
+    tx_listener_startup_token.cancelled().await;
+
+    trace!("Waiting for next slot before sending transactions ..");
+    let send_slot = poll_next_slot_start(rpc_client)
+        .await
+        .context("poll for next start slot")?;
+    trace!("Send slot: {}", send_slot);
 
     let started_at = Instant::now();
     trace!(
@@ -87,7 +100,7 @@ pub async fn send_and_confirm_bulk_transactions(
         .context("get slot afterwards")?;
 
     if after_send_slot - send_slot > 0 {
-        warn!(
+        debug!(
             "Slot advanced during sending transactions: {} -> {}",
             send_slot, after_send_slot
         );
@@ -110,9 +123,9 @@ pub async fn send_and_confirm_bulk_transactions(
     for (i, tx_sig) in txs.iter().enumerate() {
         let tx_sent = batch_sigs_or_fails[i].is_ok();
         if tx_sent {
-            trace!("- tx_sent {}", tx_sig.get_signature());
+            debug!("- tx_sent {}", tx_sig.get_signature());
         } else {
-            trace!("- tx_fail {}", tx_sig.get_signature());
+            debug!("- tx_fail {}", tx_sig.get_signature());
         }
     }
     let elapsed = started_at.elapsed();
@@ -147,13 +160,9 @@ pub async fn send_and_confirm_bulk_transactions(
 
     // items get moved from pending_status_set to result_status_map
 
-    debug!(
-        "Waiting for transaction confirmations from websocket source <{}> ..",
-        obfuscate_rpcurl(tx_status_websocket_addr.as_str())
-    );
     let started_at = Instant::now();
     let timeout_at = started_at + max_timeout;
-    // "poll" the status dashmap
+    // "poll" the status dashmap which gets updated by the tx status collector task
     'polling_loop: for iteration in 1.. {
         let iteration_ends_at = started_at + Duration::from_millis(iteration * 100);
         assert_eq!(
@@ -170,7 +179,7 @@ pub async fn send_and_confirm_bulk_transactions(
             // status is confirmed
             if pending_status_set.remove(tx_sig) {
                 trace!(
-                    "take status for sig {:?} and confirmed_slot: {:?} from websocket source",
+                    "websocket source tx status for sig {:?} and confirmed_slot: {:?}",
                     tx_sig,
                     confirmed_slot
                 );
@@ -255,7 +264,7 @@ pub async fn poll_next_slot_start(rpc_client: &RpcClient) -> Result<Slot, Error>
         let slot = rpc_client
             .get_slot_with_commitment(CommitmentConfig::confirmed())
             .await?;
-        trace!("polling slot {}", slot);
+        trace!(".. polling slot {}", slot);
         if let Some(last_slot) = last_slot {
             if last_slot + 1 == slot {
                 break slot;
