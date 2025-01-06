@@ -1,17 +1,22 @@
 [package]
 name = "solana-lite-rpc-util"
-version = "0.3.0"
+version = "0.3.1" # 版本号升级
 edition = "2021"
-description = "Utility for non-domain functions"
+description = "Utility library for Solana Lite RPC non-domain functions"  # 更详细的描述
 rust-version = "1.73.0"
 repository = "https://github.com/blockworks-foundation/lite-rpc"
-license = "AGPL"
+license = "AGPL-3.0" # 完整的 license 标识
+keywords = ["solana", "blockchain", "rpc", "utilities"] # 添加关键词
+categories = ["cryptography::cryptocurrencies", "development-tools"] # 添加类别
 
 [dependencies]
-serde = { workspace = true }
+# 核心依赖使用固定版本
+serde = { workspace = true, features = ["derive"] } # 添加 derive feature
 serde_json = { workspace = true }
-tokio = "1.*"
-tokio-stream = { version = "0.1.14" , features = ["sync"]}
+tokio = { version = "1.0", features = ["full"] } # 明确指定features
+tokio-stream = { version = "0.1.14", features = ["sync"] }
+
+# 其他依赖版本锁定
 bincode = { workspace = true }
 bs58 = { workspace = true }
 base64 = { workspace = true }
@@ -24,11 +29,14 @@ log = { workspace = true }
 tracing = { workspace = true }
 dashmap = { workspace = true }
 quinn = { workspace = true }
-chrono = { workspace = true }
+chrono = { workspace = true, features = ["serde"] } # 添加 serde feature
 rustls = { workspace = true }
 async-trait = { workspace = true }
 derive_more = "0.99.17"
 async-channel = { workspace = true }
-itertools = {workspace = true}
+itertools = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
+
+[dev-dependencies] # 添加测试依赖区块
+tokio = { version = "1.0", features = ["test-util"] }
