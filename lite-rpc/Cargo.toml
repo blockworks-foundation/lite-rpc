@@ -61,5 +61,8 @@ solana-lite-rpc-address-lookup-tables = { workspace = true }
 solana-lite-rpc-accounts = { workspace = true }
 solana-lite-rpc-accounts-on-demand = { workspace = true }
 
+openssl = { workspace = true }
+openssl-sys = { workspace = true }
+
 [dev-dependencies]
 bench = { path = "../bench" }

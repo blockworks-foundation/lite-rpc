@@ -105,6 +105,37 @@ Troubleshooting: if you encounter issues with QUIC _sendmsg_ check
 need to explicitly disable GSO (Generic Segmenatin Offload) see
 ```DISABLE_GSO=true```
 
+### Configuring openssl for quiche
+
+```
+# Get OpenSSL sources from Ubuntu 21.10 Impish
+wget https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/openssl/1.1.1l-1ubuntu1.6/openssl_1.1.1l.orig.tar.gz
+
+# Extract files
+tar -xvf openssl_1.1.1l.orig.tar.gz
+
+# build openssl 1.1.1l
+cd /tmp/openssl-1.1.1l/
+./config shared enable-ec_nistp_64_gcc_128 -Wl,-rpath=/usr/local/ssl/lib --prefix=/usr/local/ssl
+make -j 4
+make test && sudo make install
+
+# refresh cache
+hash -r
+
+# check version
+/usr/local/ssl/bin/openssl <<< version
+```
+
+#### Compiling with openssl1.1
+```
+export OPENSSL_DIR=/usr/local/ssl
+export LIBSSL_DIR=/usr/local/ssl/lib
+export INCLUDE_DIR=/usr/local/ssl/include
+export OPENSSL_NO_PKG_CONFIG=1
+
+```
+
 #### Example
 ```bash
 fly apps create my-lite-rpc
