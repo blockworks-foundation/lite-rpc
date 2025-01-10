@@ -67,6 +67,10 @@ impl TpuService {
             identity_stakes.peer_type,
             identity_stakes.total_stakes,
         );
+        log::info!(
+            "Number of streams for TPU connections: {}",
+            number_of_streams
+        );
 
         let connection_manager = match config.tpu_connection_path {
             TpuConnectionPath::QuicDirectPath => {

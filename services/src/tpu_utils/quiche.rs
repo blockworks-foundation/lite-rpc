@@ -290,6 +290,8 @@ pub fn quiche_transaction_sending_loop(
 
     let mut tpu_clients = BTreeMap::<SocketAddr, QuicheClient>::new();
     let mut continue_write = false;
+
+    println!("starting quiche transaction sending loop with {number_of_unistreams:?}");
     loop {
         let timeout = match continue_write {
             true => Some(std::time::Duration::from_secs(0)),
@@ -311,6 +313,7 @@ pub fn quiche_transaction_sending_loop(
                             if let std::collections::btree_map::Entry::Vacant(e) =
                                 tpu_clients.entry(address)
                             {
+                                println!("creating connection for {}", address);
                                 let quiche_client = new_quiche_connection(
                                     &socket,
                                     address,
@@ -441,9 +444,10 @@ pub fn quiche_transaction_sending_loop(
 
                     // send existing transactions in the queue
                     while quiche_client.streams_open < number_of_unistreams as usize {
-                        let next_unidi =
-                            get_next_unidi(quiche_client.last_stream_id, false, u64::MAX);
                         if let Some(transaction) = quiche_client.prioritization_fee_heap.pop() {
+                            println!("sending transaction");
+                            let next_unidi =
+                                get_next_unidi(quiche_client.last_stream_id, false, u64::MAX);
                             let (save_in_stream_sender_map, written) = match quiche_client
                                 .conn
                                 .stream_send(next_unidi, &transaction.transaction, true)
@@ -520,5 +524,170 @@ pub fn quiche_transaction_sending_loop(
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use solana_client::rpc_client::SerializableTransaction;
+    use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
+    use solana_sdk::hash::Hash;
+    use solana_sdk::instruction::Instruction;
+    use solana_sdk::message::Message;
+    use solana_sdk::pubkey::Pubkey;
+    use solana_sdk::signer::keypair::Keypair;
+    use solana_sdk::signer::Signer;
+    use solana_sdk::transaction::{Transaction, VersionedTransaction};
+    use solana_streamer::nonblocking::quic::{
+        compute_max_allowed_uni_streams, SpawnNonBlockingServerResult,
+    };
+    use solana_streamer::packet::PacketBatch;
+    use solana_streamer::quic::StreamStats;
+    use solana_streamer::streamer::StakedNodes;
+    use solana_streamer::tls_certificates::new_dummy_x509_certificate;
+    use std::net::{SocketAddr, UdpSocket};
+    use std::str::FromStr;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::{Arc, RwLock};
+    use std::time::Duration;
+    use tokio::task::JoinHandle;
+
+    use super::{quiche_transaction_sending_loop, QuicheMessage};
+
+    #[allow(dead_code)]
+    struct SolanaQuicStreamer {
+        sock: UdpSocket,
+        exit: Arc<AtomicBool>,
+        join_handler: JoinHandle<()>,
+        stats: Arc<StreamStats>,
+    }
+
+    impl SolanaQuicStreamer {
+        fn new_start_listening(
+            keypair: Keypair,
+            udp_socket: UdpSocket,
+            sender: crossbeam_channel::Sender<PacketBatch>,
+            staked_nodes: StakedNodes,
+        ) -> Self {
+            let staked_nodes = Arc::new(RwLock::new(staked_nodes));
+            let exit = Arc::new(AtomicBool::new(false));
+
+            let SpawnNonBlockingServerResult { stats, thread, .. } =
+                solana_streamer::nonblocking::quic::spawn_server(
+                    "test-quic-server",
+                    udp_socket.try_clone().unwrap(),
+                    &keypair,
+                    sender,
+                    exit.clone(),
+                    1,
+                    staked_nodes,
+                    10,
+                    10,
+                    9999, // max_streams_per_ms
+                    10,
+                    Duration::from_millis(1000),
+                    Duration::from_millis(1000),
+                )
+                .unwrap();
+
+            let addr = udp_socket.local_addr().unwrap().ip();
+            let port = udp_socket.local_addr().unwrap().port();
+            let _tpu_addr = SocketAddr::new(addr, port);
+
+            Self {
+                sock: udp_socket,
+                exit,
+                join_handler: thread,
+                stats,
+            }
+        }
+    }
+
+    const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+
+    pub fn build_raw_sample_tx(i: u32) -> SentTransactionInfo {
+        let payer_keypair = Keypair::from_base58_string(
+            "rKiJ7H5UUp3JR18kNyTF1XPuwPKHEM7gMLWHZPWP5djrW1vSjfwjhvJrevxF9MPmUmN9gJMLHZdLMgc9ao78eKr",
+        );
+
+        let tx = build_sample_tx(&payer_keypair, i);
+
+        let transaction = Arc::new(
+            bincode::serialize::<VersionedTransaction>(&tx).expect("failed to serialize tx"),
+        );
+
+        SentTransactionInfo {
+            signature: *tx.get_signature(),
+            slot: 1,
+            transaction,
+            last_valid_block_height: 300,
+            prioritization_fee: 0,
+        }
+    }
+
+    fn build_sample_tx(payer_keypair: &Keypair, i: u32) -> VersionedTransaction {
+        let blockhash = Hash::default();
+        create_memo_tx(format!("hi {}", i).as_bytes(), payer_keypair, blockhash).into()
+    }
+
+    fn create_memo_tx(msg: &[u8], payer: &Keypair, blockhash: Hash) -> Transaction {
+        let memo = Pubkey::from_str(MEMO_PROGRAM_ID).unwrap();
+
+        let instruction = Instruction::new_with_bytes(memo, msg, vec![]);
+        let message = Message::new(&[instruction], Some(&payer.pubkey()));
+        Transaction::new(&[payer], message, blockhash)
+    }
+
+    #[tokio::test]
+    async fn test_quiche_transaction_sending_loop() {
+        let keypair = Keypair::new();
+        let udp_socket_server = UdpSocket::bind("0.0.0.0:0").unwrap();
+        let server_socket = udp_socket_server.local_addr().unwrap();
+        let (sender, reciever) = crossbeam_channel::unbounded();
+        let _quic_stream = SolanaQuicStreamer::new_start_listening(
+            keypair,
+            udp_socket_server,
+            sender,
+            StakedNodes::default(),
+        );
+
+        let unistream_count = compute_max_allowed_uni_streams(
+            solana_streamer::nonblocking::quic::ConnectionPeerType::Unstaked,
+            0,
+        );
+
+        let (message_sx, message_rx) = mio_channel::channel::<QuicheMessage>();
+        let keypair_client = Keypair::new();
+        let (certificate, key) = new_dummy_x509_certificate(&keypair_client);
+        std::thread::spawn(move || {
+            quiche_transaction_sending_loop(
+                unistream_count as u64,
+                message_rx,
+                certificate,
+                key,
+                None,
+            )
+            .unwrap();
+        });
+
+        std::thread::sleep(Duration::from_secs(1));
+
+        message_sx
+            .send(QuicheMessage::ResetConnections(vec![server_socket]))
+            .unwrap();
+
+        std::thread::sleep(Duration::from_secs(1));
+        let transaction = build_raw_sample_tx(1);
+        message_sx
+            .send(QuicheMessage::SendTransaction(transaction.clone()))
+            .unwrap();
+
+        std::thread::sleep(Duration::from_secs(1));
+        let packet_batch = reciever.try_recv().unwrap();
+        let mut packet = packet_batch.iter().next().unwrap().clone();
+        assert_eq!(
+            &packet.buffer_mut().to_vec(),
+            transaction.transaction.as_ref()
+        );
     }
 }
