@@ -36,7 +36,6 @@ prometheus = { workspace = true }
 lazy_static = { workspace = true }
 dotenv = { workspace = true }
 async-channel = { workspace = true }
-quinn = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 chrono = { workspace = true }

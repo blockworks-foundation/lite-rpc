@@ -39,7 +39,6 @@ prometheus = { workspace = true }
 lazy_static = { workspace = true }
 dotenv = { workspace = true }
 async-channel = { workspace = true }
-quinn = { workspace = true }
 async-trait = { workspace = true }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
 tokio-util = "0.7"

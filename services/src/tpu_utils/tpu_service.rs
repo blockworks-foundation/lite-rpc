@@ -1,20 +1,18 @@
-use anyhow::Context;
+use anyhow::{bail, Context};
 use prometheus::{core::GenericGauge, opts, register_int_gauge};
 use solana_streamer::nonblocking::quic::ConnectionPeerType;
 
 use super::tpu_connection_manager::TpuConnectionManager;
-use crate::quic_connection_utils::QuicConnectionParameters;
-use crate::tpu_utils::quic_proxy_connection_manager::QuicProxyConnectionManager;
 use crate::tpu_utils::tpu_connection_path::TpuConnectionPath;
-use crate::tpu_utils::tpu_service::ConnectionManager::{DirectTpu, QuicProxy};
+use crate::tpu_utils::tpu_service::ConnectionManager::DirectTpu;
 
-use solana_lite_rpc_core::network_utils::log_gso_workaround;
 use solana_lite_rpc_core::stores::data_cache::DataCache;
 use solana_lite_rpc_core::structures::transaction_sent_info::SentTransactionInfo;
 use solana_lite_rpc_core::traits::leaders_fetcher_interface::LeaderFetcherInterface;
 use solana_lite_rpc_core::types::SlotStream;
 use solana_lite_rpc_core::AnyhowJoinHandle;
 use solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair, slot_history::Slot};
+use solana_streamer::nonblocking::quic::compute_max_allowed_uni_streams;
 use solana_streamer::tls_certificates::new_dummy_x509_certificate;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -34,13 +32,12 @@ lazy_static::lazy_static! {
 pub struct TpuServiceConfig {
     pub fanout_slots: u64,
     pub maximum_transaction_in_queue: usize,
-    pub quic_connection_params: QuicConnectionParameters,
     pub tpu_connection_path: TpuConnectionPath,
 }
 
 #[derive(Clone)]
 pub struct TpuService {
-    broadcast_sender: Arc<tokio::sync::broadcast::Sender<SentTransactionInfo>>,
+    broadcast_sender: std::sync::mpsc::Sender<SentTransactionInfo>,
     connection_manager: ConnectionManager,
     leader_schedule: Arc<dyn LeaderFetcherInterface>,
     config: TpuServiceConfig,
@@ -52,9 +49,6 @@ enum ConnectionManager {
     DirectTpu {
         tpu_connection_manager: Arc<TpuConnectionManager>,
     },
-    QuicProxy {
-        quic_proxy_connection_manager: Arc<QuicProxyConnectionManager>,
-    },
 }
 
 impl TpuService {
@@ -64,33 +58,33 @@ impl TpuService {
         leader_schedule: Arc<dyn LeaderFetcherInterface>,
         data_cache: DataCache,
     ) -> anyhow::Result<Self> {
-        let (sender, _) = tokio::sync::broadcast::channel(config.maximum_transaction_in_queue);
+        let (sender, reciever) = std::sync::mpsc::channel::<SentTransactionInfo>();
         let (certificate, key) = new_dummy_x509_certificate(identity.as_ref());
-        log_gso_workaround();
+
+        let identity_stakes = data_cache.identity_stakes.get_stakes().await;
+
+        let number_of_streams = compute_max_allowed_uni_streams(
+            identity_stakes.peer_type,
+            identity_stakes.total_stakes,
+        );
 
         let connection_manager = match config.tpu_connection_path {
             TpuConnectionPath::QuicDirectPath => {
                 let tpu_connection_manager =
-                    TpuConnectionManager::new(certificate, key, config.fanout_slots as usize).await;
+                    TpuConnectionManager::new(certificate, key, number_of_streams as u64, reciever)
+                        .await;
                 DirectTpu {
                     tpu_connection_manager: Arc::new(tpu_connection_manager),
                 }
             }
-            TpuConnectionPath::QuicForwardProxyPath {
-                forward_proxy_address,
-            } => {
-                let quic_proxy_connection_manager =
-                    QuicProxyConnectionManager::new(certificate, key, forward_proxy_address).await;
-
-                QuicProxy {
-                    quic_proxy_connection_manager: Arc::new(quic_proxy_connection_manager),
-                }
+            TpuConnectionPath::QuicForwardProxyPath { .. } => {
+                bail!("QuicForwardProxyPath is not supported");
             }
         };
 
         Ok(Self {
             leader_schedule,
-            broadcast_sender: Arc::new(sender),
+            broadcast_sender: sender,
             connection_manager,
             config,
             data_cache,
@@ -124,15 +118,11 @@ impl TpuService {
         let enable_tpu_forwards = {
             match identity_stakes.peer_type {
                 ConnectionPeerType::Unstaked => false,
-                ConnectionPeerType::Staked(_) => self
-                    .config
-                    .quic_connection_params
-                    .enable_tpu_forwarding
-                    .unwrap_or_default(),
+                ConnectionPeerType::Staked(_) => true,
             }
         };
         // get next leader with its tpu port
-        let connections_to_keep: HashSet<_, _> = next_leaders
+        let connections_to_keep: HashSet<(_, _)> = next_leaders
             .iter()
             .map(|x| {
                 let contact_info = cluster_nodes.get(&x.pubkey);
@@ -162,32 +152,13 @@ impl TpuService {
                 addresses
             })
             .collect();
+        let connections = connections_to_keep.iter().map(|x| x.1).collect::<Vec<_>>();
 
         match &self.connection_manager {
             DirectTpu {
                 tpu_connection_manager,
             } => {
-                tpu_connection_manager
-                    .update_connections(
-                        self.broadcast_sender.clone(),
-                        connections_to_keep,
-                        identity_stakes,
-                        self.data_cache.clone(),
-                        self.config.quic_connection_params,
-                    )
-                    .await;
-            }
-            QuicProxy {
-                quic_proxy_connection_manager,
-            } => {
-                let transaction_receiver = self.broadcast_sender.subscribe();
-                quic_proxy_connection_manager
-                    .update_connection(
-                        transaction_receiver,
-                        connections_to_keep,
-                        self.config.quic_connection_params,
-                    )
-                    .await;
+                tpu_connection_manager.update_connections(connections).await;
             }
         }
         Ok(())

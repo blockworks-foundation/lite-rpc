@@ -30,7 +30,6 @@ bytes = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
 dashmap = { workspace = true }
-quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
 async-trait = { workspace = true }

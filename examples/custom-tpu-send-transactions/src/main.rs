@@ -30,7 +30,6 @@ use solana_lite_rpc_core::{
 };
 use solana_lite_rpc_services::{
     data_caching_service::DataCachingService,
-    quic_connection_utils::QuicConnectionParameters,
     tpu_utils::{
         tpu_connection_path::TpuConnectionPath,
         tpu_service::{TpuService, TpuServiceConfig},
@@ -345,23 +344,10 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let count = args.transaction_count.unwrap_or(10);
-    let prioritization_heap_size = Some(count * args.number_of_seconds);
 
     let tpu_config = TpuServiceConfig {
         fanout_slots: args.fanout_slots.unwrap_or(16),
         maximum_transaction_in_queue: 2000000,
-        quic_connection_params: QuicConnectionParameters {
-            connection_timeout: Duration::from_secs(60),
-            connection_retry_count: 10,
-            finalize_timeout: Duration::from_millis(10000),
-            max_number_of_connections: 4,
-            unistream_timeout: Duration::from_millis(1000),
-            write_timeout: Duration::from_secs(10),
-            number_of_transactions_per_unistream: 1,
-            unistreams_to_create_new_connection_in_percentage: 5,
-            prioritization_heap_size,
-            enable_tpu_forwarding: None,
-        },
         tpu_connection_path: TpuConnectionPath::QuicDirectPath,
     };
 

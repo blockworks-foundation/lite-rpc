@@ -115,7 +115,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
         address_lookup_tables_binary,
         account_filters,
         enable_accounts_on_demand_accounts_service,
-        quic_connection_parameters,
         ..
     } = args;
 
@@ -307,7 +306,6 @@ pub async fn start_lite_rpc(args: Config, rpc_client: Arc<RpcClient>) -> anyhow:
     let tpu_config = TpuServiceConfig {
         fanout_slots: fanout_size,
         maximum_transaction_in_queue: 20000,
-        quic_connection_params: quic_connection_parameters.unwrap_or_default(),
         tpu_connection_path,
     };
 

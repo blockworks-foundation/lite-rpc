@@ -35,11 +35,18 @@ dashmap = { workspace = true }
 prometheus = { workspace = true }
 lazy_static = { workspace = true }
 async-channel = { workspace = true }
-quinn = { workspace = true }
 chrono = { workspace = true }
 rustls = { workspace = true }
 solana-lite-rpc-core = { workspace = true }
 solana-lite-rpc-util = { workspace = true }
+
+ring = {workspace = true}
+quiche = { workspace = true, features = ["boringssl-boring-crate"]}
+mio = { workspace = true }
+mio_channel = { workspace = true }
+nix = { version = "0.27", features = ["net", "socket", "uio"] }
+libc = "0.2"
+boring = { workspace = true }
 
 [dev-dependencies]
 tracing = { workspace = true }
