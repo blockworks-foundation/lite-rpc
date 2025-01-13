@@ -38,7 +38,7 @@ pub fn configure_client(
         .set_application_protos(&[ALPN_TPU_PROTOCOL_ID])
         .unwrap();
 
-    config.set_max_idle_timeout(1000);
+    config.set_max_idle_timeout(10000);
     config.set_max_recv_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_max_send_udp_payload_size(MAX_DATAGRAM_SIZE);
     config.set_initial_max_data(DATAGRAM_RECEIVE_BUFFER_SIZE);
@@ -198,6 +198,7 @@ fn quiche_send_socket(
     }
 
     if enable_pacing {
+        log::debug!("sending with pacing {}", total_write);
         send_with_pacing(
             socket,
             &buf[..total_write],
@@ -206,6 +207,7 @@ fn quiche_send_socket(
             MAX_DATAGRAM_SIZE as u16,
         )
     } else {
+        log::debug!("sending without pacing {}", total_write);
         socket.send(&buf[..total_write])
     }
 }
@@ -276,7 +278,6 @@ pub fn quiche_transaction_sending_loop(
 
     let mut poll = mio::Poll::new()?;
     let mut events = mio::Events::with_capacity(1024);
-    let mut out = [0; MAX_DATAGRAM_SIZE];
     let mut buf = [0; 65535];
 
     // Generate a random source connection ID for the connection.
@@ -291,14 +292,19 @@ pub fn quiche_transaction_sending_loop(
     let mut tpu_clients = BTreeMap::<SocketAddr, QuicheClient>::new();
     let mut continue_write = false;
 
-    println!("starting quiche transaction sending loop with {number_of_unistreams:?}");
     loop {
         let timeout = match continue_write {
             true => Some(std::time::Duration::from_secs(0)),
-            false => tpu_clients
-                .iter()
-                .filter_map(|(_, c)| c.conn.timeout())
-                .min(),
+            false => {
+                if tpu_clients.is_empty() {
+                    Some(std::time::Duration::from_millis(100))
+                } else {
+                    tpu_clients
+                        .iter()
+                        .filter_map(|(_, c)| c.conn.timeout())
+                        .min()
+                }
+            }
         };
 
         poll.poll(&mut events, timeout).unwrap();
@@ -313,15 +319,30 @@ pub fn quiche_transaction_sending_loop(
                             if let std::collections::btree_map::Entry::Vacant(e) =
                                 tpu_clients.entry(address)
                             {
-                                println!("creating connection for {}", address);
-                                let quiche_client = new_quiche_connection(
+                                log::debug!("creating connection for {}", address);
+                                continue_write = true;
+                                let Ok(mut quiche_client) = new_quiche_connection(
                                     &socket,
                                     address,
                                     local_address,
                                     &mut config,
                                     prioritization_heap_size,
                                     &rng,
-                                )?;
+                                ) else {
+                                    log::error!("Error creating new connection");
+                                    continue;
+                                };
+                                if let Err(e) = quiche_send_socket(
+                                    &mut buf,
+                                    &socket,
+                                    &mut quiche_client,
+                                    enable_pacing,
+                                    enable_gso,
+                                    &mut continue_write,
+                                ) {
+                                    log::error!("Error sending socket : {e}");
+                                }
+
                                 e.insert(quiche_client);
                             } else {
                                 to_remove.remove(&address);
@@ -335,22 +356,26 @@ pub fn quiche_transaction_sending_loop(
                                 {
                                     log::error!("Error closing connection : {e}");
                                 }
-                                quiche_send_socket(
+                                if let Err(e) = quiche_send_socket(
                                     &mut buf,
                                     &socket,
                                     &mut client,
                                     enable_pacing,
                                     enable_gso,
                                     &mut continue_write,
-                                )?;
+                                ) {
+                                    log::error!("Error sending socket : {e}");
+                                }
                             }
                         }
                     }
                     QuicheMessage::SendTransaction(transaction) => {
+                        log::debug!("recieved transaction {:?}", transaction.signature);
                         for (_, quiche_client) in tpu_clients.iter_mut() {
                             quiche_client
                                 .prioritization_fee_heap
                                 .insert(transaction.clone());
+                            continue_write = true;
                         }
                     }
                     QuicheMessage::UpdateCurrentBlockheight(current_blockheight) => {
@@ -362,11 +387,18 @@ pub fn quiche_transaction_sending_loop(
                     }
                 }
             }
-        } else if events.iter().any(|e| e.token() == mio::Token(0)) {
+        } else if continue_write || events.iter().any(|e| e.token() == mio::Token(0)) {
+            log::debug!("reading from socket");
             // read loop
             // Read incoming UDP packets from the socket and feed them to quiche,
             // until there are no more packets to read.
             let mut updated_sockets = BTreeSet::new();
+
+            if continue_write {
+                updated_sockets.extend(tpu_clients.keys());
+                continue_write = false;
+            }
+
             'read: loop {
                 let (len, from) = match socket.recv_from(&mut buf) {
                     Ok(v) => v,
@@ -411,6 +443,7 @@ pub fn quiche_transaction_sending_loop(
 
             debug!("done reading");
             for socket_addr in updated_sockets {
+                log::debug!("processing socket : {socket_addr}");
                 let quiche_client = tpu_clients.get_mut(&socket_addr).unwrap();
                 if !quiche_client.has_connected && quiche_client.conn.is_established() {
                     log::debug!("connection established");
@@ -430,6 +463,7 @@ pub fn quiche_transaction_sending_loop(
                 //}
 
                 if quiche_client.conn.is_established() {
+                    log::debug!("connection established");
                     // Process all readable streams.
                     for s in quiche_client.conn.readable() {
                         log::info!("got a reable stream : {s} bizzarely");
@@ -445,7 +479,7 @@ pub fn quiche_transaction_sending_loop(
                     // send existing transactions in the queue
                     while quiche_client.streams_open < number_of_unistreams as usize {
                         if let Some(transaction) = quiche_client.prioritization_fee_heap.pop() {
-                            println!("sending transaction");
+                            log::debug!("sending transaction");
                             let next_unidi =
                                 get_next_unidi(quiche_client.last_stream_id, false, u64::MAX);
                             let (save_in_stream_sender_map, written) = match quiche_client
@@ -488,7 +522,7 @@ pub fn quiche_transaction_sending_loop(
                 }
 
                 let send_result = quiche_send_socket(
-                    &mut out,
+                    &mut buf,
                     &socket,
                     quiche_client,
                     enable_pacing,
@@ -640,6 +674,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_quiche_transaction_sending_loop() {
+        tracing_subscriber::fmt::init();
+
         let keypair = Keypair::new();
         let udp_socket_server = UdpSocket::bind("0.0.0.0:0").unwrap();
         let server_socket = udp_socket_server.local_addr().unwrap();
@@ -670,20 +706,20 @@ mod tests {
             .unwrap();
         });
 
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(Duration::from_millis(10));
 
         message_sx
             .send(QuicheMessage::ResetConnections(vec![server_socket]))
             .unwrap();
 
-        std::thread::sleep(Duration::from_secs(1));
+        std::thread::sleep(Duration::from_millis(10));
         let transaction = build_raw_sample_tx(1);
         message_sx
             .send(QuicheMessage::SendTransaction(transaction.clone()))
             .unwrap();
 
-        std::thread::sleep(Duration::from_secs(1));
-        let packet_batch = reciever.try_recv().unwrap();
+        std::thread::sleep(Duration::from_secs(2));
+        let packet_batch = reciever.recv().unwrap();
         let mut packet = packet_batch.iter().next().unwrap().clone();
         assert_eq!(
             &packet.buffer_mut().to_vec(),
