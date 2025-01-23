@@ -129,11 +129,12 @@ hash -r
 
 #### Compiling with openssl1.1
 ```
+export OPENSSL_LIB_DIR=/usr/local/ssl/lib
+export OPENSSL_INCLUDE_DIR=/usr/local/ssl/include
 export OPENSSL_DIR=/usr/local/ssl
 export LIBSSL_DIR=/usr/local/ssl/lib
 export INCLUDE_DIR=/usr/local/ssl/include
 export OPENSSL_NO_PKG_CONFIG=1
-
 ```
 
 #### Example
